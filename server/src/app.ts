@@ -8,6 +8,7 @@ import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 import { newId, type User } from '@inter/shared'
+import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
 import type { Store } from './store.ts'
@@ -79,6 +80,7 @@ export function buildApp({ store, eventPin, filesDir, livekit, logger = true }: 
 
   fastify.get('/api/health', () => ({
     ok: true,
+    version: APP_VERSION,
     uptime: process.uptime(),
     ...hub.stats(),
   }))

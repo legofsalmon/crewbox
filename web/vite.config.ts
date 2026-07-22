@@ -1,12 +1,29 @@
+import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+let commit = 'dev'
+try {
+  commit = execSync('git rev-parse --short HEAD').toString().trim()
+} catch {
+  // not a git checkout (e.g. release tarball) — fall back to 'dev'
+}
+// e.g. "0.2.0+a1b2c3d" — bump pkg.version for user-facing releases.
+const appVersion = `${pkg.version}+${commit}`
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt': never yank a crew member's app out mid-message — surface an
+      // "Update available" pill and let them reload when it's safe.
+      registerType: 'prompt',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Inter — crew chat',

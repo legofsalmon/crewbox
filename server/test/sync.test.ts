@@ -123,6 +123,7 @@ describe('join and welcome', () => {
     const { welcome } = await connect(token)
     expect(welcome.me.name).toBe('Alex')
     expect(welcome.me.role).toBe('admin') // first user becomes admin
+    expect(welcome.serverVersion).toMatch(/\d+\.\d+\.\d+/) // for client update prompts
     expect(welcome.channels.map((c) => c.name)).toContain('general')
     // join produced a system message in #general
     expect(welcome.missed.some((m) => m.kind === 'system' && m.body.includes('Alex joined'))).toBe(true)

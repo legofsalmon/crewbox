@@ -33,6 +33,8 @@ function Chat() {
   const audioSettingsOpen = useStore((s) => s.audioSettingsOpen)
   const connection = useStore((s) => s.connection)
   const flash = useStore((s) => s.flash)
+  const updateReady = useStore((s) => s.updateReady)
+  const applyUpdate = useStore((s) => s.applyUpdate)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -55,6 +57,12 @@ function Chat() {
         </div>
       )}
       {flash && <div className="flash">{flash}</div>}
+      {updateReady && (
+        <button className="update-pill" onClick={applyUpdate}>
+          <span>New version available</span>
+          <strong>Reload</strong>
+        </button>
+      )}
       <VoiceBar />
       <div className={`layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <Sidebar />

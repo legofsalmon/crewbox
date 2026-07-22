@@ -8,6 +8,7 @@ import {
   type User,
 } from '@inter/shared'
 import type { Store } from './store.ts'
+import { APP_VERSION } from './version.ts'
 
 /** Max missed messages replayed per channel in the welcome payload. */
 const MISSED_LIMIT = 200
@@ -153,6 +154,7 @@ export class Hub {
 
     this.send(conn.ws, {
       type: 'welcome',
+      serverVersion: APP_VERSION,
       me: user,
       users: this.store.listUsers(),
       channels,

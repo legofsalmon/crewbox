@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { channelLabel, unreadCount, useStore } from '../store.ts'
 import { classifyLatency } from '../lib/quality.ts'
+import { APP_VERSION } from '../lib/pwa.ts'
 import Avatar from './Avatar.tsx'
 
 /** Dot color: connection state first, then latency quality while online. */
@@ -184,6 +185,9 @@ export default function Sidebar() {
           </button>
         </div>
       )}
+      <div className="app-version" title={`Inter ${APP_VERSION}`}>
+        v{APP_VERSION}
+      </div>
     </aside>
   )
 }

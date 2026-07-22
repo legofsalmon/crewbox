@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useStore } from '../store.ts'
 import { ApiError } from '../lib/api.ts'
+import { APP_VERSION } from '../lib/pwa.ts'
 
 export default function Join() {
   const join = useStore((s) => s.join)
@@ -89,6 +90,7 @@ export default function Join() {
         <button type="submit" disabled={busy}>
           {busy ? 'Joining…' : 'Join'}
         </button>
+        <div className="join-version">v{APP_VERSION}</div>
       </form>
     </div>
   )

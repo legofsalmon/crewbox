@@ -19,6 +19,7 @@ import {
   soundsEnabled,
 } from './lib/alerts.ts'
 import { initialVoiceState, VoiceManager, type VoiceState } from './lib/voice.ts'
+import { APP_VERSION, initPwa } from './lib/pwa.ts'
 
 const TOKEN_KEY = 'inter:token'
 const THEME_KEY = 'inter:theme'
@@ -70,6 +71,8 @@ interface AppState {
   audioSettingsOpen: boolean
   /** Rolling median WS round-trip in ms; null while unknown/offline. */
   latencyMs: number | null
+  /** A newer build is available; show the reload pill. */
+  updateReady: boolean
   flash: string | null
   loadingOlder: boolean
   uploading: boolean
@@ -96,6 +99,7 @@ interface AppState {
   setAdminOpen: (open: boolean) => void
   setAudioSettingsOpen: (open: boolean) => void
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
+  applyUpdate: () => void
   toggleTheme: () => void
   toggleSounds: () => void
   logout: () => Promise<void>
@@ -103,6 +107,9 @@ interface AppState {
 
 let ws: WsClient | null = null
 let voiceManager: VoiceManager | null = null
+/** Reloads into the new service worker; set once PWA registration runs. */
+let updateSW: ((reload?: boolean) => Promise<void>) | null = null
+let pwaStarted = false
 const lastTypingSent = new Map<string, number>()
 
 function getToken(): string | null {
@@ -176,6 +183,19 @@ export const useStore = create<AppState>()((set, get) => {
         readState[channelId] = seq
         ws?.send({ type: 'markRead', channelId, seq })
       }
+    }
+
+    // Server redeployed to a newer build while we were connected: surface the
+    // reload pill. Guarded by an active service worker so dev (no SW) and any
+    // transient mismatch don't nag; the SW's own onNeedRefresh is the primary
+    // trigger, this just makes reconnect-after-redeploy instant.
+    if (
+      msg.serverVersion &&
+      msg.serverVersion !== APP_VERSION &&
+      typeof navigator !== 'undefined' &&
+      navigator.serviceWorker?.controller
+    ) {
+      set({ updateReady: true })
     }
 
     // Channels where the replay was truncated have a gap between our cache
@@ -359,6 +379,7 @@ export const useStore = create<AppState>()((set, get) => {
     adminOpen: false,
     audioSettingsOpen: false,
     latencyMs: null,
+    updateReady: false,
     flash: null,
     loadingOlder: false,
     uploading: false,
@@ -401,6 +422,15 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     async boot() {
+      // Register the service worker once, regardless of auth phase.
+      if (!pwaStarted) {
+        pwaStarted = true
+        try {
+          updateSW = initPwa(() => set({ updateReady: true }))
+        } catch {
+          // no service worker support (or dev without PWA) — updates via reload
+        }
+      }
       if (!getToken()) {
         set({ phase: 'join' })
         return
@@ -566,6 +596,13 @@ export const useStore = create<AppState>()((set, get) => {
 
     setAudioDevice(kind, deviceId) {
       void voiceManager?.setDevice(kind, deviceId)
+    },
+
+    applyUpdate() {
+      // Activate the waiting service worker and reload. Unsent messages are in
+      // the IndexedDB outbox, so nothing is lost across the reload.
+      if (updateSW) void updateSW(true)
+      else location.reload()
     },
 
     toggleTheme() {

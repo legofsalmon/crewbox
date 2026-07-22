@@ -67,6 +67,31 @@ Environment (see `deploy/systemd/inter.service`): `INTER_PORT`, `DATA_DIR`,
 `node deploy/soak.mjs http://localhost:8787 50 60` runs 50 simulated crew
 members for a minute and asserts exactly-once delivery for every client.
 
+## Versioning & updates
+
+The build version (`package.json` version + short git commit, e.g.
+`0.1.0+dbed74e`) shows on the join screen and at the foot of the sidebar, and
+is returned by `GET /api/health` and in the WebSocket `welcome`. Bump the
+`web`/`server` `package.json` version for a user-facing release.
+
+When you deploy a new build, updates reach crew **without forcing anyone to do
+anything mid-task** (the service worker registers in `prompt` mode):
+
+- **Used before, app now closed:** on next open the old cached shell loads
+  instantly (works offline); the service worker checks for the new build in
+  the background and, if found, shows a small "New version available — Reload"
+  bar. One tap reloads into the new version.
+- **Currently connected:** the running app keeps working on its old code. The
+  service worker notices the new build (on its 30-minute re-check or next
+  reconnect) and shows the same reload bar. If the server reports a newer
+  version in `welcome`, the bar appears immediately on reconnect. Reloading is
+  always safe — unsent messages live in the IndexedDB outbox and flush after
+  the reload, so nothing is lost.
+- **Deploy both together:** the Node server serves the built web assets, so a
+  single deploy updates client and server in lockstep. If you ever change the
+  WebSocket protocol in `shared/` in a breaking way, treat it as a coordinated
+  release and expect connected clients to reload once.
+
 ## Known platform limits
 
 - **iOS cannot receive lock-screen notifications offline** (Apple's push

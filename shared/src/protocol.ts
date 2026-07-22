@@ -73,6 +73,8 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>
 
 export interface WelcomeMessage {
   type: 'welcome'
+  /** Server build string, so a client on an older build can prompt a reload. */
+  serverVersion: string
   me: User
   users: User[]
   channels: Channel[]
