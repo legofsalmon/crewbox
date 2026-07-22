@@ -8,6 +8,8 @@ import AdminPanel from './components/AdminPanel.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
+import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
+import { connectionScreen } from './lib/connscreen.ts'
 
 export default function App() {
   const phase = useStore((s) => s.phase)
@@ -32,6 +34,8 @@ function Chat() {
   const adminOpen = useStore((s) => s.adminOpen)
   const audioSettingsOpen = useStore((s) => s.audioSettingsOpen)
   const connection = useStore((s) => s.connection)
+  const hasConnected = useStore((s) => s.hasConnected)
+  const hasCache = useStore((s) => Object.keys(s.channels).length > 0)
   const flash = useStore((s) => s.flash)
   const updateReady = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
@@ -46,6 +50,12 @@ function Chat() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [setSearchOpen])
+
+  // Before any content exists, show a calm connecting / recovery screen instead
+  // of an empty shell. Returning users (cache or a prior connect) skip this.
+  const screen = connectionScreen({ connection, hasConnected, hasCache })
+  if (screen === 'unreachable') return <ServerUnreachable />
+  if (screen === 'connecting') return <Connecting />
 
   return (
     <div className="app">

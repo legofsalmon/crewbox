@@ -3,6 +3,8 @@ import { useStore } from '../store.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 
+const WIFI_SSID = import.meta.env.VITE_WIFI_SSID as string | undefined
+
 export default function Join() {
   const join = useStore((s) => s.join)
   const [name, setName] = useState('')
@@ -18,7 +20,11 @@ export default function Join() {
     try {
       await join(name, eventPin, personalPin)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not reach the server — are you on the crew Wi-Fi?')
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : `Can't reach the crew server. Check you're connected to ${WIFI_SSID ?? 'the crew Wi-Fi'}, then try again.`,
+      )
     } finally {
       setBusy(false)
     }

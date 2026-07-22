@@ -54,6 +54,8 @@ export type Connection = 'connecting' | 'online' | 'offline'
 interface AppState {
   phase: Phase
   connection: Connection
+  /** True once a welcome has been received this session (server was reached). */
+  hasConnected: boolean
   me: User | null
   users: Record<string, User>
   channels: Record<string, Channel>
@@ -100,6 +102,7 @@ interface AppState {
   setAudioSettingsOpen: (open: boolean) => void
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
   applyUpdate: () => void
+  retryConnection: () => void
   toggleTheme: () => void
   toggleSounds: () => void
   logout: () => Promise<void>
@@ -209,6 +212,7 @@ export const useStore = create<AppState>()((set, get) => {
     set({
       phase: 'chat',
       connection: 'online',
+      hasConnected: true,
       me: msg.me,
       users: Object.fromEntries(msg.users.map((u) => [u.id, u])),
       channels: Object.fromEntries(msg.channels.map((c) => [c.id, c])),
@@ -364,6 +368,7 @@ export const useStore = create<AppState>()((set, get) => {
   return {
     phase: 'boot',
     connection: 'connecting',
+    hasConnected: false,
     me: null,
     users: {},
     channels: {},
@@ -603,6 +608,12 @@ export const useStore = create<AppState>()((set, get) => {
       // the IndexedDB outbox, so nothing is lost across the reload.
       if (updateSW) void updateSW(true)
       else location.reload()
+    },
+
+    retryConnection() {
+      set({ connection: 'connecting' })
+      if (ws) ws.reconnectNow()
+      else startWs()
     },
 
     toggleTheme() {

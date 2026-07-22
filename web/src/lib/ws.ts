@@ -57,6 +57,11 @@ export class WsClient {
     return true
   }
 
+  /** User tapped "Retry": drop any backoff and attempt to connect right now. */
+  reconnectNow(): void {
+    this.wake()
+  }
+
   private wake = (): void => {
     if (this.stopped) return
     if (this.connected) {
