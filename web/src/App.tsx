@@ -6,6 +6,8 @@ import ChannelView from './components/ChannelView.tsx'
 import SearchOverlay from './components/SearchOverlay.tsx'
 import AdminPanel from './components/AdminPanel.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
+import AudioSettings from './components/AudioSettings.tsx'
+import IosInstallTip from './components/IosInstallTip.tsx'
 
 export default function App() {
   const phase = useStore((s) => s.phase)
@@ -28,6 +30,7 @@ function Chat() {
   const searchOpen = useStore((s) => s.searchOpen)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
   const adminOpen = useStore((s) => s.adminOpen)
+  const audioSettingsOpen = useStore((s) => s.audioSettingsOpen)
   const connection = useStore((s) => s.connection)
   const flash = useStore((s) => s.flash)
 
@@ -66,6 +69,8 @@ function Chat() {
       </div>
       {searchOpen && <SearchOverlay />}
       {adminOpen && <AdminPanel />}
+      {audioSettingsOpen && <AudioSettings />}
+      <IosInstallTip />
     </div>
   )
 }

@@ -1,6 +1,15 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { channelLabel, unreadCount, useStore } from '../store.ts'
+import { classifyLatency } from '../lib/quality.ts'
 import Avatar from './Avatar.tsx'
+
+/** Dot color: connection state first, then latency quality while online. */
+function connDotClass(connection: string, latencyMs: number | null): string {
+  if (connection !== 'online') return connection
+  if (latencyMs === null) return 'online'
+  const cls = classifyLatency(latencyMs)
+  return cls === 'good' ? 'online' : cls
+}
 
 export default function Sidebar() {
   const me = useStore((s) => s.me)
@@ -19,6 +28,7 @@ export default function Sidebar() {
   const sounds = useStore((s) => s.sounds)
   const toggleSounds = useStore((s) => s.toggleSounds)
   const setAdminOpen = useStore((s) => s.setAdminOpen)
+  const latencyMs = useStore((s) => s.latencyMs)
 
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -58,7 +68,7 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <span className={`conn-dot conn-dot-${connection}`} title={connection} />
+        <span className={`conn-dot conn-dot-${connDotClass(connection, latencyMs)}`} title={connection} />
         <h1>Inter</h1>
       </div>
 
@@ -136,7 +146,11 @@ export default function Sidebar() {
           <div className="me-info">
             <span className="me-name">{me.name}</span>
             <span className="me-status">
-              {connection === 'online' ? 'Connected' : connection === 'connecting' ? 'Connecting…' : 'Offline'}
+              {connection === 'online'
+                ? `Connected${latencyMs !== null ? ` · ${latencyMs} ms` : ''}`
+                : connection === 'connecting'
+                  ? 'Connecting…'
+                  : 'Offline'}
             </span>
           </div>
           {me.role === 'admin' && (

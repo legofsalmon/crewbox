@@ -67,6 +67,9 @@ interface AppState {
   sidebarOpen: boolean
   searchOpen: boolean
   adminOpen: boolean
+  audioSettingsOpen: boolean
+  /** Rolling median WS round-trip in ms; null while unknown/offline. */
+  latencyMs: number | null
   flash: string | null
   loadingOlder: boolean
   uploading: boolean
@@ -91,6 +94,8 @@ interface AppState {
   setSidebarOpen: (open: boolean) => void
   setSearchOpen: (open: boolean) => void
   setAdminOpen: (open: boolean) => void
+  setAudioSettingsOpen: (open: boolean) => void
+  setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
   toggleTheme: () => void
   toggleSounds: () => void
   logout: () => Promise<void>
@@ -331,6 +336,7 @@ export const useStore = create<AppState>()((set, get) => {
       },
       onMessage: handleServer,
       onStatus: (status) => set({ connection: status }),
+      onLatency: (ms) => set({ latencyMs: ms }),
     })
     ws.start()
   }
@@ -351,6 +357,8 @@ export const useStore = create<AppState>()((set, get) => {
     sidebarOpen: false,
     searchOpen: false,
     adminOpen: false,
+    audioSettingsOpen: false,
+    latencyMs: null,
     flash: null,
     loadingOlder: false,
     uploading: false,
@@ -549,6 +557,15 @@ export const useStore = create<AppState>()((set, get) => {
 
     setAdminOpen(open) {
       set({ adminOpen: open })
+    },
+
+    setAudioSettingsOpen(open) {
+      set({ audioSettingsOpen: open })
+      if (open) void voiceManager?.refreshDevices()
+    },
+
+    setAudioDevice(kind, deviceId) {
+      void voiceManager?.setDevice(kind, deviceId)
     },
 
     toggleTheme() {

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { channelLabel, useStore } from '../store.ts'
+import { classifyLatency, LATENCY_LABELS } from '../lib/quality.ts'
 import MessageList from './MessageList.tsx'
 import Composer from './Composer.tsx'
+import SignalBars from './SignalBars.tsx'
 
 export default function ChannelView({ channelId }: { channelId: string }) {
   const channel = useStore((s) => s.channels[channelId])
@@ -13,6 +15,8 @@ export default function ChannelView({ channelId }: { channelId: string }) {
   const voice = useStore((s) => s.voice)
   const joinVoice = useStore((s) => s.joinVoice)
   const leaveVoice = useStore((s) => s.leaveVoice)
+  const latencyMs = useStore((s) => s.latencyMs)
+  const connection = useStore((s) => s.connection)
 
   if (!channel) return <div className="empty-state">Channel not found</div>
 
@@ -47,6 +51,16 @@ export default function ChannelView({ channelId }: { channelId: string }) {
             <span className="channel-topic">{channel.topic || `${onlineCount} online`}</span>
           )}
         </div>
+        {connection === 'online' && latencyMs !== null && classifyLatency(latencyMs) !== 'good' && (
+          <span
+            className="weak-signal"
+            title={LATENCY_LABELS[classifyLatency(latencyMs)]}
+            aria-label={LATENCY_LABELS[classifyLatency(latencyMs)]}
+          >
+            <SignalBars quality={classifyLatency(latencyMs)} />
+            <span className="weak-signal-ms">{latencyMs} ms</span>
+          </span>
+        )}
         <button
           className={`icon-btn voice-btn ${voice.channelId === channelId ? 'voice-active' : ''}`}
           aria-label={voice.channelId === channelId ? 'Leave voice' : 'Join voice intercom'}

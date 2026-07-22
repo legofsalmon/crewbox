@@ -544,6 +544,19 @@ describe('admin', () => {
   })
 })
 
+describe('heartbeat', () => {
+  it('echoes ping timestamps for client RTT measurement', async () => {
+    const token = await join('Alex')
+    const { client } = await connect(token)
+    const t = Date.now() - 1234
+    client.send({ type: 'ping', t })
+    const pong = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'pong' }> => m.type === 'pong',
+    )
+    expect(pong.t).toBe(t)
+  })
+})
+
 describe('read state', () => {
   it('syncs markRead to the same user\'s other devices', async () => {
     const token = await join('Alex')

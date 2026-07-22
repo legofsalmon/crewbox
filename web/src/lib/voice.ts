@@ -1,15 +1,29 @@
 import {
+  ConnectionQuality,
   ConnectionState,
   Room,
   RoomEvent,
   Track,
+  type LocalTrackPublication,
   type RemoteTrack,
 } from 'livekit-client'
+import {
+  canSelectOutput,
+  deviceLabel,
+  resolveDevice,
+  saveDeviceId,
+  savedDeviceId,
+  type AudioKind,
+  type DeviceInfo,
+} from './devices.ts'
+
+export type VoiceQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown'
 
 export interface VoiceParticipant {
   id: string
   name: string
   speaking: boolean
+  quality: VoiceQuality
 }
 
 export interface VoiceState {
@@ -21,6 +35,13 @@ export interface VoiceState {
   latched: boolean
   /** False until the mic is captured; denied mics leave you listen-only. */
   micReady: boolean
+  /** My own network quality as LiveKit sees it. */
+  myQuality: VoiceQuality
+  /** 0–1 live level of my mic (only while captured); null when unavailable. */
+  micLevel: number | null
+  devices: { inputs: DeviceInfo[]; outputs: DeviceInfo[]; canSelectOutput: boolean }
+  selectedInput: string | null
+  selectedOutput: string | null
   error: string | null
 }
 
@@ -31,12 +52,33 @@ export const initialVoiceState: VoiceState = {
   talking: false,
   latched: false,
   micReady: false,
+  myQuality: 'unknown',
+  micLevel: null,
+  devices: { inputs: [], outputs: [], canSelectOutput: canSelectOutput() },
+  selectedInput: null,
+  selectedOutput: null,
   error: null,
 }
 
 const CONNECT_TIMEOUT_MS = 10_000
+const LEVEL_INTERVAL_MS = 100
 
 type Publish = (state: Partial<VoiceState>) => void
+
+function toQuality(q: ConnectionQuality): VoiceQuality {
+  switch (q) {
+    case ConnectionQuality.Excellent:
+      return 'excellent'
+    case ConnectionQuality.Good:
+      return 'good'
+    case ConnectionQuality.Poor:
+      return 'poor'
+    case ConnectionQuality.Lost:
+      return 'lost'
+    default:
+      return 'unknown'
+  }
+}
 
 /**
  * Owns the LiveKit room across channel switches — an intercom stays live
@@ -46,17 +88,31 @@ export class VoiceManager {
   private room: Room | null = null
   private channelId: string | null = null
   private audioEls = new Set<HTMLAudioElement>()
+  private levelTimer: number | null = null
+  private analyser: AnalyserNode | null = null
+  private analyserCtx: AudioContext | null = null
 
-  constructor(private readonly publish: Publish) {}
+  constructor(private readonly publish: Publish) {
+    navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+      void this.refreshDevices()
+    })
+  }
 
   async join(channelId: string, token: string, url: string): Promise<void> {
     await this.leave()
     this.channelId = channelId
     this.publish({ channelId, status: 'joining', error: null, participants: [] })
 
+    const savedIn = savedDeviceId('audioinput')
+    const savedOut = savedDeviceId('audiooutput')
     const room = new Room({
       // Tuned for intercom: tiny buffers beat pristine audio.
-      audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true },
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        ...(savedIn ? { deviceId: savedIn } : {}),
+      },
+      ...(savedOut && canSelectOutput() ? { audioOutput: { deviceId: savedOut } } : {}),
       publishDefaults: { dtx: true, red: true, stopMicTrackOnMute: false },
     })
     this.room = room
@@ -78,6 +134,15 @@ export class VoiceManager {
       .on(RoomEvent.ParticipantConnected, () => this.publishParticipants())
       .on(RoomEvent.ParticipantDisconnected, () => this.publishParticipants())
       .on(RoomEvent.ActiveSpeakersChanged, () => this.publishParticipants())
+      .on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+        if (participant.identity === room.localParticipant.identity) {
+          this.publish({ myQuality: toQuality(quality) })
+        }
+        this.publishParticipants()
+      })
+      .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
+        if (pub.kind === Track.Kind.Audio) this.startLevelMeter()
+      })
       .on(RoomEvent.Reconnecting, () => this.publish({ status: 'reconnecting' }))
       .on(RoomEvent.Reconnected, () => this.publish({ status: 'connected' }))
       .on(RoomEvent.Disconnected, () => {
@@ -93,8 +158,15 @@ export class VoiceManager {
       ])
       await room.startAudio()
       // Listening works from here even if the mic never materialises.
-      this.publish({ status: 'connected', talking: false, latched: false })
+      this.publish({
+        status: 'connected',
+        talking: false,
+        latched: false,
+        selectedInput: savedIn,
+        selectedOutput: savedOut,
+      })
       this.publishParticipants()
+      void this.refreshDevices()
       void this.acquireMic()
     } catch (err) {
       this.reset(err instanceof Error ? err.message : 'could not join voice')
@@ -117,7 +189,11 @@ export class VoiceManager {
         })(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('mic timeout')), CONNECT_TIMEOUT_MS)),
       ])
-      if (this.room === room) this.publish({ micReady: true })
+      if (this.room === room) {
+        this.publish({ micReady: true })
+        // Device labels are only revealed after a successful capture.
+        void this.refreshDevices()
+      }
     } catch {
       if (this.room === room) {
         this.publish({ micReady: false, error: 'Microphone unavailable — listen-only' })
@@ -145,6 +221,87 @@ export class VoiceManager {
     }
   }
 
+  // -- devices ---------------------------------------------------------------
+
+  async refreshDevices(): Promise<void> {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices()
+      const pick = (kind: AudioKind): DeviceInfo[] =>
+        all
+          .filter((d) => d.kind === kind && d.deviceId && d.deviceId !== 'default')
+          .map((d, i) => ({ deviceId: d.deviceId, label: deviceLabel(d, i) }))
+      const inputs = pick('audioinput')
+      const outputs = pick('audiooutput')
+      this.publish({ devices: { inputs, outputs, canSelectOutput: canSelectOutput() } })
+
+      // If the chosen device vanished (headset unplugged), fall back loudly.
+      for (const kind of ['audioinput', 'audiooutput'] as const) {
+        const available = kind === 'audioinput' ? inputs : outputs
+        const { fellBack } = resolveDevice(savedDeviceId(kind), available)
+        if (fellBack) {
+          saveDeviceId(kind, null)
+          this.publish(
+            kind === 'audioinput'
+              ? { selectedInput: null, error: 'Mic disconnected — using default' }
+              : { selectedOutput: null, error: 'Speaker disconnected — using default' },
+          )
+          if (this.room) void this.room.switchActiveDevice(kind, 'default')
+        }
+      }
+    } catch {
+      // enumeration can fail pre-permission; the pickers just stay empty
+    }
+  }
+
+  async setDevice(kind: AudioKind, deviceId: string | null): Promise<void> {
+    saveDeviceId(kind, deviceId)
+    this.publish(kind === 'audioinput' ? { selectedInput: deviceId } : { selectedOutput: deviceId })
+    if (!this.room) return
+    try {
+      await this.room.switchActiveDevice(kind, deviceId ?? 'default')
+      if (kind === 'audioinput') this.startLevelMeter()
+    } catch {
+      this.publish({ error: 'Could not switch audio device' })
+    }
+  }
+
+  // -- mic level meter -------------------------------------------------------
+
+  /** Feed the local mic track into an analyser so the UI can show life. */
+  private startLevelMeter(): void {
+    this.stopLevelMeter()
+    const track = this.room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+    const mediaTrack = track?.mediaStreamTrack
+    if (!mediaTrack) return
+    try {
+      const ctx = new AudioContext()
+      const source = ctx.createMediaStreamSource(new MediaStream([mediaTrack]))
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 512
+      source.connect(analyser)
+      this.analyserCtx = ctx
+      this.analyser = analyser
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      this.levelTimer = window.setInterval(() => {
+        analyser.getByteTimeDomainData(data)
+        let peak = 0
+        for (const v of data) peak = Math.max(peak, Math.abs(v - 128) / 128)
+        this.publish({ micLevel: peak })
+      }, LEVEL_INTERVAL_MS)
+    } catch {
+      this.publish({ micLevel: null })
+    }
+  }
+
+  private stopLevelMeter(): void {
+    if (this.levelTimer !== null) clearInterval(this.levelTimer)
+    this.levelTimer = null
+    this.analyser = null
+    void this.analyserCtx?.close().catch(() => {})
+    this.analyserCtx = null
+  }
+
   private publishParticipants(): void {
     const room = this.room
     if (!room) return
@@ -154,21 +311,24 @@ export class VoiceManager {
         id: room.localParticipant.identity,
         name: room.localParticipant.name || 'me',
         speaking: speakingIds.has(room.localParticipant.identity),
+        quality: toQuality(room.localParticipant.connectionQuality),
       },
       ...[...room.remoteParticipants.values()].map((p) => ({
         id: p.identity,
         name: p.name || p.identity,
         speaking: speakingIds.has(p.identity),
+        quality: toQuality(p.connectionQuality),
       })),
     ]
     this.publish({ participants: list })
   }
 
   private reset(error: string | null = null): void {
+    this.stopLevelMeter()
     for (const el of this.audioEls) el.remove()
     this.audioEls.clear()
     this.room = null
     this.channelId = null
-    this.publish({ ...initialVoiceState, error })
+    this.publish({ ...initialVoiceState, devices: initialVoiceState.devices, error })
   }
 }

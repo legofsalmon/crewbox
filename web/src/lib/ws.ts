@@ -1,6 +1,7 @@
 import type { ClientMessage, ServerMessage } from '@inter/shared'
+import { pushSample, rollingMedian } from './quality.ts'
 
-const HEARTBEAT_MS = 15_000
+const HEARTBEAT_MS = 10_000
 const DEAD_AFTER_MS = 25_000
 const MAX_BACKOFF_MS = 10_000
 
@@ -9,6 +10,8 @@ export interface WsHandlers {
   hello: () => { token: string; cursors: Record<string, number> }
   onMessage: (msg: ServerMessage) => void
   onStatus: (status: 'connecting' | 'offline') => void
+  /** Rolling median round-trip time, or null when unknown/disconnected. */
+  onLatency?: (ms: number | null) => void
 }
 
 /**
@@ -23,6 +26,7 @@ export class WsClient {
   private heartbeatTimer: number | null = null
   private lastActivity = 0
   private stopped = false
+  private rttSamples: number[] = []
 
   constructor(private readonly handlers: WsHandlers) {
     window.addEventListener('online', this.wake)
@@ -54,7 +58,12 @@ export class WsClient {
   }
 
   private wake = (): void => {
-    if (this.stopped || this.connected) return
+    if (this.stopped) return
+    if (this.connected) {
+      // Phone pulled out of a pocket: refresh the latency reading now.
+      this.send({ type: 'ping', t: Date.now() })
+      return
+    }
     this.attempts = 0
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer)
@@ -84,13 +93,23 @@ export class WsClient {
       } catch {
         return
       }
-      if (msg.type === 'welcome') this.attempts = 0
+      if (msg.type === 'welcome') {
+        this.attempts = 0
+        // Measure immediately so the UI has a number right after (re)connect.
+        this.send({ type: 'ping', t: Date.now() })
+      }
+      if (msg.type === 'pong') {
+        this.rttSamples = pushSample(this.rttSamples, Date.now() - msg.t)
+        this.handlers.onLatency?.(rollingMedian(this.rttSamples))
+      }
       this.handlers.onMessage(msg)
     }
     ws.onclose = () => {
       if (this.ws !== ws) return
       this.ws = null
       this.clearTimers()
+      this.rttSamples = []
+      this.handlers.onLatency?.(null)
       if (!this.stopped) {
         this.handlers.onStatus('offline')
         this.scheduleReconnect()
