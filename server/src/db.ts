@@ -84,6 +84,13 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE channels ADD COLUMN retired INTEGER NOT NULL DEFAULT 0;
   `,
+  // v3: drop deleted messages from the search index. Without this, orphaned
+  // FTS rows can match a later message that reuses the rowid.
+  `
+  CREATE TRIGGER IF NOT EXISTS messages_fts_delete AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+  END;
+  `,
 ]
 
 export function openDb(path: string): DatabaseSync {

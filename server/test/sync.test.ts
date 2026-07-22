@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import { newId, type ServerMessage, type WelcomeMessage } from '@inter/shared'
@@ -12,6 +13,7 @@ const EVENT_PIN = '9999'
 let filesDir: string
 
 let app: App
+let db: DatabaseSync
 let store: Store
 let baseUrl: string
 let wsUrl: string
@@ -90,7 +92,7 @@ async function connect(token: string, cursors: Record<string, number> = {}): Pro
 beforeEach(async () => {
   sockets = []
   filesDir = mkdtempSync(pathJoin(tmpdir(), 'inter-test-'))
-  const db = openDb(':memory:')
+  db = openDb(':memory:')
   store = new Store(db)
   store.createChannel('general', 'public', 'Everyone')
   app = buildApp({
@@ -314,6 +316,27 @@ describe('files and search', () => {
     )
     // Kit sees the public hit but never the DM.
     expect(await search(tokenC)).toEqual(['the generator needs diesel'])
+  })
+
+  it('drops deleted messages from the search index', () => {
+    const general = store.getChannelByName('general')!
+    const kept = store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: 'diesel topup at noon' }).message
+    const doomed = store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: 'diesel spill cleanup' }).message
+    expect(store.searchMessages('diesel', 10).map((m) => m.id)).toEqual(
+      expect.arrayContaining([kept.id, doomed.id]),
+    )
+
+    db.prepare('DELETE FROM messages WHERE id = ?').run(doomed.id)
+
+    const hits = store.searchMessages('diesel', 10).map((m) => m.id)
+    expect(hits).toContain(kept.id)
+    expect(hits).not.toContain(doomed.id)
+
+    // The deleted row had the max rowid, so the next insert reuses it. Without
+    // the delete trigger the orphaned index entry would match this new message.
+    const successor = store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: 'stage two lineup' }).message
+    expect(store.searchMessages('spill', 10)).toEqual([])
+    expect(store.searchMessages('lineup', 10).map((m) => m.id)).toEqual([successor.id])
   })
 })
 
