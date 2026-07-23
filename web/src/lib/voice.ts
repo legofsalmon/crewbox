@@ -91,6 +91,7 @@ export class VoiceManager {
   private levelTimer: number | null = null
   private analyser: AnalyserNode | null = null
   private analyserCtx: AudioContext | null = null
+  private micTestStream: MediaStream | null = null
 
   constructor(private readonly publish: Publish) {
     navigator.mediaDevices?.addEventListener?.('devicechange', () => {
@@ -260,7 +261,12 @@ export class VoiceManager {
     if (!this.room) return
     try {
       await this.room.switchActiveDevice(kind, deviceId ?? 'default')
-      if (kind === 'audioinput') this.startLevelMeter()
+      // Re-point the meter at the new mic: the live test if the panel is open,
+      // otherwise the send-track.
+      if (kind === 'audioinput') {
+        if (this.micTestStream) void this.startMicTest()
+        else this.startLevelMeter()
+      }
     } catch {
       this.publish({ error: 'Could not switch audio device' })
     }
@@ -268,14 +274,52 @@ export class VoiceManager {
 
   // -- mic level meter -------------------------------------------------------
 
-  /** Feed the local mic track into an analyser so the UI can show life. */
-  private startLevelMeter(): void {
+  /**
+   * Live meter for the settings panel: a dedicated capture so the bar reacts
+   * to your voice without holding talk and without sending any audio. Falls
+   * back to the live send-track (only audible while talking) if a separate
+   * capture is denied or unavailable.
+   */
+  async startMicTest(): Promise<void> {
+    this.stopMicTest()
+    if (navigator.mediaDevices?.getUserMedia) {
+      const saved = savedDeviceId('audioinput')
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: saved ? { deviceId: { exact: saved } } : true,
+        })
+        this.micTestStream = stream
+        const track = stream.getAudioTracks()[0]
+        if (track) return this.meterTrack(track)
+      } catch {
+        // denied/busy — fall through to the send-track meter below
+      }
+    }
+    this.startLevelMeter()
+  }
+
+  stopMicTest(): void {
     this.stopLevelMeter()
+    if (this.micTestStream) {
+      for (const t of this.micTestStream.getTracks()) t.stop()
+      this.micTestStream = null
+    }
+    this.publish({ micLevel: null })
+  }
+
+  /** Meter the live send-track — only shows level while the mic is unmuted. */
+  private startLevelMeter(): void {
     const track = this.room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
     const mediaTrack = track?.mediaStreamTrack
-    if (!mediaTrack) return
+    if (mediaTrack) this.meterTrack(mediaTrack)
+  }
+
+  /** Feed any mic MediaStreamTrack into an analyser so the UI can show life. */
+  private meterTrack(mediaTrack: MediaStreamTrack): void {
+    this.stopLevelMeter()
     try {
       const ctx = new AudioContext()
+      void ctx.resume().catch(() => {})
       const source = ctx.createMediaStreamSource(new MediaStream([mediaTrack]))
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 512
@@ -324,7 +368,7 @@ export class VoiceManager {
   }
 
   private reset(error: string | null = null): void {
-    this.stopLevelMeter()
+    this.stopMicTest()
     for (const el of this.audioEls) el.remove()
     this.audioEls.clear()
     this.room = null

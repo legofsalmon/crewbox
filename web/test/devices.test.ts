@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   canSelectOutput,
+  isIOSFrom,
   resolveDevice,
   saveDeviceId,
   savedDeviceId,
@@ -55,5 +56,22 @@ describe('resolveDevice (headset unplugged mid-shift)', () => {
 describe('canSelectOutput', () => {
   it('is false without setSinkId support (node / iOS Safari)', () => {
     expect(canSelectOutput()).toBe(false)
+  })
+})
+
+describe('isIOSFrom', () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605'
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605'
+
+  it('detects an iPhone by user-agent', () => {
+    expect(isIOSFrom(IPHONE, 'iPhone', 5)).toBe(true)
+  })
+
+  it('detects iPadOS masquerading as a Mac (MacIntel + touch)', () => {
+    expect(isIOSFrom(MAC, 'MacIntel', 5)).toBe(true)
+  })
+
+  it('is false for a real desktop Mac (no touch points)', () => {
+    expect(isIOSFrom(MAC, 'MacIntel', 0)).toBe(false)
   })
 })

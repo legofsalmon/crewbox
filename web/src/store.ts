@@ -626,7 +626,12 @@ export const useStore = create<AppState>()((set, get) => {
 
     setAudioSettingsOpen(open) {
       set({ audioSettingsOpen: open })
-      if (open) void voiceManager?.refreshDevices()
+      if (open) {
+        void voiceManager?.refreshDevices()
+        void voiceManager?.startMicTest()
+      } else {
+        voiceManager?.stopMicTest()
+      }
     },
 
     setAudioDevice(kind, deviceId) {

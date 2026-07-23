@@ -56,12 +56,9 @@ export default function VoiceBar() {
           onClick={() => setAudioSettingsOpen(true)}
         >
           <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden>
-            <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="2" />
             <path
-              d="M12 2.8v3M12 18.2v3M21.2 12h-3M5.8 12h-3M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1M18.5 18.5l-2.1-2.1M7.6 7.6 5.5 5.5"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
+              fill="currentColor"
+              d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"
             />
           </svg>
         </button>
@@ -72,6 +69,18 @@ export default function VoiceBar() {
 
       {voice.status === 'connected' && (
         <div className="ptt-dock">
+          {/* Status pills float above the button; kept out of flow so they
+              never shift the talk target under the user's finger. */}
+          <div className="ptt-alerts" aria-live="polite">
+            {(voice.myQuality === 'poor' || voice.myQuality === 'lost') && (
+              <span className="ptt-weak" role="status">
+                Weak signal — your voice may be choppy
+              </span>
+            )}
+            {speaking.length > 0 && (
+              <span className="ptt-speaking">🔊 {speaking.map((p) => p.name).join(', ')}</span>
+            )}
+          </div>
           <button
             className={`latch-btn ${voice.latched ? 'on' : ''}`}
             aria-label={voice.latched ? 'Unlock mic (stop talking)' : 'Lock mic open'}
@@ -100,16 +109,6 @@ export default function VoiceBar() {
             </svg>
             <span>{voice.talking ? 'LIVE' : 'HOLD'}</span>
           </button>
-          {(voice.myQuality === 'poor' || voice.myQuality === 'lost') && (
-            <span className="ptt-weak" role="status">
-              Weak signal — your voice may be choppy
-            </span>
-          )}
-          {speaking.length > 0 && (
-            <span className="ptt-speaking" aria-live="polite">
-              🔊 {speaking.map((p) => p.name).join(', ')}
-            </span>
-          )}
         </div>
       )}
     </>

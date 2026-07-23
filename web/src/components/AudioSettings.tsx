@@ -54,7 +54,7 @@ export default function AudioSettings() {
         <p className="audio-hint">
           {voice.micLevel === null
             ? voice.micReady
-              ? 'Press and hold talk once to activate the meter.'
+              ? 'Testing microphone…'
               : 'Microphone unavailable — you are listen-only.'
             : 'Say something — the bar should move. If not, pick another mic.'}
         </p>

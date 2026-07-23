@@ -35,8 +35,27 @@ export function resolveDevice(saved: string | null, available: DeviceInfo[]): {
   return found ? { deviceId: saved, fellBack: false } : { deviceId: null, fellBack: true }
 }
 
-/** Speaker selection needs setSinkId — absent on iOS/Safari (OS routes audio). */
+/** Pure iOS check (testable): iPhone/iPad, incl. iPadOS masquerading as a Mac. */
+export function isIOSFrom(ua: string, platform: string, maxTouchPoints: number): boolean {
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  // iPadOS 13+ reports as "MacIntel" but is a touch device.
+  return platform === 'MacIntel' && maxTouchPoints > 1
+}
+
+/** True on iPhone/iPad (incl. iPadOS masquerading as a Mac). */
+export function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return isIOSFrom(navigator.userAgent, navigator.platform ?? '', navigator.maxTouchPoints ?? 0)
+}
+
+/**
+ * Whether to offer an in-app speaker picker. Needs setSinkId, but even where
+ * newer iOS Safari exposes it the only "devices" are Earpiece/Speaker, which
+ * don't route the way users expect — iOS owns output routing (Control Centre,
+ * AirPlay, Bluetooth auto-switch). So defer to the system there.
+ */
 export function canSelectOutput(): boolean {
+  if (isIOS()) return false
   return typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 }
 

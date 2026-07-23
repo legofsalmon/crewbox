@@ -1030,6 +1030,23 @@ ul {
   gap: 10px;
 }
 
+/* Transient status pills, anchored above the dock and out of flow so the
+   latch + talk buttons never move when someone starts/stops speaking. */
+.ptt-alerts {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  /* Absolute positioning shrinks children to min-content — give pills room. */
+  width: max-content;
+  max-width: min(70vw, 260px);
+}
+
 .ptt-btn {
   width: 88px;
   height: 88px;
