@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { fileUrl, type FileMeta, type Message } from '@inter/shared'
 import { useStore, type Pending } from '../store.ts'
+import { formatBytes } from '../lib/files.ts'
 import Avatar from './Avatar.tsx'
 
 const GROUP_GAP_MS = 5 * 60 * 1000
@@ -24,11 +25,6 @@ function time(ts: number): string {
   return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 /** Highlight @mentions of known names (plus @all/@everyone/@channel). */
 function renderBody(body: string, names: string[], myName: string | undefined): ReactNode {
@@ -58,17 +54,18 @@ function renderBody(body: string, names: string[], myName: string | undefined): 
   return nodes
 }
 
-function FileAttachment({ file }: { file: FileMeta }) {
+/** Attachments open the in-app detail modal; raw open/download live there. */
+function FileAttachment({ file, onOpen }: { file: FileMeta; onOpen: () => void }) {
   const url = fileUrl(file)
   if (file.mime.startsWith('image/')) {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="msg-image-link">
+      <button type="button" className="msg-image-link" onClick={onOpen}>
         <img src={url} alt={file.name} loading="lazy" className="msg-image" />
-      </a>
+      </button>
     )
   }
   return (
-    <a href={url} download={file.name} className="file-card">
+    <button type="button" className="file-card" onClick={onOpen}>
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
         <path
           d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 0v5h5"
@@ -80,9 +77,9 @@ function FileAttachment({ file }: { file: FileMeta }) {
       </svg>
       <span className="file-card-info">
         <span className="file-card-name">{file.name}</span>
-        <span className="file-card-size">{formatSize(file.size)}</span>
+        <span className="file-card-size">{formatBytes(file.size)}</span>
       </span>
-    </a>
+    </button>
   )
 }
 
@@ -94,6 +91,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
   const loadOlder = useStore((s) => s.loadOlder)
   const markChannelRead = useStore((s) => s.markChannelRead)
   const sendFile = useStore((s) => s.sendFile)
+  const openFileDetail = useStore((s) => s.openFileDetail)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -206,6 +204,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
         grouped={grouped}
         userNames={userNames}
         myName={me?.name}
+        onOpenFile={() => openFileDetail(msg)}
       />,
     )
     prevMsg = msg
@@ -270,8 +269,10 @@ function MessageRow(props: {
   pending?: boolean
   userNames: string[]
   myName?: string
+  onOpenFile?: () => void
 }) {
-  const { body, file, authorName, authorId, ts, grouped, pending, userNames, myName } = props
+  const { body, file, authorName, authorId, ts, grouped, pending, userNames, myName, onOpenFile } =
+    props
   return (
     <div className={`msg ${grouped ? 'grouped' : ''} ${pending ? 'pending' : ''}`}>
       <div className="msg-gutter">{!grouped && <Avatar name={authorName} id={authorId} />}</div>
@@ -284,7 +285,12 @@ function MessageRow(props: {
           </div>
         )}
         {body && <div className="msg-body">{renderBody(body, userNames, myName)}</div>}
-        {file && (pending ? <div className="msg-body msg-file-pending">📎 {file.name}</div> : <FileAttachment file={file} />)}
+        {file &&
+          (pending || !onOpenFile ? (
+            <div className="msg-body msg-file-pending">📎 {file.name}</div>
+          ) : (
+            <FileAttachment file={file} onOpen={onOpenFile} />
+          ))}
         {grouped && pending && <span className="msg-state">◷</span>}
       </div>
     </div>

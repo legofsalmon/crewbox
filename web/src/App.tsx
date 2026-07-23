@@ -7,6 +7,7 @@ import SearchOverlay from './components/SearchOverlay.tsx'
 import AdminPanel from './components/AdminPanel.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
+import FileDetail from './components/FileDetail.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import { connectionScreen } from './lib/connscreen.ts'
@@ -33,6 +34,7 @@ function Chat() {
   const setSearchOpen = useStore((s) => s.setSearchOpen)
   const adminOpen = useStore((s) => s.adminOpen)
   const audioSettingsOpen = useStore((s) => s.audioSettingsOpen)
+  const fileDetail = useStore((s) => s.fileDetail)
   const connection = useStore((s) => s.connection)
   const hasConnected = useStore((s) => s.hasConnected)
   const hasCache = useStore((s) => Object.keys(s.channels).length > 0)
@@ -88,6 +90,7 @@ function Chat() {
       {searchOpen && <SearchOverlay />}
       {adminOpen && <AdminPanel />}
       {audioSettingsOpen && <AudioSettings />}
+      {fileDetail && <FileDetail />}
       <IosInstallTip />
     </div>
   )

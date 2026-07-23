@@ -816,6 +816,16 @@ ul {
   }
 }
 
+/* Attachment triggers are buttons (they open the file modal, not a tab). */
+.msg-image-link {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
 .msg-image {
   display: block;
   max-width: min(360px, 100%);
@@ -839,6 +849,9 @@ ul {
   color: var(--text);
   text-decoration: none;
   max-width: 320px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .file-card:hover {
@@ -1267,6 +1280,102 @@ ul {
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
+}
+
+/* ----------------------------------------------------------- file detail */
+.file-panel {
+  width: min(520px, 100%);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  align-self: flex-start;
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 84vh;
+}
+
+.file-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-name {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.file-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 72px;
+  overflow: hidden;
+}
+
+.file-preview-media {
+  max-width: 100%;
+  max-height: 55vh;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  object-fit: contain;
+  background: var(--bg);
+}
+
+.file-preview-audio {
+  width: 100%;
+}
+
+.file-preview-icon {
+  color: var(--accent);
+  padding: 18px 0 6px;
+}
+
+.file-meta-line {
+  text-align: center;
+  font-size: 14px;
+}
+
+.file-meta-muted {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.file-act {
+  flex: 1 1 auto;
+  min-width: 104px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.file-act:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* -------------------------------------------------------------- iOS tip */

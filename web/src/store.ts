@@ -85,6 +85,8 @@ interface AppState {
   searchOpen: boolean
   adminOpen: boolean
   audioSettingsOpen: boolean
+  /** File message whose detail modal is open; null when closed. */
+  fileDetail: Message | null
   /** Rolling median WS round-trip in ms; null while unknown/offline. */
   latencyMs: number | null
   /** A newer build is available; show the reload pill. */
@@ -114,6 +116,8 @@ interface AppState {
   setSearchOpen: (open: boolean) => void
   setAdminOpen: (open: boolean) => void
   setAudioSettingsOpen: (open: boolean) => void
+  openFileDetail: (message: Message) => void
+  closeFileDetail: () => void
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
   applyUpdate: () => void
   retryConnection: () => void
@@ -390,6 +394,7 @@ export const useStore = create<AppState>()((set, get) => {
     connection: 'connecting',
     hasConnected: false,
     config: initialConfig(),
+    fileDetail: null,
     me: null,
     users: {},
     channels: {},
@@ -632,6 +637,14 @@ export const useStore = create<AppState>()((set, get) => {
       } else {
         voiceManager?.stopMicTest()
       }
+    },
+
+    openFileDetail(message) {
+      if (message.file) set({ fileDetail: message })
+    },
+
+    closeFileDetail() {
+      set({ fileDetail: null })
     },
 
     setAudioDevice(kind, deviceId) {

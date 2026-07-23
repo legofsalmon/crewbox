@@ -285,8 +285,43 @@ describe('files and search', () => {
 
     const served = await fetch(`${baseUrl}/api/files/${first.id}/notes.txt`)
     expect(await served.text()).toBe('same-bytes')
+    expect(served.headers.get('accept-ranges')).toBe('bytes')
 
     expect(store.getFileRow(first.id)!.path).toBe(store.getFileRow(second.id)!.path)
+  })
+
+  it('serves byte ranges (iOS media playback needs 206 responses)', async () => {
+    const token = await join('Alex')
+    const form = new FormData()
+    form.append('file', new Blob(['0123456789'], { type: 'audio/mpeg' }), 'clip.mp3')
+    const up = await fetch(`${baseUrl}/api/files`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: form,
+    })
+    const { file } = (await up.json()) as { file: { id: string } }
+    const url = `${baseUrl}/api/files/${file.id}/clip.mp3`
+
+    const partial = await fetch(url, { headers: { range: 'bytes=2-5' } })
+    expect(partial.status).toBe(206)
+    expect(partial.headers.get('content-range')).toBe('bytes 2-5/10')
+    expect(partial.headers.get('content-length')).toBe('4')
+    expect(await partial.text()).toBe('2345')
+
+    // Open-ended and suffix forms.
+    const tail = await fetch(url, { headers: { range: 'bytes=7-' } })
+    expect(tail.status).toBe(206)
+    expect(await tail.text()).toBe('789')
+    const suffix = await fetch(url, { headers: { range: 'bytes=-3' } })
+    expect(suffix.status).toBe(206)
+    expect(await suffix.text()).toBe('789')
+
+    // Out of range → 416; malformed → full 200.
+    const beyond = await fetch(url, { headers: { range: 'bytes=99-' } })
+    expect(beyond.status).toBe(416)
+    const malformed = await fetch(url, { headers: { range: 'elephants=0-3' } })
+    expect(malformed.status).toBe(200)
+    expect(await malformed.text()).toBe('0123456789')
   })
 
   it('finds messages via full-text search, respecting DM privacy', async () => {

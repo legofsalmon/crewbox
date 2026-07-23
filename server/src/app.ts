@@ -50,6 +50,33 @@ const settingsPatchSchema = z.object({
   wifiSsid: z.string().trim().max(64).optional(),
 })
 
+/**
+ * Parse a single-range `Range: bytes=…` header. Returns the inclusive byte
+ * window, 'unsatisfiable' (→ 416), or null to serve the whole file (absent,
+ * malformed or multi-range headers all fall back to a plain 200).
+ */
+export function parseByteRange(
+  header: string | undefined,
+  size: number,
+): { start: number; end: number } | 'unsatisfiable' | null {
+  if (!header || size <= 0) return null
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match) return null // malformed or multi-range
+  const [, startStr, endStr] = match
+  if (startStr === '' && endStr === '') return null
+  if (startStr === '') {
+    // Suffix form: last N bytes.
+    const suffix = Number(endStr)
+    if (suffix === 0) return 'unsatisfiable'
+    return { start: Math.max(0, size - suffix), end: size - 1 }
+  }
+  const start = Number(startStr)
+  if (start >= size) return 'unsatisfiable'
+  const end = endStr === '' ? size - 1 : Math.min(Number(endStr), size - 1)
+  if (end < start) return 'unsatisfiable'
+  return { start, end }
+}
+
 export interface AppDeps {
   store: Store
   eventPin: string
@@ -195,16 +222,29 @@ export function buildApp({
   })
 
   // Files are addressed by unguessable ids (capability URLs) so <img> tags
-  // work without auth headers on the crew LAN.
+  // work without auth headers on the crew LAN. Single-range requests are
+  // honoured (206) — iOS Safari refuses to play video/audio without them.
   fastify.get('/api/files/:id/:name', async (req, reply) => {
     const { id } = req.params as { id: string; name: string }
     const row = store.getFileRow(id)
     if (!row) return reply.code(404).send({ error: 'not found' })
-    return reply
+    void reply
       .header('content-type', row.mime)
-      .header('content-length', String(row.size))
       .header('cache-control', 'public, max-age=31536000, immutable')
-      .send(createReadStream(row.path))
+      .header('accept-ranges', 'bytes')
+
+    const range = parseByteRange(req.headers.range, row.size)
+    if (range === 'unsatisfiable') {
+      return reply.code(416).header('content-range', `bytes */${row.size}`).send()
+    }
+    if (range) {
+      return reply
+        .code(206)
+        .header('content-range', `bytes ${range.start}-${range.end}/${row.size}`)
+        .header('content-length', String(range.end - range.start + 1))
+        .send(createReadStream(row.path, { start: range.start, end: range.end }))
+    }
+    return reply.header('content-length', String(row.size)).send(createReadStream(row.path))
   })
 
   // Voice: mint a LiveKit room token for a channel's intercom room.
