@@ -84,6 +84,9 @@ export default function Join() {
               placeholder="e.g. chat.crew.example or 192.168.8.1"
               autoComplete="off"
               inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
             />
             <span className="hint">On the join poster</span>
