@@ -95,8 +95,32 @@ anything mid-task** (the service worker registers in `prompt` mode):
 ## Known platform limits
 
 - **iOS cannot receive lock-screen notifications offline** (Apple's push
-  servers are unreachable). In-app sounds/vibration work while open. A
-  Capacitor Android app with a foreground service (planned Phase 5) is the
-  path to reliable background alerts.
-- Mic, install prompt and service worker require HTTPS — provided on site
-  by the pre-fetched certificate + local DNS trick (see RUNBOOK).
+  servers are unreachable) — not even natively. In-app sounds/vibration work
+  while open. **The Phase 5 Android app solves this**: its foreground service
+  holds a WebSocket to the crew server and buzzes for messages and mentions
+  while the phone is locked, entirely on-LAN. Alert-critical roles carry
+  Android.
+- Mic, install prompt and service worker require HTTPS *in the browser* —
+  provided on site by the pre-fetched certificate + local DNS trick (see
+  RUNBOOK). **The native apps are exempt**: they talk plain HTTP to the crew
+  server and grant mic permission natively.
+
+## Native apps (Phase 5)
+
+`native/` is a Capacitor workspace wrapping the built web bundle:
+
+- **Android** (`native/android`) — the important one. Sideloadable APK; a
+  foreground service (`AlertsService`) keeps its own WebSocket to the crew
+  server and raises notifications while the app is backgrounded: normal
+  traffic on a default-priority "Messages" channel, @mentions and DMs on a
+  high-priority vibrating "Mentions & DMs" channel. No notification floods
+  on reconnect (it baselines from the welcome payload), no alerts while the
+  app is visible, auto-reconnect, battery-optimisation exemption prompt.
+- **iOS** (`native/ios`) — same app, native mic permission, plain-HTTP LAN
+  transport. No offline push (see above); distribute via TestFlight.
+
+Build: `npm run build:native` (web build + `cap sync`), then
+`cd native/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug`
+for the APK, or open `native/ios/App` in Xcode for the iOS archive. The
+join screen in native builds asks for the crew server address (also
+reachable via a `?server=` deep-link on the QR poster).

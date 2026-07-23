@@ -21,7 +21,7 @@ import {
 } from './lib/alerts.ts'
 import { initialVoiceState, VoiceManager, type VoiceState } from './lib/voice.ts'
 import { APP_VERSION, initPwa } from './lib/pwa.ts'
-import { isNative } from './lib/server.ts'
+import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 
 const TOKEN_KEY = 'inter:token'
 const THEME_KEY = 'inter:theme'
@@ -262,6 +262,15 @@ export const useStore = create<AppState>()((set, get) => {
     ingestMessages(msg.missed)
     // Messages deleted while we were away must leave state and cache too.
     applyDeletions(msg.deletions ?? [])
+
+    // Android wrapper: hand the session to the foreground service so the
+    // phone buzzes for messages while the app is backgrounded or locked.
+    const alerts = nativeAlerts()
+    if (alerts && serverOrigin()) {
+      void alerts
+        .start({ serverUrl: serverOrigin(), token: getToken() ?? '', myName: msg.me.name })
+        .catch(() => {})
+    }
 
     if (!get().activeChannelId) {
       const general = msg.channels.find((c) => c.name === 'general') ?? msg.channels[0]
@@ -704,6 +713,7 @@ export const useStore = create<AppState>()((set, get) => {
 
     async logout() {
       await voiceManager?.leave()
+      void nativeAlerts()?.stop().catch(() => {})
       ws?.stop()
       ws = null
       localStorage.removeItem(TOKEN_KEY)

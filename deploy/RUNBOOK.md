@@ -58,9 +58,30 @@ The one document to print and keep in the production office.
 ## Platform truths (so nobody promises otherwise)
 
 - **iOS phones cannot get lock-screen alerts offline** — Apple push needs
-  internet. Crew on iPhones should keep the app open (guide: Settings →
-  Display → Auto-Lock → Never during shifts). Alert-critical roles carry
-  Android (a native wrapper with a foreground service can buzz reliably —
-  Phase 5) or a real radio as backup.
+  internet, even for native apps. Crew on iPhones should keep the app open
+  (guide: Settings → Display → Auto-Lock → Never during shifts). Alert-critical
+  roles carry Android with the Inter app (below) or a real radio as backup.
 - Browsers only allow mic/notifications/install on HTTPS — hence the whole
-  certificate dance. Don't skip it.
+  certificate dance. Don't skip it. (The native apps are exempt: plain HTTP.)
+
+## The Android app (background alerts)
+
+The Phase 5 APK gives Android crew real lock-screen buzz with no internet:
+a foreground service holds a WebSocket to the crew server; mentions and DMs
+vibrate on a high-priority channel.
+
+1. Build it once per release:
+   `npm run build:native && cd native/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug`
+   → `native/android/app/build/outputs/apk/debug/app-debug.apk`.
+2. Copy it onto the crew box as `inter.apk` next to the web dist and serve it
+   (Caddy: `handle /inter.apk { root * /opt/inter; file_server }` — or just
+   drop it in the web dist folder before starting the server).
+3. Add a line to the QR poster: "Android? Scan to install the app — it buzzes
+   even when locked." QR → `http://chat.<your-domain>/inter.apk`. Crew must
+   allow install-from-browser once (Android prompts).
+4. On first app launch: enter the crew server address from the poster, join,
+   tap **Allow** on notifications, and **Allow** on battery exemption. Done —
+   test it by locking the phone and having someone @mention them.
+5. iPhones: TestFlight (Apple account required) — open `native/ios/App` in
+   Xcode, set your team, Product → Archive → Distribute. The PWA remains the
+   zero-setup iOS path.

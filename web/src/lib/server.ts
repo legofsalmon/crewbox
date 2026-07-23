@@ -9,15 +9,28 @@ import { fileUrl } from '@inter/shared'
 
 const SERVER_KEY = 'inter:server-url'
 
+interface AlertsPlugin {
+  start(options: { serverUrl: string; token: string; myName: string }): Promise<void>
+  stop(): Promise<void>
+}
+
 declare global {
   interface Window {
-    Capacitor?: { isNativePlatform?: () => boolean }
+    Capacitor?: {
+      isNativePlatform?: () => boolean
+      Plugins?: { InterAlerts?: AlertsPlugin }
+    }
   }
 }
 
 /** True when running inside a Capacitor native shell. */
 export function isNative(): boolean {
   return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
+}
+
+/** The Android background-alerts bridge, when present (native builds only). */
+export function nativeAlerts(): AlertsPlugin | undefined {
+  return window.Capacitor?.Plugins?.InterAlerts
 }
 
 /**
