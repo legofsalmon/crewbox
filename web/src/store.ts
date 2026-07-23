@@ -78,6 +78,8 @@ interface AppState {
   channels: Record<string, Channel>
   online: Record<string, boolean>
   readState: Record<string, number>
+  /** Highest seq per channel that @-mentions me; unseen when > readState. */
+  mentionSeqs: Record<string, number>
   messages: Record<string, Message[]>
   pending: Record<string, Pending[]>
   typing: Record<string, Record<string, number>>
@@ -176,6 +178,17 @@ export const useStore = create<AppState>()((set, get) => {
     const channels = { ...state.channels }
     const settled = new Set(incoming.filter((m) => m.clientMsgId).map((m) => m.clientMsgId!))
 
+    // Track the newest @mention of me per channel for the sidebar badges.
+    const mentionSeqs = { ...state.mentionSeqs }
+    let mentionsChanged = false
+    for (const m of incoming) {
+      if (!m.authorId || m.authorId === state.me?.id) continue
+      if (isMentioned(m.body, state.me?.name) && m.seq > (mentionSeqs[m.channelId] ?? 0)) {
+        mentionSeqs[m.channelId] = m.seq
+        mentionsChanged = true
+      }
+    }
+
     const byChannel = new Map<string, Message[]>()
     for (const m of incoming) {
       const list = byChannel.get(m.channelId) ?? []
@@ -193,7 +206,8 @@ export const useStore = create<AppState>()((set, get) => {
         pending[channelId] = pending[channelId].filter((p) => !settled.has(p.clientMsgId))
       }
     }
-    set({ messages, pending, channels })
+    set(mentionsChanged ? { messages, pending, channels, mentionSeqs } : { messages, pending, channels })
+    if (mentionsChanged) persistSnapshot()
     for (const clientMsgId of settled) void cache.deleteOutbox(clientMsgId)
     void cache.saveMessages(incoming)
   }
@@ -217,12 +231,13 @@ export const useStore = create<AppState>()((set, get) => {
   }
 
   function persistSnapshot(): void {
-    const { me, users, channels, readState } = get()
+    const { me, users, channels, readState, mentionSeqs } = get()
     void cache.saveSnapshot({
       me,
       users: Object.values(users),
       channels: Object.values(channels),
       readState,
+      mentionSeqs,
     })
   }
 
@@ -456,6 +471,7 @@ export const useStore = create<AppState>()((set, get) => {
     channels: {},
     online: {},
     readState: {},
+    mentionSeqs: {},
     messages: {},
     pending: {},
     typing: {},
@@ -561,6 +577,7 @@ export const useStore = create<AppState>()((set, get) => {
         users: Object.fromEntries((snapshot?.users ?? []).map((u) => [u.id, u])),
         channels: Object.fromEntries((snapshot?.channels ?? []).map((c) => [c.id, c])),
         readState: snapshot?.readState ?? {},
+        mentionSeqs: snapshot?.mentionSeqs ?? {},
       })
       const general = (snapshot?.channels ?? []).find((c) => c.name === 'general')
       if (general) set({ activeChannelId: general.id })

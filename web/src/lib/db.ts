@@ -20,6 +20,8 @@ export interface Snapshot {
   users: User[]
   channels: Channel[]
   readState: Record<string, number>
+  /** Highest seq per channel that @-mentions me (absent in old snapshots). */
+  mentionSeqs?: Record<string, number>
   savedAt: number
 }
 

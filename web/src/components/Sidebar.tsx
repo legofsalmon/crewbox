@@ -18,6 +18,7 @@ export default function Sidebar() {
   const channels = useStore((s) => s.channels)
   const online = useStore((s) => s.online)
   const readState = useStore((s) => s.readState)
+  const mentionSeqs = useStore((s) => s.mentionSeqs)
   const activeChannelId = useStore((s) => s.activeChannelId)
   const setActiveChannel = useStore((s) => s.setActiveChannel)
   const openDm = useStore((s) => s.openDm)
@@ -99,16 +100,23 @@ export default function Sidebar() {
         <ul>
           {publicChannels.map((channel) => {
             const unread = unreadCount(channel, readState)
+            // An unseen @mention outranks plain unread — different signal.
+            const mentioned = (mentionSeqs[channel.id] ?? 0) > (readState[channel.id] ?? 0)
             return (
               <li key={channel.id}>
                 <button
                   className={`row ${channel.id === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-                  aria-label={`#${channelLabel(channel, users, me?.id)}${unread ? `, ${unread} unread` : ''}`}
+                  aria-label={`#${channelLabel(channel, users, me?.id)}${unread ? `, ${unread} unread` : ''}${mentioned ? ', mentions you' : ''}`}
                   onClick={() => setActiveChannel(channel.id)}
                 >
                   <span className="row-hash">#</span>
                   <span className="row-name">{channelLabel(channel, users, me?.id)}</span>
-                  {unread > 0 && <span className="badge">{unread > 99 ? '99+' : unread}</span>}
+                  {unread > 0 && (
+                    <span className={`badge ${mentioned ? 'badge-mention' : ''}`}>
+                      {mentioned ? '@' : ''}
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
                 </button>
               </li>
             )
@@ -132,7 +140,8 @@ export default function Sidebar() {
                 >
                   <span className={`presence-dot ${online[user.id] ? 'on' : ''}`} />
                   <span className="row-name">{user.name}</span>
-                  {unread > 0 && <span className="badge">{unread > 99 ? '99+' : unread}</span>}
+                  {/* A DM unread is always personal — mention styling. */}
+                  {unread > 0 && <span className="badge badge-mention">{unread > 99 ? '99+' : unread}</span>}
                 </button>
               </li>
             )

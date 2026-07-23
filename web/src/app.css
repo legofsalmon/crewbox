@@ -519,6 +519,12 @@ ul {
   text-align: center;
 }
 
+/* Someone @-mentioned you (or it's a DM) — louder than plain unread. */
+.badge-mention {
+  background: var(--danger);
+  color: #fff;
+}
+
 .presence-dot {
   width: 8px;
   height: 8px;
