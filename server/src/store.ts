@@ -359,6 +359,14 @@ export class Store {
     return rows.map(toMessage).reverse()
   }
 
+  /** Messages surrounding one seq — powers "jump to message" from search. */
+  listAround(channelId: string, seq: number, radius: number): Message[] {
+    const rows = this.db
+      .prepare(`${MSG_SELECT} WHERE m.channel_id = ? AND m.seq BETWEEN ? AND ? ORDER BY m.seq ASC`)
+      .all(channelId, seq - radius, seq + radius) as unknown as MessageRow[]
+    return rows.map(toMessage)
+  }
+
   /** Every message across every channel, for the admin export. */
   listAllMessages(): Message[] {
     const rows = this.db

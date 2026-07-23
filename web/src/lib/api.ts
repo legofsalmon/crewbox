@@ -79,6 +79,17 @@ export function search(token: string, q: string): Promise<{ messages: Message[] 
   })
 }
 
+export function fetchContext(
+  token: string,
+  channelId: string,
+  seq: number,
+): Promise<{ messages: Message[] }> {
+  const params = new URLSearchParams({ seq: String(seq) })
+  return request(`/api/channels/${channelId}/context?${params}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+}
+
 export function fetchHistory(
   token: string,
   channelId: string,

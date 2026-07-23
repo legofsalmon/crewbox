@@ -651,6 +651,21 @@ ul {
   contain-intrinsic-size: auto 46px;
 }
 
+/* Search-jump landing: pulse the found message so the eye finds it. */
+.msg-flash {
+  animation: msg-flash 1.6s ease-out;
+}
+
+@keyframes msg-flash {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 .msg:not(.grouped) {
   margin-top: 12px;
 }

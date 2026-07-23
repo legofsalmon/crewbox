@@ -82,6 +82,15 @@ interface AppState {
   pending: Record<string, Pending[]>
   typing: Record<string, Record<string, number>>
   activeChannelId: string | null
+  /** Message to scroll to and flash once rendered (set by search jumps). */
+  jumpTarget: { channelId: string; seq: number } | null
+  /**
+   * Channels whose in-memory messages are an old context block, detached
+   * from the live tail (after a far-back search jump). The list shows a
+   * persistent "Jump to latest" pill and suppresses read-marking until
+   * returnToLatest() replaces the block with the real tail.
+   */
+  historyGapped: Record<string, boolean>
   /** DM the user asked to open; activated when the channel arrives. */
   pendingDmUserId: string | null
   sidebarOpen: boolean
@@ -111,6 +120,11 @@ interface AppState {
   sendFile: (channelId: string, file: File, caption?: string) => Promise<void>
   sendTyping: (channelId: string) => void
   setActiveChannel: (channelId: string) => void
+  /** Open a channel scrolled to a specific message (search results). */
+  jumpToMessage: (channelId: string, seq: number) => Promise<void>
+  clearJumpTarget: () => void
+  /** Leave a gapped history view: refetch and show the channel's live tail. */
+  returnToLatest: (channelId: string) => Promise<void>
   openDm: (userId: string) => void
   createChannel: (name: string, topic: string) => void
   loadOlder: (channelId: string) => Promise<void>
@@ -265,6 +279,8 @@ export const useStore = create<AppState>()((set, get) => {
       online: Object.fromEntries(msg.online.map((id) => [id, true])),
       readState,
       messages,
+      // Replay (or the truncated-channel reset) heals any search-jump gap.
+      historyGapped: {},
     })
     ingestMessages(msg.missed)
     // Messages deleted while we were away must leave state and cache too.
@@ -444,6 +460,8 @@ export const useStore = create<AppState>()((set, get) => {
     pending: {},
     typing: {},
     activeChannelId: null,
+    jumpTarget: null,
+    historyGapped: {},
     pendingDmUserId: null,
     sidebarOpen: false,
     searchOpen: false,
@@ -620,6 +638,63 @@ export const useStore = create<AppState>()((set, get) => {
     setActiveChannel(channelId) {
       set({ activeChannelId: channelId, sidebarOpen: false })
       get().markChannelRead(channelId)
+    },
+
+    async jumpToMessage(channelId, seq) {
+      set({ searchOpen: false })
+      const held = get().messages[channelId] ?? []
+      if (!held.some((m) => m.seq === seq)) {
+        let ctx: Message[]
+        try {
+          ;({ messages: ctx } = await api.fetchContext(getToken() ?? '', channelId, seq))
+        } catch {
+          ctx = []
+        }
+        if (!ctx.some((m) => m.seq === seq)) {
+          // Deleted or unreachable — open the channel normally instead.
+          set({ flash: 'That message is no longer available' })
+          setTimeout(() => set({ flash: null }), 5000)
+          get().setActiveChannel(channelId)
+          return
+        }
+        const earliestHeld = held.find((m) => m.seq > 0)?.seq
+        if (earliestHeld !== undefined && ctx.at(-1)!.seq >= earliestHeld - 1) {
+          // Context touches what we hold — a plain contiguous extension.
+          set({
+            messages: { ...get().messages, [channelId]: mergeMessages(get().messages[channelId], ctx) },
+          })
+          void cache.saveMessages(ctx)
+        } else {
+          // Far-back block, detached from the live tail: show it alone and
+          // flag the gap. Never cached — the cache stays a contiguous tail.
+          const lastSeq = get().channels[channelId]?.lastSeq ?? Number.POSITIVE_INFINITY
+          set({
+            messages: { ...get().messages, [channelId]: ctx },
+            historyGapped: { ...get().historyGapped, [channelId]: lastSeq > ctx.at(-1)!.seq },
+          })
+        }
+      }
+      set({ activeChannelId: channelId, sidebarOpen: false, jumpTarget: { channelId, seq } })
+    },
+
+    clearJumpTarget() {
+      set({ jumpTarget: null })
+    },
+
+    async returnToLatest(channelId) {
+      const lastSeq = get().channels[channelId]?.lastSeq ?? 0
+      try {
+        const { messages: tail } = await api.fetchHistory(getToken() ?? '', channelId, lastSeq + 1)
+        const historyGapped = { ...get().historyGapped }
+        delete historyGapped[channelId]
+        set({ messages: { ...get().messages, [channelId]: tail }, historyGapped })
+        await cache.clearChannel(channelId)
+        void cache.saveMessages(tail)
+        get().markChannelRead(channelId)
+      } catch {
+        set({ flash: 'Could not load the latest messages — check the connection' })
+        setTimeout(() => set({ flash: null }), 5000)
+      }
     },
 
     openDm(userId) {

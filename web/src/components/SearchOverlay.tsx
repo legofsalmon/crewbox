@@ -5,7 +5,7 @@ import * as api from '../lib/api.ts'
 
 export default function SearchOverlay() {
   const setSearchOpen = useStore((s) => s.setSearchOpen)
-  const setActiveChannel = useStore((s) => s.setActiveChannel)
+  const jumpToMessage = useStore((s) => s.jumpToMessage)
   const channels = useStore((s) => s.channels)
   const users = useStore((s) => s.users)
   const me = useStore((s) => s.me)
@@ -41,8 +41,7 @@ export default function SearchOverlay() {
   }, [query])
 
   function open(message: Message) {
-    setActiveChannel(message.channelId)
-    setSearchOpen(false)
+    void jumpToMessage(message.channelId, message.seq)
   }
 
   return (

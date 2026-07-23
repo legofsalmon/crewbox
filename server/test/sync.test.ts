@@ -290,6 +290,32 @@ describe('files and search', () => {
     expect(store.getFileRow(first.id)!.path).toBe(store.getFileRow(second.id)!.path)
   })
 
+  it('serves a context window around a seq for search jumps', async () => {
+    const token = await join('Alex')
+    const { client, welcome } = await connect(token)
+    const general = welcome.channels.find((c) => c.name === 'general')!
+
+    let midSeq = 0
+    for (let i = 0; i < 9; i++) {
+      const clientMsgId = newId()
+      client.send({ type: 'send', clientMsgId, channelId: general.id, body: `ctx ${i}` })
+      const ack = await client.waitFor(
+        (m): m is Extract<ServerMessage, { type: 'ack' }> =>
+          m.type === 'ack' && m.clientMsgId === clientMsgId,
+      )
+      if (i === 4) midSeq = ack.message.seq
+    }
+
+    const res = await fetch(
+      `${baseUrl}/api/channels/${general.id}/context?seq=${midSeq}&radius=2`,
+      { headers: { authorization: `Bearer ${token}` } },
+    )
+    expect(res.status).toBe(200)
+    const { messages } = (await res.json()) as { messages: { seq: number; body: string }[] }
+    expect(messages.map((m) => m.seq)).toEqual([midSeq - 2, midSeq - 1, midSeq, midSeq + 1, midSeq + 2])
+    expect(messages[2]!.body).toBe('ctx 4')
+  })
+
   it('stores image dimensions and a client thumbnail, serving the preview', async () => {
     const token = await join('Alex')
 

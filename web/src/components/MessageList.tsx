@@ -123,12 +123,17 @@ export default function MessageList({ channelId }: { channelId: string }) {
   const loadOlder = useStore((s) => s.loadOlder)
   const markChannelRead = useStore((s) => s.markChannelRead)
   const sendFile = useStore((s) => s.sendFile)
+  const jumpTarget = useStore((s) => s.jumpTarget)
+  const clearJumpTarget = useStore((s) => s.clearJumpTarget)
+  const gapped = useStore((s) => s.historyGapped[channelId] ?? false)
+  const returnToLatest = useStore((s) => s.returnToLatest)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
   const prevHeightRef = useRef<number | null>(null)
   const [newBelow, setNewBelow] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [flashSeq, setFlashSeq] = useState<number | null>(null)
 
   const list = messages ?? []
   const pendingList = pending ?? []
@@ -137,18 +142,40 @@ export default function MessageList({ channelId }: { channelId: string }) {
 
   const userNames = useMemo(() => Object.values(users).map((u) => u.name), [users])
 
-  // Jump straight to the bottom when switching channels.
+  // Jump straight to the bottom when switching channels — unless we're
+  // arriving on a search jump, which positions itself below.
   useLayoutEffect(() => {
+    if (useStore.getState().jumpTarget?.channelId === channelId) return
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
     nearBottomRef.current = true
     setNewBelow(false)
   }, [channelId])
 
+  // Search jump: center the target row and flash it once it exists.
+  const justJumpedRef = useRef(false)
+  useLayoutEffect(() => {
+    if (!jumpTarget || jumpTarget.channelId !== channelId) return
+    const row = scrollRef.current?.querySelector(`[data-seq="${jumpTarget.seq}"]`)
+    if (!row) return
+    row.scrollIntoView({ block: 'center' })
+    nearBottomRef.current = false
+    justJumpedRef.current = true
+    setFlashSeq(jumpTarget.seq)
+    clearJumpTarget()
+    const timer = setTimeout(() => setFlashSeq(null), 1800)
+    return () => clearTimeout(timer)
+  }, [jumpTarget, channelId, lastSeq, clearJumpTarget])
+
   // Follow new messages if we're already at the bottom, else show the pill.
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    if (justJumpedRef.current) {
+      // This render was a search jump landing, not new traffic.
+      justJumpedRef.current = false
+      return
+    }
     if (prevHeightRef.current !== null) {
       // We just prepended history — keep the viewport anchored.
       el.scrollTop += el.scrollHeight - prevHeightRef.current
@@ -162,13 +189,27 @@ export default function MessageList({ channelId }: { channelId: string }) {
     }
   }, [lastSeq, lastPendingId])
 
+  // Leaving a gapped history view (returnToLatest) lands on the newest
+  // message. Declared after the follow effect so it wins this commit.
+  const prevGappedRef = useRef(gapped)
+  useLayoutEffect(() => {
+    if (prevGappedRef.current && !gapped) {
+      const el = scrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+      nearBottomRef.current = true
+      setNewBelow(false)
+    }
+    prevGappedRef.current = gapped
+  }, [gapped])
+
   useEffect(() => {
     const onFocus = () => {
-      if (nearBottomRef.current) markChannelRead(channelId)
+      // The bottom of a gapped history view is not the real latest message.
+      if (nearBottomRef.current && !gapped) markChannelRead(channelId)
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [channelId, markChannelRead])
+  }, [channelId, markChannelRead, gapped])
 
   function onScroll() {
     const el = scrollRef.current
@@ -177,7 +218,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
     nearBottomRef.current = fromBottom < NEAR_BOTTOM_PX
     if (nearBottomRef.current) {
       setNewBelow(false)
-      markChannelRead(channelId)
+      if (!gapped) markChannelRead(channelId)
     }
     if (el.scrollTop < 60 && list.length > 0 && (list[0]?.seq ?? 1) > 1) {
       prevHeightRef.current = el.scrollHeight
@@ -219,7 +260,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
     }
     if (msg.kind === 'system') {
       rows.push(
-        <div className="system-msg" key={msg.id}>
+        <div className="system-msg" key={msg.id} data-seq={msg.seq}>
           {msg.body}
         </div>,
       )
@@ -242,6 +283,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
         userNames={userNames}
         myName={me?.name}
         onImgLoad={onImgLoad}
+        flashed={msg.seq === flashSeq}
       />,
     )
     prevMsg = msg
@@ -284,10 +326,16 @@ export default function MessageList({ channelId }: { channelId: string }) {
         {rows}
       </div>
       {dragOver && <div className="drop-hint">Drop to share</div>}
-      {newBelow && (
-        <button className="jump-pill" onClick={jumpToLatest}>
-          New messages ↓
+      {gapped ? (
+        <button className="jump-pill" onClick={() => void returnToLatest(channelId)}>
+          Jump to latest ↓
         </button>
+      ) : (
+        newBelow && (
+          <button className="jump-pill" onClick={jumpToLatest}>
+            New messages ↓
+          </button>
+        )
       )}
     </div>
   )
@@ -309,8 +357,10 @@ const MessageRow = memo(function MessageRow(props: {
   userNames: string[]
   myName?: string
   onImgLoad?: () => void
+  /** Briefly highlighted as a search-jump landing. */
+  flashed?: boolean
 }) {
-  const { msg, pendingEntry, authorName, authorId, grouped, userNames, myName, onImgLoad } = props
+  const { msg, pendingEntry, authorName, authorId, grouped, userNames, myName, onImgLoad, flashed } = props
   const openFileDetail = useStore((s) => s.openFileDetail)
 
   const pending = !msg
@@ -323,7 +373,10 @@ const MessageRow = memo(function MessageRow(props: {
       : undefined)
 
   return (
-    <div className={`msg ${grouped ? 'grouped' : ''} ${pending ? 'pending' : ''}`}>
+    <div
+      className={`msg ${grouped ? 'grouped' : ''} ${pending ? 'pending' : ''} ${flashed ? 'msg-flash' : ''}`}
+      data-seq={msg?.seq}
+    >
       <div className="msg-gutter">{!grouped && <Avatar name={authorName} id={authorId} />}</div>
       <div className="msg-content">
         {!grouped && (

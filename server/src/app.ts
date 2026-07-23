@@ -42,6 +42,11 @@ const historyQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 })
 
+const contextQuerySchema = z.object({
+  seq: z.coerce.number().int().positive(),
+  radius: z.coerce.number().int().min(1).max(100).default(30),
+})
+
 const resetPinBodySchema = z.object({
   pin: z.string().regex(/^\d{4,8}$/, '4–8 digits'),
 })
@@ -388,6 +393,20 @@ export function buildApp({
     const { beforeSeq, limit } = parsed.data
     const messages = store.listBefore(channel.id, beforeSeq ?? channel.lastSeq + 1, limit)
     return { messages }
+  })
+
+  // Messages around one seq — jump-to-message from a search result.
+  fastify.get('/api/channels/:id/context', (req, reply) => {
+    const user = authUser(req)
+    if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+    const { id } = req.params as { id: string }
+    const channel = store.getChannel(id)
+    if (!channel || !store.isMember(channel.id, user.id)) {
+      return reply.code(404).send({ error: 'channel not found' })
+    }
+    const parsed = contextQuerySchema.safeParse(req.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid query' })
+    return { messages: store.listAround(channel.id, parsed.data.seq, parsed.data.radius) }
   })
 
   // -- admin ----------------------------------------------------------------
