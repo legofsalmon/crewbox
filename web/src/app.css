@@ -1068,6 +1068,10 @@ ul {
   -webkit-user-select: none;
 }
 
+/* While live, an inline box-shadow (set in VoiceBar from the mic level) grows
+   the halo ring so the speaker can see the system hearing them. This rule is
+   the resting fallback. Shadow only — the button itself must never move or
+   resize under a pressed finger. */
 .ptt-btn.talking {
   background: var(--accent);
   color: var(--accent-contrast);

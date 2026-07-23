@@ -1,6 +1,13 @@
 import type { PointerEvent } from 'react'
 import { channelLabel, useStore } from '../store.ts'
 
+/** Halo ring 8→30px with voice level; must mirror .ptt-btn.talking's resting shadow. */
+function talkingHalo(micLevel: number | null): string {
+  const level = Math.min(1, (micLevel ?? 0) * 1.6)
+  const ring = (8 + level * 22).toFixed(1)
+  return `0 0 0 ${ring}px rgba(245, 183, 62, 0.25), 0 8px 24px rgba(0, 0, 0, 0.4)`
+}
+
 /** Sticky intercom strip + the big push-to-talk button. */
 export default function VoiceBar() {
   const voice = useStore((s) => s.voice)
@@ -92,6 +99,11 @@ export default function VoiceBar() {
           <button
             className={`ptt-btn ${voice.talking ? 'talking' : ''}`}
             aria-label="Hold to talk"
+            // Live mic level drives the halo ring — visible proof you're heard.
+            // Boosted like the settings meter so normal speech reads clearly.
+            // Inline (not a CSS var): Chromium won't retarget a shadow
+            // transition when only a var() inside it changes.
+            style={voice.talking ? { boxShadow: talkingHalo(voice.micLevel) } : undefined}
             onPointerDown={pttDown}
             onPointerUp={pttUp}
             onPointerCancel={pttUp}

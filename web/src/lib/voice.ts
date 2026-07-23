@@ -92,6 +92,7 @@ export class VoiceManager {
   private analyser: AnalyserNode | null = null
   private analyserCtx: AudioContext | null = null
   private micTestStream: MediaStream | null = null
+  private talking = false
 
   constructor(private readonly publish: Publish) {
     navigator.mediaDevices?.addEventListener?.('devicechange', () => {
@@ -142,7 +143,11 @@ export class VoiceManager {
         this.publishParticipants()
       })
       .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
-        if (pub.kind === Track.Kind.Audio) this.startLevelMeter()
+        // Covers the first-ever talk press, where the track publishes after
+        // setTalking already tried (and failed) to find one to meter.
+        if (pub.kind === Track.Kind.Audio && this.talking && !this.micTestStream) {
+          this.startLevelMeter()
+        }
       })
       .on(RoomEvent.Reconnecting, () => this.publish({ status: 'reconnecting' }))
       .on(RoomEvent.Reconnected, () => this.publish({ status: 'connected' }))
@@ -213,11 +218,23 @@ export class VoiceManager {
   /** Open/close the mic. Mute-based, so open latency is near-zero. */
   async setTalking(on: boolean): Promise<void> {
     if (!this.room || this.room.state !== ConnectionState.Connected) return
+    this.talking = on
     this.publish({ talking: on })
+    // Meter the send track while transmitting so the UI can show the mic is
+    // hearing you (muted tracks read as silence, so only meter while open).
+    // The settings-panel test capture, when active, already feeds the meter.
+    if (!this.micTestStream) {
+      if (on) this.startLevelMeter()
+      else {
+        this.stopLevelMeter()
+        this.publish({ micLevel: null })
+      }
+    }
     try {
       await this.room.localParticipant.setMicrophoneEnabled(on)
       if (on) this.publish({ micReady: true })
     } catch {
+      this.talking = false
       this.publish({ talking: false, error: 'Microphone unavailable — listen-only' })
     }
   }
@@ -262,10 +279,10 @@ export class VoiceManager {
     try {
       await this.room.switchActiveDevice(kind, deviceId ?? 'default')
       // Re-point the meter at the new mic: the live test if the panel is open,
-      // otherwise the send-track.
+      // otherwise the send-track (only meaningful while transmitting).
       if (kind === 'audioinput') {
         if (this.micTestStream) void this.startMicTest()
-        else this.startLevelMeter()
+        else if (this.talking) this.startLevelMeter()
       }
     } catch {
       this.publish({ error: 'Could not switch audio device' })
@@ -327,11 +344,16 @@ export class VoiceManager {
       this.analyserCtx = ctx
       this.analyser = analyser
       const data = new Uint8Array(analyser.frequencyBinCount)
+      // VU-style smoothing: jump up instantly, decay gradually. Keeps the
+      // settings meter and the talk-button halo readable without relying on
+      // CSS transitions.
+      let smoothed = 0
       this.levelTimer = window.setInterval(() => {
         analyser.getByteTimeDomainData(data)
         let peak = 0
         for (const v of data) peak = Math.max(peak, Math.abs(v - 128) / 128)
-        this.publish({ micLevel: peak })
+        smoothed = peak > smoothed ? peak : smoothed * 0.7
+        this.publish({ micLevel: smoothed < 0.01 ? 0 : smoothed })
       }, LEVEL_INTERVAL_MS)
     } catch {
       this.publish({ micLevel: null })
@@ -368,6 +390,7 @@ export class VoiceManager {
   }
 
   private reset(error: string | null = null): void {
+    this.talking = false
     this.stopMicTest()
     for (const el of this.audioEls) el.remove()
     this.audioEls.clear()
