@@ -53,6 +53,10 @@ export const cache = {
       .delete()
   },
 
+  async deleteMessages(ids: string[]): Promise<void> {
+    if (ids.length) await db.messages.bulkDelete(ids)
+  },
+
   /** Trim old messages so the cache doesn't grow without bound. */
   async prune(): Promise<void> {
     const all = await db.messages.orderBy('[channelId+seq]').toArray()

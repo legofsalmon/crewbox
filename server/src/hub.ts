@@ -13,6 +13,8 @@ import { APP_VERSION } from './version.ts'
 
 /** Max missed messages replayed per channel in the welcome payload. */
 const MISSED_LIMIT = 200
+/** How far back welcome replays deletions so returning clients reconcile. */
+const DELETION_REPLAY_MS = 7 * 24 * 60 * 60 * 1000
 const HEARTBEAT_MS = 15_000
 
 interface Conn {
@@ -165,6 +167,10 @@ export class Hub {
       online: [...this.online.keys()],
       missed,
       truncated,
+      deletions: this.store.listDeletions(
+        channels.map((c) => c.id),
+        Date.now() - DELETION_REPLAY_MS,
+      ),
     })
     this.markOnline(user.id)
   }
@@ -257,6 +263,11 @@ export class Hub {
   /** Push updated public settings (e.g. admin changed the Wi-Fi SSID). */
   announceConfig(): void {
     this.broadcastAll({ type: 'config', config: this.getPublicConfig() })
+  }
+
+  /** Tell a channel's audience a message was deleted (e.g. file removed). */
+  announceDeleted(channelId: string, messageId: string): void {
+    this.broadcastToChannel(channelId, { type: 'deleted', channelId, messageId })
   }
 
   systemMessage(channelId: string, body: string): Message {

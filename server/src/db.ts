@@ -99,6 +99,16 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  // v5: deletion log, replayed on welcome so offline clients drop stale
+  // cache entries for messages removed while they were away.
+  `
+  CREATE TABLE IF NOT EXISTS deleted_messages (
+    message_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_deleted_messages_at ON deleted_messages(deleted_at);
+  `,
 ]
 
 export function openDb(path: string): DatabaseSync {

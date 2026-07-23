@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { unlinkSync } from 'node:fs'
 import { newId } from '@inter/shared'
 import type {
   Channel,
@@ -357,6 +358,68 @@ export class Store {
       .prepare(`${MSG_SELECT} ORDER BY m.channel_id, m.seq`)
       .all() as unknown as MessageRow[]
     return rows.map(toMessage)
+  }
+
+  getMessageById(id: string): Message | undefined {
+    const row = this.db.prepare(`${MSG_SELECT} WHERE m.id = ?`).get(id) as unknown as
+      | MessageRow
+      | undefined
+    return row ? toMessage(row) : undefined
+  }
+
+  /**
+   * Delete a message, logging it for welcome-time reconciliation. The file
+   * row and blob are removed only when nothing else references them —
+   * uploads are deduped by content, so a path can back several file rows.
+   */
+  deleteMessage(id: string): boolean {
+    const orphanedPath = transaction(this.db, () => {
+      const row = this.db
+        .prepare('SELECT channel_id, file_id FROM messages WHERE id = ?')
+        .get(id) as { channel_id: string; file_id: string | null } | undefined
+      if (!row) return undefined
+      this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
+      this.db
+        .prepare('INSERT OR REPLACE INTO deleted_messages (message_id, channel_id, deleted_at) VALUES (?, ?, ?)')
+        .run(id, row.channel_id, Date.now())
+      if (!row.file_id) return undefined
+      const { refs } = this.db
+        .prepare('SELECT COUNT(*) AS refs FROM messages WHERE file_id = ?')
+        .get(row.file_id) as { refs: number }
+      if (refs > 0) return undefined
+      const file = this.db.prepare('SELECT path FROM files WHERE id = ?').get(row.file_id) as
+        | { path: string }
+        | undefined
+      if (!file) return undefined
+      this.db.prepare('DELETE FROM files WHERE id = ?').run(row.file_id)
+      const { siblings } = this.db
+        .prepare('SELECT COUNT(*) AS siblings FROM files WHERE path = ?')
+        .get(file.path) as { siblings: number }
+      return siblings === 0 ? file.path : undefined
+    })
+    if (orphanedPath === undefined) {
+      // Either the message never existed — report that — or no blob cleanup.
+      return this.db.prepare('SELECT 1 FROM deleted_messages WHERE message_id = ?').get(id) !== undefined
+    }
+    try {
+      unlinkSync(orphanedPath)
+    } catch {
+      // Blob already gone — the DB rows are the source of truth.
+    }
+    return true
+  }
+
+  /** Deletions since `sinceMs` in the given channels, for the welcome payload. */
+  listDeletions(channelIds: string[], sinceMs: number): { channelId: string; messageId: string }[] {
+    if (!channelIds.length) return []
+    const placeholders = channelIds.map(() => '?').join(',')
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, channel_id FROM deleted_messages
+         WHERE deleted_at >= ? AND channel_id IN (${placeholders})`,
+      )
+      .all(sinceMs, ...channelIds) as { message_id: string; channel_id: string }[]
+    return rows.map((r) => ({ channelId: r.channel_id, messageId: r.message_id }))
   }
 
   /** Full-text search over message bodies, newest first. */

@@ -176,6 +176,24 @@ export const useStore = create<AppState>()((set, get) => {
     void cache.saveMessages(incoming)
   }
 
+  /** Drop deleted messages from state and cache (live broadcast + welcome). */
+  function applyDeletions(deletions: { channelId: string; messageId: string }[]): void {
+    if (!deletions.length) return
+    const ids = new Set(deletions.map((d) => d.messageId))
+    const messages = { ...get().messages }
+    let changed = false
+    for (const { channelId } of deletions) {
+      const list = messages[channelId]
+      if (!list?.some((m) => ids.has(m.id))) continue
+      messages[channelId] = list.filter((m) => !ids.has(m.id))
+      changed = true
+    }
+    if (changed) set({ messages })
+    const openDetail = get().fileDetail
+    if (openDetail && ids.has(openDetail.id)) set({ fileDetail: null })
+    void cache.deleteMessages([...ids])
+  }
+
   function persistSnapshot(): void {
     const { me, users, channels, readState } = get()
     void cache.saveSnapshot({
@@ -241,6 +259,8 @@ export const useStore = create<AppState>()((set, get) => {
       messages,
     })
     ingestMessages(msg.missed)
+    // Messages deleted while we were away must leave state and cache too.
+    applyDeletions(msg.deletions ?? [])
 
     if (!get().activeChannelId) {
       const general = msg.channels.find((c) => c.name === 'general') ?? msg.channels[0]
@@ -359,6 +379,9 @@ export const useStore = create<AppState>()((set, get) => {
       case 'config':
         rememberConfig(msg.config)
         set({ config: msg.config })
+        break
+      case 'deleted':
+        applyDeletions([{ channelId: msg.channelId, messageId: msg.messageId }])
         break
       case 'error':
         if (msg.code === 'auth') {

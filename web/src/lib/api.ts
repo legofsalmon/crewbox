@@ -103,6 +103,13 @@ export function getConfig(): Promise<PublicConfig> {
   return request('/api/config')
 }
 
+export function deleteMessage(token: string, messageId: string): Promise<{ ok: true }> {
+  return request(`/api/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  })
+}
+
 export function adminGetSettings(token: string): Promise<AdminSettings> {
   return request('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } })
 }

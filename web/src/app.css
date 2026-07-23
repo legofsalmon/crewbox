@@ -1378,6 +1378,52 @@ ul {
   color: var(--accent);
 }
 
+.file-act.danger {
+  color: var(--danger);
+}
+
+.file-act.danger:hover,
+.file-act.danger.confirm {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.file-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* Zoomable image surface: transform lives on the img, gestures on the box. */
+.file-zoom {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  touch-action: none;
+  cursor: zoom-in;
+}
+
+.file-zoom .file-preview-media {
+  will-change: transform;
+}
+
+.file-zoom-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* -------------------------------------------------------------- iOS tip */
 .ios-tip {
   position: fixed;

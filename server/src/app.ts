@@ -247,6 +247,26 @@ export function buildApp({
     return reply.header('content-length', String(row.size)).send(createReadStream(row.path))
   })
 
+  // Remove a shared file: the message, its blob (dedup-safe) and a system
+  // note. Author or admin only — mistakes and wrong maps must be fixable.
+  fastify.delete('/api/messages/:id', (req, reply) => {
+    const user = authUser(req)
+    if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+    const { id } = req.params as { id: string }
+    const message = store.getMessageById(id)
+    if (!message) return reply.code(404).send({ error: 'message not found' })
+    if (message.kind !== 'file') {
+      return reply.code(400).send({ error: 'only shared files can be deleted' })
+    }
+    if (message.authorId !== user.id && user.role !== 'admin') {
+      return reply.code(403).send({ error: 'you can only delete your own files' })
+    }
+    store.deleteMessage(id)
+    hub.announceDeleted(message.channelId, id)
+    hub.systemMessage(message.channelId, `${user.name} removed a shared file`)
+    return { ok: true }
+  })
+
   // Voice: mint a LiveKit room token for a channel's intercom room.
   fastify.post('/api/voice/token', async (req, reply) => {
     const user = authUser(req)

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -288,6 +288,88 @@ describe('files and search', () => {
     expect(served.headers.get('accept-ranges')).toBe('bytes')
 
     expect(store.getFileRow(first.id)!.path).toBe(store.getFileRow(second.id)!.path)
+  })
+
+  it('deletes a shared file: permissions, broadcast, welcome reconcile, dedup-safe blob', async () => {
+    const adminToken = await join('Alex') // first user is admin
+    const authorToken = await join('Sam')
+    const bystanderToken = await join('Kit')
+    const author = await connect(authorToken)
+    const general = author.welcome.channels.find((c) => c.name === 'general')!
+
+    const upload = async (token: string, name: string) => {
+      const form = new FormData()
+      form.append('file', new Blob(['same-bytes-for-dedup'], { type: 'text/plain' }), name)
+      const res = await fetch(`${baseUrl}/api/files`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      })
+      return ((await res.json()) as { file: { id: string } }).file
+    }
+    const sendFileMsg = async (fileId: string) => {
+      const clientMsgId = newId()
+      author.client.send({ type: 'send', clientMsgId, channelId: general.id, fileId, body: '' })
+      const ack = await author.client.waitFor(
+        (m): m is Extract<ServerMessage, { type: 'ack' }> =>
+          m.type === 'ack' && m.clientMsgId === clientMsgId,
+      )
+      return ack.message
+    }
+
+    // Two messages whose uploads share one deduped blob on disk.
+    const fileA = await upload(authorToken, 'map-v1.txt')
+    const fileB = await upload(authorToken, 'map-v2.txt')
+    const msgA = await sendFileMsg(fileA.id)
+    const msgB = await sendFileMsg(fileB.id)
+    const sharedPath = store.getFileRow(fileA.id)!.path
+    expect(store.getFileRow(fileB.id)!.path).toBe(sharedPath)
+
+    const del = (token: string, id: string) =>
+      fetch(`${baseUrl}/api/messages/${id}`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${token}` },
+      })
+
+    // A bystander cannot delete someone else's file.
+    expect((await del(bystanderToken, msgA.id)).status).toBe(403)
+
+    // The author can. A second connected client sees the broadcast + note.
+    const watcher = await connect(bystanderToken)
+    expect((await del(authorToken, msgA.id)).status).toBe(200)
+    const deleted = await watcher.client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'deleted' }> => m.type === 'deleted',
+    )
+    expect(deleted.messageId).toBe(msgA.id)
+    const note = await watcher.client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'msg' }> =>
+        m.type === 'msg' && m.message.kind === 'system',
+    )
+    expect(note.message.body).toBe('Sam removed a shared file')
+
+    // Gone from the store; deduped blob survives while msgB references it.
+    expect(store.getMessageById(msgA.id)).toBeUndefined()
+    expect(existsSync(sharedPath)).toBe(true)
+
+    // A client that was offline during the delete reconciles via welcome.
+    const returning = await connect(bystanderToken)
+    expect(returning.welcome.deletions).toContainEqual({
+      channelId: general.id,
+      messageId: msgA.id,
+    })
+
+    // Admin deletes the second copy — now the blob is truly orphaned.
+    expect((await del(adminToken, msgB.id)).status).toBe(200)
+    expect(existsSync(sharedPath)).toBe(false)
+
+    // Text messages are out of scope for deletion.
+    const textId = newId()
+    author.client.send({ type: 'send', clientMsgId: textId, channelId: general.id, body: 'keep me' })
+    const textAck = await author.client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'ack' }> =>
+        m.type === 'ack' && m.clientMsgId === textId,
+    )
+    expect((await del(adminToken, textAck.message.id)).status).toBe(400)
   })
 
   it('serves byte ranges (iOS media playback needs 206 responses)', async () => {

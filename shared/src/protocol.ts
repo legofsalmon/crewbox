@@ -96,6 +96,8 @@ export interface WelcomeMessage {
   missed: Message[]
   /** Channels where `missed` was truncated; client should refetch history. */
   truncated: string[]
+  /** Recently deleted messages, so returning clients drop stale cache entries. */
+  deletions: { channelId: string; messageId: string }[]
 }
 
 export interface MsgMessage {
@@ -157,6 +159,13 @@ export interface ConfigMessage {
   config: PublicConfig
 }
 
+/** A message was deleted (e.g. a shared file removed by its author/admin). */
+export interface DeletedMessage {
+  type: 'deleted'
+  channelId: string
+  messageId: string
+}
+
 export interface ErrorMessage {
   type: 'error'
   code: 'auth' | 'bad_request' | 'not_found' | 'forbidden'
@@ -175,4 +184,5 @@ export type ServerMessage =
   | ReadStateMessage
   | PongMessage
   | ConfigMessage
+  | DeletedMessage
   | ErrorMessage
