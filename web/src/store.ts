@@ -19,7 +19,8 @@ import {
   setSoundsEnabled,
   soundsEnabled,
 } from './lib/alerts.ts'
-import { initialVoiceState, VoiceManager, type VoiceState } from './lib/voice.ts'
+import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
+import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, initPwa } from './lib/pwa.ts'
 import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
@@ -129,6 +130,7 @@ interface AppState {
 }
 
 let ws: WsClient | null = null
+/** Lazily constructed — importing it pulls the LiveKit SDK chunk. */
 let voiceManager: VoiceManager | null = null
 /** Reloads into the new service worker; set once PWA registration runs. */
 let updateSW: ((reload?: boolean) => Promise<void>) | null = null
@@ -140,9 +142,13 @@ function getToken(): string | null {
 }
 
 function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Message[] {
-  if (!existing?.length) return [...incoming].sort((a, b) => a.seq - b.seq)
+  const sorted = [...incoming].sort((a, b) => a.seq - b.seq)
+  if (!existing?.length) return sorted
+  // Fast path — live traffic is strictly newer than everything we hold, so
+  // don't rebuild and re-sort the whole channel per arriving message.
+  if (sorted[0]!.seq > existing.at(-1)!.seq) return [...existing, ...sorted]
   const byId = new Map(existing.map((m) => [m.id, m]))
-  for (const m of incoming) byId.set(m.id, m)
+  for (const m of sorted) byId.set(m.id, m)
   return [...byId.values()].sort((a, b) => a.seq - b.seq)
 }
 
@@ -453,9 +459,13 @@ export const useStore = create<AppState>()((set, get) => {
     voice: initialVoiceState,
 
     async joinVoice(channelId) {
-      voiceManager ??= new VoiceManager((partial) =>
-        set({ voice: { ...useStore.getState().voice, ...partial } }),
-      )
+      if (!voiceManager) {
+        // First use: load the voice module (and the LiveKit SDK) on demand.
+        const { VoiceManager } = await import('./lib/voice.ts')
+        voiceManager ??= new VoiceManager((partial) =>
+          set({ voice: { ...useStore.getState().voice, ...partial } }),
+        )
+      }
       try {
         const { url, token } = await api.voiceToken(getToken() ?? '', channelId)
         await voiceManager.join(channelId, token, url)

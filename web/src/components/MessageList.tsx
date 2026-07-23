@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { fileUrl, thumbUrl, type FileMeta, type Message } from '@inter/shared'
 import { useStore, type Pending } from '../store.ts'
 import { formatBytes } from '../lib/files.ts'
@@ -123,7 +123,6 @@ export default function MessageList({ channelId }: { channelId: string }) {
   const loadOlder = useStore((s) => s.loadOlder)
   const markChannelRead = useStore((s) => s.markChannelRead)
   const sendFile = useStore((s) => s.sendFile)
-  const openFileDetail = useStore((s) => s.openFileDetail)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -201,10 +200,11 @@ export default function MessageList({ channelId }: { channelId: string }) {
 
   // Legacy images (uploaded before dimensions were captured) still shift the
   // layout when they load — stay glued to the bottom if we were there.
-  function onImgLoad() {
+  // Stable identity so memoized rows never re-render because of it.
+  const onImgLoad = useCallback(() => {
     const el = scrollRef.current
     if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight
-  }
+  }, [])
 
   const rows: JSX.Element[] = []
   let prevMsg: Message | null = null
@@ -235,15 +235,12 @@ export default function MessageList({ channelId }: { channelId: string }) {
     rows.push(
       <MessageRow
         key={msg.id}
-        body={msg.body}
-        file={msg.file}
+        msg={msg}
         authorName={author?.name ?? 'Unknown'}
         authorId={msg.authorId ?? '?'}
-        ts={msg.createdAt}
         grouped={grouped}
         userNames={userNames}
         myName={me?.name}
-        onOpenFile={() => openFileDetail(msg)}
         onImgLoad={onImgLoad}
       />,
     )
@@ -253,13 +250,10 @@ export default function MessageList({ channelId }: { channelId: string }) {
     rows.push(
       <MessageRow
         key={p.clientMsgId}
-        body={p.body}
-        file={p.fileId ? { id: p.fileId, name: p.fileName ?? 'file', mime: p.fileMime ?? '', size: 0 } : undefined}
+        pendingEntry={p}
         authorName={me?.name ?? 'Me'}
         authorId={me?.id ?? '?'}
-        ts={p.createdAt}
         grouped={false}
-        pending
         userNames={userNames}
         myName={me?.name}
       />,
@@ -299,21 +293,35 @@ export default function MessageList({ channelId }: { channelId: string }) {
   )
 }
 
-function MessageRow(props: {
-  body: string
-  file?: FileMeta
+/**
+ * Memoized: appends to the list no longer re-render every existing row
+ * (and re-run the mention scanner across the whole transcript). All props
+ * are identity-stable across appends; `openFileDetail` comes from the
+ * store, whose action references never change.
+ */
+const MessageRow = memo(function MessageRow(props: {
+  /** Delivered message; exactly one of msg/pendingEntry is set. */
+  msg?: Message
+  pendingEntry?: Pending
   authorName: string
   authorId: string
-  ts: number
   grouped: boolean
-  pending?: boolean
   userNames: string[]
   myName?: string
-  onOpenFile?: () => void
   onImgLoad?: () => void
 }) {
-  const { body, file, authorName, authorId, ts, grouped, pending, userNames, myName, onOpenFile, onImgLoad } =
-    props
+  const { msg, pendingEntry, authorName, authorId, grouped, userNames, myName, onImgLoad } = props
+  const openFileDetail = useStore((s) => s.openFileDetail)
+
+  const pending = !msg
+  const body = msg?.body ?? pendingEntry?.body ?? ''
+  const ts = msg?.createdAt ?? pendingEntry?.createdAt ?? 0
+  const file: FileMeta | undefined =
+    msg?.file ??
+    (pendingEntry?.fileId
+      ? { id: pendingEntry.fileId, name: pendingEntry.fileName ?? 'file', mime: pendingEntry.fileMime ?? '', size: 0 }
+      : undefined)
+
   return (
     <div className={`msg ${grouped ? 'grouped' : ''} ${pending ? 'pending' : ''}`}>
       <div className="msg-gutter">{!grouped && <Avatar name={authorName} id={authorId} />}</div>
@@ -327,13 +335,13 @@ function MessageRow(props: {
         )}
         {body && <div className="msg-body">{renderBody(body, userNames, myName)}</div>}
         {file &&
-          (pending || !onOpenFile ? (
-            <div className="msg-body msg-file-pending">📎 {file.name}</div>
+          (msg ? (
+            <FileAttachment file={file} onOpen={() => openFileDetail(msg)} onImgLoad={onImgLoad} />
           ) : (
-            <FileAttachment file={file} onOpen={onOpenFile} onImgLoad={onImgLoad} />
+            <div className="msg-body msg-file-pending">📎 {file.name}</div>
           ))}
         {grouped && pending && <span className="msg-state">◷</span>}
       </div>
     </div>
   )
-}
+})

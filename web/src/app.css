@@ -645,6 +645,10 @@ ul {
   display: flex;
   gap: 12px;
   padding: 3px 18px;
+  /* Skip layout/paint for rows far off-screen; keeps long transcripts
+     cheap on old phones. The intrinsic hint avoids scrollbar wobble. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 46px;
 }
 
 .msg:not(.grouped) {
