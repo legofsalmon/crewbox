@@ -1,4 +1,5 @@
 import type { Channel, FileMeta, Message, PublicConfig, User } from '@inter/shared'
+import { apiUrl } from './server.ts'
 
 export interface AdminSettings {
   settings: { wifiSsid: string }
@@ -22,7 +23,8 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init)
+  // apiUrl prefixes the configured server origin (native builds); '' for the PWA.
+  const res = await fetch(apiUrl(path), init)
   const data = (await res.json().catch(() => ({}))) as { error?: string } & T
   if (!res.ok) throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)
   return data
@@ -127,7 +129,9 @@ export function adminUpdateSettings(
 
 /** The export is downloaded as a blob so the UI can save it as a file. */
 export async function adminExport(token: string): Promise<Blob> {
-  const res = await fetch('/api/admin/export', { headers: { authorization: `Bearer ${token}` } })
+  const res = await fetch(apiUrl('/api/admin/export'), {
+    headers: { authorization: `Bearer ${token}` },
+  })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string }
     throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)

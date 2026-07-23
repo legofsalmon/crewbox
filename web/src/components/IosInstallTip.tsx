@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { isNative } from '../lib/server.ts'
 
 const DISMISS_KEY = 'inter:ios-tip-dismissed'
 
 function isIosSafariBrowser(): boolean {
+  if (isNative()) return false // the native app needs no home-screen install
   const ua = navigator.userAgent
   const isIos = /iPhone|iPad|iPod/.test(ua) || (ua.includes('Mac') && navigator.maxTouchPoints > 1)
   const standalone = (navigator as { standalone?: boolean }).standalone === true

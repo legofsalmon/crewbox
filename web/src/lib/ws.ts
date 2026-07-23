@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerMessage } from '@inter/shared'
 import { pushSample, rollingMedian } from './quality.ts'
+import { wsUrl } from './server.ts'
 
 const HEARTBEAT_MS = 10_000
 const DEAD_AFTER_MS = 25_000
@@ -80,8 +81,7 @@ export class WsClient {
   private connect(): void {
     if (this.stopped || this.ws) return
     this.handlers.onStatus('connecting')
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/ws`)
+    const ws = new WebSocket(wsUrl())
     this.ws = ws
     this.lastActivity = Date.now()
 

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type R
 import { fileUrl, type FileMeta, type Message } from '@inter/shared'
 import { useStore, type Pending } from '../store.ts'
 import { formatBytes } from '../lib/files.ts'
+import { apiUrl } from '../lib/server.ts'
 import Avatar from './Avatar.tsx'
 
 const GROUP_GAP_MS = 5 * 60 * 1000
@@ -56,7 +57,7 @@ function renderBody(body: string, names: string[], myName: string | undefined): 
 
 /** Attachments open the in-app detail modal; raw open/download live there. */
 function FileAttachment({ file, onOpen }: { file: FileMeta; onOpen: () => void }) {
-  const url = fileUrl(file)
+  const url = apiUrl(fileUrl(file))
   if (file.mime.startsWith('image/')) {
     return (
       <button type="button" className="msg-image-link" onClick={onOpen}>

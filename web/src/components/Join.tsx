@@ -3,6 +3,17 @@ import { useStore } from '../store.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { effectiveSsid } from '../lib/settings.ts'
+import { isNative, normalizeOrigin, serverOrigin, setServerOrigin } from '../lib/server.ts'
+
+/** Native builds aren't served by the crew server, so they must be told
+ * where it is. A `?server=` param (QR-poster deep link) also enables it. */
+function needsServerField(): boolean {
+  return isNative() || new URLSearchParams(location.search).has('server')
+}
+
+function initialServer(): string {
+  return new URLSearchParams(location.search).get('server') ?? serverOrigin()
+}
 
 export default function Join() {
   const join = useStore((s) => s.join)
@@ -10,12 +21,21 @@ export default function Join() {
   const [name, setName] = useState('')
   const [eventPin, setEventPin] = useState('')
   const [personalPin, setPersonalPin] = useState('')
+  const [server, setServer] = useState(initialServer)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const showServer = needsServerField()
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    if (showServer) {
+      if (!normalizeOrigin(server)) {
+        setError('Enter the crew server address (it’s on the join poster)')
+        return
+      }
+      setServerOrigin(server)
+    }
     setBusy(true)
     try {
       await join(name, eventPin, personalPin)
@@ -55,6 +75,20 @@ export default function Join() {
           <p>Crew chat that works with no internet</p>
         </div>
 
+        {showServer && (
+          <label>
+            Crew server
+            <input
+              value={server}
+              onChange={(e) => setServer(e.target.value)}
+              placeholder="e.g. chat.crew.example or 192.168.8.1"
+              autoComplete="off"
+              inputMode="url"
+              required
+            />
+            <span className="hint">On the join poster</span>
+          </label>
+        )}
         <label>
           Your name
           <input

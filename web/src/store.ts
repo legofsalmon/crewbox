@@ -21,6 +21,7 @@ import {
 } from './lib/alerts.ts'
 import { initialVoiceState, VoiceManager, type VoiceState } from './lib/voice.ts'
 import { APP_VERSION, initPwa } from './lib/pwa.ts'
+import { isNative } from './lib/server.ts'
 
 const TOKEN_KEY = 'inter:token'
 const THEME_KEY = 'inter:theme'
@@ -476,8 +477,9 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     async boot() {
-      // Register the service worker once, regardless of auth phase.
-      if (!pwaStarted) {
+      // Register the service worker once, regardless of auth phase. Native
+      // wrappers ship the bundle in the app package — no SW wanted there.
+      if (!pwaStarted && !isNative()) {
         pwaStarted = true
         try {
           updateSW = initPwa(() => set({ updateReady: true }))

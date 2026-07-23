@@ -1,6 +1,7 @@
 import { useStore } from '../store.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { effectiveSsid } from '../lib/settings.ts'
+import { serverLabel } from '../lib/server.ts'
 
 /** Shown when the app can't reach the server on a cold load with no cache. */
 export default function ServerUnreachable() {
@@ -27,7 +28,7 @@ export default function ServerUnreachable() {
           {retrying ? 'Retrying…' : 'Retry now'}
         </button>
         <div className="center-meta">
-          Trying {location.host} · retrying automatically
+          Trying {serverLabel()} · retrying automatically
         </div>
         <div className="center-version">v{APP_VERSION}</div>
       </div>

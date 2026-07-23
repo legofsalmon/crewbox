@@ -4,6 +4,7 @@ import { rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
+import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
@@ -117,6 +118,10 @@ export function buildApp({
   // PIN-guessing, not a crew rush after a briefing.
   const joinLimiter = new RateLimiter(Number(process.env.JOIN_RATE_LIMIT ?? 10), 60_000)
   if (filesDir) mkdirSync(filesDir, { recursive: true })
+  // Native wrappers load the bundle from the app package, so their requests
+  // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
+  // no CSRF surface on the crew LAN.
+  void fastify.register(cors, { origin: true })
   void fastify.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } })
 
   const authUser = (req: FastifyRequest): User | undefined => {

@@ -3,6 +3,7 @@ import { fileUrl } from '@inter/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 import { describeFile, fileCategory, formatBytes } from '../lib/files.ts'
+import { absoluteFileUrl, apiUrl } from '../lib/server.ts'
 import { panBy, zoomAt, zoomIdentity, ZOOM_TAP, type ZoomState } from '../lib/zoom.ts'
 
 const DOUBLE_TAP_MS = 300
@@ -21,8 +22,8 @@ export default function FileDetail() {
   const file = message?.file
   if (!message || !file) return null
 
-  const url = fileUrl(file)
-  const absoluteUrl = location.origin + url
+  const url = apiUrl(fileUrl(file))
+  const absoluteUrl = absoluteFileUrl(file)
   const category = fileCategory(file.mime)
   const author = message.authorId ? users[message.authorId] : undefined
   const authorName = message.authorId === me?.id ? 'you' : (author?.name ?? 'Unknown')
