@@ -15,7 +15,10 @@ The one document to print and keep in the production office.
 
 1. **Certificate** (calendar this — expires every 90 days):
    `deploy/cert-renew.sh` on the server box. Verify: `openssl x509 -enddate -noout -in /etc/inter/certs/fullchain.pem`
-2. **Software up to date**: `git pull && npm install && npm run build` in `/opt/inter`.
+2. **Software up to date**: `git pull && npm install && npm run build` in `/opt/inter`,
+   then restart the service. The server serves whatever `web/dist` holds at request
+   time — an old dist next to a new server binary quietly ships stale UI (clients
+   will nag "New version available" forever), so treat build + restart as one step.
 3. **Set secrets** in `/etc/systemd/system/inter.service`: `EVENT_PIN`, `LIVEKIT_KEY`/`LIVEKIT_SECRET`
    (generate with `livekit-server generate-keys`; mirror in `/etc/inter/livekit.yaml`), then
    `sudo systemctl daemon-reload`.

@@ -76,6 +76,13 @@ button {
   cursor: pointer;
 }
 
+/* Keyboard navigation is visible on every control, not just text fields
+   (which style their own :focus via border-color). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 input,
 textarea {
   font: inherit;
@@ -548,8 +555,8 @@ ul {
 .sidebar-me {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 6px;
+  padding: 12px 10px;
   border-top: 1px solid var(--border);
 }
 
@@ -571,6 +578,10 @@ ul {
 .me-status {
   font-size: 12px;
   color: var(--text-faint);
+  /* "Connected · 32 ms" must never wrap the unit onto its own line. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* -------------------------------------------------------------- channel */
@@ -1793,6 +1804,10 @@ ul {
     inset: 0;
     z-index: 40;
     background: rgba(0, 0, 0, 0.5);
+    /* A plain black scrim vanishes on the dark theme — the blur keeps the
+       "tap outside to close" affordance visible on both. */
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
   }
 
   .hamburger {
