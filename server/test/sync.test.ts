@@ -545,6 +545,73 @@ describe('admin', () => {
   })
 })
 
+describe('settings & config', () => {
+  it('serves public config and reflects an admin Wi-Fi SSID change everywhere', async () => {
+    const adminToken = await join('Alex') // first user is admin
+    const memberToken = await join('Sam')
+
+    // Public config: default empty SSID, voice enabled (livekit set in setup).
+    const initial = await (await fetch(`${baseUrl}/api/config`)).json()
+    expect(initial).toEqual({ wifiSsid: '', voiceEnabled: true })
+
+    // A member cannot change settings.
+    const denied = await app.inject({
+      method: 'PATCH',
+      url: '/api/admin/settings',
+      headers: { authorization: `Bearer ${memberToken}` },
+      payload: { wifiSsid: 'HackNet' },
+    })
+    expect(denied.statusCode).toBe(403)
+
+    // An admin can. A connected client gets a live `config` broadcast.
+    const listener = await connect(memberToken)
+    const ok = await app.inject({
+      method: 'PATCH',
+      url: '/api/admin/settings',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { wifiSsid: 'CrewNet' },
+    })
+    expect(ok.statusCode).toBe(200)
+
+    const pushed = await listener.client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'config' }> => m.type === 'config',
+    )
+    expect(pushed.config.wifiSsid).toBe('CrewNet')
+
+    // Public endpoint and a fresh welcome both show the new value.
+    const after = (await (await fetch(`${baseUrl}/api/config`)).json()) as { wifiSsid: string }
+    expect(after.wifiSsid).toBe('CrewNet')
+    const fresh = await connect(adminToken)
+    expect(fresh.welcome.config.wifiSsid).toBe('CrewNet')
+  })
+
+  it('exposes read-only server info (incl. event PIN) to admins only', async () => {
+    const adminToken = await join('Alex')
+    const memberToken = await join('Sam')
+
+    const asMember = await app.inject({
+      method: 'GET',
+      url: '/api/admin/settings',
+      headers: { authorization: `Bearer ${memberToken}` },
+    })
+    expect(asMember.statusCode).toBe(403)
+
+    const asAdmin = await app.inject({
+      method: 'GET',
+      url: '/api/admin/settings',
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    expect(asAdmin.statusCode).toBe(200)
+    const body = asAdmin.json() as {
+      settings: { wifiSsid: string }
+      serverInfo: { eventPin: string; voiceEnabled: boolean; version: string }
+    }
+    expect(body.serverInfo.eventPin).toBe(EVENT_PIN)
+    expect(body.serverInfo.voiceEnabled).toBe(true)
+    expect(body.serverInfo.version).toMatch(/\d+\.\d+\.\d+/)
+  })
+})
+
 describe('heartbeat', () => {
   it('echoes ping timestamps for client RTT measurement', async () => {
     const token = await join('Alex')

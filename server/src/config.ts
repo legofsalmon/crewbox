@@ -7,6 +7,8 @@ export const config = {
   dataDir: resolve(process.env.DATA_DIR ?? './data'),
   /** Shared PIN printed on the QR join posters. Set EVENT_PIN in production. */
   eventPin: process.env.EVENT_PIN ?? '1234',
+  /** Initial Wi-Fi SSID shown as join guidance; admins can override at runtime. */
+  wifiSsid: process.env.WIFI_SSID ?? '',
   /** Built web app to serve in production (ignored if missing, e.g. in dev). */
   webDist: resolve(process.env.WEB_DIST ?? '../web/dist'),
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */

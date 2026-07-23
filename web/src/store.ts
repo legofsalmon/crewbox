@@ -3,6 +3,7 @@ import {
   newId,
   type Channel,
   type Message,
+  type PublicConfig,
   type ServerMessage,
   type User,
   type WelcomeMessage,
@@ -23,8 +24,19 @@ import { APP_VERSION, initPwa } from './lib/pwa.ts'
 
 const TOKEN_KEY = 'inter:token'
 const THEME_KEY = 'inter:theme'
+const SSID_KEY = 'inter:wifi-ssid'
 const TYPING_TTL_MS = 4000
 const TYPING_THROTTLE_MS = 2500
+
+/** Last-known Wi-Fi SSID, cached so the offline recovery screen has it. */
+function initialConfig(): PublicConfig {
+  return { wifiSsid: localStorage.getItem(SSID_KEY) ?? '', voiceEnabled: true }
+}
+
+function rememberConfig(config: PublicConfig): void {
+  if (config.wifiSsid) localStorage.setItem(SSID_KEY, config.wifiSsid)
+  else localStorage.removeItem(SSID_KEY)
+}
 
 export interface Pending {
   clientMsgId: string
@@ -56,6 +68,8 @@ interface AppState {
   connection: Connection
   /** True once a welcome has been received this session (server was reached). */
   hasConnected: boolean
+  /** Live public settings (Wi-Fi SSID, voice availability). */
+  config: PublicConfig
   me: User | null
   users: Record<string, User>
   channels: Record<string, Channel>
@@ -209,10 +223,12 @@ export const useStore = create<AppState>()((set, get) => {
       void cache.clearChannel(channelId)
     }
 
+    rememberConfig(msg.config)
     set({
       phase: 'chat',
       connection: 'online',
       hasConnected: true,
+      config: msg.config,
       me: msg.me,
       users: Object.fromEntries(msg.users.map((u) => [u.id, u])),
       channels: Object.fromEntries(msg.channels.map((c) => [c.id, c])),
@@ -336,6 +352,10 @@ export const useStore = create<AppState>()((set, get) => {
       }
       case 'pong':
         break
+      case 'config':
+        rememberConfig(msg.config)
+        set({ config: msg.config })
+        break
       case 'error':
         if (msg.code === 'auth') {
           void get().logout()
@@ -369,6 +389,7 @@ export const useStore = create<AppState>()((set, get) => {
     phase: 'boot',
     connection: 'connecting',
     hasConnected: false,
+    config: initialConfig(),
     me: null,
     users: {},
     channels: {},
@@ -436,6 +457,15 @@ export const useStore = create<AppState>()((set, get) => {
           // no service worker support (or dev without PWA) — updates via reload
         }
       }
+      // Public config (Wi-Fi SSID, voice availability) — works pre-auth so the
+      // join and offline screens can show current guidance. Best-effort.
+      void api
+        .getConfig()
+        .then((config) => {
+          rememberConfig(config)
+          set({ config })
+        })
+        .catch(() => {})
       if (!getToken()) {
         set({ phase: 'join' })
         return

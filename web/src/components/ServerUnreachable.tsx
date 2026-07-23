@@ -1,12 +1,12 @@
 import { useStore } from '../store.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
-
-const WIFI_SSID = import.meta.env.VITE_WIFI_SSID as string | undefined
+import { effectiveSsid } from '../lib/settings.ts'
 
 /** Shown when the app can't reach the server on a cold load with no cache. */
 export default function ServerUnreachable() {
   const connection = useStore((s) => s.connection)
   const retryConnection = useStore((s) => s.retryConnection)
+  const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
   const retrying = connection === 'connecting'
 
   return (
@@ -20,7 +20,7 @@ export default function ServerUnreachable() {
         </svg>
         <h1>Can't reach the crew server</h1>
         <p>
-          Make sure you're connected to {WIFI_SSID ? <strong>{WIFI_SSID}</strong> : 'the crew Wi-Fi'}.
+          Make sure you're connected to {wifiSsid ? <strong>{wifiSsid}</strong> : 'the crew Wi-Fi'}.
           If the server is restarting, this will clear on its own.
         </p>
         <button className="center-retry" onClick={retryConnection} disabled={retrying}>

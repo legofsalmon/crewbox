@@ -2,11 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { useStore } from '../store.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
-
-const WIFI_SSID = import.meta.env.VITE_WIFI_SSID as string | undefined
+import { effectiveSsid } from '../lib/settings.ts'
 
 export default function Join() {
   const join = useStore((s) => s.join)
+  const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
   const [name, setName] = useState('')
   const [eventPin, setEventPin] = useState('')
   const [personalPin, setPersonalPin] = useState('')
@@ -23,7 +23,7 @@ export default function Join() {
       setError(
         err instanceof ApiError
           ? err.message
-          : `Can't reach the crew server. Check you're connected to ${WIFI_SSID ?? 'the crew Wi-Fi'}, then try again.`,
+          : `Can't reach the crew server. Check you're connected to ${wifiSsid ?? 'the crew Wi-Fi'}, then try again.`,
       )
     } finally {
       setBusy(false)

@@ -4,6 +4,7 @@ import {
   type Channel,
   type ClientMessage,
   type Message,
+  type PublicConfig,
   type ServerMessage,
   type User,
 } from '@inter/shared'
@@ -35,6 +36,7 @@ export class Hub {
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
+    private readonly getPublicConfig: () => PublicConfig,
   ) {}
 
   attach(wss: WebSocketServer): void {
@@ -155,6 +157,7 @@ export class Hub {
     this.send(conn.ws, {
       type: 'welcome',
       serverVersion: APP_VERSION,
+      config: this.getPublicConfig(),
       me: user,
       users: this.store.listUsers(),
       channels,
@@ -249,6 +252,11 @@ export class Hub {
   /** Announce a created or admin-edited channel to everyone connected. */
   announceChannel(channel: Channel): void {
     this.broadcastAll({ type: 'channel', channel })
+  }
+
+  /** Push updated public settings (e.g. admin changed the Wi-Fi SSID). */
+  announceConfig(): void {
+    this.broadcastAll({ type: 'config', config: this.getPublicConfig() })
   }
 
   systemMessage(channelId: string, body: string): Message {

@@ -16,6 +16,7 @@ if (!store.getChannelByName('general')) {
 const app = buildApp({
   store,
   eventPin: config.eventPin,
+  wifiSsid: config.wifiSsid,
   filesDir: join(config.dataDir, 'files'),
   livekit: config.livekit,
 })

@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
-import { newId, type User } from '@inter/shared'
+import { newId, type PublicConfig, type User } from '@inter/shared'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -46,9 +46,15 @@ const channelPatchSchema = z.object({
   retired: z.boolean().optional(),
 })
 
+const settingsPatchSchema = z.object({
+  wifiSsid: z.string().trim().max(64).optional(),
+})
+
 export interface AppDeps {
   store: Store
   eventPin: string
+  /** Initial Wi-Fi SSID default; admin can override at runtime (settings table). */
+  wifiSsid?: string
   /** Directory for uploaded files; omit to disable uploads (tests). */
   filesDir?: string
   /** LiveKit connection details; omit to disable voice. */
@@ -58,14 +64,28 @@ export interface AppDeps {
 
 export type App = FastifyInstance & { hub: Hub }
 
-export function buildApp({ store, eventPin, filesDir, livekit, logger = true }: AppDeps): App {
+export function buildApp({
+  store,
+  eventPin,
+  wifiSsid = '',
+  filesDir,
+  livekit,
+  logger = true,
+}: AppDeps): App {
   const fastify = Fastify({
     logger: logger ? { level: process.env.LOG_LEVEL ?? 'info' } : false,
     // Open WebSockets must never block shutdown — restarts have to be instant
     // and unattended on the festival box.
     forceCloseConnections: true,
   })
-  const hub = new Hub(store, fastify.log)
+
+  // Effective public settings: DB override wins over the deploy-time default.
+  const publicConfig = (): PublicConfig => ({
+    wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
+    voiceEnabled: Boolean(livekit?.url),
+  })
+
+  const hub = new Hub(store, fastify.log, publicConfig)
   // Per-IP: every phone has its own LAN IP, so 10/min only throttles
   // PIN-guessing, not a crew rush after a briefing.
   const joinLimiter = new RateLimiter(Number(process.env.JOIN_RATE_LIMIT ?? 10), 60_000)
@@ -84,6 +104,9 @@ export function buildApp({ store, eventPin, filesDir, livekit, logger = true }: 
     uptime: process.uptime(),
     ...hub.stats(),
   }))
+
+  // Public settings the pre-auth join screen and offline screen need.
+  fastify.get('/api/config', () => publicConfig())
 
   // Join doubles as login: a known name + matching personal PIN gets a new
   // session; an unknown name + correct event PIN creates the user.
@@ -290,6 +313,37 @@ export function buildApp({ store, eventPin, filesDir, livekit, logger = true }: 
       hub.systemMessage(updated.id, `#${channel.name} is now #${updated.name} (renamed by ${admin.name})`)
     }
     return { channel: updated }
+  })
+
+  // Editable settings + read-only server info for the admin panel.
+  fastify.get('/api/admin/settings', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const stats = hub.stats()
+    return {
+      settings: { wifiSsid: publicConfig().wifiSsid },
+      serverInfo: {
+        version: APP_VERSION,
+        uptimeSec: Math.round(process.uptime()),
+        connections: stats.connections,
+        onlineUsers: stats.onlineUsers,
+        voiceEnabled: Boolean(livekit?.url),
+        // Read-only: shown so admins can put the current PIN on posters.
+        eventPin,
+      },
+    }
+  })
+
+  fastify.patch('/api/admin/settings', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const parsed = settingsPatchSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    if (parsed.data.wifiSsid !== undefined) {
+      store.setSetting('wifiSsid', parsed.data.wifiSsid)
+    }
+    hub.announceConfig()
+    return { settings: { wifiSsid: publicConfig().wifiSsid } }
   })
 
   // Full JSON dump for the post-event archive.

@@ -1,4 +1,16 @@
-import type { Channel, FileMeta, Message, User } from '@inter/shared'
+import type { Channel, FileMeta, Message, PublicConfig, User } from '@inter/shared'
+
+export interface AdminSettings {
+  settings: { wifiSsid: string }
+  serverInfo: {
+    version: string
+    uptimeSec: number
+    connections: number
+    onlineUsers: number
+    voiceEnabled: boolean
+    eventPin: string
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -81,6 +93,25 @@ export function adminUpdateChannel(
   patch: { name?: string; topic?: string; retired?: boolean },
 ): Promise<{ channel: Channel }> {
   return request(`/api/admin/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+}
+
+export function getConfig(): Promise<PublicConfig> {
+  return request('/api/config')
+}
+
+export function adminGetSettings(token: string): Promise<AdminSettings> {
+  return request('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } })
+}
+
+export function adminUpdateSettings(
+  token: string,
+  patch: { wifiSsid?: string },
+): Promise<{ settings: { wifiSsid: string } }> {
+  return request('/api/admin/settings', {
     method: 'PATCH',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify(patch),

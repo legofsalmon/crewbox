@@ -71,10 +71,20 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>
 // Server → client
 // ---------------------------------------------------------------------------
 
+/** Non-sensitive settings sent to every client (admin-editable subset + info). */
+export interface PublicConfig {
+  /** Wi-Fi network name shown as join guidance; '' when unset. */
+  wifiSsid: string
+  /** Whether the server has a voice (LiveKit) backend configured. */
+  voiceEnabled: boolean
+}
+
 export interface WelcomeMessage {
   type: 'welcome'
   /** Server build string, so a client on an older build can prompt a reload. */
   serverVersion: string
+  /** Live public settings (Wi-Fi SSID, voice availability). */
+  config: PublicConfig
   me: User
   users: User[]
   channels: Channel[]
@@ -141,6 +151,12 @@ export interface PongMessage {
   t: number
 }
 
+/** Live push of updated public settings (e.g. admin changed the Wi-Fi SSID). */
+export interface ConfigMessage {
+  type: 'config'
+  config: PublicConfig
+}
+
 export interface ErrorMessage {
   type: 'error'
   code: 'auth' | 'bad_request' | 'not_found' | 'forbidden'
@@ -158,4 +174,5 @@ export type ServerMessage =
   | ChannelMessage
   | ReadStateMessage
   | PongMessage
+  | ConfigMessage
   | ErrorMessage

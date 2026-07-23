@@ -91,6 +91,14 @@ const MIGRATIONS: string[] = [
     INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
   END;
   `,
+  // v4: runtime key/value settings (admin-editable config without a redeploy).
+  `
+  CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ]
 
 export function openDb(path: string): DatabaseSync {

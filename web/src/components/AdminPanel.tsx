@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Channel, User } from '@inter/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
@@ -94,6 +94,10 @@ export default function AdminPanel() {
             </ul>
           </section>
           <section>
+            <h3 className="admin-section-title">Server</h3>
+            <ServerSection onNote={setNote} />
+          </section>
+          <section>
             <h3 className="admin-section-title">Export</h3>
             <p className="admin-hint">
               Download every user, channel and message as a JSON file for the post-event archive.
@@ -107,6 +111,99 @@ export default function AdminPanel() {
         </div>
       </div>
     </div>
+  )
+}
+
+function formatUptime(sec: number): string {
+  const d = Math.floor(sec / 86400)
+  const h = Math.floor((sec % 86400) / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
+
+function ServerSection({ onNote }: { onNote: (note: string) => void }) {
+  const [data, setData] = useState<api.AdminSettings | null>(null)
+  const [ssid, setSsid] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    api
+      .adminGetSettings(token())
+      .then((d) => {
+        if (!live) return
+        setData(d)
+        setSsid(d.settings.wifiSsid)
+      })
+      .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Could not load settings'))
+    return () => {
+      live = false
+    }
+  }, [onNote])
+
+  async function saveSsid(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const { settings } = await api.adminUpdateSettings(token(), { wifiSsid: ssid.trim() })
+      setSsid(settings.wifiSsid)
+      onNote('Wi-Fi network saved')
+    } catch (err) {
+      onNote(err instanceof api.ApiError ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const info = data?.serverInfo
+  return (
+    <>
+      <form className="admin-setting" onSubmit={(e) => void saveSsid(e)}>
+        <label htmlFor="admin-ssid">Wi-Fi network (shown as join guidance)</label>
+        <div className="admin-setting-row">
+          <input
+            id="admin-ssid"
+            value={ssid}
+            maxLength={64}
+            placeholder="e.g. CrewNet"
+            onChange={(e) => setSsid(e.target.value)}
+          />
+          <button className="admin-btn" disabled={saving || !data || ssid === data.settings.wifiSsid}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </form>
+      {info && (
+        <dl className="admin-info">
+          <div>
+            <dt>Event PIN</dt>
+            <dd>
+              {info.eventPin} <span className="admin-muted">(for posters · set via EVENT_PIN)</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd>{info.version}</dd>
+          </div>
+          <div>
+            <dt>Uptime</dt>
+            <dd>{formatUptime(info.uptimeSec)}</dd>
+          </div>
+          <div>
+            <dt>Online</dt>
+            <dd>
+              {info.onlineUsers} crew · {info.connections} connections
+            </dd>
+          </div>
+          <div>
+            <dt>Voice</dt>
+            <dd>{info.voiceEnabled ? 'Enabled' : 'Not configured'}</dd>
+          </div>
+        </dl>
+      )}
+    </>
   )
 }
 
