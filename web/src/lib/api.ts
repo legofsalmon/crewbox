@@ -42,8 +42,18 @@ export function join(input: {
   })
 }
 
-export function uploadFile(token: string, file: File): Promise<{ file: FileMeta }> {
+export function uploadFile(
+  token: string,
+  file: File,
+  image?: { width: number; height: number; thumb: Blob | null },
+): Promise<{ file: FileMeta }> {
   const form = new FormData()
+  // Fields and thumb go before the file so the server sees them first.
+  if (image) {
+    form.append('width', String(image.width))
+    form.append('height', String(image.height))
+    if (image.thumb) form.append('thumb', image.thumb, 'thumb')
+  }
   form.append('file', file)
   return request('/api/files', {
     method: 'POST',

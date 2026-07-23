@@ -22,6 +22,7 @@ import {
 import { initialVoiceState, VoiceManager, type VoiceState } from './lib/voice.ts'
 import { APP_VERSION, initPwa } from './lib/pwa.ts'
 import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
+import { measureImage } from './lib/files.ts'
 
 const TOKEN_KEY = 'inter:token'
 const THEME_KEY = 'inter:theme'
@@ -569,7 +570,8 @@ export const useStore = create<AppState>()((set, get) => {
       }
       set({ uploading: true })
       try {
-        const { file: meta } = await api.uploadFile(getToken() ?? '', file)
+        const image = await measureImage(file)
+        const { file: meta } = await api.uploadFile(getToken() ?? '', file, image ?? undefined)
         const entry: OutboxEntry = {
           clientMsgId: newId(),
           channelId,

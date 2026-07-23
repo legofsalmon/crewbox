@@ -290,6 +290,49 @@ describe('files and search', () => {
     expect(store.getFileRow(first.id)!.path).toBe(store.getFileRow(second.id)!.path)
   })
 
+  it('stores image dimensions and a client thumbnail, serving the preview', async () => {
+    const token = await join('Alex')
+
+    const form = new FormData()
+    form.append('width', '4000')
+    form.append('height', '3000')
+    form.append('thumb', new Blob(['tiny-jpeg-bytes'], { type: 'image/jpeg' }), 'thumb')
+    form.append('file', new Blob(['big-image-bytes'], { type: 'image/png' }), 'map.png')
+    const res = await fetch(`${baseUrl}/api/files`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: form,
+    })
+    expect(res.status).toBe(200)
+    const { file } = (await res.json()) as {
+      file: { id: string; width?: number; height?: number; hasThumb?: boolean }
+    }
+    expect(file.width).toBe(4000)
+    expect(file.height).toBe(3000)
+    expect(file.hasThumb).toBe(true)
+
+    const thumb = await fetch(`${baseUrl}/api/files/${file.id}/thumb`)
+    expect(thumb.status).toBe(200)
+    expect(thumb.headers.get('content-type')).toBe('image/jpeg')
+    expect(await thumb.text()).toBe('tiny-jpeg-bytes')
+
+    // Non-images never get dimensions or a preview, even if the client lies.
+    const plain = new FormData()
+    plain.append('width', '4000')
+    plain.append('height', '3000')
+    plain.append('thumb', new Blob(['bogus'], { type: 'image/jpeg' }), 'thumb')
+    plain.append('file', new Blob(['notes'], { type: 'text/plain' }), 'notes.txt')
+    const plainRes = await fetch(`${baseUrl}/api/files`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: plain,
+    })
+    const plainFile = ((await plainRes.json()) as { file: { id: string; hasThumb?: boolean } }).file
+    expect(plainFile.hasThumb).toBeUndefined()
+    const noThumb = await fetch(`${baseUrl}/api/files/${plainFile.id}/thumb`)
+    expect(noThumb.status).toBe(404)
+  })
+
   it('deletes a shared file: permissions, broadcast, welcome reconcile, dedup-safe blob', async () => {
     const adminToken = await join('Alex') // first user is admin
     const authorToken = await join('Sam')

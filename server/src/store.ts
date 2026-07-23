@@ -43,11 +43,15 @@ interface MessageRow {
   file_name: string | null
   file_mime: string | null
   file_size: number | null
+  file_width: number | null
+  file_height: number | null
+  file_thumb: string | null
 }
 
 /** messages joined with their file attachment, aliased for toMessage. */
 const MSG_SELECT = `
-  SELECT m.*, f.name AS file_name, f.mime AS file_mime, f.size AS file_size
+  SELECT m.*, f.name AS file_name, f.mime AS file_mime, f.size AS file_size,
+         f.width AS file_width, f.height AS file_height, f.thumb_path AS file_thumb
   FROM messages m LEFT JOIN files f ON f.id = m.file_id
 `
 
@@ -72,6 +76,9 @@ function toMessage(row: MessageRow): Message {
       name: row.file_name,
       mime: row.file_mime ?? 'application/octet-stream',
       size: row.file_size ?? 0,
+      width: row.file_width ?? undefined,
+      height: row.file_height ?? undefined,
+      hasThumb: row.file_thumb ? true : undefined,
     }
   }
   return message
@@ -406,6 +413,11 @@ export class Store {
     } catch {
       // Blob already gone — the DB rows are the source of truth.
     }
+    try {
+      unlinkSync(`${orphanedPath}.thumb`)
+    } catch {
+      // No thumbnail for this blob.
+    }
     return true
   }
 
@@ -450,24 +462,82 @@ export class Store {
 
   // -- files ----------------------------------------------------------------
 
-  createFile(meta: { name: string; mime: string; size: number; sha256: string; path: string }): FileMeta {
+  createFile(meta: {
+    name: string
+    mime: string
+    size: number
+    sha256: string
+    path: string
+    width?: number
+    height?: number
+    thumbPath?: string
+  }): FileMeta {
     const id = newId()
     this.db
       .prepare(
-        'INSERT INTO files (id, name, mime, size, sha256, path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        `INSERT INTO files (id, name, mime, size, sha256, path, created_at, width, height, thumb_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, meta.name, meta.mime, meta.size, meta.sha256, meta.path, Date.now())
-    return { id, name: meta.name, mime: meta.mime, size: meta.size }
+      .run(
+        id,
+        meta.name,
+        meta.mime,
+        meta.size,
+        meta.sha256,
+        meta.path,
+        Date.now(),
+        meta.width ?? null,
+        meta.height ?? null,
+        meta.thumbPath ?? null,
+      )
+    return {
+      id,
+      name: meta.name,
+      mime: meta.mime,
+      size: meta.size,
+      width: meta.width,
+      height: meta.height,
+      hasThumb: meta.thumbPath ? true : undefined,
+    }
   }
 
   getFile(id: string): FileMeta | undefined {
     const row = this.getFileRow(id)
-    return row ? { id: row.id, name: row.name, mime: row.mime, size: row.size } : undefined
+    if (!row) return undefined
+    return {
+      id: row.id,
+      name: row.name,
+      mime: row.mime,
+      size: row.size,
+      width: row.width ?? undefined,
+      height: row.height ?? undefined,
+      hasThumb: row.thumb_path ? true : undefined,
+    }
   }
 
-  getFileRow(id: string): { id: string; name: string; mime: string; size: number; path: string } | undefined {
+  getFileRow(id: string):
+    | {
+        id: string
+        name: string
+        mime: string
+        size: number
+        path: string
+        width: number | null
+        height: number | null
+        thumb_path: string | null
+      }
+    | undefined {
     return this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as
-      | { id: string; name: string; mime: string; size: number; path: string }
+      | {
+          id: string
+          name: string
+          mime: string
+          size: number
+          path: string
+          width: number | null
+          height: number | null
+          thumb_path: string | null
+        }
       | undefined
   }
 

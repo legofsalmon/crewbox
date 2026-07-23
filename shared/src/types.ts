@@ -30,6 +30,11 @@ export interface FileMeta {
   name: string
   mime: string
   size: number
+  /** Pixel dimensions, captured at upload (images only). */
+  width?: number
+  height?: number
+  /** A small JPEG preview is available at thumbUrl(). */
+  hasThumb?: boolean
 }
 
 export interface Message {
@@ -51,4 +56,9 @@ export interface Message {
 /** Download/view URL for an uploaded file. */
 export function fileUrl(file: FileMeta): string {
   return `/api/files/${file.id}/${encodeURIComponent(file.name)}`
+}
+
+/** Preview URL for an image upload (valid when hasThumb). */
+export function thumbUrl(file: FileMeta): string {
+  return `/api/files/${file.id}/thumb`
 }

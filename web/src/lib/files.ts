@@ -2,6 +2,51 @@
 
 export type FileCategory = 'image' | 'video' | 'audio' | 'pdf' | 'archive' | 'text' | 'other'
 
+export interface ImageUploadExtras {
+  width: number
+  height: number
+  /** Small JPEG preview; null when the original is already small. */
+  thumb: Blob | null
+}
+
+/** Longest edge of the preview the uploading client renders. */
+const THUMB_MAX_EDGE_PX = 1000
+const THUMB_JPEG_QUALITY = 0.82
+
+/**
+ * Measure an image and render a small preview before upload, so the message
+ * list can reserve layout (no scroll jumps) and old phones never decode a
+ * 12-megapixel photo just to draw a 400px bubble. Returns null for
+ * non-images and formats this browser can't decode (e.g. HEIC) — the upload
+ * then proceeds exactly as before.
+ */
+export async function measureImage(file: File): Promise<ImageUploadExtras | null> {
+  if (!file.type.startsWith('image/')) return null
+  try {
+    const bitmap = await createImageBitmap(file)
+    const { width, height } = bitmap
+    let thumb: Blob | null = null
+    const longest = Math.max(width, height)
+    if (longest > THUMB_MAX_EDGE_PX) {
+      const scale = THUMB_MAX_EDGE_PX / longest
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(width * scale)
+      canvas.height = Math.round(height * scale)
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+        thumb = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, 'image/jpeg', THUMB_JPEG_QUALITY),
+        )
+      }
+    }
+    bitmap.close()
+    return width > 0 && height > 0 ? { width, height, thumb } : null
+  } catch {
+    return null
+  }
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`

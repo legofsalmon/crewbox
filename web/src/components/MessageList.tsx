@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
-import { fileUrl, type FileMeta, type Message } from '@inter/shared'
+import { fileUrl, thumbUrl, type FileMeta, type Message } from '@inter/shared'
 import { useStore, type Pending } from '../store.ts'
 import { formatBytes } from '../lib/files.ts'
 import { apiUrl } from '../lib/server.ts'
@@ -55,13 +55,44 @@ function renderBody(body: string, names: string[], myName: string | undefined): 
   return nodes
 }
 
+/** Bubble box for an image with known dimensions, mirroring the CSS caps. */
+const IMAGE_MAX_W = 360
+const IMAGE_MAX_H = 300
+
 /** Attachments open the in-app detail modal; raw open/download live there. */
-function FileAttachment({ file, onOpen }: { file: FileMeta; onOpen: () => void }) {
+function FileAttachment({
+  file,
+  onOpen,
+  onImgLoad,
+}: {
+  file: FileMeta
+  onOpen: () => void
+  onImgLoad?: () => void
+}) {
   const url = apiUrl(fileUrl(file))
   if (file.mime.startsWith('image/')) {
+    // Preview when one exists; reserve the layout box up front when the
+    // dimensions are known so loading never shifts the transcript.
+    const src = file.hasThumb ? apiUrl(thumbUrl(file)) : url
+    let style: { width: string; aspectRatio: string } | undefined
+    if (file.width && file.height) {
+      const scale = Math.min(IMAGE_MAX_W / file.width, IMAGE_MAX_H / file.height, 1)
+      style = {
+        width: `${Math.round(file.width * scale)}px`,
+        aspectRatio: `${file.width} / ${file.height}`,
+      }
+    }
     return (
       <button type="button" className="msg-image-link" onClick={onOpen}>
-        <img src={url} alt={file.name} loading="lazy" className="msg-image" />
+        <img
+          src={src}
+          alt={file.name}
+          loading="lazy"
+          decoding="async"
+          className="msg-image"
+          style={style}
+          onLoad={style ? undefined : onImgLoad}
+        />
       </button>
     )
   }
@@ -168,6 +199,13 @@ export default function MessageList({ channelId }: { channelId: string }) {
     markChannelRead(channelId)
   }
 
+  // Legacy images (uploaded before dimensions were captured) still shift the
+  // layout when they load — stay glued to the bottom if we were there.
+  function onImgLoad() {
+    const el = scrollRef.current
+    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight
+  }
+
   const rows: JSX.Element[] = []
   let prevMsg: Message | null = null
   for (const msg of list) {
@@ -206,6 +244,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
         userNames={userNames}
         myName={me?.name}
         onOpenFile={() => openFileDetail(msg)}
+        onImgLoad={onImgLoad}
       />,
     )
     prevMsg = msg
@@ -271,8 +310,9 @@ function MessageRow(props: {
   userNames: string[]
   myName?: string
   onOpenFile?: () => void
+  onImgLoad?: () => void
 }) {
-  const { body, file, authorName, authorId, ts, grouped, pending, userNames, myName, onOpenFile } =
+  const { body, file, authorName, authorId, ts, grouped, pending, userNames, myName, onOpenFile, onImgLoad } =
     props
   return (
     <div className={`msg ${grouped ? 'grouped' : ''} ${pending ? 'pending' : ''}`}>
@@ -290,7 +330,7 @@ function MessageRow(props: {
           (pending || !onOpenFile ? (
             <div className="msg-body msg-file-pending">📎 {file.name}</div>
           ) : (
-            <FileAttachment file={file} onOpen={onOpenFile} />
+            <FileAttachment file={file} onOpen={onOpenFile} onImgLoad={onImgLoad} />
           ))}
         {grouped && pending && <span className="msg-state">◷</span>}
       </div>

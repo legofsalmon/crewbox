@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream, mkdirSync } from 'node:fs'
-import { rename, stat, unlink } from 'node:fs/promises'
+import { rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
@@ -15,6 +15,10 @@ import { Hub } from './hub.ts'
 import type { Store } from './store.ts'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+/** Client-generated image preview; anything bigger is silently ignored. */
+const MAX_THUMB_BYTES = 512 * 1024
+/** Sanity bound for client-reported image dimensions. */
+const MAX_IMAGE_EDGE_PX = 20_000
 
 const joinBodySchema = z.object({
   name: z
@@ -26,6 +30,12 @@ const joinBodySchema = z.object({
   eventPin: z.string().max(64).default(''),
   personalPin: z.string().regex(/^\d{4,8}$/, '4–8 digits'),
 })
+
+/** Client-reported pixel dimension: positive integer within sane bounds. */
+function parseImageDim(value: string | undefined): number | undefined {
+  const n = Number(value)
+  return Number.isInteger(n) && n > 0 && n <= MAX_IMAGE_EDGE_PX ? n : undefined
+}
 
 const historyQuerySchema = z.object({
   beforeSeq: z.coerce.number().int().positive().optional(),
@@ -122,7 +132,7 @@ export function buildApp({
   // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
   // no CSRF surface on the crew LAN.
   void fastify.register(cors, { origin: true })
-  void fastify.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } })
+  void fastify.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 2 } })
 
   const authUser = (req: FastifyRequest): User | undefined => {
     const header = req.headers.authorization
@@ -192,38 +202,97 @@ export function buildApp({
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
     if (!filesDir) return reply.code(503).send({ error: 'uploads disabled' })
-    const part = await req.file()
-    if (!part) return reply.code(400).send({ error: 'no file' })
 
-    const tmpPath = join(filesDir, `tmp-${newId()}`)
-    const hash = createHash('sha256')
-    part.file.on('data', (chunk: Buffer) => hash.update(chunk))
-    await pipeline(part.file, createWriteStream(tmpPath))
-    if (part.file.truncated) {
-      await unlink(tmpPath)
+    // Multipart layout (all but `file` optional): width/height fields and a
+    // small client-rendered `thumb` image part, then the `file` part itself.
+    const fields: Record<string, string> = {}
+    let thumb: Buffer | null = null
+    let main: { tmpPath: string; sha256: string; name: string; mime: string; truncated: boolean } | null = null
+
+    for await (const part of req.parts()) {
+      if (part.type === 'field') {
+        if (typeof part.value === 'string') fields[part.fieldname] = part.value
+        continue
+      }
+      if (part.fieldname === 'thumb' && !thumb) {
+        const chunks: Buffer[] = []
+        let bytes = 0
+        for await (const chunk of part.file) {
+          bytes += (chunk as Buffer).length
+          if (bytes > MAX_THUMB_BYTES) break
+          chunks.push(chunk as Buffer)
+        }
+        part.file.resume() // drain any oversized remainder
+        if (bytes <= MAX_THUMB_BYTES) thumb = Buffer.concat(chunks)
+        continue
+      }
+      if (part.fieldname === 'file' && !main) {
+        const tmpPath = join(filesDir, `tmp-${newId()}`)
+        const hash = createHash('sha256')
+        part.file.on('data', (chunk: Buffer) => hash.update(chunk))
+        await pipeline(part.file, createWriteStream(tmpPath))
+        main = {
+          tmpPath,
+          sha256: hash.digest('hex'),
+          // 'thumb' is reserved by the preview route below.
+          name: (part.filename === 'thumb' ? '_thumb' : part.filename || 'file').slice(0, 200),
+          mime: part.mimetype || 'application/octet-stream',
+          truncated: part.file.truncated,
+        }
+        continue
+      }
+      part.file.resume() // unknown part — drain and ignore
+    }
+
+    if (!main) return reply.code(400).send({ error: 'no file' })
+    if (main.truncated) {
+      await unlink(main.tmpPath)
       return reply.code(413).send({ error: 'file too large' })
     }
 
-    const sha256 = hash.digest('hex')
-    const { size } = await stat(tmpPath)
-    const existingPath = store.findPathBySha(sha256)
+    const { size } = await stat(main.tmpPath)
+    const existingPath = store.findPathBySha(main.sha256)
     let path: string
     if (existingPath) {
-      await unlink(tmpPath)
+      await unlink(main.tmpPath)
       path = existingPath
     } else {
-      path = join(filesDir, sha256)
-      await rename(tmpPath, path)
+      path = join(filesDir, main.sha256)
+      await rename(main.tmpPath, path)
     }
-    const name = (part.filename || 'file').slice(0, 200)
+
+    // Dimensions and thumbnails only make sense for images; ignore otherwise.
+    const isImage = main.mime.startsWith('image/')
+    const width = isImage ? parseImageDim(fields.width) : undefined
+    const height = isImage ? parseImageDim(fields.height) : undefined
+    let thumbPath: string | undefined
+    if (isImage && thumb && width && height) {
+      thumbPath = `${path}.thumb`
+      await writeFile(thumbPath, thumb)
+    }
+
     const file = store.createFile({
-      name,
-      mime: part.mimetype || 'application/octet-stream',
+      name: main.name,
+      mime: main.mime,
       size,
-      sha256,
+      sha256: main.sha256,
       path,
+      width,
+      height,
+      thumbPath,
     })
     return { file }
+  })
+
+  // Small JPEG preview generated by the uploading client (images only).
+  fastify.get('/api/files/:id/thumb', (req, reply) => {
+    const { id } = req.params as { id: string }
+    const row = store.getFileRow(id)
+    if (!row?.thumb_path) return reply.code(404).send({ error: 'not found' })
+    return reply
+      .header('content-type', 'image/jpeg')
+      .header('cache-control', 'public, max-age=31536000, immutable')
+      .send(createReadStream(row.thumb_path))
   })
 
   // Files are addressed by unguessable ids (capability URLs) so <img> tags

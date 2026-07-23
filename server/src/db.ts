@@ -109,6 +109,13 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS idx_deleted_messages_at ON deleted_messages(deleted_at);
   `,
+  // v6: image dimensions + client-generated thumbnail, so the message list
+  // can reserve layout before pixels arrive and render small previews.
+  `
+  ALTER TABLE files ADD COLUMN width INTEGER;
+  ALTER TABLE files ADD COLUMN height INTEGER;
+  ALTER TABLE files ADD COLUMN thumb_path TEXT;
+  `,
 ]
 
 export function openDb(path: string): DatabaseSync {
