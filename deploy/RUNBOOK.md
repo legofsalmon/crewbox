@@ -116,10 +116,16 @@ site-only (LiveKit doesn't traverse the tunnel); remote users are text+files.
 2. **Harden before exposing** — these matter once the join page is public:
    - `EVENT_PIN`: treat it as a real secret now, not poster decoration —
      long and rotated per event. Remote staff get it by phone/text, not email
-     blasts.
+     blasts. **Required with the tunnel**: the server refuses to start when
+     `INTER_TRUST_PROXY=1` and `EVENT_PIN` is unset, so it can never sit on
+     the internet on the public default PIN.
    - `INTER_TRUST_PROXY=1` in the service env, so rate limits see real
      client IPs through the tunnel instead of one shared localhost bucket.
    - `SESSION_TTL_DAYS` (default 60) — idle sessions expire; prunes at boot.
+   - **Personal PINs**: for an internet-exposed event tell crew to use 6–8
+     digits, not 4. A wrong-PIN lockout (10 tries per name, then a few-minute
+     cooldown, regardless of source IP) already blunts brute force, but a
+     longer PIN is the real defence.
 
 3. **Tell remote staff**: browser → `https://support.<your-domain>`, join
    with the event PIN like anyone else. They show an **office** badge in the

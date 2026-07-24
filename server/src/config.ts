@@ -41,8 +41,18 @@ export const config = {
   },
 }
 
-export function warnOnDefaults(log: { warn: (msg: string) => void }) {
+/**
+ * Guard risky defaults at startup. Returns a fatal message when the config is
+ * unsafe to run (caller should exit), or null. A tunnel-exposed server
+ * (INTER_TRUST_PROXY=1) running on the public default event PIN would let
+ * anyone on the internet register — fail closed rather than warn.
+ */
+export function warnOnDefaults(log: { warn: (msg: string) => void }): string | null {
   if (!process.env.EVENT_PIN) {
+    if (config.trustProxy) {
+      return 'EVENT_PIN is unset but INTER_TRUST_PROXY=1 (internet-exposed). Refusing to start on the public default PIN — set EVENT_PIN.'
+    }
     log.warn('EVENT_PIN not set — using default dev PIN "1234". Set EVENT_PIN in production!')
   }
+  return null
 }

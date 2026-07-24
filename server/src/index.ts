@@ -24,7 +24,11 @@ const app = buildApp({
 })
 const hub = app.hub
 
-warnOnDefaults(app.log)
+const fatal = warnOnDefaults(app.log)
+if (fatal) {
+  app.log.error(fatal)
+  process.exit(1)
+}
 
 const webIndex = join(config.webDist, 'index.html')
 if (existsSync(webIndex)) {

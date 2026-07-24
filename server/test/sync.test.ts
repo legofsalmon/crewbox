@@ -156,6 +156,53 @@ describe('join and welcome', () => {
     expect(relogin.statusCode).toBe(200)
     expect((relogin.json() as { created: boolean }).created).toBe(false)
   })
+
+  it('locks an account after repeated wrong PINs, regardless of source IP', async () => {
+    await join('Alex')
+    const guess = (ip: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/join',
+        headers: { 'x-forwarded-for': ip }, // trustProxy on in tests → distinct req.ip
+        payload: { name: 'Alex', eventPin: '', personalPin: '0000' },
+      })
+    // 10 failures from 10 different IPs — the per-IP limiter never trips, but
+    // the per-account limiter must, so a botnet can't out-scale it.
+    for (let i = 0; i < 10; i++) {
+      const r = await guess(`203.0.113.${i}`)
+      expect(r.statusCode).toBe(401)
+    }
+    const locked = await guess('203.0.113.99')
+    expect(locked.statusCode).toBe(429)
+    // A different account is unaffected.
+    const other = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      headers: { 'x-forwarded-for': '203.0.113.99' },
+      payload: { name: 'Sam', eventPin: EVENT_PIN, personalPin: '4242' },
+    })
+    expect(other.statusCode).toBe(200)
+  })
+
+  it('a correct PIN clears the account lockout counter', async () => {
+    await join('Kit')
+    // Distinct IPs so the per-IP limiter can't interfere with the per-account
+    // assertion (each request is its own IP bucket).
+    const tryPin = (pin: string, ip: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/join',
+        headers: { 'x-forwarded-for': ip },
+        payload: { name: 'Kit', eventPin: '', personalPin: pin },
+      })
+    for (let i = 0; i < 5; i++) await tryPin('0000', `198.51.100.${i}`)
+    // Correct PIN succeeds and resets the counter, so subsequent wrong tries
+    // start from zero rather than tripping the lock immediately.
+    expect((await tryPin('1234', '198.51.100.50')).statusCode).toBe(200)
+    for (let i = 0; i < 9; i++) {
+      expect((await tryPin('0000', `198.51.100.${100 + i}`)).statusCode).toBe(401)
+    }
+  })
 })
 
 describe('message delivery', () => {
@@ -198,6 +245,25 @@ describe('message delivery', () => {
     const stored = store.listAfter(general.id, 0, 100).filter((m) => m.body === 'once only')
     expect(stored).toHaveLength(1)
     expect(stored[0]!.id).toBe(first.message.id)
+  })
+
+  it('throttles a single socket flooding sends (amplification guard)', async () => {
+    const token = await join('Alex')
+    const { client, welcome } = await connect(token)
+    const general = welcome.channels.find((c) => c.name === 'general')!
+
+    // Fire 40 sends in a burst; the 30/10s cap must reject the excess.
+    for (let i = 0; i < 40; i++) {
+      client.send({ type: 'send', clientMsgId: newId(), channelId: general.id, body: `flood ${i}` })
+    }
+    const rejected = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'rejected' }> =>
+        m.type === 'rejected' && m.reason.includes('too many'),
+    )
+    expect(rejected.type).toBe('rejected')
+    // At most the cap made it into the channel, not all 40.
+    const stored = store.listAfter(general.id, 0, 200).filter((m) => m.body.startsWith('flood '))
+    expect(stored.length).toBeLessThanOrEqual(30)
   })
 })
 

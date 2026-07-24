@@ -148,9 +148,17 @@ export function buildApp({
   // Per-IP: every phone has its own LAN IP, so 10/min only throttles
   // PIN-guessing, not a crew rush after a briefing.
   const joinLimiter = new RateLimiter(Number(process.env.JOIN_RATE_LIMIT ?? 10), 60_000)
-  // Evict elapsed keys so the limiter map can't grow unbounded under an
+  // Per-ACCOUNT failed-login throttle: the IP limiter above doesn't stop a
+  // multi-IP (botnet) attack on one crew member's short personal PIN once the
+  // server is internet-exposed. Lock a name for a cooldown after 10 failures
+  // regardless of source IP; a correct PIN clears it.
+  const pinLimiter = new RateLimiter(10, 10 * 60_000)
+  // Evict elapsed keys so the limiter maps can't grow unbounded under an
   // IP-rotating brute force. unref so it never holds the process open.
-  const limiterSweep = setInterval(() => joinLimiter.sweep(), 5 * 60_000)
+  const limiterSweep = setInterval(() => {
+    joinLimiter.sweep()
+    pinLimiter.sweep()
+  }, 5 * 60_000)
   limiterSweep.unref()
   fastify.addHook('onClose', () => clearInterval(limiterSweep))
   if (filesDir) mkdirSync(filesDir, { recursive: true })
@@ -190,11 +198,19 @@ export function buildApp({
 
     const existing = store.getUserByName(name)
     if (existing) {
+      const accountKey = name.trim().toLowerCase()
+      if (pinLimiter.blocked(accountKey)) {
+        return reply
+          .code(429)
+          .send({ error: 'Too many wrong PINs for that name — wait a few minutes and try again.' })
+      }
       if (!verifyPin(personalPin, existing.pinHash)) {
+        pinLimiter.record(accountKey)
         return reply
           .code(401)
           .send({ error: 'That name is taken and the PIN doesn\'t match. Pick another name, or use your PIN.' })
       }
+      pinLimiter.clear(accountKey)
       const token = newToken()
       store.createSession(token, existing.id)
       const { pinHash: _, ...user } = existing

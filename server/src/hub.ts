@@ -24,7 +24,13 @@ interface Conn {
   alive: boolean
   /** Connection arrived from off the LAN (tunnel / public internet). */
   remote: boolean
+  /** Recent `send` timestamps, for the per-connection flood limit. */
+  sends: number[]
 }
+
+/** Max `send` messages one socket may emit per window before being throttled. */
+const SEND_LIMIT = 30
+const SEND_WINDOW_MS = 10_000
 
 /** Dotted-quad form of an IPv4-mapped IPv6 address, or the input unchanged. */
 function toV4(ip: string): string {
@@ -114,7 +120,13 @@ export class Hub {
   // -- connection lifecycle -------------------------------------------------
 
   private onConnection(ws: WebSocket, req?: IncomingMessage): void {
-    const conn: Conn = { ws, user: null, alive: true, remote: isRemoteConnection(req, this.trustProxy) }
+    const conn: Conn = {
+      ws,
+      user: null,
+      alive: true,
+      remote: isRemoteConnection(req, this.trustProxy),
+      sends: [],
+    }
     this.conns.add(conn)
 
     ws.on('pong', () => {
@@ -155,9 +167,24 @@ export class Hub {
     }
 
     switch (msg.type) {
-      case 'send':
+      case 'send': {
+        // Per-connection flood guard: one authenticated socket must not be
+        // able to fan out unbounded traffic to every client. A human hitting
+        // 30 messages / 10s is already implausibly fast.
+        const now = Date.now()
+        conn.sends = conn.sends.filter((t) => now - t < SEND_WINDOW_MS)
+        if (conn.sends.length >= SEND_LIMIT) {
+          this.send(conn.ws, {
+            type: 'rejected',
+            clientMsgId: msg.clientMsgId,
+            reason: 'slow down — too many messages',
+          })
+          break
+        }
+        conn.sends.push(now)
         this.onSend(conn, conn.user, msg)
         break
+      }
       case 'typing':
         this.onTyping(conn, conn.user, msg.channelId)
         break
