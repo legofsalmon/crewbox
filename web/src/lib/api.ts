@@ -133,6 +133,14 @@ export function deleteMessage(token: string, messageId: string): Promise<{ ok: t
   })
 }
 
+/** Permanently delete the signed-in user's own account. */
+export function deleteAccount(token: string): Promise<{ ok: true }> {
+  return request('/api/me', {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  })
+}
+
 export function adminGetSettings(token: string): Promise<AdminSettings> {
   return request('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } })
 }

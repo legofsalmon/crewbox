@@ -238,6 +238,17 @@ export function buildApp({
     return { user }
   })
 
+  // Delete your own account and personal data (App Store requirement).
+  // Sessions, DM memberships and read state are removed; authored messages
+  // are anonymized. Live sockets are dropped and the name frees up again.
+  fastify.delete('/api/me', (req, reply) => {
+    const user = authUser(req)
+    if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+    store.deleteUser(user.id)
+    hub.disconnectUser(user.id)
+    return { ok: true }
+  })
+
   // Upload a file; returns metadata to reference in a `send`. Identical
   // content is stored once (sha256 dedupe) under a fresh file id.
   fastify.post('/api/files', async (req, reply) => {

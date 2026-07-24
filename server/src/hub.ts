@@ -344,6 +344,16 @@ export class Hub {
     this.broadcastToChannel(channelId, { type: 'deleted', channelId, messageId })
   }
 
+  /** Close every socket for a user (their session tokens are now invalid). */
+  disconnectUser(userId: string): void {
+    for (const conn of this.conns) {
+      if (conn.user?.id === userId) {
+        this.send(conn.ws, { type: 'error', code: 'auth', message: 'account deleted' })
+        conn.ws.close(4001, 'account deleted')
+      }
+    }
+  }
+
   systemMessage(channelId: string, body: string): Message {
     const { message } = this.store.appendMessage({
       channelId,

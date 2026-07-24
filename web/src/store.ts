@@ -145,6 +145,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSounds: () => void
   logout: () => Promise<void>
+  deleteAccount: () => Promise<void>
 }
 
 let ws: WsClient | null = null
@@ -866,6 +867,13 @@ export const useStore = create<AppState>()((set, get) => {
       localStorage.removeItem(TOKEN_KEY)
       await cache.wipe()
       location.reload()
+    },
+
+    async deleteAccount() {
+      // Server-side removal first; if it fails, keep the account and surface it
+      // rather than wiping the device while the account still exists.
+      await api.deleteAccount(getToken() ?? '')
+      await get().logout()
     },
   }
 })

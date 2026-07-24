@@ -24,6 +24,11 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Only standard HTTPS/TLS is used (no proprietary/custom crypto), which
+	     is exempt from U.S. export compliance — declaring this lets App Store
+	     Connect skip the per-build encryption questionnaire. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Inter uses the microphone for push-to-talk crew voice.</string>
 	<key>NSAppTransportSecurity</key>

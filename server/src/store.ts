@@ -142,6 +142,23 @@ export class Store {
     return row ? toUser(row) : undefined
   }
 
+  /**
+   * Delete a user account and its personal data (App Store requirement).
+   * Sessions, DM memberships and read state go; authored messages are
+   * anonymized (author_id → NULL) rather than deleted so channel history
+   * stays continuous — they render as a former member. The name frees up
+   * for re-registration. Order matters: clear the FK references before the
+   * users row (author_id and channel_members both reference users(id)).
+   */
+  deleteUser(userId: string): void {
+    transaction(this.db, () => {
+      this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
+      this.db.prepare('DELETE FROM channel_members WHERE user_id = ?').run(userId)
+      this.db.prepare('UPDATE messages SET author_id = NULL WHERE author_id = ?').run(userId)
+      this.db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+    })
+  }
+
   listUsers(): User[] {
     const rows = this.db.prepare('SELECT * FROM users ORDER BY name').all() as unknown as UserRow[]
     return rows.map(toUser)

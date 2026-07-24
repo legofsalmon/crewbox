@@ -68,6 +68,17 @@ class TestClient {
     })
   }
 
+  waitForClose(timeoutMs = 2000): Promise<void> {
+    if (this.ws.readyState === WebSocket.CLOSED) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('waitForClose timed out')), timeoutMs)
+      this.ws.once('close', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
+  }
+
   close(): void {
     this.ws.close()
   }
@@ -202,6 +213,47 @@ describe('join and welcome', () => {
     for (let i = 0; i < 9; i++) {
       expect((await tryPin('0000', `198.51.100.${100 + i}`)).statusCode).toBe(401)
     }
+  })
+
+  it('deletes an account: token invalid, name freed, messages anonymized, socket dropped', async () => {
+    const token = await join('Alex')
+    const { client, welcome } = await connect(token)
+    const general = welcome.channels.find((c) => c.name === 'general')!
+    const myId = welcome.me.id
+
+    const clientMsgId = newId()
+    client.send({ type: 'send', clientMsgId, channelId: general.id, body: 'I was here' })
+    const ack = await client.waitFor((m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack')
+
+    // Delete the account.
+    const del = await app.inject({
+      method: 'DELETE',
+      url: '/api/me',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(del.statusCode).toBe(200)
+
+    // Live socket is closed with the auth code.
+    await client.waitForClose()
+
+    // The session token no longer authenticates.
+    const me = await app.inject({ method: 'GET', url: '/api/me', headers: { authorization: `Bearer ${token}` } })
+    expect(me.statusCode).toBe(401)
+
+    // The user row is gone but the message survives, anonymized.
+    expect(store.getUserById(myId)).toBeUndefined()
+    const msg = store.listAfter(general.id, 0, 100).find((m) => m.id === ack.message.id)
+    expect(msg?.body).toBe('I was here')
+    expect(msg?.authorId).toBeNull()
+
+    // The name is available for a fresh registration (event PIN required again).
+    const rejoin = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Alex', eventPin: EVENT_PIN, personalPin: '5555' },
+    })
+    expect(rejoin.statusCode).toBe(200)
+    expect((rejoin.json() as { created: boolean }).created).toBe(true)
   })
 })
 

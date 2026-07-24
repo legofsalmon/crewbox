@@ -368,15 +368,112 @@ ul {
   font-weight: 800;
 }
 
-.app-version {
+.sidebar-footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 6px 16px 10px;
+}
+
+.delete-account-link {
   font-size: 11px;
   color: var(--text-faint);
-  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.delete-account-link:hover {
+  color: var(--danger);
+}
+
+.app-version {
+  font-size: 11px;
+  color: var(--text-faint);
   letter-spacing: 0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* -------------------------------------------------- confirm dialog */
+.confirm-panel {
+  width: min(420px, 100%);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.confirm-panel h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.confirm-panel p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.confirm-field input {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+}
+
+.confirm-field input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.confirm-cancel,
+.confirm-delete {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.confirm-cancel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.confirm-delete {
+  background: var(--danger);
+  color: #fff;
+}
+
+.confirm-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .join-version {

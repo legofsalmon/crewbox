@@ -3,6 +3,7 @@ import { channelLabel, unreadCount, useStore } from '../store.ts'
 import { classifyLatency } from '../lib/quality.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import Avatar from './Avatar.tsx'
+import DeleteAccountDialog from './DeleteAccountDialog.tsx'
 
 /** Stroke icon in the same style as the channel-header buttons — emoji
  * render differently on every platform, SVG doesn't. */
@@ -66,6 +67,7 @@ export default function Sidebar() {
 
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const publicChannels = useMemo(
     () =>
@@ -231,9 +233,17 @@ export default function Sidebar() {
           </button>
         </div>
       )}
-      <div className="app-version" title={`Inter ${APP_VERSION}`}>
-        v{APP_VERSION}
+      <div className="sidebar-footer-links">
+        {me && (
+          <button className="delete-account-link" onClick={() => setDeleteOpen(true)}>
+            Delete account
+          </button>
+        )}
+        <span className="app-version" title={`Inter ${APP_VERSION}`}>
+          v{APP_VERSION}
+        </span>
       </div>
+      {deleteOpen && <DeleteAccountDialog onClose={() => setDeleteOpen(false)} />}
     </aside>
   )
 }
