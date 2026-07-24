@@ -19,6 +19,8 @@ const app = buildApp({
   wifiSsid: config.wifiSsid,
   filesDir: join(config.dataDir, 'files'),
   livekit: config.livekit,
+  sessionTtlMs: config.sessionTtlMs,
+  trustProxy: config.trustProxy,
 })
 const hub = app.hub
 

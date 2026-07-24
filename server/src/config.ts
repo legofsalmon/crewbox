@@ -11,6 +11,18 @@ export const config = {
   wifiSsid: process.env.WIFI_SSID ?? '',
   /** Built web app to serve in production (ignored if missing, e.g. in dev). */
   webDist: resolve(process.env.WEB_DIST ?? '../web/dist'),
+  /**
+   * Sessions idle longer than this stop working. Generous by default — a
+   * crew phone that sat in a drawer between events must not be locked out
+   * mid-festival — but finite, which matters once a tunnel exposes the
+   * server to the internet.
+   */
+  sessionTtlMs: Number(process.env.SESSION_TTL_DAYS ?? 60) * 24 * 60 * 60 * 1000,
+  /**
+   * Behind cloudflared/Caddy: trust X-Forwarded-For so rate limits key on
+   * the real client IP instead of lumping all proxied traffic together.
+   */
+  trustProxy: process.env.INTER_TRUST_PROXY === '1',
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
     /** URL the *client* uses to reach LiveKit. Empty string disables voice. */

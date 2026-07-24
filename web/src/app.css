@@ -536,6 +536,19 @@ ul {
   color: #fff;
 }
 
+/* Online from off-site (tunnel) — support staff at the office/warehouse. */
+.office-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+
 .presence-dot {
   width: 8px;
   height: 8px;

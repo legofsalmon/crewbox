@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http'
 import type { WebSocket, WebSocketServer } from 'ws'
 import {
   clientMessageSchema,
@@ -21,6 +22,31 @@ interface Conn {
   ws: WebSocket
   user: User | null
   alive: boolean
+  /** Connection arrived from off the LAN (tunnel / public internet). */
+  remote: boolean
+}
+
+/** RFC1918/loopback/link-local (v4 + mapped v6) — i.e. "on the site LAN". */
+export function isPrivateIp(ip: string): boolean {
+  const v4 = ip.replace(/^::ffff:/i, '')
+  if (/^(10\.|192\.168\.|127\.|169\.254\.)/.test(v4)) return true
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(v4)) return true
+  return ip === '::1' || /^f[cd]/i.test(ip) || /^fe80:/i.test(ip)
+}
+
+/**
+ * Off-site detection for the presence badge. Proxies (cloudflared, Caddy)
+ * connect from localhost but carry the real client IP in headers —
+ * cloudflared's CF-Connecting-IP is authoritative when present. Purely
+ * cosmetic signal: a spoofed header wins a wrong badge, nothing more.
+ */
+export function isRemoteConnection(req: IncomingMessage | undefined): boolean {
+  if (!req) return false
+  const header =
+    (req.headers['cf-connecting-ip'] as string | undefined) ??
+    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+  const ip = header ?? req.socket.remoteAddress ?? ''
+  return ip !== '' && !isPrivateIp(ip)
 }
 
 interface Logger {
@@ -33,16 +59,19 @@ export class Hub {
   private conns = new Set<Conn>()
   /** userId → number of open sockets. */
   private online = new Map<string, number>()
+  /** userId → number of open on-site (LAN) sockets, for the office badge. */
+  private localSockets = new Map<string, number>()
   private heartbeat: NodeJS.Timeout | null = null
 
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
     private readonly getPublicConfig: () => PublicConfig,
+    private readonly sessionTtlMs?: number,
   ) {}
 
   attach(wss: WebSocketServer): void {
-    wss.on('connection', (ws) => this.onConnection(ws))
+    wss.on('connection', (ws, req) => this.onConnection(ws, req))
     this.heartbeat = setInterval(() => {
       for (const conn of this.conns) {
         if (!conn.alive) {
@@ -67,8 +96,8 @@ export class Hub {
 
   // -- connection lifecycle -------------------------------------------------
 
-  private onConnection(ws: WebSocket): void {
-    const conn: Conn = { ws, user: null, alive: true }
+  private onConnection(ws: WebSocket, req?: IncomingMessage): void {
+    const conn: Conn = { ws, user: null, alive: true, remote: isRemoteConnection(req) }
     this.conns.add(conn)
 
     ws.on('pong', () => {
@@ -85,7 +114,7 @@ export class Hub {
     })
     ws.on('close', () => {
       this.conns.delete(conn)
-      if (conn.user) this.markOffline(conn.user.id)
+      if (conn.user) this.markOffline(conn.user.id, conn.remote)
     })
     ws.on('error', (err) => this.log.warn(`ws error: ${String(err)}`))
   }
@@ -133,7 +162,7 @@ export class Hub {
   // -- handlers -------------------------------------------------------------
 
   private onHello(conn: Conn, msg: Extract<ClientMessage, { type: 'hello' }>): void {
-    const user = this.store.getSessionUser(msg.token)
+    const user = this.store.getSessionUser(msg.token, this.sessionTtlMs)
     if (!user) {
       this.send(conn.ws, { type: 'error', code: 'auth', message: 'invalid session' })
       conn.ws.close(4001, 'invalid session')
@@ -165,6 +194,7 @@ export class Hub {
       channels,
       readState: this.store.getReadState(user.id),
       online: [...this.online.keys()],
+      remote: [...this.online.keys()].filter((id) => (this.localSockets.get(id) ?? 0) === 0),
       missed,
       truncated,
       deletions: this.store.listDeletions(
@@ -172,7 +202,7 @@ export class Hub {
         Date.now() - DELETION_REPLAY_MS,
       ),
     })
-    this.markOnline(user.id)
+    this.markOnline(user.id, conn.remote)
   }
 
   private onSend(conn: Conn, user: User, msg: Extract<ClientMessage, { type: 'send' }>): void {
@@ -283,20 +313,41 @@ export class Hub {
 
   // -- presence -------------------------------------------------------------
 
-  private markOnline(userId: string): void {
+  private markOnline(userId: string, remote: boolean): void {
+    const wasRemoteOnly = this.isRemoteOnly(userId)
     const count = this.online.get(userId) ?? 0
     this.online.set(userId, count + 1)
-    if (count === 0) this.broadcastAll({ type: 'presence', userId, online: true })
+    if (!remote) this.localSockets.set(userId, (this.localSockets.get(userId) ?? 0) + 1)
+    // Announce coming online, or an off-site user's on-site device appearing.
+    if (count === 0 || wasRemoteOnly !== this.isRemoteOnly(userId)) {
+      this.broadcastAll({ type: 'presence', userId, online: true, remote: this.isRemoteOnly(userId) })
+    }
   }
 
-  private markOffline(userId: string): void {
+  private markOffline(userId: string, remote: boolean): void {
+    const wasRemoteOnly = this.isRemoteOnly(userId)
     const count = this.online.get(userId) ?? 0
+    if (!remote) {
+      const local = (this.localSockets.get(userId) ?? 1) - 1
+      if (local <= 0) this.localSockets.delete(userId)
+      else this.localSockets.set(userId, local)
+    }
     if (count <= 1) {
       this.online.delete(userId)
+      this.localSockets.delete(userId)
       this.broadcastAll({ type: 'presence', userId, online: false })
     } else {
       this.online.set(userId, count - 1)
+      // Their last on-site device left; they're still on from the office.
+      if (wasRemoteOnly !== this.isRemoteOnly(userId)) {
+        this.broadcastAll({ type: 'presence', userId, online: true, remote: this.isRemoteOnly(userId) })
+      }
     }
+  }
+
+  /** Online with not a single LAN socket — i.e. joining from off-site. */
+  private isRemoteOnly(userId: string): boolean {
+    return (this.online.get(userId) ?? 0) > 0 && (this.localSockets.get(userId) ?? 0) === 0
   }
 
   // -- transport ------------------------------------------------------------

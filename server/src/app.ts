@@ -102,6 +102,10 @@ export interface AppDeps {
   filesDir?: string
   /** LiveKit connection details; omit to disable voice. */
   livekit?: { url: string; key: string; secret: string }
+  /** Sessions idle past this stop working; omit for non-expiring (tests). */
+  sessionTtlMs?: number
+  /** Trust X-Forwarded-For (behind cloudflared/Caddy) for client IPs. */
+  trustProxy?: boolean
   logger?: boolean
 }
 
@@ -113,6 +117,8 @@ export function buildApp({
   wifiSsid = '',
   filesDir,
   livekit,
+  sessionTtlMs,
+  trustProxy = false,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -120,6 +126,9 @@ export function buildApp({
     // Open WebSockets must never block shutdown — restarts have to be instant
     // and unattended on the festival box.
     forceCloseConnections: true,
+    // Behind cloudflared/Caddy the socket peer is localhost; without this
+    // every remote user shares one rate-limit bucket.
+    trustProxy,
   })
 
   // Effective public settings: DB override wins over the deploy-time default.
@@ -128,7 +137,11 @@ export function buildApp({
     voiceEnabled: Boolean(livekit?.url),
   })
 
-  const hub = new Hub(store, fastify.log, publicConfig)
+  const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs)
+  if (sessionTtlMs) {
+    const pruned = store.pruneSessions(sessionTtlMs)
+    if (pruned > 0) fastify.log.info(`pruned ${pruned} expired session(s)`)
+  }
   // Per-IP: every phone has its own LAN IP, so 10/min only throttles
   // PIN-guessing, not a crew rush after a briefing.
   const joinLimiter = new RateLimiter(Number(process.env.JOIN_RATE_LIMIT ?? 10), 60_000)
@@ -142,7 +155,7 @@ export function buildApp({
   const authUser = (req: FastifyRequest): User | undefined => {
     const header = req.headers.authorization
     if (!header?.startsWith('Bearer ')) return undefined
-    return store.getSessionUser(header.slice('Bearer '.length))
+    return store.getSessionUser(header.slice('Bearer '.length), sessionTtlMs)
   }
 
   fastify.get('/api/health', () => ({

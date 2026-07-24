@@ -88,3 +88,42 @@ vibrate on a high-priority channel.
 5. iPhones: TestFlight (Apple account required) — open `native/ios/App` in
    Xcode, set your team, Product → Archive → Distribute. The PWA remains the
    zero-setup iOS path.
+
+## Remote support access (optional — needs internet at the site)
+
+Lets office/warehouse staff join over the internet to answer questions and
+source assets. The server stays on the site box: if the uplink dies, the
+festival keeps chatting and only remote folks drop off. Voice stays
+site-only (LiveKit doesn't traverse the tunnel); remote users are text+files.
+
+1. **Expose the server with a Cloudflare Tunnel** (free, no inbound ports):
+   - One-time, at home: `cloudflared tunnel login`, then
+     `cloudflared tunnel create inter` and add a DNS route:
+     `cloudflared tunnel route dns inter support.<your-domain>`.
+   - Config `/etc/cloudflared/config.yml`:
+     ```yaml
+     tunnel: inter
+     credentials-file: /etc/cloudflared/<tunnel-id>.json
+     ingress:
+       - hostname: support.<your-domain>
+         service: http://localhost:8787
+       - service: http_status:404
+     ```
+   - `sudo cloudflared service install` (or use `deploy/systemd/inter-tunnel.service`).
+   - Ad-hoc alternative (no account, random URL, great for testing):
+     `cloudflared tunnel --url http://localhost:8787`.
+
+2. **Harden before exposing** — these matter once the join page is public:
+   - `EVENT_PIN`: treat it as a real secret now, not poster decoration —
+     long and rotated per event. Remote staff get it by phone/text, not email
+     blasts.
+   - `INTER_TRUST_PROXY=1` in the service env, so rate limits see real
+     client IPs through the tunnel instead of one shared localhost bucket.
+   - `SESSION_TTL_DAYS` (default 60) — idle sessions expire; prunes at boot.
+
+3. **Tell remote staff**: browser → `https://support.<your-domain>`, join
+   with the event PIN like anyone else. They show an **office** badge in the
+   sidebar so site crew know who's not physically around. A `#support`
+   channel keeps asset-sourcing chatter out of `#general`.
+
+4. **Kill switch**: stop the tunnel service. Site chat is untouched.

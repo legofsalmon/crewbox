@@ -77,6 +77,8 @@ interface AppState {
   users: Record<string, User>
   channels: Record<string, Channel>
   online: Record<string, boolean>
+  /** Online with no on-site connection — joining from the office/warehouse. */
+  remoteUsers: Record<string, boolean>
   readState: Record<string, number>
   /** Highest seq per channel that @-mentions me; unseen when > readState. */
   mentionSeqs: Record<string, number>
@@ -292,6 +294,7 @@ export const useStore = create<AppState>()((set, get) => {
       users: Object.fromEntries(msg.users.map((u) => [u.id, u])),
       channels: Object.fromEntries(msg.channels.map((c) => [c.id, c])),
       online: Object.fromEntries(msg.online.map((id) => [id, true])),
+      remoteUsers: Object.fromEntries((msg.remote ?? []).map((id) => [id, true])),
       readState,
       messages,
       // Replay (or the truncated-channel reset) heals any search-jump gap.
@@ -382,7 +385,13 @@ export const useStore = create<AppState>()((set, get) => {
         break
       }
       case 'presence':
-        set({ online: { ...get().online, [msg.userId]: msg.online } })
+        set({
+          online: { ...get().online, [msg.userId]: msg.online },
+          remoteUsers: {
+            ...get().remoteUsers,
+            [msg.userId]: msg.online ? (msg.remote ?? false) : false,
+          },
+        })
         break
       case 'typing': {
         const typing = { ...get().typing }
@@ -470,6 +479,7 @@ export const useStore = create<AppState>()((set, get) => {
     users: {},
     channels: {},
     online: {},
+    remoteUsers: {},
     readState: {},
     mentionSeqs: {},
     messages: {},

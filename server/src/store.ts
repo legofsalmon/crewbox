@@ -133,17 +133,27 @@ export class Store {
       .run(token, userId, now, now)
   }
 
-  getSessionUser(token: string): User | undefined {
+  getSessionUser(token: string, ttlMs?: number): User | undefined {
+    const cutoff = ttlMs ? Date.now() - ttlMs : 0
     const row = this.db
       .prepare(
-        `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`,
+        `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token = ? AND s.last_seen >= ?`,
       )
-      .get(token) as UserRow | undefined
+      .get(token, cutoff) as UserRow | undefined
     return row ? toUser(row) : undefined
   }
 
   touchSession(token: string): void {
     this.db.prepare('UPDATE sessions SET last_seen = ? WHERE token = ?').run(Date.now(), token)
+  }
+
+  /** Drop sessions idle past the TTL; run at startup so the table can't grow forever. */
+  pruneSessions(ttlMs: number): number {
+    const { changes } = this.db
+      .prepare('DELETE FROM sessions WHERE last_seen < ?')
+      .run(Date.now() - ttlMs)
+    return Number(changes)
   }
 
   // -- channels -------------------------------------------------------------

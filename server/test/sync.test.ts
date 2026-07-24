@@ -7,6 +7,7 @@ import { WebSocket } from 'ws'
 import { newId, type ServerMessage, type WelcomeMessage } from '@inter/shared'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
+import { isPrivateIp } from '../src/hub.ts'
 import { attachWs, buildApp, type App } from '../src/app.ts'
 
 const EVENT_PIN = '9999'
@@ -24,8 +25,8 @@ class TestClient {
   received: ServerMessage[] = []
   private waiters: { predicate: (m: ServerMessage) => boolean; resolve: (m: ServerMessage) => void }[] = []
 
-  constructor(url: string) {
-    this.ws = new WebSocket(url)
+  constructor(url: string, headers?: Record<string, string>) {
+    this.ws = new WebSocket(url, { headers })
     this.ws.on('message', (data) => {
       const msg = JSON.parse(String(data)) as ServerMessage
       this.received.push(msg)
@@ -81,8 +82,12 @@ async function join(name: string): Promise<string> {
   return (res.json() as { token: string }).token
 }
 
-async function connect(token: string, cursors: Record<string, number> = {}): Promise<{ client: TestClient; welcome: WelcomeMessage }> {
-  const client = new TestClient(wsUrl)
+async function connect(
+  token: string,
+  cursors: Record<string, number> = {},
+  headers?: Record<string, string>,
+): Promise<{ client: TestClient; welcome: WelcomeMessage }> {
+  const client = new TestClient(wsUrl, headers)
   await client.open()
   client.send({ type: 'hello', token, cursors })
   const welcome = await client.waitFor((m): m is WelcomeMessage => m.type === 'welcome')
@@ -524,6 +529,46 @@ describe('files and search', () => {
     const successor = store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: 'stage two lineup' }).message
     expect(store.searchMessages('spill', 10)).toEqual([])
     expect(store.searchMessages('lineup', 10).map((m) => m.id)).toEqual([successor.id])
+  })
+})
+
+describe('remote access', () => {
+  it('classifies LAN vs public addresses', () => {
+    for (const ip of ['10.0.2.2', '192.168.8.14', '172.20.1.9', '127.0.0.1', '::1', '::ffff:192.168.1.2', 'fe80::1']) {
+      expect(isPrivateIp(ip), ip).toBe(true)
+    }
+    for (const ip of ['203.0.113.9', '8.8.8.8', '::ffff:203.0.113.9', '2001:db8::1', '172.32.0.1']) {
+      expect(isPrivateIp(ip), ip).toBe(false)
+    }
+  })
+
+  it('expires idle sessions past the TTL and prunes them', async () => {
+    const token = await join('Alex')
+    expect(store.getSessionUser(token, 60_000)?.name).toBe('Alex')
+    // Age the session two minutes; a one-minute TTL must reject it.
+    db.prepare('UPDATE sessions SET last_seen = ?').run(Date.now() - 120_000)
+    expect(store.getSessionUser(token, 60_000)).toBeUndefined()
+    expect(store.getSessionUser(token)).toBeDefined() // no TTL → still valid
+    expect(store.pruneSessions(60_000)).toBe(1)
+    expect(store.getSessionUser(token)).toBeUndefined()
+  })
+
+  it('marks users connected only from off-site, clearing when a LAN socket appears', async () => {
+    const officeToken = await join('Warehouse')
+    const siteToken = await join('Sitey')
+    // Off-site: public client IP via the header cloudflared sets.
+    const office = await connect(officeToken, {}, { 'cf-connecting-ip': '203.0.113.9' })
+    const site = await connect(siteToken)
+    expect(site.welcome.remote).toContain(office.welcome.me.id)
+    expect(site.welcome.remote).not.toContain(site.welcome.me.id)
+
+    // The office user's phone joins the site Wi-Fi → badge clears live.
+    await connect(officeToken)
+    const update = await site.client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'presence' }> =>
+        m.type === 'presence' && m.userId === office.welcome.me.id && m.remote === false,
+    )
+    expect(update.online).toBe(true)
   })
 })
 

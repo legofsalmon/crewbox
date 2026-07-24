@@ -92,6 +92,12 @@ export interface WelcomeMessage {
   readState: Record<string, number>
   /** userIds currently connected. */
   online: string[]
+  /**
+   * userIds connected only from off-site (via the internet tunnel, no LAN
+   * socket) — the sidebar shows these as "office" so crew know who is
+   * physically around. Optional: older servers omit it.
+   */
+  remote?: string[]
   /** Messages newer than the client's cursors, ascending by (channel, seq). */
   missed: Message[]
   /** Channels where `missed` was truncated; client should refetch history. */
@@ -123,6 +129,8 @@ export interface PresenceMessage {
   type: 'presence'
   userId: string
   online: boolean
+  /** True when every open connection for this user is off-site. */
+  remote?: boolean
 }
 
 export interface TypingMessage {

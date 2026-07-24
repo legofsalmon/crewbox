@@ -48,6 +48,7 @@ export default function Sidebar() {
   const users = useStore((s) => s.users)
   const channels = useStore((s) => s.channels)
   const online = useStore((s) => s.online)
+  const remoteUsers = useStore((s) => s.remoteUsers)
   const readState = useStore((s) => s.readState)
   const mentionSeqs = useStore((s) => s.mentionSeqs)
   const activeChannelId = useStore((s) => s.activeChannelId)
@@ -166,11 +167,16 @@ export default function Sidebar() {
               <li key={user.id}>
                 <button
                   className={`row ${dmId && dmId === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-                  aria-label={`Message ${user.name}${online[user.id] ? ' (online)' : ''}${unread ? `, ${unread} unread` : ''}`}
+                  aria-label={`Message ${user.name}${online[user.id] ? (remoteUsers[user.id] ? ' (online remotely)' : ' (online)') : ''}${unread ? `, ${unread} unread` : ''}`}
                   onClick={() => openDm(user.id)}
                 >
                   <span className={`presence-dot ${online[user.id] ? 'on' : ''}`} />
                   <span className="row-name">{user.name}</span>
+                  {online[user.id] && remoteUsers[user.id] && (
+                    <span className="office-badge" title="Joining from off-site">
+                      office
+                    </span>
+                  )}
                   {/* A DM unread is always personal — mention styling. */}
                   {unread > 0 && <span className="badge badge-mention">{unread > 99 ? '99+' : unread}</span>}
                 </button>
