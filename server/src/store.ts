@@ -55,6 +55,39 @@ const MSG_SELECT = `
   FROM messages m LEFT JOIN files f ON f.id = m.file_id
 `
 
+/** A row of the `files` table. */
+interface FileRow {
+  id: string
+  name: string
+  mime: string
+  size: number
+  path: string
+  width: number | null
+  height: number | null
+  thumb_path: string | null
+}
+
+/** The single place that maps raw file columns to the wire FileMeta shape. */
+function toFileMeta(f: {
+  id: string
+  name: string
+  mime: string | null
+  size: number | null
+  width: number | null
+  height: number | null
+  thumb: string | null
+}): FileMeta {
+  return {
+    id: f.id,
+    name: f.name,
+    mime: f.mime ?? 'application/octet-stream',
+    size: f.size ?? 0,
+    width: f.width ?? undefined,
+    height: f.height ?? undefined,
+    hasThumb: f.thumb ? true : undefined,
+  }
+}
+
 function toUser(row: UserRow): User {
   return { id: row.id, name: row.name, role: row.role as Role, createdAt: row.created_at }
 }
@@ -71,15 +104,15 @@ function toMessage(row: MessageRow): Message {
     createdAt: row.created_at,
   }
   if (row.file_id && row.file_name !== null) {
-    message.file = {
+    message.file = toFileMeta({
       id: row.file_id,
       name: row.file_name,
-      mime: row.file_mime ?? 'application/octet-stream',
-      size: row.file_size ?? 0,
-      width: row.file_width ?? undefined,
-      height: row.file_height ?? undefined,
-      hasThumb: row.file_thumb ? true : undefined,
-    }
+      mime: row.file_mime,
+      size: row.file_size,
+      width: row.file_width,
+      height: row.file_height,
+      thumb: row.file_thumb,
+    })
   }
   return message
 }
@@ -508,54 +541,25 @@ export class Store {
         meta.height ?? null,
         meta.thumbPath ?? null,
       )
-    return {
+    return toFileMeta({
       id,
       name: meta.name,
       mime: meta.mime,
       size: meta.size,
-      width: meta.width,
-      height: meta.height,
-      hasThumb: meta.thumbPath ? true : undefined,
-    }
+      width: meta.width ?? null,
+      height: meta.height ?? null,
+      thumb: meta.thumbPath ?? null,
+    })
   }
 
   getFile(id: string): FileMeta | undefined {
     const row = this.getFileRow(id)
-    if (!row) return undefined
-    return {
-      id: row.id,
-      name: row.name,
-      mime: row.mime,
-      size: row.size,
-      width: row.width ?? undefined,
-      height: row.height ?? undefined,
-      hasThumb: row.thumb_path ? true : undefined,
-    }
+    return row ? toFileMeta({ ...row, thumb: row.thumb_path }) : undefined
   }
 
-  getFileRow(id: string):
-    | {
-        id: string
-        name: string
-        mime: string
-        size: number
-        path: string
-        width: number | null
-        height: number | null
-        thumb_path: string | null
-      }
-    | undefined {
+  getFileRow(id: string): FileRow | undefined {
     return this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as
-      | {
-          id: string
-          name: string
-          mime: string
-          size: number
-          path: string
-          width: number | null
-          height: number | null
-          thumb_path: string | null
-        }
+      | FileRow
       | undefined
   }
 

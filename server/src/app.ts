@@ -127,8 +127,11 @@ export function buildApp({
     // and unattended on the festival box.
     forceCloseConnections: true,
     // Behind cloudflared/Caddy the socket peer is localhost; without this
-    // every remote user shares one rate-limit bucket.
-    trustProxy,
+    // every remote user shares one rate-limit bucket. Trust exactly ONE hop
+    // (the tunnel), never trust:true — trust-all would take the left-most,
+    // client-supplied X-Forwarded-For entry as req.ip, letting anyone forge
+    // a fresh IP per request and walk straight past the PIN-guess limiter.
+    trustProxy: trustProxy ? 1 : false,
   })
 
   // Effective public settings: DB override wins over the deploy-time default.
@@ -137,7 +140,7 @@ export function buildApp({
     voiceEnabled: Boolean(livekit?.url),
   })
 
-  const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs)
+  const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy)
   if (sessionTtlMs) {
     const pruned = store.pruneSessions(sessionTtlMs)
     if (pruned > 0) fastify.log.info(`pruned ${pruned} expired session(s)`)
@@ -145,6 +148,11 @@ export function buildApp({
   // Per-IP: every phone has its own LAN IP, so 10/min only throttles
   // PIN-guessing, not a crew rush after a briefing.
   const joinLimiter = new RateLimiter(Number(process.env.JOIN_RATE_LIMIT ?? 10), 60_000)
+  // Evict elapsed keys so the limiter map can't grow unbounded under an
+  // IP-rotating brute force. unref so it never holds the process open.
+  const limiterSweep = setInterval(() => joinLimiter.sweep(), 5 * 60_000)
+  limiterSweep.unref()
+  fastify.addHook('onClose', () => clearInterval(limiterSweep))
   if (filesDir) mkdirSync(filesDir, { recursive: true })
   // Native wrappers load the bundle from the app package, so their requests
   // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
@@ -235,13 +243,17 @@ export function buildApp({
       if (part.fieldname === 'thumb' && !thumb) {
         const chunks: Buffer[] = []
         let bytes = 0
+        let over = false
+        // Consume the WHOLE part — busboy won't emit the next part until this
+        // stream ends. `break` here would call the iterator's return() and
+        // destroy the stream, stalling the following `file` part; instead we
+        // read to completion and just stop retaining bytes once over the cap.
         for await (const chunk of part.file) {
           bytes += (chunk as Buffer).length
-          if (bytes > MAX_THUMB_BYTES) break
-          chunks.push(chunk as Buffer)
+          if (bytes > MAX_THUMB_BYTES) over = true
+          if (!over) chunks.push(chunk as Buffer)
         }
-        part.file.resume() // drain any oversized remainder
-        if (bytes <= MAX_THUMB_BYTES) thumb = Buffer.concat(chunks)
+        if (!over) thumb = Buffer.concat(chunks)
         continue
       }
       if (part.fieldname === 'file' && !main) {

@@ -1,5 +1,11 @@
 import { resolve } from 'node:path'
 
+/** Parse a positive-integer day count, falling back to `fallback` on junk/≤0. */
+function positiveDays(value: string | undefined, fallback: number): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
 export const config = {
   host: process.env.HOST ?? '0.0.0.0',
   // Deliberately not the generic PORT — dev harnesses set that for the web app.
@@ -15,9 +21,12 @@ export const config = {
    * Sessions idle longer than this stop working. Generous by default — a
    * crew phone that sat in a drawer between events must not be locked out
    * mid-festival — but finite, which matters once a tunnel exposes the
-   * server to the internet.
+   * server to the internet. A malformed or non-positive value falls back to
+   * the default rather than silently disabling expiry (NaN would read as
+   * "never expire", the opposite of what an operator hardening a public
+   * server intends).
    */
-  sessionTtlMs: Number(process.env.SESSION_TTL_DAYS ?? 60) * 24 * 60 * 60 * 1000,
+  sessionTtlMs: positiveDays(process.env.SESSION_TTL_DAYS, 60) * 24 * 60 * 60 * 1000,
   /**
    * Behind cloudflared/Caddy: trust X-Forwarded-For so rate limits key on
    * the real client IP instead of lumping all proxied traffic together.

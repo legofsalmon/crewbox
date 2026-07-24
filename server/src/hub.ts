@@ -26,26 +26,42 @@ interface Conn {
   remote: boolean
 }
 
+/** Dotted-quad form of an IPv4-mapped IPv6 address, or the input unchanged. */
+function toV4(ip: string): string {
+  const dotted = ip.replace(/^::ffff:/i, '')
+  if (dotted !== ip && /^\d+\.\d+\.\d+\.\d+$/.test(dotted)) return dotted
+  // Hex mapped form, e.g. ::ffff:c0a8:0164 → 192.168.1.100.
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip)
+  if (hex) {
+    const hi = parseInt(hex[1]!, 16)
+    const lo = parseInt(hex[2]!, 16)
+    return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
+  }
+  return ip
+}
+
 /** RFC1918/loopback/link-local (v4 + mapped v6) — i.e. "on the site LAN". */
 export function isPrivateIp(ip: string): boolean {
-  const v4 = ip.replace(/^::ffff:/i, '')
+  const v4 = toV4(ip)
   if (/^(10\.|192\.168\.|127\.|169\.254\.)/.test(v4)) return true
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(v4)) return true
   return ip === '::1' || /^f[cd]/i.test(ip) || /^fe80:/i.test(ip)
 }
 
 /**
- * Off-site detection for the presence badge. Proxies (cloudflared, Caddy)
- * connect from localhost but carry the real client IP in headers —
- * cloudflared's CF-Connecting-IP is authoritative when present. Purely
- * cosmetic signal: a spoofed header wins a wrong badge, nothing more.
+ * Off-site detection for the presence badge. Forwarded headers are only
+ * honoured when the deploy actually sits behind a trusted proxy (trustProxy);
+ * on a pure-LAN deploy they're ignored so a crew member can't spoof an
+ * 'office' badge with a fake CF-Connecting-IP. Purely cosmetic either way —
+ * a wrong badge is the worst a spoof achieves.
  */
-export function isRemoteConnection(req: IncomingMessage | undefined): boolean {
+export function isRemoteConnection(req: IncomingMessage | undefined, trustProxy = false): boolean {
   if (!req) return false
-  const header =
-    (req.headers['cf-connecting-ip'] as string | undefined) ??
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
-  const ip = header ?? req.socket.remoteAddress ?? ''
+  const forwarded = trustProxy
+    ? ((req.headers['cf-connecting-ip'] as string | undefined) ??
+      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim())
+    : undefined
+  const ip = forwarded ?? req.socket.remoteAddress ?? ''
   return ip !== '' && !isPrivateIp(ip)
 }
 
@@ -68,6 +84,7 @@ export class Hub {
     private readonly log: Logger,
     private readonly getPublicConfig: () => PublicConfig,
     private readonly sessionTtlMs?: number,
+    private readonly trustProxy = false,
   ) {}
 
   attach(wss: WebSocketServer): void {
@@ -97,7 +114,7 @@ export class Hub {
   // -- connection lifecycle -------------------------------------------------
 
   private onConnection(ws: WebSocket, req?: IncomingMessage): void {
-    const conn: Conn = { ws, user: null, alive: true, remote: isRemoteConnection(req) }
+    const conn: Conn = { ws, user: null, alive: true, remote: isRemoteConnection(req, this.trustProxy) }
     this.conns.add(conn)
 
     ws.on('pong', () => {

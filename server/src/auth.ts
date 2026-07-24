@@ -38,4 +38,16 @@ export class RateLimiter {
     this.hits.set(key, recent)
     return true
   }
+
+  /**
+   * Drop keys whose window has fully elapsed. Without this the map grows for
+   * the process lifetime — one entry per distinct IP, unbounded under an
+   * IP-rotating brute force. Call periodically.
+   */
+  sweep(): void {
+    const cutoff = Date.now() - this.windowMs
+    for (const [key, times] of this.hits) {
+      if (times.every((t) => t < cutoff)) this.hits.delete(key)
+    }
+  }
 }

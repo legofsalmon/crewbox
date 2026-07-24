@@ -7,7 +7,8 @@ import { WebSocket } from 'ws'
 import { newId, type ServerMessage, type WelcomeMessage } from '@inter/shared'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
-import { isPrivateIp } from '../src/hub.ts'
+import { isPrivateIp, isRemoteConnection } from '../src/hub.ts'
+import type { IncomingMessage } from 'node:http'
 import { attachWs, buildApp, type App } from '../src/app.ts'
 
 const EVENT_PIN = '9999'
@@ -105,6 +106,9 @@ beforeEach(async () => {
     eventPin: EVENT_PIN,
     filesDir,
     livekit: { url: 'ws://localhost:7880', key: 'devkey', secret: 'secret' },
+    // Behind-a-proxy config so the office-badge presence test can exercise
+    // forwarded-header handling; the pure-LAN ignore path is unit-tested below.
+    trustProxy: true,
     logger: false,
   })
   await app.listen({ host: '127.0.0.1', port: 0 })
@@ -364,6 +368,28 @@ describe('files and search', () => {
     expect(noThumb.status).toBe(404)
   })
 
+  it('accepts the upload but drops the thumbnail when it exceeds the cap', async () => {
+    const token = await join('Alex')
+    // 600 KB thumb > MAX_THUMB_BYTES (512 KB): the file must still upload
+    // (breaking the thumb stream must not stall the following file part).
+    const form = new FormData()
+    form.append('width', '2000')
+    form.append('height', '1500')
+    form.append('thumb', new Blob(['x'.repeat(600 * 1024)], { type: 'image/jpeg' }), 'thumb')
+    form.append('file', new Blob(['real-photo-bytes'], { type: 'image/png' }), 'photo.png')
+    const res = await fetch(`${baseUrl}/api/files`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: form,
+    })
+    expect(res.status).toBe(200)
+    const { file } = (await res.json()) as { file: { id: string; width?: number; hasThumb?: boolean } }
+    expect(file.width).toBe(2000) // dimensions still recorded
+    expect(file.hasThumb).toBeUndefined() // oversized thumb dropped
+    const served = await fetch(`${baseUrl}/api/files/${file.id}/photo.png`)
+    expect(await served.text()).toBe('real-photo-bytes') // the file itself survived
+  })
+
   it('deletes a shared file: permissions, broadcast, welcome reconcile, dedup-safe blob', async () => {
     const adminToken = await join('Alex') // first user is admin
     const authorToken = await join('Sam')
@@ -533,13 +559,27 @@ describe('files and search', () => {
 })
 
 describe('remote access', () => {
-  it('classifies LAN vs public addresses', () => {
-    for (const ip of ['10.0.2.2', '192.168.8.14', '172.20.1.9', '127.0.0.1', '::1', '::ffff:192.168.1.2', 'fe80::1']) {
+  it('classifies LAN vs public addresses (incl. hex-mapped IPv6)', () => {
+    for (const ip of [
+      '10.0.2.2', '192.168.8.14', '172.20.1.9', '127.0.0.1', '::1',
+      '::ffff:192.168.1.2', '::ffff:c0a8:0164', 'fe80::1', // c0a8:0164 = 192.168.1.100
+    ]) {
       expect(isPrivateIp(ip), ip).toBe(true)
     }
-    for (const ip of ['203.0.113.9', '8.8.8.8', '::ffff:203.0.113.9', '2001:db8::1', '172.32.0.1']) {
+    for (const ip of ['203.0.113.9', '8.8.8.8', '::ffff:203.0.113.9', '::ffff:cb00:7109', '2001:db8::1', '172.32.0.1']) {
       expect(isPrivateIp(ip), ip).toBe(false)
     }
+  })
+
+  it('only trusts forwarded IP headers when trustProxy is set', () => {
+    const fake = (headers: Record<string, string>, remoteAddress: string) =>
+      ({ headers, socket: { remoteAddress } }) as unknown as IncomingMessage
+    // Pure-LAN deploy (trustProxy off): a spoofed public header is ignored,
+    // so a crew member can't forge an 'office' badge — socket addr wins.
+    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '8.8.8.8' }, '192.168.1.5'), false)).toBe(false)
+    // Behind a trusted proxy: the forwarded client IP is honoured.
+    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '8.8.8.8' }, '127.0.0.1'), true)).toBe(true)
+    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '192.168.1.5' }, '127.0.0.1'), true)).toBe(false)
   })
 
   it('expires idle sessions past the TTL and prunes them', async () => {
