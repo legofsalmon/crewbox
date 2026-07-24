@@ -198,8 +198,18 @@ export const useStore = create<AppState>()((set, get) => {
       byChannel.set(m.channelId, list)
     }
     for (const [channelId, list] of byChannel) {
-      messages[channelId] = mergeMessages(messages[channelId], list)
-      const lastSeq = messages[channelId].at(-1)?.seq ?? 0
+      // While a channel shows a detached search-jump block (historyGapped),
+      // don't splice live traffic onto it — that would render a brand-new
+      // message directly under days-old context with no gap marker. The
+      // block stays intact; returnToLatest refetches the real tail. We still
+      // bump lastSeq (so the "Jump to latest" pill and unread counts update)
+      // and cache below (the cache holds the true contiguous tail, untouched
+      // by the gapped view).
+      if (!state.historyGapped[channelId]) {
+        messages[channelId] = mergeMessages(messages[channelId], list)
+      }
+      const incomingMax = list.reduce((mx, m) => Math.max(mx, m.seq), 0)
+      const lastSeq = Math.max(incomingMax, messages[channelId]?.at(-1)?.seq ?? 0)
       const channel = channels[channelId]
       if (channel && lastSeq > channel.lastSeq) {
         channels[channelId] = { ...channel, lastSeq }
@@ -209,7 +219,7 @@ export const useStore = create<AppState>()((set, get) => {
       }
     }
     set(mentionsChanged ? { messages, pending, channels, mentionSeqs } : { messages, pending, channels })
-    if (mentionsChanged) persistSnapshot()
+    if (mentionsChanged) schedulePersistSnapshot()
     for (const clientMsgId of settled) void cache.deleteOutbox(clientMsgId)
     void cache.saveMessages(incoming)
   }
@@ -241,6 +251,18 @@ export const useStore = create<AppState>()((set, get) => {
       readState,
       mentionSeqs,
     })
+  }
+
+  // Coalesce snapshot writes on a trailing timer: a burst of @mentions (or an
+  // @all) would otherwise re-serialize the whole users+channels roster into
+  // IndexedDB per message on low-end phones.
+  let snapshotTimer: ReturnType<typeof setTimeout> | null = null
+  function schedulePersistSnapshot(): void {
+    if (snapshotTimer) return
+    snapshotTimer = setTimeout(() => {
+      snapshotTimer = null
+      persistSnapshot()
+    }, 1000)
   }
 
   function markRead(channelId: string, seq: number): void {
@@ -685,8 +707,14 @@ export const useStore = create<AppState>()((set, get) => {
           return
         }
         const earliestHeld = held.find((m) => m.seq > 0)?.seq
-        if (earliestHeld !== undefined && ctx.at(-1)!.seq >= earliestHeld - 1) {
-          // Context touches what we hold — a plain contiguous extension.
+        // Only a plain contiguous extension when we hold the live tail (not an
+        // already-detached block) AND the context reaches it — otherwise
+        // merging would splice a second hidden gap into the held block.
+        if (
+          !get().historyGapped[channelId] &&
+          earliestHeld !== undefined &&
+          ctx.at(-1)!.seq >= earliestHeld - 1
+        ) {
           set({
             messages: { ...get().messages, [channelId]: mergeMessages(get().messages[channelId], ctx) },
           })
@@ -702,6 +730,11 @@ export const useStore = create<AppState>()((set, get) => {
         }
       }
       set({ activeChannelId: channelId, sidebarOpen: false, jumpTarget: { channelId, seq } })
+      // Opening a channel normally marks it read (the old setActiveChannel
+      // path did); preserve that for a contiguous jump. When gapped we're
+      // viewing detached history, so leave unread state — the "Jump to
+      // latest" pill signals there's newer traffic below.
+      if (!get().historyGapped[channelId]) get().markChannelRead(channelId)
     },
 
     clearJumpTarget() {

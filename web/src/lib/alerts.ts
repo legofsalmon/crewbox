@@ -64,5 +64,9 @@ export function isMentioned(body: string, myName: string | undefined): boolean {
   const lower = body.toLowerCase()
   if (/@(all|everyone|channel)\b/.test(lower)) return true
   if (!myName) return false
-  return lower.includes(`@${myName.toLowerCase()}`)
+  // Require a non-alphanumeric boundary after the name so "@Sammy" doesn't
+  // mention "Sam". Names can contain regex metacharacters ("Alex (Stage 2)"),
+  // so escape before building the pattern.
+  const name = myName.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`@${name}(?![a-z0-9])`).test(lower)
 }

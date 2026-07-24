@@ -36,7 +36,14 @@ function renderBody(body: string, names: string[], myName: string | undefined): 
   for (let i = 0; i < body.length; i++) {
     if (body[i] !== '@') continue
     const rest = body.slice(i + 1).toLowerCase()
-    const hit = candidates.find((n) => rest.startsWith(n.toLowerCase()))
+    // Match a name only when the following char isn't alphanumeric, so "@Sam"
+    // doesn't highlight inside "@Sammy" (mirrors isMentioned in alerts.ts).
+    const hit = candidates.find((n) => {
+      const lower = n.toLowerCase()
+      if (!rest.startsWith(lower)) return false
+      const after = rest[lower.length]
+      return after === undefined || !/[a-z0-9]/.test(after)
+    })
     if (!hit) continue
     if (i > cursor) nodes.push(body.slice(cursor, i))
     const text = body.slice(i, i + hit.length + 1)
@@ -74,6 +81,11 @@ function FileAttachment({
     // Preview when one exists; reserve the layout box up front when the
     // dimensions are known so loading never shifts the transcript.
     const src = file.hasThumb ? apiUrl(thumbUrl(file)) : url
+    // If the thumbnail blob is missing/corrupt, fall back to the full image
+    // (still served fine) rather than showing a permanently broken chip.
+    const onError = (e: { currentTarget: HTMLImageElement }) => {
+      if (e.currentTarget.src !== url) e.currentTarget.src = url
+    }
     let style: { width: string; aspectRatio: string } | undefined
     if (file.width && file.height) {
       const scale = Math.min(IMAGE_MAX_W / file.width, IMAGE_MAX_H / file.height, 1)
@@ -91,6 +103,7 @@ function FileAttachment({
           decoding="async"
           className="msg-image"
           style={style}
+          onError={file.hasThumb ? onError : undefined}
           onLoad={style ? undefined : onImgLoad}
           // Cached images can be complete before onLoad attaches (WKWebView
           // especially) — re-anchor immediately so the bottom stays glued.
@@ -140,6 +153,12 @@ export default function MessageList({ channelId }: { channelId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
   const prevHeightRef = useRef<number | null>(null)
+  // True during the post-channel-open settle window; suppresses loadOlder so
+  // the glue loop can't anchor the view into history.
+  const settlingRef = useRef(false)
+  // Growth baseline for the follow effect (see below).
+  const prevLastSeqRef = useRef(0)
+  const prevPendingIdRef = useRef<string | undefined>(undefined)
   const [newBelow, setNewBelow] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [flashSeq, setFlashSeq] = useState<number | null>(null)
@@ -159,15 +178,21 @@ export default function MessageList({ channelId }: { channelId: string }) {
     if (el) el.scrollTop = el.scrollHeight
     nearBottomRef.current = true
     setNewBelow(false)
+    // Reset the growth baseline so the follow effect doesn't read a spurious
+    // "grew" by comparing this channel's lastSeq against the previous one's.
+    prevLastSeqRef.current = lastSeq
+    prevPendingIdRef.current = lastPendingId
   }, [channelId])
 
   // scrollHeight keeps changing while a freshly opened channel settles —
   // image decodes, content-visibility sizing, the welcome merge — and any
   // single jump-to-bottom lands wherever the layout happened to be at that
   // instant (WKWebView is the worst offender). Pin the bottom every frame
-  // for a short window. Only a USER gesture (touch/wheel) aborts it: a
-  // big growth step fires scroll events that corrupt nearBottomRef before
-  // the next frame, so that flag can't be the gate here.
+  // for a short window; settlingRef also gates loadOlder so the settle can't
+  // page in history. Any user-initiated scroll aborts — touch, wheel,
+  // keyboard, or grabbing the scrollbar (pointerdown) — since a growth step
+  // fires scroll events that corrupt nearBottomRef before the next frame,
+  // so that flag can't be the gate here.
   useEffect(() => {
     if (useStore.getState().jumpTarget?.channelId === channelId) return
     const el = scrollRef.current
@@ -175,9 +200,12 @@ export default function MessageList({ channelId }: { channelId: string }) {
     let cancelled = false
     const abort = () => {
       cancelled = true
+      settlingRef.current = false
     }
-    el.addEventListener('touchstart', abort, { passive: true })
-    el.addEventListener('wheel', abort, { passive: true })
+    for (const ev of ['touchstart', 'wheel', 'pointerdown', 'keydown'] as const) {
+      el.addEventListener(ev, abort, { passive: true })
+    }
+    settlingRef.current = true
     const started = performance.now()
     let raf = 0
     const glue = () => {
@@ -185,53 +213,56 @@ export default function MessageList({ channelId }: { channelId: string }) {
       el.scrollTop = el.scrollHeight
       nearBottomRef.current = true
       if (performance.now() - started < 1500) raf = requestAnimationFrame(glue)
+      else settlingRef.current = false
     }
     raf = requestAnimationFrame(glue)
     return () => {
       cancelled = true
-      el.removeEventListener('touchstart', abort)
-      el.removeEventListener('wheel', abort)
+      settlingRef.current = false
+      for (const ev of ['touchstart', 'wheel', 'pointerdown', 'keydown'] as const) {
+        el.removeEventListener(ev, abort)
+      }
       cancelAnimationFrame(raf)
     }
   }, [channelId])
 
   // Search jump: center the target row and flash it once it exists.
-  const justJumpedRef = useRef(false)
   useLayoutEffect(() => {
     if (!jumpTarget || jumpTarget.channelId !== channelId) return
     const row = scrollRef.current?.querySelector(`[data-seq="${jumpTarget.seq}"]`)
     if (!row) return
     row.scrollIntoView({ block: 'center' })
     nearBottomRef.current = false
-    justJumpedRef.current = true
+    settlingRef.current = false // the jump owns the position, not the glue loop
     setFlashSeq(jumpTarget.seq)
     clearJumpTarget()
     const timer = setTimeout(() => setFlashSeq(null), 1800)
     return () => clearTimeout(timer)
   }, [jumpTarget, channelId, lastSeq, clearJumpTarget])
 
-  // Follow new messages if we're already at the bottom, else show the pill.
+  // Follow new messages if we're already at the bottom, else show the pill —
+  // but only on genuine growth (lastSeq/pending increased), not on a jump
+  // landing, a deletion, or a channel swap, all of which also change deps.
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    if (justJumpedRef.current) {
-      // This render was a search jump landing, not new traffic.
-      justJumpedRef.current = false
-      return
-    }
     if (prevHeightRef.current !== null) {
       // We just prepended history — keep the viewport anchored.
       el.scrollTop += el.scrollHeight - prevHeightRef.current
       prevHeightRef.current = null
+      prevLastSeqRef.current = lastSeq
+      prevPendingIdRef.current = lastPendingId
       return
     }
+    const grew = lastSeq > prevLastSeqRef.current || lastPendingId !== prevPendingIdRef.current
+    prevLastSeqRef.current = lastSeq
+    prevPendingIdRef.current = lastPendingId
+    if (!grew) return
     if (nearBottomRef.current) {
       el.scrollTop = el.scrollHeight
     } else {
       setNewBelow(true)
     }
-    // list.length is a dep so deletion reconciles (which shrink content
-    // above the viewport) re-glue the bottom too, not just new arrivals.
   }, [lastSeq, lastPendingId, list.length])
 
   // Leaving a gapped history view (returnToLatest) lands on the newest
@@ -265,11 +296,19 @@ export default function MessageList({ channelId }: { channelId: string }) {
       setNewBelow(false)
       if (!gapped) markChannelRead(channelId)
     }
-    // The near-bottom check matters at boot: while images are still sizing,
-    // content can be shorter than the viewport, making scrollTop ~0 while
-    // we're logically at the bottom — loading older then anchors the view
-    // into history instead of the newest messages.
-    if (!nearBottomRef.current && el.scrollTop < 60 && list.length > 0 && (list[0]?.seq ?? 1) > 1) {
+    // Page in older history when scrolled to the top of actually-scrollable
+    // content. Gated on settlingRef (not nearBottom) so the post-open glue
+    // loop can't trigger a load, while still allowing a short context block
+    // to page older once settled. The overflow check ensures we don't fire
+    // when content is shorter than the viewport (nothing to scroll up from).
+    const scrollable = el.scrollHeight - el.clientHeight > NEAR_BOTTOM_PX
+    if (
+      !settlingRef.current &&
+      scrollable &&
+      el.scrollTop < 60 &&
+      list.length > 0 &&
+      (list[0]?.seq ?? 1) > 1
+    ) {
       prevHeightRef.current = el.scrollHeight
       void loadOlder(channelId).then(() => {
         // If nothing was prepended, drop the anchor so new tail messages scroll.

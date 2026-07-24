@@ -23,7 +23,11 @@ const THUMB_JPEG_QUALITY = 0.82
 export async function measureImage(file: File): Promise<ImageUploadExtras | null> {
   if (!file.type.startsWith('image/')) return null
   try {
-    const bitmap = await createImageBitmap(file)
+    // 'from-image' applies EXIF orientation, so width/height and the drawn
+    // thumbnail match what the <img> tag paints. Without it a rotated phone
+    // photo yields raw (sideways) pixel dims → a transposed reserved box and
+    // a sideways thumbnail, inconsistent between WKWebView and Chromium.
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
     const { width, height } = bitmap
     let thumb: Blob | null = null
     const longest = Math.max(width, height)
