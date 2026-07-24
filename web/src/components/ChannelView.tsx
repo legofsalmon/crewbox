@@ -33,7 +33,15 @@ export default function ChannelView({ channelId }: { channelId: string }) {
           aria-label="Open channels"
           onClick={() => setSidebarOpen(true)}
         >
-          ☰
+          {/* Drawn, not the ☰ glyph — the iOS webview font lacks it (tofu box). */}
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
+            <path
+              d="M4 6h16M4 12h16M4 18h16"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
         <div className="channel-title">
           <h2>

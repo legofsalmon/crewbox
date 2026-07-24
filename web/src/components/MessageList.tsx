@@ -92,6 +92,15 @@ function FileAttachment({
           className="msg-image"
           style={style}
           onLoad={style ? undefined : onImgLoad}
+          // Cached images can be complete before onLoad attaches (WKWebView
+          // especially) — re-anchor immediately so the bottom stays glued.
+          ref={
+            style
+              ? undefined
+              : (el) => {
+                  if (el?.complete) onImgLoad?.()
+                }
+          }
         />
       </button>
     )
@@ -152,6 +161,40 @@ export default function MessageList({ channelId }: { channelId: string }) {
     setNewBelow(false)
   }, [channelId])
 
+  // scrollHeight keeps changing while a freshly opened channel settles —
+  // image decodes, content-visibility sizing, the welcome merge — and any
+  // single jump-to-bottom lands wherever the layout happened to be at that
+  // instant (WKWebView is the worst offender). Pin the bottom every frame
+  // for a short window. Only a USER gesture (touch/wheel) aborts it: a
+  // big growth step fires scroll events that corrupt nearBottomRef before
+  // the next frame, so that flag can't be the gate here.
+  useEffect(() => {
+    if (useStore.getState().jumpTarget?.channelId === channelId) return
+    const el = scrollRef.current
+    if (!el) return
+    let cancelled = false
+    const abort = () => {
+      cancelled = true
+    }
+    el.addEventListener('touchstart', abort, { passive: true })
+    el.addEventListener('wheel', abort, { passive: true })
+    const started = performance.now()
+    let raf = 0
+    const glue = () => {
+      if (cancelled) return
+      el.scrollTop = el.scrollHeight
+      nearBottomRef.current = true
+      if (performance.now() - started < 1500) raf = requestAnimationFrame(glue)
+    }
+    raf = requestAnimationFrame(glue)
+    return () => {
+      cancelled = true
+      el.removeEventListener('touchstart', abort)
+      el.removeEventListener('wheel', abort)
+      cancelAnimationFrame(raf)
+    }
+  }, [channelId])
+
   // Search jump: center the target row and flash it once it exists.
   const justJumpedRef = useRef(false)
   useLayoutEffect(() => {
@@ -187,7 +230,9 @@ export default function MessageList({ channelId }: { channelId: string }) {
     } else {
       setNewBelow(true)
     }
-  }, [lastSeq, lastPendingId])
+    // list.length is a dep so deletion reconciles (which shrink content
+    // above the viewport) re-glue the bottom too, not just new arrivals.
+  }, [lastSeq, lastPendingId, list.length])
 
   // Leaving a gapped history view (returnToLatest) lands on the newest
   // message. Declared after the follow effect so it wins this commit.
@@ -220,7 +265,11 @@ export default function MessageList({ channelId }: { channelId: string }) {
       setNewBelow(false)
       if (!gapped) markChannelRead(channelId)
     }
-    if (el.scrollTop < 60 && list.length > 0 && (list[0]?.seq ?? 1) > 1) {
+    // The near-bottom check matters at boot: while images are still sizing,
+    // content can be shorter than the viewport, making scrollTop ~0 while
+    // we're logically at the bottom — loading older then anchors the view
+    // into history instead of the newest messages.
+    if (!nearBottomRef.current && el.scrollTop < 60 && list.length > 0 && (list[0]?.seq ?? 1) > 1) {
       prevHeightRef.current = el.scrollHeight
       void loadOlder(channelId).then(() => {
         // If nothing was prepended, drop the anchor so new tail messages scroll.

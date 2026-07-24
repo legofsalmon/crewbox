@@ -1,6 +1,9 @@
 // Soak test: N fake crew members chatting through the real join + WS path.
 // Usage: node deploy/soak.mjs [baseUrl] [clients] [seconds]
 // Verifies at the end that every client saw every message exactly once.
+// All clients join from one IP, which trips the per-IP join limiter — start
+// the TARGET server with JOIN_RATE_LIMIT=1000 (a scratch instance, never the
+// real event box; real crew join from distinct phone IPs and are unaffected).
 import { WebSocket } from 'ws'
 
 const base = process.argv[2] ?? 'http://localhost:8787'

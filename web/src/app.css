@@ -288,6 +288,10 @@ ul {
   height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
+  /* viewport-fit=cover extends under the iOS status bar / Dynamic Island —
+     without this the channel header sits beneath the clock in the native
+     wrapper and the installed PWA. Zero everywhere else. */
+  padding-top: env(safe-area-inset-top);
 }
 
 .layout {
@@ -1793,6 +1797,8 @@ ul {
     transition: transform 0.22s ease;
     width: min(var(--sidebar-w), 85vw);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    /* Fixed drawer escapes .app's safe-area padding — re-apply it. */
+    padding-top: env(safe-area-inset-top);
   }
 
   .sidebar-open .sidebar {
