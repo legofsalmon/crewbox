@@ -1,0 +1,36 @@
+// Live Patch's SCSS token names, mapped onto the crewbox design tokens
+// (CSS custom properties from web/src/app.css). The ported components keep
+// their upstream class rules but render in the crewbox theme — including
+// dark/light, which follows the shell's data-theme automatically.
+
+// Brand / actions
+$color-primary: var(--accent);
+$color-primary-dark: var(--accent-strong);
+$color-accent-green: var(--ok);
+$color-accent-orange: var(--accent);
+$color-danger: var(--danger);
+$color-danger-dark: var(--danger);
+
+// Selector hero (was a violet gradient; now the shell's raised surface)
+$gradient-hero: linear-gradient(135deg, var(--bg-active) 0%, var(--bg-raised) 100%);
+
+// Neutrals
+$color-ink: var(--text);
+$color-ink-soft: var(--text);
+$color-muted: var(--text-muted);
+$color-border: var(--border);
+$color-border-soft: var(--border);
+$color-surface: var(--bg-raised);
+$color-surface-alt: var(--bg);
+$color-surface-dim: var(--bg-hover);
+
+// Grid
+$grid-line: var(--border);
+$grid-header-bg: var(--bg-hover);
+$grid-cell-focus: color-mix(in srgb, var(--accent) 14%, transparent);
+
+// Layout
+$radius: 8px;
+$radius-small: 4px;
+$shadow-card: 0 2px 10px rgba(0, 0, 0, 0.18);
+$shadow-popover: 0 8px 30px rgba(0, 0, 0, 0.35);

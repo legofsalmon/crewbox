@@ -67,6 +67,7 @@ function initialTheme(): Theme {
 }
 
 export type Phase = 'boot' | 'join' | 'chat'
+export type ToastKind = 'info' | 'warning' | 'error'
 export type Connection = 'connecting' | 'online' | 'offline'
 
 export interface AppState {
@@ -115,7 +116,7 @@ export interface AppState {
   /** A newer build is available; show the reload pill. */
   updateReady: boolean
   /** Transient notices; each auto-dismisses on its own timer. */
-  toasts: { id: number; message: string }[]
+  toasts: { id: number; message: string; kind: ToastKind }[]
   loadingOlder: boolean
   uploading: boolean
   theme: Theme
@@ -132,12 +133,12 @@ export interface AppState {
   sendFile: (channelId: string, file: File, caption?: string) => Promise<void>
   sendTyping: (channelId: string) => void
   setActiveChannel: (channelId: string) => void
-  /** Open a module's main view (sidebar tap); pushes /m/<id>. */
-  setActiveModule: (moduleId: string) => void
+  /** Open a module view (sidebar tap / in-module nav); pushes /m/<id>[/<subpath>]. */
+  setActiveModule: (moduleId: string, subpath?: string) => void
   /** Apply a route from the URL (back/forward, initial load) to state. */
   applyRoute: (route: Route) => void
   /** Show a transient notice; auto-dismisses after a few seconds. */
-  toast: (message: string) => void
+  toast: (message: string, kind?: ToastKind) => void
   /** Open a channel scrolled to a specific message (search results). */
   jumpToMessage: (channelId: string, seq: number) => Promise<void>
   clearJumpTarget: () => void
@@ -173,6 +174,11 @@ let toastSeq = 0
 
 function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
+}
+
+/** The crewbox session token, for modules that call platform services. */
+export function sessionToken(): string | null {
+  return getToken()
 }
 
 function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Message[] {
@@ -735,9 +741,9 @@ export const useStore = create<AppState>()((set, get) => {
       get().markChannelRead(channelId)
     },
 
-    setActiveModule(moduleId) {
-      navigate({ kind: 'module', moduleId, subpath: '' })
-      set({ activeModuleId: moduleId, activeModuleSubpath: '', sidebarOpen: false })
+    setActiveModule(moduleId, subpath = '') {
+      navigate({ kind: 'module', moduleId, subpath })
+      set({ activeModuleId: moduleId, activeModuleSubpath: subpath, sidebarOpen: false })
     },
 
     applyRoute(route) {
@@ -762,9 +768,9 @@ export const useStore = create<AppState>()((set, get) => {
       }
     },
 
-    toast(message) {
+    toast(message, kind = 'error') {
       const id = ++toastSeq
-      set({ toasts: [...get().toasts, { id, message }] })
+      set({ toasts: [...get().toasts, { id, message, kind }] })
       // Per-toast timer — a second toast must not cut the first one short.
       setTimeout(() => {
         set({ toasts: get().toasts.filter((toast) => toast.id !== id) })

@@ -1,0 +1,310 @@
+@use '../styles/tokens' as *;
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.popover {
+  background: $color-surface;
+  border-radius: $radius;
+  box-shadow: $shadow-popover;
+  width: min(680px, 100%);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid $color-border-soft;
+
+  h2 {
+    font-size: 1.1rem;
+    color: $color-ink;
+  }
+}
+
+.closeButton {
+  border: none;
+  background: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: $color-muted;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: $radius-small;
+
+  &:hover {
+    color: $color-ink;
+    background: $color-surface-dim;
+  }
+}
+
+.content {
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+}
+
+.controls {
+  margin-bottom: 12px;
+}
+
+.addButton {
+  border: none;
+  background: $color-primary;
+  color: #fff;
+  border-radius: $radius-small;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-primary-dark;
+  }
+}
+
+.item {
+  border: 1px solid $color-border-soft;
+  border-radius: $radius;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: $color-surface-alt;
+}
+
+.itemHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.nameInput {
+  flex: 1;
+  border: 1px solid $color-border;
+  border-radius: $radius-small;
+  padding: 7px 9px;
+  font-weight: 600;
+  font-size: 0.95rem;
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+  }
+}
+
+.removeButton {
+  border: none;
+  background: none;
+  color: $color-muted;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: $radius-small;
+
+  &:hover:not(:disabled) {
+    color: $color-danger;
+    background: $color-surface-dim;
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.fieldRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.fieldGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  label {
+    font-size: 0.82rem;
+    color: $color-ink-soft;
+    font-weight: 600;
+  }
+
+  input {
+    border: 1px solid $color-border;
+    border-radius: $radius-small;
+    padding: 6px 8px;
+    font-size: 0.88rem;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+}
+
+.notes {
+  margin-top: 10px;
+
+  label {
+    display: block;
+    font-size: 0.82rem;
+    color: $color-ink-soft;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  textarea {
+    width: 100%;
+    border: 1px solid $color-border;
+    border-radius: $radius-small;
+    padding: 8px;
+    font-size: 0.88rem;
+    resize: vertical;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+}
+
+.empty {
+  text-align: center;
+  color: $color-muted;
+  padding: 18px 0;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: $color-ink-soft;
+  margin-bottom: 14px;
+  line-height: 1.5;
+
+  code {
+    background: $color-surface-dim;
+    padding: 1px 5px;
+    border-radius: $radius-small;
+    font-size: 0.8rem;
+  }
+}
+
+.wideInput {
+  width: 100%;
+  border: 1px solid $color-border;
+  border-radius: $radius-small;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+  }
+}
+
+.saveRow {
+  display: flex;
+  gap: 8px;
+
+  input {
+    flex: 1;
+  }
+
+  button {
+    white-space: nowrap;
+  }
+}
+
+.versionInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.versionName {
+  font-weight: 600;
+  color: $color-ink;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.versionMeta {
+  font-size: 0.78rem;
+  color: $color-muted;
+}
+
+.dialogActions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fileHint {
+  font-size: 0.78rem;
+  color: $color-muted;
+  margin-top: 4px;
+}
+
+.fileList {
+  list-style: none;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fileItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  background: $color-surface;
+  border: 1px solid $color-border-soft;
+  border-radius: $radius-small;
+  padding: 5px 8px;
+
+  a {
+    color: $color-primary;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.fileSize {
+  color: $color-muted;
+  font-size: 0.75rem;
+  margin-left: auto;
+}
+
+.removeFileButton {
+  border: none;
+  background: none;
+  color: $color-muted;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+
+  &:hover {
+    color: $color-danger;
+  }
+}

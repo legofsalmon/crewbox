@@ -10,3 +10,5 @@ native/ios/
 docs/privacy-policy.html
 deploy/poster.html
 web/public/
+playwright-report/
+test-results/

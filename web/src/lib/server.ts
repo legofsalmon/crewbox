@@ -77,6 +77,11 @@ export function wsUrl(): string {
   return `${proto}://${location.host}/ws`
 }
 
+/** The shared-docs WebSocket base; providers append /<module>/<room>. */
+export function docsWsUrl(): string {
+  return wsUrl() + '/docs'
+}
+
 /** Absolute URL for a shared file — shareable/copyable off-device. */
 export function absoluteFileUrl(file: FileMeta): string {
   return (serverOrigin() || location.origin) + fileUrl(file)

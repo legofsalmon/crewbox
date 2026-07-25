@@ -88,7 +88,7 @@ function Shell() {
       {toasts.length > 0 && (
         <div className="toast-stack">
           {toasts.map((toast) => (
-            <div key={toast.id} className="flash">
+            <div key={toast.id} className={`flash flash-${toast.kind}`}>
               {toast.message}
             </div>
           ))}

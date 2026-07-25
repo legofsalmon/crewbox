@@ -334,6 +334,17 @@ ul {
   gap: 8px;
 }
 
+.flash-info {
+  background: var(--bg-raised) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border);
+}
+
+.flash-warning {
+  background: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+}
+
 .flash {
   background: var(--danger);
   color: #fff;

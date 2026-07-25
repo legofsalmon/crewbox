@@ -21,10 +21,12 @@
     "build:native": "npm run build -w web && npx -w native cap sync",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
     "concurrently": "^9.1.2",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",

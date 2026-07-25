@@ -14,6 +14,9 @@ export interface Shortcut {
   /** Require Ctrl (Windows/Linux) or Cmd (macOS). */
   mod?: boolean
   shift?: boolean
+  /** Extra guard checked before preventDefault — return false to let the
+   * event through untouched (e.g. native text undo in a dirty input). */
+  when?: (e: KeyboardEvent) => boolean
   handler: (e: KeyboardEvent) => void
 }
 
@@ -35,7 +38,7 @@ function matches(e: KeyboardEvent, s: Shortcut): boolean {
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (e) => {
     for (const s of shortcuts) {
-      if (matches(e, s)) {
+      if (matches(e, s) && (s.when?.(e) ?? true)) {
         e.preventDefault()
         s.handler(e)
         return
