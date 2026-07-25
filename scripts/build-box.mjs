@@ -16,9 +16,12 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
-const root = new URL('..', import.meta.url).pathname
+// fileURLToPath, not URL.pathname — the latter yields /C:/... on Windows,
+// which every fs call then fails to resolve.
+const root = fileURLToPath(new URL('..', import.meta.url))
 const distDir = join(root, 'web', 'dist')
 const outDir = join(root, 'build', 'box')
 
