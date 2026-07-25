@@ -137,6 +137,9 @@ const typeFromGdtf = (id: string, gdtfBytes: Uint8Array): FixtureType | null => 
   }
 }
 
+/** MVR writes 0 for an unassigned FixtureID or UnitNumber. */
+const unsetZero = (value: string): string => (value === '0' ? '' : value)
+
 /** Absolute MVR address → universe and in-universe address. */
 const splitAddress = (absolute: number): { universe: number; address: number } => ({
   universe: Math.floor((absolute - 1) / DMX_UNIVERSE_SIZE) + 1,
@@ -168,7 +171,14 @@ const collectFixtures = (
 
 export function parseMvr(data: Uint8Array): MvrResult {
   const warnings: string[] = []
-  const files = unzipSync(data)
+
+  // Skip the 3D geometry. A real export is mostly .3ds model files — one
+  // 10 MB festival rig carried 218 of them against a single scene XML — and
+  // inflating those costs seconds on a laptop and far worse on the phone
+  // someone is actually holding. We never draw them.
+  const files = unzipSync(data, {
+    filter: (file) => /\.(xml|gdtf)$/i.test(file.name),
+  })
 
   const sceneBytes = findEntry(files, (name) => name.endsWith('generalscenedescription.xml'))
   if (!sceneBytes) {
@@ -247,8 +257,10 @@ export function parseMvr(data: Uint8Array): MvrResult {
       footprint: mode?.footprint ?? 1,
       universe,
       address,
-      channel: textOf(element, 'FixtureID'),
-      unit: textOf(element, 'UnitNumber'),
+      // Capture writes 0 for "not assigned"; showing a channel 0 in the
+      // paperwork would be worse than showing nothing.
+      channel: unsetZero(textOf(element, 'FixtureID')),
+      unit: unsetZero(textOf(element, 'UnitNumber')),
       x: point.x,
       y: point.y,
     })

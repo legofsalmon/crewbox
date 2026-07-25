@@ -7,12 +7,13 @@ import { useDraft } from '../../_shared/ui/useDraft'
 import { plotCsvFilename, plotSummary, plotToCsv } from '../model/csv'
 import { fixturesFromCsv } from '../model/importCsv'
 import { parseMvr, type MvrFixture } from '../model/mvr'
-import { fitPosition } from '../model/placement'
+import { fitPosition, isBar } from '../model/placement'
 import {
   addFixture,
   addFixtures,
   upsertFixtureType,
   addPosition,
+  removePosition,
   setPlotMeta,
   updatePosition,
 } from '../model/plotDoc'
@@ -87,6 +88,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   const [showPositions, setShowPositions] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const title = useDraft(snapshot?.meta.title ?? '', (next) => {
     if (doc) setPlotMeta(doc, 'title', next)
@@ -181,6 +183,14 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
 
     for (const type of result.types) upsertFixtureType(doc, type)
 
+    // A brand-new plot ships with one placeholder truss. Once a real rig
+    // lands it's just an empty row in the list and a stray label on the
+    // plan, so clear it — but only when it's demonstrably untouched.
+    const placeholder =
+      snapshot.positions.length === 1 && snapshot.fixtures.length === 0
+        ? snapshot.positions[0]!.id
+        : null
+
     const byLayer = new Map<string, MvrFixture[]>()
     for (const fixture of result.fixtures) {
       const list = byLayer.get(fixture.layer)
@@ -189,16 +199,26 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
     }
 
     const existing = new Map(snapshot.positions.map((p) => [p.name.toLowerCase(), p.id]))
+    const used = new Set<string>()
 
     for (const [layer, group] of byLayer) {
-      // `order` is placement output, not document state — don't write it in.
-      const { order, ...geometry } = fitPosition(group)
+      // `order` and `residual` are placement output, not document state.
+      const { order, residual, ...geometry } = fitPosition(group)
       let positionId = existing.get(layer.toLowerCase())
       if (!positionId) {
         positionId = addPosition(doc, layer)
         existing.set(layer.toLowerCase(), positionId)
       }
-      updatePosition(doc, positionId, geometry)
+      used.add(positionId)
+      // Real files group by role ("Spots", "Washes") as often as by bar, and
+      // those fixtures sit across several trusses. Drawing one long line
+      // through them would invent a truss that isn't there, so a scattered
+      // group becomes a grouping with no bar — its fixtures still land at
+      // their true coordinates.
+      updatePosition(doc, positionId, {
+        ...geometry,
+        length: isBar({ ...geometry, order, residual }, group.length) ? geometry.length : 0,
+      })
 
       // Unit numbers follow the order along the bar, so the plot and the
       // paperwork agree with what someone counting along the truss sees.
@@ -216,10 +236,17 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
             purpose: fixture.name,
             positionId,
             unit: fixture.unit || String(along + 1),
+            x: fixture.x,
+            y: fixture.y,
           }
         })
       )
     }
+
+    // ...unless the import reused it, which happens whenever a layer is
+    // named the same as the placeholder. Deleting it then would take the
+    // fixtures' position out from under them.
+    if (placeholder && !used.has(placeholder)) removePosition(doc, placeholder)
 
     setFlash(
       `Imported ${result.fixtures.length} fixtures across ${byLayer.size} position${
@@ -229,11 +256,20 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   }
 
   const importFile = async (file: File) => {
+    // A festival MVR is tens of megabytes and takes seconds to inflate and
+    // parse, all of it on the main thread. Say so rather than looking hung.
+    setImporting(true)
+    setFlash(`Reading ${file.name}…`)
+    // Yield twice so the flash actually paints before the parse blocks.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
     try {
       if (file.name.toLowerCase().endsWith('.mvr')) await importMvr(file)
       else await importCsv(file)
     } catch (error) {
       setFlash(`Import failed: ${error instanceof Error ? error.message : 'unreadable file'}`)
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -278,12 +314,13 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
           <button type="button" className={styles.action} onClick={() => addFixture(doc)}>
             + Fixture
           </button>
-          <label className={styles.action}>
-            Import
+          <label className={`${styles.action} ${importing ? styles.actionBusy : ''}`}>
+            {importing ? 'Reading…' : 'Import'}
             <input
               type="file"
               accept=".csv,.mvr,text/csv"
               className={styles.fileInput}
+              disabled={importing}
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) void importFile(file)

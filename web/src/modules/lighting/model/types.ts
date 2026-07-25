@@ -83,6 +83,13 @@ export interface Fixture {
   watts: number | null
   /** Kilograms. Null when unknown. */
   weight: number | null
+  /**
+   * Real plan coordinates in metres, when something authoritative supplied
+   * them (MVR does). Null means "place me along my position", which is what
+   * hand-built plots do.
+   */
+  x: number | null
+  y: number | null
   // --- Ops
   notes: string
   status: FixtureStatus
@@ -135,6 +142,8 @@ export const emptyFixture = (): Omit<Fixture, 'id'> => ({
   circuit: '',
   watts: null,
   weight: null,
+  x: null,
+  y: null,
   notes: '',
   status: 'todo',
 })

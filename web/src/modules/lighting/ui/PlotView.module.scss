@@ -162,6 +162,11 @@
   }
 }
 
+.actionBusy {
+  opacity: 0.7;
+  cursor: progress;
+}
+
 // The Import control is a <label> wrapping a hidden file input.
 .fileInput {
   position: absolute;

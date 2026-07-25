@@ -6,7 +6,7 @@
 import { zipSync, strToU8 } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { gdtfModeFootprint, parseMvr, parseMvrMatrix } from './mvr'
-import { fitPosition } from './placement'
+import { fitPosition, isBar } from './placement'
 
 /**
  * These build real ZIPs — an .mvr containing .gdtf archives — rather than
@@ -324,5 +324,37 @@ describe('position fitting', () => {
 
   it('handles an empty position', () => {
     expect(fitPosition([])).toMatchObject({ length: 12, order: [] })
+  })
+
+  it('measures how far off the line a scattered group sits', () => {
+    // A role grouping across two trusses, as a real Capture export produces.
+    const scatter = [
+      { x: -4, y: 6 },
+      { x: 4, y: 6 },
+      { x: -4, y: 9 },
+      { x: 4, y: 9 },
+    ]
+    expect(fitPosition(scatter).residual).toBeGreaterThan(1)
+    expect(isBar(fitPosition(scatter), scatter.length)).toBe(false)
+  })
+
+  it('accepts a real truss', () => {
+    const truss = [
+      { x: -4, y: 6 },
+      { x: 0, y: 6.05 },
+      { x: 4, y: 6 },
+    ]
+    expect(isBar(fitPosition(truss), truss.length)).toBe(true)
+  })
+
+  it('refuses to call two points a bar', () => {
+    // Any two points are exactly collinear, so the residual says nothing —
+    // two hazers at opposite corners would draw a truss across the stage.
+    const pair = [
+      { x: -8, y: 7 },
+      { x: 8, y: 7 },
+    ]
+    expect(fitPosition(pair).residual).toBe(0)
+    expect(isBar(fitPosition(pair), pair.length)).toBe(false)
   })
 })

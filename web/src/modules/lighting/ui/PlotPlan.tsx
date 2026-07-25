@@ -36,12 +36,21 @@ const statusClass: Record<Fixture['status'], string> = {
   fault: styles.fxFault!,
 }
 
-/** Where a fixture sits along its position, in metres. */
+/**
+ * Where to draw a fixture.
+ *
+ * A fixture that came from something authoritative (MVR) knows where it
+ * actually is, and that always wins — a real export groups by role as often
+ * as by bar, so spreading those evenly along one line would invent a rig
+ * that doesn't exist. Everything else is spaced along its position.
+ */
 const fixturePoint = (
+  fixture: Fixture,
   position: Position,
   index: number,
   count: number
 ): { x: number; y: number } => {
+  if (fixture.x !== null && fixture.y !== null) return { x: fixture.x, y: fixture.y }
   const angle = (position.rotation * Math.PI) / 180
   // Spread across the bar with half-gaps at each end, so a single fixture
   // lands in the middle rather than on the corner.
@@ -79,6 +88,10 @@ export default function PlotPlan({
       xs.push(position.x - half, position.x + half)
       ys.push(position.y - half, position.y + half)
     }
+    for (const fixture of snapshot.fixtures) {
+      if (fixture.x !== null) xs.push(fixture.x)
+      if (fixture.y !== null) ys.push(fixture.y)
+    }
     const pad = 2
     return {
       minX: Math.min(...xs) - pad,
@@ -86,7 +99,7 @@ export default function PlotPlan({
       minY: Math.min(...ys) - pad,
       maxY: Math.max(...ys) + pad,
     }
-  }, [snapshot.positions])
+  }, [snapshot.positions, snapshot.fixtures])
 
   const width = (bounds.maxX - bounds.minX) * SCALE * zoom
   const height = (bounds.maxY - bounds.minY) * SCALE * zoom
@@ -192,22 +205,32 @@ export default function PlotPlan({
             const y2 = position.y + Math.sin(angle) * half
             const fixtures = fixturesOnPosition(snapshot, position.id)
 
+            const hasBar = position.length > 0
+
             return (
               <g key={position.id}>
-                <line
-                  x1={px(x1)}
-                  y1={py(y1)}
-                  x2={px(x2)}
-                  y2={py(y2)}
-                  className={`${styles.position} ${drag?.positionId === position.id ? styles.positionDragging : ''}`}
-                  onPointerDown={(e) => startDrag(e, position)}
-                />
-                <text x={px(x1)} y={py(y1) - 10} className={styles.positionLabel}>
-                  {position.name}
-                </text>
+                {hasBar && (
+                  <line
+                    x1={px(x1)}
+                    y1={py(y1)}
+                    x2={px(x2)}
+                    y2={py(y2)}
+                    className={`${styles.position} ${drag?.positionId === position.id ? styles.positionDragging : ''}`}
+                    onPointerDown={(e) => startDrag(e, position)}
+                  />
+                )}
+                {/* Only a drawn bar gets a label. Role groupings interleave
+                    on the same trusses, so labelling their centroids stacks
+                    four names on one spot and says nothing true about where
+                    anything is. */}
+                {hasBar && (
+                  <text x={px(x1)} y={py(y1) - 10} className={styles.positionLabel}>
+                    {position.name}
+                  </text>
+                )}
 
                 {fixtures.map((fixture, index) => {
-                  const point = fixturePoint(position, index, fixtures.length)
+                  const point = fixturePoint(fixture, position, index, fixtures.length)
                   const isSelected = fixture.id === selectedId
                   return (
                     <g

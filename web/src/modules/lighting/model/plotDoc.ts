@@ -330,6 +330,8 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
         circuit: str(json.circuit),
         watts: nullableNum(json.watts),
         weight: nullableNum(json.weight),
+        x: nullableNum(json.x),
+        y: nullableNum(json.y),
         notes: str(json.notes),
         status: (['todo', 'rigged', 'ok', 'fault'] as const).includes(status as FixtureStatus)
           ? (status as FixtureStatus)
