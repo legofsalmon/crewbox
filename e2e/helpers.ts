@@ -22,8 +22,9 @@ export const newDevice = async (browser: Browser, crewName?: string): Promise<Pa
   await page.getByLabel('Event PIN').fill('4242')
   await page.getByLabel('Your PIN').fill('1234')
   await page.getByRole('button', { name: 'Join' }).click()
-  // The shell sidebar brand appears once the chat phase renders.
-  await expect(page.getByRole('heading', { name: 'Crewbox' })).toBeVisible()
+  // Wait for the composer, not the brand: the join screen has its own
+  // <h1>Crewbox</h1>, so heading text alone can pass before login completes.
+  await expect(page.getByPlaceholder(/Message/)).toBeVisible()
   return page
 }
 

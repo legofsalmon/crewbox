@@ -35,8 +35,8 @@ $artist-row-height: 38px;
   top: 0;
   z-index: 3;
   height: $artist-row-height;
-  background: $color-ink;
-  color: #fff;
+  background: var(--bg-active);
+  color: var(--text);
   padding: 0 10px;
   text-align: left;
 }
@@ -59,16 +59,16 @@ $artist-row-height: 38px;
 
 .copyButton {
   margin-left: auto;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
   border-radius: $radius-small;
   font-size: 0.75rem;
   padding: 3px 8px;
   cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--bg-active);
   }
 }
 
@@ -175,11 +175,11 @@ $artist-row-height: 38px;
 
 tbody tr:nth-child(even) {
   .cell {
-    background: #f4f6f8;
+    background: color-mix(in srgb, var(--text) 4%, var(--bg-raised));
   }
 
   .channelHeader {
-    background: #e6eaee;
+    background: color-mix(in srgb, var(--text) 9%, var(--bg-hover));
   }
 }
 
@@ -201,7 +201,7 @@ tbody tr:nth-child(even) {
 
 // Find-box highlight — wins over zebra striping, loses to focus styling.
 .matchCell {
-  background: #ffe999;
+  background: color-mix(in srgb, var(--accent) 38%, var(--bg-raised));
 }
 
 .gridActions {

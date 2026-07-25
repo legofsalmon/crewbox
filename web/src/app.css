@@ -30,8 +30,11 @@
   --text: #26221b;
   --text-muted: #5f594c;
   --text-faint: #8d8574;
-  --accent: #c07f00;
-  --accent-strong: #a06a00;
+  /* Darkened from #c07f00: with --accent-contrast text this only reached
+     ~3.2:1, under AA for button labels — and light theme is exactly what
+     crew get outdoors in daylight. Now ~4.8:1, same amber family. */
+  --accent: #9a6600;
+  --accent-strong: #7d5300;
   --accent-contrast: #fffaf0;
   --danger: #c53a2a;
   --ok: #1e8a54;
@@ -332,6 +335,10 @@ ul {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  /* Transient and centred over the header — never let one eat a tap on the
+     controls underneath it. */
+  pointer-events: none;
+  max-width: min(92vw, 420px);
 }
 
 .updated-dot {

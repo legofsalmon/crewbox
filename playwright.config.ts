@@ -31,6 +31,11 @@ export default defineConfig({
       DATA_DIR: dataDir,
       WEB_DIST: `${process.cwd()}/web/dist`,
       EVENT_PIN: '4242',
+      // Every simulated device joins from localhost, so the per-IP join
+      // limiter (10/min, right for real crew on separate phones) throttles
+      // the suite itself once it grows. The limiter has its own coverage in
+      // the server integration tests.
+      JOIN_RATE_LIMIT: '1000',
       CREWBOX_MODULES: 'patch',
       LIVEKIT_URL: '',
     },

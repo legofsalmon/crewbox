@@ -181,7 +181,7 @@
   color: #fff;
   font-size: 0.72rem;
   font-weight: 700;
-  border: 2px solid $color-ink;
+  border: 2px solid var(--bg-raised);
   margin-left: -6px;
 
   &:first-child {

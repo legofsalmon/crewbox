@@ -8,7 +8,7 @@
 
 .hero {
   text-align: center;
-  color: #fff;
+  color: var(--text);
   margin-bottom: 28px;
 
   h1 {
@@ -18,22 +18,22 @@
 
   p {
     margin-top: 6px;
-    opacity: 0.85;
+    color: var(--text-muted);
   }
 }
 
 .syncButton {
   margin-top: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
   border-radius: 999px;
   padding: 6px 14px;
   font-size: 0.82rem;
   cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.22);
+    background: var(--bg-active);
   }
 }
 
@@ -44,8 +44,8 @@
 }
 
 .createButton {
-  background: #fff;
-  color: $color-ink;
+  background: var(--accent);
+  color: var(--accent-contrast);
   border: none;
   border-radius: $radius;
   padding: 12px 22px;
@@ -60,9 +60,9 @@
 }
 
 .importButton {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: $radius;
   padding: 12px 22px;
   font-size: 1rem;
@@ -71,7 +71,7 @@
   margin-left: 10px;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--bg-active);
   }
 }
 
@@ -99,11 +99,11 @@
     font-weight: 600;
     cursor: pointer;
     background: $color-accent-green;
-    color: #fff;
+    color: var(--text);
   }
 
   .secondary {
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--bg-active);
   }
 }
 
@@ -118,7 +118,7 @@
 .empty {
   grid-column: 1 / -1;
   text-align: center;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-muted);
 
   h2 {
     margin-bottom: 6px;
