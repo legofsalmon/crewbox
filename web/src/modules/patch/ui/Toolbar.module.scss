@@ -89,11 +89,12 @@
   }
 
   .export {
-    background: $color-accent-green;
-    color: #fff;
+    background: var(--bg-hover);
+    color: var(--text);
+    border: 1px solid var(--border);
 
     &:hover {
-      background: color-mix(in srgb, var(--ok) 82%, black);
+      background: var(--bg-active);
     }
   }
 }
@@ -119,5 +120,24 @@
   .titleInput,
   .field input {
     border: none;
+  }
+}
+
+// On a phone the grid is the point — keep the chrome above it compact and
+// stop button labels wrapping mid-word.
+@media (max-width: 640px) {
+  .toolbar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .titleInput {
+    font-size: 1.05rem;
+  }
+
+  .buttons button {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    white-space: nowrap;
   }
 }

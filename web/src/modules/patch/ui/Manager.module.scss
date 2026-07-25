@@ -62,7 +62,7 @@
 .addButton {
   border: none;
   background: $color-primary;
-  color: #fff;
+  color: var(--accent-contrast);
   border-radius: $radius-small;
   padding: 8px 14px;
   font-weight: 600;
