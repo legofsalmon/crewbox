@@ -1,5 +1,5 @@
 {
-  "name": "@inter/native",
+  "name": "@crewbox/native",
   "version": "0.1.0",
   "private": true,
   "description": "Capacitor native shells (Android with background alerts; iOS wrapper)",

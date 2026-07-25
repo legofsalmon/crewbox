@@ -1,4 +1,4 @@
-const SOUNDS_KEY = 'inter:sounds'
+const SOUNDS_KEY = 'crewbox:sounds'
 
 let audioCtx: AudioContext | null = null
 
@@ -47,7 +47,7 @@ export function notify(title: string, body: string): void {
   if (!document.hidden) return
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
   try {
-    new Notification(title, { body, tag: 'inter-msg', icon: '/icon-192.png' })
+    new Notification(title, { body, tag: 'crewbox-msg', icon: '/icon-192.png' })
   } catch {
     // some platforms (Android Chrome) require SW-based notifications; skip
   }

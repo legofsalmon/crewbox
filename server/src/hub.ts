@@ -8,7 +8,7 @@ import {
   type PublicConfig,
   type ServerMessage,
   type User,
-} from '@inter/shared'
+} from '@crewbox/shared'
 import type { Store } from './store.ts'
 import { APP_VERSION } from './version.ts'
 

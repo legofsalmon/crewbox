@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Message } from '@inter/shared'
+import type { Message } from '@crewbox/shared'
 import { channelLabel, useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 
@@ -29,7 +29,7 @@ export default function SearchOverlay() {
     debounceRef.current = window.setTimeout(async () => {
       setBusy(true)
       try {
-        const token = localStorage.getItem('inter:token') ?? ''
+        const token = localStorage.getItem('crewbox:token') ?? ''
         const { messages } = await api.search(token, query)
         setResults(messages)
       } catch {

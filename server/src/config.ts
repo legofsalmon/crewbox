@@ -9,7 +9,7 @@ function positiveDays(value: string | undefined, fallback: number): number {
 export const config = {
   host: process.env.HOST ?? '0.0.0.0',
   // Deliberately not the generic PORT — dev harnesses set that for the web app.
-  port: Number(process.env.INTER_PORT ?? 8787),
+  port: Number(process.env.CREWBOX_PORT ?? 8787),
   dataDir: resolve(process.env.DATA_DIR ?? './data'),
   /** Shared PIN printed on the QR join posters. Set EVENT_PIN in production. */
   eventPin: process.env.EVENT_PIN ?? '1234',
@@ -31,7 +31,7 @@ export const config = {
    * Behind cloudflared/Caddy: trust X-Forwarded-For so rate limits key on
    * the real client IP instead of lumping all proxied traffic together.
    */
-  trustProxy: process.env.INTER_TRUST_PROXY === '1',
+  trustProxy: process.env.CREWBOX_TRUST_PROXY === '1',
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
     /** URL the *client* uses to reach LiveKit. Empty string disables voice. */
@@ -44,13 +44,13 @@ export const config = {
 /**
  * Guard risky defaults at startup. Returns a fatal message when the config is
  * unsafe to run (caller should exit), or null. A tunnel-exposed server
- * (INTER_TRUST_PROXY=1) running on the public default event PIN would let
+ * (CREWBOX_TRUST_PROXY=1) running on the public default event PIN would let
  * anyone on the internet register — fail closed rather than warn.
  */
 export function warnOnDefaults(log: { warn: (msg: string) => void }): string | null {
   if (!process.env.EVENT_PIN) {
     if (config.trustProxy) {
-      return 'EVENT_PIN is unset but INTER_TRUST_PROXY=1 (internet-exposed). Refusing to start on the public default PIN — set EVENT_PIN.'
+      return 'EVENT_PIN is unset but CREWBOX_TRUST_PROXY=1 (internet-exposed). Refusing to start on the public default PIN — set EVENT_PIN.'
     }
     log.warn('EVENT_PIN not set — using default dev PIN "1234". Set EVENT_PIN in production!')
   }

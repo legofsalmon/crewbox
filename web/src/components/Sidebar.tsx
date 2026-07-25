@@ -105,7 +105,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-brand">
         <span className={`conn-dot conn-dot-${connDotClass(connection, latencyMs)}`} title={connection} />
-        <h1>Inter</h1>
+        <h1>Crewbox</h1>
       </div>
 
       <nav className="sidebar-scroll">
@@ -239,7 +239,7 @@ export default function Sidebar() {
             Delete account
           </button>
         )}
-        <span className="app-version" title={`Inter ${APP_VERSION}`}>
+        <span className="app-version" title={`Crewbox ${APP_VERSION}`}>
           v{APP_VERSION}
         </span>
       </div>

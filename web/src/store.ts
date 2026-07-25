@@ -7,7 +7,7 @@ import {
   type ServerMessage,
   type User,
   type WelcomeMessage,
-} from '@inter/shared'
+} from '@crewbox/shared'
 import { cache, type OutboxEntry } from './lib/db.ts'
 import { WsClient } from './lib/ws.ts'
 import * as api from './lib/api.ts'
@@ -25,9 +25,9 @@ import { APP_VERSION, initPwa } from './lib/pwa.ts'
 import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
 
-const TOKEN_KEY = 'inter:token'
-const THEME_KEY = 'inter:theme'
-const SSID_KEY = 'inter:wifi-ssid'
+const TOKEN_KEY = 'crewbox:token'
+const THEME_KEY = 'crewbox:theme'
+const SSID_KEY = 'crewbox:wifi-ssid'
 const TYPING_TTL_MS = 4000
 const TYPING_THROTTLE_MS = 2500
 
@@ -887,13 +887,13 @@ useStore.subscribe((state) => {
     if (channel.retired) continue
     total += Math.max(0, channel.lastSeq - (state.readState[channel.id] ?? 0))
   }
-  const title = total > 0 ? `(${total}) Inter` : 'Inter'
+  const title = total > 0 ? `(${total}) Crewbox` : 'Crewbox'
   if (document.title !== title) document.title = title
 })
 
 // Test hook for driving the store from the browser console in dev.
 if (import.meta.env.DEV) {
-  ;(window as unknown as { __inter: typeof useStore }).__inter = useStore
+  ;(window as unknown as { __crewbox: typeof useStore }).__crewbox = useStore
 }
 
 /** Unread count for a channel, given current read state. */

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { fileUrl } from '@inter/shared'
+import { fileUrl } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 import { describeFile, fileCategory, formatBytes } from '../lib/files.ts'
@@ -70,7 +70,7 @@ export default function FileDetail() {
     setDeleting(true)
     setError(null)
     try {
-      await api.deleteMessage(localStorage.getItem('inter:token') ?? '', message!.id)
+      await api.deleteMessage(localStorage.getItem('crewbox:token') ?? '', message!.id)
       // The 'deleted' broadcast also closes us, but don't wait on it.
       closeFileDetail()
     } catch (err) {

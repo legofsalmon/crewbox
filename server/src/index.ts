@@ -5,7 +5,7 @@ import { openDb } from './db.ts'
 import { Store } from './store.ts'
 import { attachWs, buildApp } from './app.ts'
 
-const db = openDb(join(config.dataDir, 'inter.db'))
+const db = openDb(join(config.dataDir, 'crewbox.db'))
 const store = new Store(db)
 
 // #general always exists so there is somewhere to land after joining.
@@ -45,7 +45,7 @@ if (existsSync(webIndex)) {
 await app.listen({ host: config.host, port: config.port })
 attachWs(app)
 
-app.log.info(`inter server listening on ${config.host}:${config.port}`)
+app.log.info(`crewbox server listening on ${config.host}:${config.port}`)
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {

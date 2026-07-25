@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
-import { fileUrl, thumbUrl, type FileMeta, type Message } from '@inter/shared'
+import { fileUrl, thumbUrl, type FileMeta, type Message } from '@crewbox/shared'
 import { useStore, type Pending } from '../store.ts'
 import { formatBytes } from '../lib/files.ts'
 import { apiUrl } from '../lib/server.ts'

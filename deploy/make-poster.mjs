@@ -1,8 +1,8 @@
 // Generate printable QR join posters: node deploy/make-poster.mjs [url] [pin]
 // Writes deploy/poster.html — print a stack and zip-tie them to poles.
 // Includes a second QR for the Android APK (served from the crew box as
-// /inter.apk per the RUNBOOK) so phones that need lock-screen alerts can
-// grab the app with no internet. The APK box only helps once inter.apk is
+// /crewbox.apk per the RUNBOOK) so phones that need lock-screen alerts can
+// grab the app with no internet. The APK box only helps once crewbox.apk is
 // actually deployed next to the web dist — the RUNBOOK step, not this one.
 import { writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -13,12 +13,12 @@ const url = process.argv[2] ?? 'https://chat.example.com'
 const pin = process.argv[3] ?? 'SET-EVENT-PIN'
 // APK downloads skip TLS on purpose: Android's installer doesn't care, and
 // http avoids any cert-trust hiccup on a phone that just joined the Wi-Fi.
-const apkUrl = `${url.replace(/^https:/, 'http:').replace(/\/$/, '')}/inter.apk`
+const apkUrl = `${url.replace(/^https:/, 'http:').replace(/\/$/, '')}/crewbox.apk`
 const qr = await QRCode.toDataURL(url, { width: 480, margin: 1 })
 const apkQr = await QRCode.toDataURL(apkUrl, { width: 240, margin: 1 })
 
 const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>Inter join poster</title>
+<html><head><meta charset="utf-8"><title>Crewbox join poster</title>
 <style>
   body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; }
   .poster { text-align: center; padding: 40px; page-break-after: always; }

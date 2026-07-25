@@ -8,7 +8,7 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
-import { newId, type PublicConfig, type User } from '@inter/shared'
+import { newId, type PublicConfig, type User } from '@crewbox/shared'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -556,7 +556,7 @@ export function buildApp({
     if (!authAdmin(req, reply)) return reply
     const stamp = new Date().toISOString().slice(0, 10)
     return reply
-      .header('content-disposition', `attachment; filename="inter-export-${stamp}.json"`)
+      .header('content-disposition', `attachment; filename="crewbox-export-${stamp}.json"`)
       .send({
         exportedAt: Date.now(),
         users: store.listUsers(),

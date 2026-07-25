@@ -26,8 +26,8 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Inter — crew chat',
-        short_name: 'Inter',
+        name: 'Crewbox — crew comms',
+        short_name: 'Crewbox',
         description: 'Offline-first crew chat for festivals',
         theme_color: '#12100e',
         background_color: '#12100e',
@@ -48,7 +48,7 @@ export default defineConfig({
             urlPattern: ({ url }) => url.pathname.startsWith('/api/files/'),
             handler: 'CacheFirst',
             options: {
-              cacheName: 'inter-files',
+              cacheName: 'crewbox-files',
               expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
             },
           },
@@ -58,7 +58,7 @@ export default defineConfig({
   ],
   optimizeDeps: {
     // Workspace package ships TS source; let Vite transform it directly.
-    exclude: ['@inter/shared'],
+    exclude: ['@crewbox/shared'],
   },
   server: {
     host: true, // reachable from other devices on the LAN

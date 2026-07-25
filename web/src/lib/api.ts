@@ -1,4 +1,4 @@
-import type { Channel, FileMeta, Message, PublicConfig, User } from '@inter/shared'
+import type { Channel, FileMeta, Message, PublicConfig, User } from '@crewbox/shared'
 import { apiUrl } from './server.ts'
 
 export interface AdminSettings {

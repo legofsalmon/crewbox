@@ -8,8 +8,8 @@ export interface DeviceInfo {
 }
 
 const KEYS: Record<AudioKind, string> = {
-  audioinput: 'inter:audio-in',
-  audiooutput: 'inter:audio-out',
+  audioinput: 'crewbox:audio-in',
+  audiooutput: 'crewbox:audio-out',
 }
 
 export function savedDeviceId(kind: AudioKind): string | null {

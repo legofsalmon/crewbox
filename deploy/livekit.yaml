@@ -1,5 +1,5 @@
 # LiveKit config for the festival box.
-# Start with: livekit-server --config /etc/inter/livekit.yaml
+# Start with: livekit-server --config /etc/crewbox/livekit.yaml
 port: 7880
 bind_addresses:
   - 127.0.0.1 # signalling only via Caddy; media binds separately below
@@ -11,7 +11,7 @@ rtc:
   use_external_ip: false
 keys:
   # Generate a real pair with: livekit-server generate-keys
-  # Must match LIVEKIT_KEY / LIVEKIT_SECRET in inter.service.
+  # Must match LIVEKIT_KEY / LIVEKIT_SECRET in crewbox.service.
   devkey: secret
 logging:
   level: info

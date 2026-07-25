@@ -4,7 +4,7 @@ import { join as pathJoin } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { newId, type ServerMessage, type WelcomeMessage } from '@inter/shared'
+import { newId, type ServerMessage, type WelcomeMessage } from '@crewbox/shared'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
 import { isPrivateIp, isRemoteConnection } from '../src/hub.ts'
@@ -108,7 +108,7 @@ async function connect(
 
 beforeEach(async () => {
   sockets = []
-  filesDir = mkdtempSync(pathJoin(tmpdir(), 'inter-test-'))
+  filesDir = mkdtempSync(pathJoin(tmpdir(), 'crewbox-test-'))
   db = openDb(':memory:')
   store = new Store(db)
   store.createChannel('general', 'public', 'Everyone')

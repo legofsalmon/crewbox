@@ -1,11 +1,11 @@
 [Unit]
-Description=LiveKit SFU for Inter voice
+Description=LiveKit SFU for Crewbox voice
 After=network.target
 
 [Service]
 Type=simple
-User=inter
-ExecStart=/usr/local/bin/livekit-server --config /etc/inter/livekit.yaml
+User=crewbox
+ExecStart=/usr/local/bin/livekit-server --config /etc/crewbox/livekit.yaml
 Restart=always
 RestartSec=2
 

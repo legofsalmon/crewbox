@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import type { Channel, User } from '@inter/shared'
+import type { Channel, User } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 
 const PIN_RE = /^\d{4,8}$/
 
 function token(): string {
-  return localStorage.getItem('inter:token') ?? ''
+  return localStorage.getItem('crewbox:token') ?? ''
 }
 
 export default function AdminPanel() {
@@ -43,7 +43,7 @@ export default function AdminPanel() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `inter-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = `crewbox-export-${new Date().toISOString().slice(0, 10)}.json`
       a.click()
       URL.revokeObjectURL(url)
       setNote('Export downloaded')

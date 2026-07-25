@@ -71,7 +71,7 @@ export default function Join() {
             />
             <circle cx="24" cy="33" r="3.5" fill="currentColor" />
           </svg>
-          <h1>Inter</h1>
+          <h1>Crewbox</h1>
           <p>Crew chat that works with no internet</p>
         </div>
 

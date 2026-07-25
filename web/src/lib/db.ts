@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { Channel, Message, User } from '@inter/shared'
+import type { Channel, Message, User } from '@crewbox/shared'
 
 /** A send waiting for a server ack. Survives reloads and battery death. */
 export interface OutboxEntry {
@@ -25,7 +25,7 @@ export interface Snapshot {
   savedAt: number
 }
 
-const db = new Dexie('inter') as Dexie & {
+const db = new Dexie('crewbox') as Dexie & {
   messages: EntityTable<Message, 'id'>
   outbox: EntityTable<OutboxEntry, 'clientMsgId'>
   kv: EntityTable<Snapshot, 'key'>

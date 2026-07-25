@@ -11,11 +11,11 @@
 set -euo pipefail
 
 DOMAIN="chat.example.com"
-CERT_DIR="/etc/inter/certs"
+CERT_DIR="/etc/crewbox/certs"
 
 sudo certbot certonly \
   --dns-cloudflare \
-  --dns-cloudflare-credentials /etc/inter/cloudflare.ini \
+  --dns-cloudflare-credentials /etc/crewbox/cloudflare.ini \
   -d "$DOMAIN" \
   --non-interactive --agree-tos -m you@example.com
 

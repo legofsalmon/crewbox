@@ -4,10 +4,10 @@
  * app package instead, so they carry a configured server origin — stored in
  * localStorage and applied to every API/WS/file URL.
  */
-import type { FileMeta } from '@inter/shared'
-import { fileUrl } from '@inter/shared'
+import type { FileMeta } from '@crewbox/shared'
+import { fileUrl } from '@crewbox/shared'
 
-const SERVER_KEY = 'inter:server-url'
+const SERVER_KEY = 'crewbox:server-url'
 
 interface AlertsPlugin {
   start(options: { serverUrl: string; token: string; myName: string }): Promise<void>

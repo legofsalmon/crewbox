@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage } from '@inter/shared'
+import type { ClientMessage, ServerMessage } from '@crewbox/shared'
 import { pushSample, rollingMedian } from './quality.ts'
 import { wsUrl } from './server.ts'
 

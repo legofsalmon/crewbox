@@ -1,15 +1,15 @@
 [Unit]
-Description=Inter crew chat server
+Description=Crewbox crew comms server
 After=network.target
 
 [Service]
 Type=simple
-User=inter
-WorkingDirectory=/opt/inter/server
+User=crewbox
+WorkingDirectory=/opt/crewbox/server
 Environment=NODE_ENV=production
-Environment=INTER_PORT=8787
-Environment=DATA_DIR=/var/lib/inter
-Environment=WEB_DIST=/opt/inter/web/dist
+Environment=CREWBOX_PORT=8787
+Environment=DATA_DIR=/var/lib/crewbox
+Environment=WEB_DIST=/opt/crewbox/web/dist
 # CHANGE THESE before the event:
 Environment=EVENT_PIN=2468
 Environment=LIVEKIT_URL=wss://chat.example.com/livekit

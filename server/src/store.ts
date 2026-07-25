@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { unlinkSync } from 'node:fs'
-import { newId } from '@inter/shared'
+import { newId } from '@crewbox/shared'
 import type {
   Channel,
   ChannelKind,
@@ -9,7 +9,7 @@ import type {
   MessageKind,
   Role,
   User,
-} from '@inter/shared'
+} from '@crewbox/shared'
 import { transaction } from './db.ts'
 
 interface UserRow {
