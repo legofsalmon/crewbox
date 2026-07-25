@@ -24,7 +24,10 @@ let sockets: TestClient[]
 class TestClient {
   ws: WebSocket
   received: ServerMessage[] = []
-  private waiters: { predicate: (m: ServerMessage) => boolean; resolve: (m: ServerMessage) => void }[] = []
+  private waiters: {
+    predicate: (m: ServerMessage) => boolean
+    resolve: (m: ServerMessage) => void
+  }[] = []
 
   constructor(url: string, headers?: Record<string, string>) {
     this.ws = new WebSocket(url, { headers })
@@ -53,7 +56,10 @@ class TestClient {
     this.ws.send(JSON.stringify(msg))
   }
 
-  waitFor<T extends ServerMessage>(predicate: (m: ServerMessage) => m is T, timeoutMs = 2000): Promise<T> {
+  waitFor<T extends ServerMessage>(
+    predicate: (m: ServerMessage) => m is T,
+    timeoutMs = 2000
+  ): Promise<T> {
     const existing = this.received.find(predicate)
     if (existing) return Promise.resolve(existing)
     return new Promise((resolve, reject) => {
@@ -97,7 +103,7 @@ async function join(name: string): Promise<string> {
 async function connect(
   token: string,
   cursors: Record<string, number> = {},
-  headers?: Record<string, string>,
+  headers?: Record<string, string>
 ): Promise<{ client: TestClient; welcome: WelcomeMessage }> {
   const client = new TestClient(wsUrl, headers)
   await client.open()
@@ -146,7 +152,9 @@ describe('join and welcome', () => {
     expect(welcome.serverVersion).toMatch(/\d+\.\d+\.\d+/) // for client update prompts
     expect(welcome.channels.map((c) => c.name)).toContain('general')
     // join produced a system message in #general
-    expect(welcome.missed.some((m) => m.kind === 'system' && m.body.includes('Alex joined'))).toBe(true)
+    expect(welcome.missed.some((m) => m.kind === 'system' && m.body.includes('Alex joined'))).toBe(
+      true
+    )
   })
 
   it('rejects a wrong event PIN but allows re-login with personal PIN', async () => {
@@ -223,7 +231,9 @@ describe('join and welcome', () => {
 
     const clientMsgId = newId()
     client.send({ type: 'send', clientMsgId, channelId: general.id, body: 'I was here' })
-    const ack = await client.waitFor((m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack')
+    const ack = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack'
+    )
 
     // Delete the account.
     const del = await app.inject({
@@ -237,7 +247,11 @@ describe('join and welcome', () => {
     await client.waitForClose()
 
     // The session token no longer authenticates.
-    const me = await app.inject({ method: 'GET', url: '/api/me', headers: { authorization: `Bearer ${token}` } })
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { authorization: `Bearer ${token}` },
+    })
     expect(me.statusCode).toBe(401)
 
     // The user row is gone but the message survives, anonymized.
@@ -267,13 +281,15 @@ describe('message delivery', () => {
     const clientMsgId = newId()
     a.client.send({ type: 'send', clientMsgId, channelId: general.id, body: 'stage 2 mic check' })
 
-    const ack = await a.client.waitFor((m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack')
+    const ack = await a.client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack'
+    )
     expect(ack.clientMsgId).toBe(clientMsgId)
     expect(ack.message.body).toBe('stage 2 mic check')
 
     const received = await b.client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'msg' }> =>
-        m.type === 'msg' && m.message.clientMsgId === clientMsgId,
+        m.type === 'msg' && m.message.clientMsgId === clientMsgId
     )
     expect(received.message.seq).toBe(ack.message.seq)
   })
@@ -285,13 +301,14 @@ describe('message delivery', () => {
 
     const clientMsgId = newId()
     client.send({ type: 'send', clientMsgId, channelId: general.id, body: 'once only' })
-    const first = await client.waitFor((m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack')
+    const first = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack'
+    )
 
     // Simulate an outbox flush retry after a reconnect-ish situation.
     client.send({ type: 'send', clientMsgId, channelId: general.id, body: 'once only' })
     await client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'ack' }> =>
-        m.type === 'ack' && m !== first,
+      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack' && m !== first
     )
 
     const stored = store.listAfter(general.id, 0, 100).filter((m) => m.body === 'once only')
@@ -310,7 +327,7 @@ describe('message delivery', () => {
     }
     const rejected = await client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'rejected' }> =>
-        m.type === 'rejected' && m.reason.includes('too many'),
+        m.type === 'rejected' && m.reason.includes('too many')
     )
     expect(rejected.type).toBe('rejected')
     // At most the cap made it into the channel, not all 40.
@@ -332,7 +349,8 @@ describe('reconnect resync', () => {
       b.client.send({ type: 'send', clientMsgId: newId(), channelId: general.id, body })
     }
     await b.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack' && m.message.body === 'three',
+      (m): m is Extract<ServerMessage, { type: 'ack' }> =>
+        m.type === 'ack' && m.message.body === 'three'
     )
 
     const a2 = await connect(tokenA, { [general.id]: cursorAtDisconnect })
@@ -365,18 +383,19 @@ describe('DMs', () => {
 
     a.client.send({ type: 'openDm', userId: b.welcome.me.id })
     const dm = await a.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'channel' }> => m.type === 'channel' && m.channel.kind === 'dm',
+      (m): m is Extract<ServerMessage, { type: 'channel' }> =>
+        m.type === 'channel' && m.channel.kind === 'dm'
     )
 
     const clientMsgId = newId()
     a.client.send({ type: 'send', clientMsgId, channelId: dm.channel.id, body: 'secret' })
     await b.client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'msg' }> =>
-        m.type === 'msg' && m.message.clientMsgId === clientMsgId,
+        m.type === 'msg' && m.message.clientMsgId === clientMsgId
     )
 
     expect(
-      c.client.received.some((m) => m.type === 'msg' && m.message.channelId === dm.channel.id),
+      c.client.received.some((m) => m.type === 'msg' && m.message.channelId === dm.channel.id)
     ).toBe(false)
     // C's welcome/receives never list the DM channel either.
     expect(c.welcome.channels.some((ch) => ch.id === dm.channel.id)).toBe(false)
@@ -406,7 +425,9 @@ describe('files and search', () => {
 
     const clientMsgId = newId()
     client.send({ type: 'send', clientMsgId, channelId: general.id, fileId: first.id, body: '' })
-    const ack = await client.waitFor((m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack')
+    const ack = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack'
+    )
     expect(ack.message.kind).toBe('file')
     expect(ack.message.file?.name).toBe('notes.txt')
 
@@ -428,18 +449,24 @@ describe('files and search', () => {
       client.send({ type: 'send', clientMsgId, channelId: general.id, body: `ctx ${i}` })
       const ack = await client.waitFor(
         (m): m is Extract<ServerMessage, { type: 'ack' }> =>
-          m.type === 'ack' && m.clientMsgId === clientMsgId,
+          m.type === 'ack' && m.clientMsgId === clientMsgId
       )
       if (i === 4) midSeq = ack.message.seq
     }
 
     const res = await fetch(
       `${baseUrl}/api/channels/${general.id}/context?seq=${midSeq}&radius=2`,
-      { headers: { authorization: `Bearer ${token}` } },
+      { headers: { authorization: `Bearer ${token}` } }
     )
     expect(res.status).toBe(200)
     const { messages } = (await res.json()) as { messages: { seq: number; body: string }[] }
-    expect(messages.map((m) => m.seq)).toEqual([midSeq - 2, midSeq - 1, midSeq, midSeq + 1, midSeq + 2])
+    expect(messages.map((m) => m.seq)).toEqual([
+      midSeq - 2,
+      midSeq - 1,
+      midSeq,
+      midSeq + 1,
+      midSeq + 2,
+    ])
     expect(messages[2]!.body).toBe('ctx 4')
   })
 
@@ -501,7 +528,9 @@ describe('files and search', () => {
       body: form,
     })
     expect(res.status).toBe(200)
-    const { file } = (await res.json()) as { file: { id: string; width?: number; hasThumb?: boolean } }
+    const { file } = (await res.json()) as {
+      file: { id: string; width?: number; hasThumb?: boolean }
+    }
     expect(file.width).toBe(2000) // dimensions still recorded
     expect(file.hasThumb).toBeUndefined() // oversized thumb dropped
     const served = await fetch(`${baseUrl}/api/files/${file.id}/photo.png`)
@@ -530,7 +559,7 @@ describe('files and search', () => {
       author.client.send({ type: 'send', clientMsgId, channelId: general.id, fileId, body: '' })
       const ack = await author.client.waitFor(
         (m): m is Extract<ServerMessage, { type: 'ack' }> =>
-          m.type === 'ack' && m.clientMsgId === clientMsgId,
+          m.type === 'ack' && m.clientMsgId === clientMsgId
       )
       return ack.message
     }
@@ -556,12 +585,12 @@ describe('files and search', () => {
     const watcher = await connect(bystanderToken)
     expect((await del(authorToken, msgA.id)).status).toBe(200)
     const deleted = await watcher.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'deleted' }> => m.type === 'deleted',
+      (m): m is Extract<ServerMessage, { type: 'deleted' }> => m.type === 'deleted'
     )
     expect(deleted.messageId).toBe(msgA.id)
     const note = await watcher.client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'msg' }> =>
-        m.type === 'msg' && m.message.kind === 'system',
+        m.type === 'msg' && m.message.kind === 'system'
     )
     expect(note.message.body).toBe('Sam removed a shared file')
 
@@ -582,10 +611,15 @@ describe('files and search', () => {
 
     // Text messages are out of scope for deletion.
     const textId = newId()
-    author.client.send({ type: 'send', clientMsgId: textId, channelId: general.id, body: 'keep me' })
+    author.client.send({
+      type: 'send',
+      clientMsgId: textId,
+      channelId: general.id,
+      body: 'keep me',
+    })
     const textAck = await author.client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'ack' }> =>
-        m.type === 'ack' && m.clientMsgId === textId,
+        m.type === 'ack' && m.clientMsgId === textId
     )
     expect((await del(adminToken, textAck.message.id)).status).toBe(400)
   })
@@ -630,14 +664,26 @@ describe('files and search', () => {
     const b = await connect(tokenB)
     const general = a.welcome.channels.find((c) => c.name === 'general')!
 
-    a.client.send({ type: 'send', clientMsgId: newId(), channelId: general.id, body: 'the generator needs diesel' })
+    a.client.send({
+      type: 'send',
+      clientMsgId: newId(),
+      channelId: general.id,
+      body: 'the generator needs diesel',
+    })
     a.client.send({ type: 'openDm', userId: b.welcome.me.id })
     const dm = await a.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'channel' }> => m.type === 'channel' && m.channel.kind === 'dm',
+      (m): m is Extract<ServerMessage, { type: 'channel' }> =>
+        m.type === 'channel' && m.channel.kind === 'dm'
     )
-    a.client.send({ type: 'send', clientMsgId: newId(), channelId: dm.channel.id, body: 'secret diesel stash' })
+    a.client.send({
+      type: 'send',
+      clientMsgId: newId(),
+      channelId: dm.channel.id,
+      body: 'secret diesel stash',
+    })
     await a.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack' && m.message.body.includes('stash'),
+      (m): m is Extract<ServerMessage, { type: 'ack' }> =>
+        m.type === 'ack' && m.message.body.includes('stash')
     )
 
     const search = async (token: string) => {
@@ -648,7 +694,7 @@ describe('files and search', () => {
     }
 
     expect(await search(tokenA)).toEqual(
-      expect.arrayContaining(['the generator needs diesel', 'secret diesel stash']),
+      expect.arrayContaining(['the generator needs diesel', 'secret diesel stash'])
     )
     // Kit sees the public hit but never the DM.
     expect(await search(tokenC)).toEqual(['the generator needs diesel'])
@@ -656,10 +702,20 @@ describe('files and search', () => {
 
   it('drops deleted messages from the search index', () => {
     const general = store.getChannelByName('general')!
-    const kept = store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: 'diesel topup at noon' }).message
-    const doomed = store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: 'diesel spill cleanup' }).message
+    const kept = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'diesel topup at noon',
+    }).message
+    const doomed = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'diesel spill cleanup',
+    }).message
     expect(store.searchMessages('diesel', 10).map((m) => m.id)).toEqual(
-      expect.arrayContaining([kept.id, doomed.id]),
+      expect.arrayContaining([kept.id, doomed.id])
     )
 
     db.prepare('DELETE FROM messages WHERE id = ?').run(doomed.id)
@@ -670,7 +726,12 @@ describe('files and search', () => {
 
     // The deleted row had the max rowid, so the next insert reuses it. Without
     // the delete trigger the orphaned index entry would match this new message.
-    const successor = store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: 'stage two lineup' }).message
+    const successor = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'stage two lineup',
+    }).message
     expect(store.searchMessages('spill', 10)).toEqual([])
     expect(store.searchMessages('lineup', 10).map((m) => m.id)).toEqual([successor.id])
   })
@@ -679,12 +740,25 @@ describe('files and search', () => {
 describe('remote access', () => {
   it('classifies LAN vs public addresses (incl. hex-mapped IPv6)', () => {
     for (const ip of [
-      '10.0.2.2', '192.168.8.14', '172.20.1.9', '127.0.0.1', '::1',
-      '::ffff:192.168.1.2', '::ffff:c0a8:0164', 'fe80::1', // c0a8:0164 = 192.168.1.100
+      '10.0.2.2',
+      '192.168.8.14',
+      '172.20.1.9',
+      '127.0.0.1',
+      '::1',
+      '::ffff:192.168.1.2',
+      '::ffff:c0a8:0164',
+      'fe80::1', // c0a8:0164 = 192.168.1.100
     ]) {
       expect(isPrivateIp(ip), ip).toBe(true)
     }
-    for (const ip of ['203.0.113.9', '8.8.8.8', '::ffff:203.0.113.9', '::ffff:cb00:7109', '2001:db8::1', '172.32.0.1']) {
+    for (const ip of [
+      '203.0.113.9',
+      '8.8.8.8',
+      '::ffff:203.0.113.9',
+      '::ffff:cb00:7109',
+      '2001:db8::1',
+      '172.32.0.1',
+    ]) {
       expect(isPrivateIp(ip), ip).toBe(false)
     }
   })
@@ -694,10 +768,16 @@ describe('remote access', () => {
       ({ headers, socket: { remoteAddress } }) as unknown as IncomingMessage
     // Pure-LAN deploy (trustProxy off): a spoofed public header is ignored,
     // so a crew member can't forge an 'office' badge — socket addr wins.
-    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '8.8.8.8' }, '192.168.1.5'), false)).toBe(false)
+    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '8.8.8.8' }, '192.168.1.5'), false)).toBe(
+      false
+    )
     // Behind a trusted proxy: the forwarded client IP is honoured.
-    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '8.8.8.8' }, '127.0.0.1'), true)).toBe(true)
-    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '192.168.1.5' }, '127.0.0.1'), true)).toBe(false)
+    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '8.8.8.8' }, '127.0.0.1'), true)).toBe(
+      true
+    )
+    expect(isRemoteConnection(fake({ 'cf-connecting-ip': '192.168.1.5' }, '127.0.0.1'), true)).toBe(
+      false
+    )
   })
 
   it('expires idle sessions past the TTL and prunes them', async () => {
@@ -724,7 +804,7 @@ describe('remote access', () => {
     await connect(officeToken)
     const update = await site.client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'presence' }> =>
-        m.type === 'presence' && m.userId === office.welcome.me.id && m.remote === false,
+        m.type === 'presence' && m.userId === office.welcome.me.id && m.remote === false
     )
     expect(update.online).toBe(true)
   })
@@ -738,7 +818,8 @@ describe('voice', () => {
 
     a.client.send({ type: 'openDm', userId: b.welcome.me.id })
     const dm = await a.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'channel' }> => m.type === 'channel' && m.channel.kind === 'dm',
+      (m): m is Extract<ServerMessage, { type: 'channel' }> =>
+        m.type === 'channel' && m.channel.kind === 'dm'
     )
 
     const mint = (token: string, channelId: string) =>
@@ -768,7 +849,11 @@ describe('admin', () => {
 
     const calls = [
       { method: 'GET' as const, url: '/api/admin/export' },
-      { method: 'PATCH' as const, url: `/api/admin/channels/${general.id}`, payload: { topic: 'x' } },
+      {
+        method: 'PATCH' as const,
+        url: `/api/admin/channels/${general.id}`,
+        payload: { topic: 'x' },
+      },
       { method: 'POST' as const, url: `/api/admin/users/${sam.id}/pin`, payload: { pin: '4321' } },
     ]
     for (const call of calls) {
@@ -845,13 +930,13 @@ describe('admin', () => {
 
     const broadcast = await client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'channel' }> =>
-        m.type === 'channel' && m.channel.id === stage.id,
+        m.type === 'channel' && m.channel.id === stage.id
     )
     expect(broadcast.channel.name).toBe('stage-2')
     // The rename leaves a trail in the channel itself.
     const note = await client.waitFor(
       (m): m is Extract<ServerMessage, { type: 'msg' }> =>
-        m.type === 'msg' && m.message.kind === 'system' && m.message.channelId === stage.id,
+        m.type === 'msg' && m.message.kind === 'system' && m.message.channelId === stage.id
     )
     expect(note.message.body).toContain('#stage-2')
   })
@@ -884,7 +969,7 @@ describe('admin', () => {
     const clientMsgId = newId()
     client.send({ type: 'send', clientMsgId, channelId: stage.id, body: 'anyone here?' })
     const rejected = await client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'rejected' }> => m.type === 'rejected',
+      (m): m is Extract<ServerMessage, { type: 'rejected' }> => m.type === 'rejected'
     )
     expect(rejected.clientMsgId).toBe(clientMsgId)
     expect(rejected.reason).toBe('channel retired')
@@ -897,14 +982,26 @@ describe('admin', () => {
     const b = await connect(memberToken)
     const general = a.welcome.channels.find((c) => c.name === 'general')!
 
-    a.client.send({ type: 'send', clientMsgId: newId(), channelId: general.id, body: 'load out at 6' })
+    a.client.send({
+      type: 'send',
+      clientMsgId: newId(),
+      channelId: general.id,
+      body: 'load out at 6',
+    })
     a.client.send({ type: 'openDm', userId: b.welcome.me.id })
     const dm = await a.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'channel' }> => m.type === 'channel' && m.channel.kind === 'dm',
+      (m): m is Extract<ServerMessage, { type: 'channel' }> =>
+        m.type === 'channel' && m.channel.kind === 'dm'
     )
-    a.client.send({ type: 'send', clientMsgId: newId(), channelId: dm.channel.id, body: 'dm for the archive' })
+    a.client.send({
+      type: 'send',
+      clientMsgId: newId(),
+      channelId: dm.channel.id,
+      body: 'dm for the archive',
+    })
     await a.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'ack' }> => m.type === 'ack' && m.message.body.includes('archive'),
+      (m): m is Extract<ServerMessage, { type: 'ack' }> =>
+        m.type === 'ack' && m.message.body.includes('archive')
     )
     const stage = store.createChannel('stage', 'public')
     store.updateChannel(stage.id, { retired: true })
@@ -925,11 +1022,11 @@ describe('admin', () => {
     }
     expect(dump.users.map((u) => u.name).sort()).toEqual(['Alex', 'Sam'])
     expect(dump.channels.map((c) => c.id)).toEqual(
-      expect.arrayContaining([general.id, dm.channel.id, stage.id]),
+      expect.arrayContaining([general.id, dm.channel.id, stage.id])
     )
     expect(dump.channels.find((c) => c.id === stage.id)?.retired).toBe(true)
     expect(dump.messages.map((m) => m.body)).toEqual(
-      expect.arrayContaining(['load out at 6', 'dm for the archive']),
+      expect.arrayContaining(['load out at 6', 'dm for the archive'])
     )
   })
 })
@@ -963,7 +1060,7 @@ describe('settings & config', () => {
     expect(ok.statusCode).toBe(200)
 
     const pushed = await listener.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'config' }> => m.type === 'config',
+      (m): m is Extract<ServerMessage, { type: 'config' }> => m.type === 'config'
     )
     expect(pushed.config.wifiSsid).toBe('CrewNet')
 
@@ -1008,14 +1105,14 @@ describe('heartbeat', () => {
     const t = Date.now() - 1234
     client.send({ type: 'ping', t })
     const pong = await client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'pong' }> => m.type === 'pong',
+      (m): m is Extract<ServerMessage, { type: 'pong' }> => m.type === 'pong'
     )
     expect(pong.t).toBe(t)
   })
 })
 
 describe('read state', () => {
-  it('syncs markRead to the same user\'s other devices', async () => {
+  it("syncs markRead to the same user's other devices", async () => {
     const token = await join('Alex')
     const phone = await connect(token)
     const laptop = await connect(token)
@@ -1023,7 +1120,7 @@ describe('read state', () => {
 
     phone.client.send({ type: 'markRead', channelId: general.id, seq: general.lastSeq })
     const synced = await laptop.client.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'readState' }> => m.type === 'readState',
+      (m): m is Extract<ServerMessage, { type: 'readState' }> => m.type === 'readState'
     )
     expect(synced.channelId).toBe(general.id)
     expect(synced.seq).toBe(general.lastSeq)

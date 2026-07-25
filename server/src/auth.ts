@@ -24,7 +24,7 @@ export class RateLimiter {
 
   constructor(
     private readonly max: number,
-    private readonly windowMs: number,
+    private readonly windowMs: number
   ) {}
 
   allow(key: string): boolean {

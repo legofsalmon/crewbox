@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+} from 'react'
 import { useStore } from '../store.ts'
 
 const coarsePointer =
@@ -118,7 +125,12 @@ export default function Composer({
       {mention && mentionMatches.length > 0 && (
         <div className="mention-pop" role="listbox">
           {mentionMatches.map((name) => (
-            <button key={name} role="option" aria-selected={false} onClick={() => insertMention(name)}>
+            <button
+              key={name}
+              role="option"
+              aria-selected={false}
+              onClick={() => insertMention(name)}
+            >
               @{name}
             </button>
           ))}

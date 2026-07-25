@@ -26,7 +26,7 @@ const joinBodySchema = z.object({
     .trim()
     .min(2)
     .max(24)
-    .regex(/^[\p{L}\p{N} ()._'-]+$/u, 'letters, numbers, spaces and ()._\'- only'),
+    .regex(/^[\p{L}\p{N} ()._'-]+$/u, "letters, numbers, spaces and ()._'- only"),
   eventPin: z.string().max(64).default(''),
   personalPin: z.string().regex(/^\d{4,8}$/, '4–8 digits'),
 })
@@ -73,7 +73,7 @@ const settingsPatchSchema = z.object({
  */
 export function parseByteRange(
   header: string | undefined,
-  size: number,
+  size: number
 ): { start: number; end: number } | 'unsatisfiable' | null {
   if (!header || size <= 0) return null
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
@@ -206,9 +206,10 @@ export function buildApp({
       }
       if (!verifyPin(personalPin, existing.pinHash)) {
         pinLimiter.record(accountKey)
-        return reply
-          .code(401)
-          .send({ error: 'That name is taken and the PIN doesn\'t match. Pick another name, or use your PIN.' })
+        return reply.code(401).send({
+          error:
+            "That name is taken and the PIN doesn't match. Pick another name, or use your PIN.",
+        })
       }
       pinLimiter.clear(accountKey)
       const token = newToken()
@@ -260,7 +261,13 @@ export function buildApp({
     // small client-rendered `thumb` image part, then the `file` part itself.
     const fields: Record<string, string> = {}
     let thumb: Buffer | null = null
-    let main: { tmpPath: string; sha256: string; name: string; mime: string; truncated: boolean } | null = null
+    let main: {
+      tmpPath: string
+      sha256: string
+      name: string
+      mime: string
+      truncated: boolean
+    } | null = null
 
     for await (const part of req.parts()) {
       if (part.type === 'field') {
@@ -515,7 +522,10 @@ export function buildApp({
     const updated = store.updateChannel(id, parsed.data)!
     hub.announceChannel(updated)
     if (name && name !== channel.name && !updated.retired) {
-      hub.systemMessage(updated.id, `#${channel.name} is now #${updated.name} (renamed by ${admin.name})`)
+      hub.systemMessage(
+        updated.id,
+        `#${channel.name} is now #${updated.name} (renamed by ${admin.name})`
+      )
     }
     return { channel: updated }
   })

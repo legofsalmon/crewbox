@@ -14,10 +14,30 @@ export default function ServerUnreachable() {
     <div className="center-screen">
       <div className="center-card">
         <svg viewBox="0 0 48 48" className="join-logo center-logo" aria-hidden>
-          <path d="M10 30a14 14 0 0 1 28 0" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          <path d="M17 30a7 7 0 0 1 14 0" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          <path
+            d="M10 30a14 14 0 0 1 28 0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <path
+            d="M17 30a7 7 0 0 1 14 0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
           <circle cx="24" cy="33" r="3.5" fill="currentColor" />
-          <line x1="8" y1="40" x2="40" y2="8" stroke="var(--danger)" strokeWidth="3" strokeLinecap="round" />
+          <line
+            x1="8"
+            y1="40"
+            x2="40"
+            y2="8"
+            stroke="var(--danger)"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
         </svg>
         <h1>Can't reach the crew server</h1>
         <p>
@@ -27,9 +47,7 @@ export default function ServerUnreachable() {
         <button className="center-retry" onClick={retryConnection} disabled={retrying}>
           {retrying ? 'Retrying…' : 'Retry now'}
         </button>
-        <div className="center-meta">
-          Trying {serverLabel()} · retrying automatically
-        </div>
+        <div className="center-meta">Trying {serverLabel()} · retrying automatically</div>
         <div className="center-version">v{APP_VERSION}</div>
       </div>
     </div>

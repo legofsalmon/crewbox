@@ -53,7 +53,7 @@ describe('same-origin default (the PWA path)', () => {
     expect(wsUrl()).toBe('wss://chat.crew.example/ws')
     expect(serverLabel()).toBe('chat.crew.example')
     expect(absoluteFileUrl({ id: 'f1', name: 'map.png', mime: 'image/png', size: 1 })).toBe(
-      'https://chat.crew.example/api/files/f1/map.png',
+      'https://chat.crew.example/api/files/f1/map.png'
     )
   })
 })
@@ -66,7 +66,7 @@ describe('configured origin (the native path)', () => {
     expect(wsUrl()).toBe('ws://192.168.8.1:8787/ws')
     expect(serverLabel()).toBe('192.168.8.1:8787')
     expect(absoluteFileUrl({ id: 'f1', name: 'map.png', mime: 'image/png', size: 1 })).toBe(
-      'http://192.168.8.1:8787/api/files/f1/map.png',
+      'http://192.168.8.1:8787/api/files/f1/map.png'
     )
   })
 

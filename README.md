@@ -113,7 +113,7 @@ anything mid-task** (the service worker registers in `prompt` mode):
   holds a WebSocket to the crew server and buzzes for messages and mentions
   while the phone is locked, entirely on-LAN. Alert-critical roles carry
   Android.
-- Mic, install prompt and service worker require HTTPS *in the browser* —
+- Mic, install prompt and service worker require HTTPS _in the browser_ —
   provided on site by the pre-fetched certificate + local DNS trick (see
   RUNBOOK). **The native apps are exempt**: they talk plain HTTP to the crew
   server and grant mic permission natively.

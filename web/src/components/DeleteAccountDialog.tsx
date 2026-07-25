@@ -58,7 +58,11 @@ export default function DeleteAccountDialog({ onClose }: { onClose: () => void }
           <button className="confirm-cancel" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="confirm-delete" onClick={() => void onDelete()} disabled={!canDelete || busy}>
+          <button
+            className="confirm-delete"
+            onClick={() => void onDelete()}
+            disabled={!canDelete || busy}
+          >
             {busy ? 'Deleting…' : 'Delete account'}
           </button>
         </div>

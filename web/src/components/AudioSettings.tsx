@@ -76,8 +76,8 @@ export default function AudioSettings() {
             </select>
           ) : (
             <p className="audio-hint">
-              This device routes sound through the system — switch outputs in
-              Control Centre / your Bluetooth settings.
+              This device routes sound through the system — switch outputs in Control Centre / your
+              Bluetooth settings.
             </p>
           )}
         </label>

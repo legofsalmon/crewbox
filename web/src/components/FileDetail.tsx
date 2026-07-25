@@ -186,7 +186,9 @@ function ZoomableImage({ url, name }: { url: string; name: string }) {
       const rect = box.getBoundingClientRect()
       const factor = Math.exp(-e.deltaY * 0.002)
       setInteracted(true)
-      setZoom((z) => zoomAt(z, e.clientX - rect.left, e.clientY - rect.top, factor, rect.width, rect.height))
+      setZoom((z) =>
+        zoomAt(z, e.clientX - rect.left, e.clientY - rect.top, factor, rect.width, rect.height)
+      )
     }
     box.addEventListener('wheel', onWheel, { passive: false })
     return () => box.removeEventListener('wheel', onWheel)
@@ -226,8 +228,8 @@ function ZoomableImage({ url, name }: { url: string; name: string }) {
           mid.y - rect.top,
           dist / prevDist,
           rect.width,
-          rect.height,
-        ),
+          rect.height
+        )
       )
       return
     }
@@ -249,7 +251,14 @@ function ZoomableImage({ url, name }: { url: string; name: string }) {
       setZoom((z) =>
         z.scale > 1
           ? zoomIdentity
-          : zoomAt(z, e.clientX - rect.left, e.clientY - rect.top, ZOOM_TAP, rect.width, rect.height),
+          : zoomAt(
+              z,
+              e.clientX - rect.left,
+              e.clientY - rect.top,
+              ZOOM_TAP,
+              rect.width,
+              rect.height
+            )
       )
       lastTap.current = 0
       return

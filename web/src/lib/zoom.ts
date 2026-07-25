@@ -36,7 +36,7 @@ export function zoomAt(
   focalY: number,
   factor: number,
   w: number,
-  h: number,
+  h: number
 ): ZoomState {
   const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.scale * factor))
   const k = scale / state.scale

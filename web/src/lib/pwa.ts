@@ -1,7 +1,6 @@
 import { registerSW } from 'virtual:pwa-register'
 
-export const APP_VERSION: string =
-  typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
+export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
 
 /**
  * Register the service worker in prompt mode. When a new build is deployed,

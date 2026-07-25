@@ -14,14 +14,20 @@ function isIosSafariBrowser(): boolean {
 /** One-time nudge for iOS users: installed PWAs behave far better on site. */
 export default function IosInstallTip() {
   const [dismissed, setDismissed] = useState(
-    () => localStorage.getItem(DISMISS_KEY) === '1' || !isIosSafariBrowser(),
+    () => localStorage.getItem(DISMISS_KEY) === '1' || !isIosSafariBrowser()
   )
   if (dismissed) return null
   return (
     <div className="ios-tip" role="note">
       <span>
         Add Crewbox to your home screen for the best experience:{' '}
-        <svg viewBox="0 0 24 24" width="15" height="15" aria-label="Share" style={{ verticalAlign: '-2px' }}>
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          aria-label="Share"
+          style={{ verticalAlign: '-2px' }}
+        >
           <path
             d="M12 3v12M8 6.5 12 3l4 3.5M5 11v8a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-8"
             fill="none"

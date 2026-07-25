@@ -26,7 +26,10 @@ export function saveDeviceId(kind: AudioKind, deviceId: string | null): void {
  * exists, otherwise system default (null). Headsets get unplugged
  * mid-shift; silently vanishing audio is not acceptable at a festival.
  */
-export function resolveDevice(saved: string | null, available: DeviceInfo[]): {
+export function resolveDevice(
+  saved: string | null,
+  available: DeviceInfo[]
+): {
   deviceId: string | null
   fellBack: boolean
 } {

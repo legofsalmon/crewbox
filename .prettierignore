@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dev-dist/
+build/
+data/
+package-lock.json
+import/
+native/android/
+native/ios/
+docs/privacy-policy.html
+deploy/poster.html
+web/public/

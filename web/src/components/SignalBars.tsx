@@ -1,7 +1,13 @@
 import type { LatencyClass } from '../lib/quality.ts'
 
 /** 3-bar signal strength glyph: good = 3, fair = 2, poor = 1. */
-export default function SignalBars({ quality, size = 16 }: { quality: LatencyClass; size?: number }) {
+export default function SignalBars({
+  quality,
+  size = 16,
+}: {
+  quality: LatencyClass
+  size?: number
+}) {
   const lit = quality === 'good' ? 3 : quality === 'fair' ? 2 : 1
   return (
     <svg

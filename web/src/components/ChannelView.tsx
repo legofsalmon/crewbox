@@ -21,8 +21,7 @@ export default function ChannelView({ channelId }: { channelId: string }) {
   if (!channel) return <div className="empty-state">Channel not found</div>
 
   const label = channelLabel(channel, users, me?.id)
-  const otherId =
-    channel.kind === 'dm' ? channel.memberIds?.find((id) => id !== me?.id) : undefined
+  const otherId = channel.kind === 'dm' ? channel.memberIds?.find((id) => id !== me?.id) : undefined
   const onlineCount = Object.values(online).filter(Boolean).length
 
   return (
@@ -47,7 +46,8 @@ export default function ChannelView({ channelId }: { channelId: string }) {
           <h2>
             {channel.kind === 'dm' ? (
               <>
-                <span className={`presence-dot ${otherId && online[otherId] ? 'on' : ''}`} /> {label}
+                <span className={`presence-dot ${otherId && online[otherId] ? 'on' : ''}`} />{' '}
+                {label}
               </>
             ) : (
               <>
@@ -103,7 +103,10 @@ export default function ChannelView({ channelId }: { channelId: string }) {
       </header>
       <MessageList channelId={channelId} />
       <TypingLine channelId={channelId} />
-      <Composer channelId={channelId} placeholder={`Message ${channel.kind === 'dm' ? label : `#${label}`}`} />
+      <Composer
+        channelId={channelId}
+        placeholder={`Message ${channel.kind === 'dm' ? label : `#${label}`}`}
+      />
     </div>
   )
 }

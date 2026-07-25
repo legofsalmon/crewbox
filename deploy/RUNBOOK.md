@@ -44,14 +44,14 @@ The one document to print and keep in the production office.
 
 ## When things go wrong
 
-| Symptom | Fix |
-|---|---|
-| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP. |
-| Certificate warning | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online. |
-| App down | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves. |
-| Voice drops but chat works | `systemctl restart livekit`. Check UDP ports 50000–50200 aren't firewalled. |
-| Server box dies | Swap in the spare, restore newest USB backup into `/var/lib/crewbox`, same static IP. Crew phones reconnect on their own. |
-| Full reset mid-event | Power-cycle everything in the power order above. The system needs no human input to come back. |
+| Symptom                    | Fix                                                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.          |
+| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online. |
+| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.    |
+| Voice drops but chat works | `systemctl restart livekit`. Check UDP ports 50000–50200 aren't firewalled.                                                |
+| Server box dies            | Swap in the spare, restore newest USB backup into `/var/lib/crewbox`, same static IP. Crew phones reconnect on their own.  |
+| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                             |
 
 ## Teardown
 

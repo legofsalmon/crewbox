@@ -43,7 +43,7 @@ export default function Join() {
       setError(
         err instanceof ApiError
           ? err.message
-          : `Can't reach the crew server. Check you're connected to ${wifiSsid ?? 'the crew Wi-Fi'}, then try again.`,
+          : `Can't reach the crew server. Check you're connected to ${wifiSsid ?? 'the crew Wi-Fi'}, then try again.`
       )
     } finally {
       setBusy(false)

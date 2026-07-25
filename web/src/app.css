@@ -17,8 +17,7 @@
   --radius: 12px;
   --sidebar-w: 280px;
   --font:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, sans-serif;
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='light'] {
@@ -109,8 +108,7 @@ ul {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%),
-    var(--bg);
+    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%), var(--bg);
 }
 
 .join-card {
@@ -213,8 +211,7 @@ ul {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%),
-    var(--bg);
+    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%), var(--bg);
 }
 
 .center-card {
@@ -916,7 +913,9 @@ ul {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  transition: background 0.15s, opacity 0.15s;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
 }
 
 .send-btn:hover {
@@ -1155,7 +1154,9 @@ ul {
   color: var(--text-muted);
   white-space: nowrap;
   font-size: 12.5px;
-  transition: border-color 0.1s, color 0.1s;
+  transition:
+    border-color 0.1s,
+    color 0.1s;
 }
 
 .voice-chip.speaking {

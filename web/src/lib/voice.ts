@@ -17,7 +17,12 @@ import {
   type DeviceInfo,
 } from './devices.ts'
 
-import { initialVoiceState, type VoiceParticipant, type VoiceQuality, type VoiceState } from './voice-state.ts'
+import {
+  initialVoiceState,
+  type VoiceParticipant,
+  type VoiceQuality,
+  type VoiceState,
+} from './voice-state.ts'
 
 export type { VoiceParticipant, VoiceQuality, VoiceState }
 
@@ -120,7 +125,7 @@ export class VoiceManager {
       await Promise.race([
         room.connect(url, token),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS),
+          setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS)
         ),
       ])
       await room.startAudio()
@@ -154,7 +159,9 @@ export class VoiceManager {
           await room.localParticipant.setMicrophoneEnabled(true)
           await room.localParticipant.setMicrophoneEnabled(false)
         })(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('mic timeout')), CONNECT_TIMEOUT_MS)),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('mic timeout')), CONNECT_TIMEOUT_MS)
+        ),
       ])
       if (this.room === room) {
         this.publish({ micReady: true })
@@ -223,7 +230,7 @@ export class VoiceManager {
           this.publish(
             kind === 'audioinput'
               ? { selectedInput: null, error: 'Mic disconnected — using default' }
-              : { selectedOutput: null, error: 'Speaker disconnected — using default' },
+              : { selectedOutput: null, error: 'Speaker disconnected — using default' }
           )
           if (this.room) void this.room.switchActiveDevice(kind, 'default')
         }

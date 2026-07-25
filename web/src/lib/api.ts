@@ -16,7 +16,7 @@ export interface AdminSettings {
 export class ApiError extends Error {
   constructor(
     message: string,
-    readonly status: number,
+    readonly status: number
   ) {
     super(message)
   }
@@ -45,7 +45,7 @@ export function join(input: {
 export function uploadFile(
   token: string,
   file: File,
-  image?: { width: number; height: number; thumb: Blob | null },
+  image?: { width: number; height: number; thumb: Blob | null }
 ): Promise<{ file: FileMeta }> {
   const form = new FormData()
   // Fields and thumb go before the file so the server sees them first.
@@ -64,7 +64,7 @@ export function uploadFile(
 
 export function voiceToken(
   token: string,
-  channelId: string,
+  channelId: string
 ): Promise<{ url: string; token: string }> {
   return request('/api/voice/token', {
     method: 'POST',
@@ -82,7 +82,7 @@ export function search(token: string, q: string): Promise<{ messages: Message[] 
 export function fetchContext(
   token: string,
   channelId: string,
-  seq: number,
+  seq: number
 ): Promise<{ messages: Message[] }> {
   const params = new URLSearchParams({ seq: String(seq) })
   return request(`/api/channels/${channelId}/context?${params}`, {
@@ -94,7 +94,7 @@ export function fetchHistory(
   token: string,
   channelId: string,
   beforeSeq: number,
-  limit = 100,
+  limit = 100
 ): Promise<{ messages: Message[] }> {
   const params = new URLSearchParams({ beforeSeq: String(beforeSeq), limit: String(limit) })
   return request(`/api/channels/${channelId}/messages?${params}`, {
@@ -113,7 +113,7 @@ export function adminResetPin(token: string, userId: string, pin: string): Promi
 export function adminUpdateChannel(
   token: string,
   channelId: string,
-  patch: { name?: string; topic?: string; retired?: boolean },
+  patch: { name?: string; topic?: string; retired?: boolean }
 ): Promise<{ channel: Channel }> {
   return request(`/api/admin/channels/${channelId}`, {
     method: 'PATCH',
@@ -147,7 +147,7 @@ export function adminGetSettings(token: string): Promise<AdminSettings> {
 
 export function adminUpdateSettings(
   token: string,
-  patch: { wifiSsid?: string },
+  patch: { wifiSsid?: string }
 ): Promise<{ settings: { wifiSsid: string } }> {
   return request('/api/admin/settings', {
     method: 'PATCH',

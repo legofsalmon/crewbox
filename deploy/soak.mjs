@@ -56,7 +56,7 @@ async function makeClient(i) {
           clientMsgId: `soak-${i}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           channelId,
           body: `soak message ${stats.sent} from ${i}`,
-        }),
+        })
       )
     }
   }, 1000)

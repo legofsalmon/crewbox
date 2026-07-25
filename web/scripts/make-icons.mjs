@@ -28,7 +28,10 @@ const padded = Buffer.from(
        <path d="M186 312a70 70 0 0 1 140 0" fill="none" stroke="#f5b73e" stroke-width="34" stroke-linecap="round"/>
        <circle cx="256" cy="342" r="38" fill="#f5b73e"/>
      </g>
-   </svg>`,
+   </svg>`
 )
-await sharp(padded, { density: 300 }).resize(512, 512).png().toFile(join(root, 'icon-maskable-512.png'))
+await sharp(padded, { density: 300 })
+  .resize(512, 512)
+  .png()
+  .toFile(join(root, 'icon-maskable-512.png'))
 console.log('wrote icon-maskable-512.png')

@@ -219,7 +219,11 @@ export const useStore = create<AppState>()((set, get) => {
         pending[channelId] = pending[channelId].filter((p) => !settled.has(p.clientMsgId))
       }
     }
-    set(mentionsChanged ? { messages, pending, channels, mentionSeqs } : { messages, pending, channels })
+    set(
+      mentionsChanged
+        ? { messages, pending, channels, mentionSeqs }
+        : { messages, pending, channels }
+    )
     if (mentionsChanged) schedulePersistSnapshot()
     for (const clientMsgId of settled) void cache.deleteOutbox(clientMsgId)
     void cache.saveMessages(incoming)
@@ -386,7 +390,7 @@ export const useStore = create<AppState>()((set, get) => {
             playAlert()
             notify(
               channel?.kind === 'dm' ? author : `${author} in #${channel?.name ?? 'channel'}`,
-              msg.message.body || msg.message.file?.name || '',
+              msg.message.body || msg.message.file?.name || ''
             )
           }
         }
@@ -418,7 +422,10 @@ export const useStore = create<AppState>()((set, get) => {
         break
       case 'typing': {
         const typing = { ...get().typing }
-        typing[msg.channelId] = { ...typing[msg.channelId], [msg.userId]: Date.now() + TYPING_TTL_MS }
+        typing[msg.channelId] = {
+          ...typing[msg.channelId],
+          [msg.userId]: Date.now() + TYPING_TTL_MS,
+        }
         set({ typing })
         break
       }
@@ -431,7 +438,7 @@ export const useStore = create<AppState>()((set, get) => {
         // A retired channel disappears; move anyone looking at it to #general.
         if (msg.channel.retired && get().activeChannelId === msg.channel.id) {
           const fallback = Object.values(get().channels).find(
-            (c) => c.name === 'general' && !c.retired,
+            (c) => c.name === 'general' && !c.retired
           )
           set({ activeChannelId: fallback?.id ?? null })
         }
@@ -530,7 +537,7 @@ export const useStore = create<AppState>()((set, get) => {
         // First use: load the voice module (and the LiveKit SDK) on demand.
         const { VoiceManager } = await import('./lib/voice.ts')
         voiceManager ??= new VoiceManager((partial) =>
-          set({ voice: { ...useStore.getState().voice, ...partial } }),
+          set({ voice: { ...useStore.getState().voice, ...partial } })
         )
       }
       try {
@@ -717,7 +724,10 @@ export const useStore = create<AppState>()((set, get) => {
           ctx.at(-1)!.seq >= earliestHeld - 1
         ) {
           set({
-            messages: { ...get().messages, [channelId]: mergeMessages(get().messages[channelId], ctx) },
+            messages: {
+              ...get().messages,
+              [channelId]: mergeMessages(get().messages[channelId], ctx),
+            },
           })
           void cache.saveMessages(ctx)
         } else {
@@ -761,7 +771,8 @@ export const useStore = create<AppState>()((set, get) => {
     openDm(userId) {
       const { channels, me } = get()
       const existing = Object.values(channels).find(
-        (c) => c.kind === 'dm' && c.memberIds?.includes(userId) && c.memberIds.includes(me?.id ?? ''),
+        (c) =>
+          c.kind === 'dm' && c.memberIds?.includes(userId) && c.memberIds.includes(me?.id ?? '')
       )
       if (existing) {
         get().setActiveChannel(existing.id)
@@ -782,10 +793,17 @@ export const useStore = create<AppState>()((set, get) => {
       if (loadingOlder || !earliest || earliest.seq <= 1) return
       set({ loadingOlder: true })
       try {
-        const { messages: older } = await api.fetchHistory(getToken() ?? '', channelId, earliest.seq)
+        const { messages: older } = await api.fetchHistory(
+          getToken() ?? '',
+          channelId,
+          earliest.seq
+        )
         if (older.length) {
           set({
-            messages: { ...get().messages, [channelId]: mergeMessages(get().messages[channelId], older) },
+            messages: {
+              ...get().messages,
+              [channelId]: mergeMessages(get().messages[channelId], older),
+            },
           })
           void cache.saveMessages(older)
         }
@@ -861,7 +879,9 @@ export const useStore = create<AppState>()((set, get) => {
 
     async logout() {
       await voiceManager?.leave()
-      void nativeAlerts()?.stop().catch(() => {})
+      void nativeAlerts()
+        ?.stop()
+        .catch(() => {})
       ws?.stop()
       ws = null
       localStorage.removeItem(TOKEN_KEY)
@@ -905,7 +925,7 @@ export function unreadCount(channel: Channel, readState: Record<string, number>)
 export function channelLabel(
   channel: Channel,
   users: Record<string, User>,
-  meId: string | undefined,
+  meId: string | undefined
 ): string {
   if (channel.kind !== 'dm') return channel.name
   const otherId = channel.memberIds?.find((id) => id !== meId) ?? channel.memberIds?.[0]

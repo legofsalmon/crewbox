@@ -1,4 +1,14 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from 'react'
 import { fileUrl, thumbUrl, type FileMeta, type Message } from '@crewbox/shared'
 import { useStore, type Pending } from '../store.ts'
 import { formatBytes } from '../lib/files.ts'
@@ -26,7 +36,6 @@ function time(ts: number): string {
   return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-
 /** Highlight @mentions of known names (plus @all/@everyone/@channel). */
 function renderBody(body: string, names: string[], myName: string | undefined): ReactNode {
   const candidates = [...names, 'all', 'everyone', 'channel'].sort((a, b) => b.length - a.length)
@@ -52,7 +61,7 @@ function renderBody(body: string, names: string[], myName: string | undefined): 
     nodes.push(
       <mark key={key++} className={`mention ${isMe || isBroadcast ? 'mention-me' : ''}`}>
         {text}
-      </mark>,
+      </mark>
     )
     cursor = i + hit.length + 1
     i = cursor - 1
@@ -182,6 +191,10 @@ export default function MessageList({ channelId }: { channelId: string }) {
     // "grew" by comparing this channel's lastSeq against the previous one's.
     prevLastSeqRef.current = lastSeq
     prevPendingIdRef.current = lastPendingId
+    // Deliberately fires on channel switch only: lastSeq/lastPendingId are
+    // read as baselines, and re-running on their changes would jump the
+    // scroll on every message.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId])
 
   // scrollHeight keeps changing while a freshly opened channel settles —
@@ -342,7 +355,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
       rows.push(
         <div className="day-divider" key={`day-${msg.id}`}>
           <span>{dayLabel(msg.createdAt)}</span>
-        </div>,
+        </div>
       )
       prevMsg = null
     }
@@ -350,7 +363,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
       rows.push(
         <div className="system-msg" key={msg.id} data-seq={msg.seq}>
           {msg.body}
-        </div>,
+        </div>
       )
       prevMsg = msg
       continue
@@ -372,7 +385,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
         myName={me?.name}
         onImgLoad={onImgLoad}
         flashed={msg.seq === flashSeq}
-      />,
+      />
     )
     prevMsg = msg
   }
@@ -386,7 +399,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
         grouped={false}
         userNames={userNames}
         myName={me?.name}
-      />,
+      />
     )
   }
 
@@ -448,7 +461,17 @@ const MessageRow = memo(function MessageRow(props: {
   /** Briefly highlighted as a search-jump landing. */
   flashed?: boolean
 }) {
-  const { msg, pendingEntry, authorName, authorId, grouped, userNames, myName, onImgLoad, flashed } = props
+  const {
+    msg,
+    pendingEntry,
+    authorName,
+    authorId,
+    grouped,
+    userNames,
+    myName,
+    onImgLoad,
+    flashed,
+  } = props
   const openFileDetail = useStore((s) => s.openFileDetail)
 
   const pending = !msg
@@ -457,7 +480,12 @@ const MessageRow = memo(function MessageRow(props: {
   const file: FileMeta | undefined =
     msg?.file ??
     (pendingEntry?.fileId
-      ? { id: pendingEntry.fileId, name: pendingEntry.fileName ?? 'file', mime: pendingEntry.fileMime ?? '', size: 0 }
+      ? {
+          id: pendingEntry.fileId,
+          name: pendingEntry.fileName ?? 'file',
+          mime: pendingEntry.fileMime ?? '',
+          size: 0,
+        }
       : undefined)
 
   return (

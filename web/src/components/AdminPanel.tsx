@@ -24,16 +24,16 @@ export default function AdminPanel() {
       Object.values(users).sort(
         (a, b) =>
           Number(online[b.id] ?? false) - Number(online[a.id] ?? false) ||
-          a.name.localeCompare(b.name),
+          a.name.localeCompare(b.name)
       ),
-    [users, online],
+    [users, online]
   )
   const publicChannels = useMemo(
     () =>
       Object.values(channels)
         .filter((c) => c.kind === 'public' && !c.retired)
         .sort((a, b) => a.createdAt - b.createdAt),
-    [channels],
+    [channels]
   )
 
   async function downloadExport() {
@@ -65,7 +65,11 @@ export default function AdminPanel() {
       <div className="admin-panel" role="dialog" aria-label="Admin panel">
         <header className="admin-head">
           <h2>Admin</h2>
-          <button className="icon-btn" aria-label="Close admin panel" onClick={() => setAdminOpen(false)}>
+          <button
+            className="icon-btn"
+            aria-label="Close admin panel"
+            onClick={() => setAdminOpen(false)}
+          >
             ✕
           </button>
         </header>
@@ -103,7 +107,11 @@ export default function AdminPanel() {
               Download every user, channel and message as a JSON file for the post-event archive.
             </p>
             <div className="admin-export">
-              <button className="admin-btn" disabled={exporting} onClick={() => void downloadExport()}>
+              <button
+                className="admin-btn"
+                disabled={exporting}
+                onClick={() => void downloadExport()}
+              >
                 {exporting ? 'Preparing…' : 'Download chat logs'}
               </button>
             </div>
@@ -170,7 +178,10 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
             placeholder="e.g. CrewNet"
             onChange={(e) => setSsid(e.target.value)}
           />
-          <button className="admin-btn" disabled={saving || !data || ssid === data.settings.wifiSsid}>
+          <button
+            className="admin-btn"
+            disabled={saving || !data || ssid === data.settings.wifiSsid}
+          >
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>

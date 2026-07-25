@@ -74,7 +74,7 @@ export default function Sidebar() {
       Object.values(channels)
         .filter((c) => c.kind === 'public' && !c.retired)
         .sort((a, b) => a.createdAt - b.createdAt),
-    [channels],
+    [channels]
   )
   const dmByOther = useMemo(() => {
     const map = new Map<string, string>()
@@ -89,8 +89,12 @@ export default function Sidebar() {
     () =>
       Object.values(users)
         .filter((u) => u.id !== me?.id)
-        .sort((a, b) => Number(online[b.id] ?? false) - Number(online[a.id] ?? false) || a.name.localeCompare(b.name)),
-    [users, me, online],
+        .sort(
+          (a, b) =>
+            Number(online[b.id] ?? false) - Number(online[a.id] ?? false) ||
+            a.name.localeCompare(b.name)
+        ),
+    [users, me, online]
   )
 
   function submitChannel(e: FormEvent) {
@@ -104,7 +108,10 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <span className={`conn-dot conn-dot-${connDotClass(connection, latencyMs)}`} title={connection} />
+        <span
+          className={`conn-dot conn-dot-${connDotClass(connection, latencyMs)}`}
+          title={connection}
+        />
         <h1>Crewbox</h1>
       </div>
 
@@ -180,7 +187,9 @@ export default function Sidebar() {
                     </span>
                   )}
                   {/* A DM unread is always personal — mention styling. */}
-                  {unread > 0 && <span className="badge badge-mention">{unread > 99 ? '99+' : unread}</span>}
+                  {unread > 0 && (
+                    <span className="badge badge-mention">{unread > 99 ? '99+' : unread}</span>
+                  )}
                 </button>
               </li>
             )
@@ -228,7 +237,12 @@ export default function Sidebar() {
           >
             <Icon d={theme === 'dark' ? ICON_SUN : ICON_MOON} />
           </button>
-          <button className="icon-btn" title="Sign out" aria-label="Sign out" onClick={() => void logout()}>
+          <button
+            className="icon-btn"
+            title="Sign out"
+            aria-label="Sign out"
+            onClick={() => void logout()}
+          >
             <Icon d={ICON_LOGOUT} />
           </button>
         </div>

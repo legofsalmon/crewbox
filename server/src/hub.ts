@@ -90,7 +90,7 @@ export class Hub {
     private readonly log: Logger,
     private readonly getPublicConfig: () => PublicConfig,
     private readonly sessionTtlMs?: number,
-    private readonly trustProxy = false,
+    private readonly trustProxy = false
   ) {}
 
   attach(wss: WebSocketServer): void {
@@ -243,7 +243,7 @@ export class Hub {
       truncated,
       deletions: this.store.listDeletions(
         channels.map((c) => c.id),
-        Date.now() - DELETION_REPLAY_MS,
+        Date.now() - DELETION_REPLAY_MS
       ),
     })
     this.markOnline(user.id, conn.remote)
@@ -268,11 +268,19 @@ export class Hub {
       return
     }
     if (msg.fileId && !this.store.getFile(msg.fileId)) {
-      this.send(conn.ws, { type: 'rejected', clientMsgId: msg.clientMsgId, reason: 'file not found' })
+      this.send(conn.ws, {
+        type: 'rejected',
+        clientMsgId: msg.clientMsgId,
+        reason: 'file not found',
+      })
       return
     }
     if (!msg.fileId && !msg.body.trim()) {
-      this.send(conn.ws, { type: 'rejected', clientMsgId: msg.clientMsgId, reason: 'empty message' })
+      this.send(conn.ws, {
+        type: 'rejected',
+        clientMsgId: msg.clientMsgId,
+        reason: 'empty message',
+      })
       return
     }
     const { message, deduped } = this.store.appendMessage({
@@ -374,7 +382,12 @@ export class Hub {
     if (!remote) this.localSockets.set(userId, (this.localSockets.get(userId) ?? 0) + 1)
     // Announce coming online, or an off-site user's on-site device appearing.
     if (count === 0 || wasRemoteOnly !== this.isRemoteOnly(userId)) {
-      this.broadcastAll({ type: 'presence', userId, online: true, remote: this.isRemoteOnly(userId) })
+      this.broadcastAll({
+        type: 'presence',
+        userId,
+        online: true,
+        remote: this.isRemoteOnly(userId),
+      })
     }
   }
 
@@ -394,7 +407,12 @@ export class Hub {
       this.online.set(userId, count - 1)
       // Their last on-site device left; they're still on from the office.
       if (wasRemoteOnly !== this.isRemoteOnly(userId)) {
-        this.broadcastAll({ type: 'presence', userId, online: true, remote: this.isRemoteOnly(userId) })
+        this.broadcastAll({
+          type: 'presence',
+          userId,
+          online: true,
+          remote: this.isRemoteOnly(userId),
+        })
       }
     }
   }

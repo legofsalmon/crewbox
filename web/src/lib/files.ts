@@ -40,7 +40,7 @@ export async function measureImage(file: File): Promise<ImageUploadExtras | null
       if (ctx) {
         ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
         thumb = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob(resolve, 'image/jpeg', THUMB_JPEG_QUALITY),
+          canvas.toBlob(resolve, 'image/jpeg', THUMB_JPEG_QUALITY)
         )
       }
     }

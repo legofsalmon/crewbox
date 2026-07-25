@@ -132,8 +132,7 @@ export class Store {
 
   getUserByName(name: string): (User & { pinHash: string }) | undefined {
     const row = this.db.prepare('SELECT * FROM users WHERE name = ?').get(name) as
-      | UserRow
-      | undefined
+      UserRow | undefined
     return row ? { ...toUser(row), pinHash: row.pin_hash } : undefined
   }
 
@@ -188,7 +187,7 @@ export class Store {
     const row = this.db
       .prepare(
         `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token = ? AND s.last_seen >= ?`,
+         WHERE s.token = ? AND s.last_seen >= ?`
       )
       .get(token, cutoff) as UserRow | undefined
     return row ? toUser(row) : undefined
@@ -220,7 +219,7 @@ export class Store {
     const row = this.db
       .prepare(
         `SELECT c.*, COALESCE((SELECT MAX(seq) FROM messages m WHERE m.channel_id = c.id), 0) AS last_seq
-         FROM channels c WHERE c.id = ?`,
+         FROM channels c WHERE c.id = ?`
       )
       .get(id) as ChannelRow | undefined
     return row ? this.toChannel(row) : undefined
@@ -230,7 +229,7 @@ export class Store {
     const row = this.db
       .prepare(
         `SELECT c.*, COALESCE((SELECT MAX(seq) FROM messages m WHERE m.channel_id = c.id), 0) AS last_seq
-         FROM channels c WHERE c.name = ?`,
+         FROM channels c WHERE c.name = ?`
       )
       .get(name) as ChannelRow | undefined
     return row ? this.toChannel(row) : undefined
@@ -245,7 +244,7 @@ export class Store {
          WHERE (c.kind = 'public' AND c.retired = 0)
             OR (c.kind = 'dm' AND EXISTS (
                  SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?))
-         ORDER BY c.created_at`,
+         ORDER BY c.created_at`
       )
       .all(userId) as unknown as ChannelRow[]
     return rows.map((row) => this.toChannel(row))
@@ -256,7 +255,7 @@ export class Store {
     const rows = this.db
       .prepare(
         `SELECT c.*, COALESCE((SELECT MAX(seq) FROM messages m WHERE m.channel_id = c.id), 0) AS last_seq
-         FROM channels c ORDER BY c.created_at`,
+         FROM channels c ORDER BY c.created_at`
       )
       .all() as unknown as ChannelRow[]
     return rows.map((row) => this.toChannel(row))
@@ -264,7 +263,7 @@ export class Store {
 
   updateChannel(
     id: string,
-    patch: { name?: string; topic?: string; retired?: boolean },
+    patch: { name?: string; topic?: string; retired?: boolean }
   ): Channel | undefined {
     const sets: string[] = []
     const args: (string | number)[] = []
@@ -314,7 +313,7 @@ export class Store {
       if (existing) return existing
       const channel = this.createChannel(name, 'dm')
       const insert = this.db.prepare(
-        'INSERT INTO channel_members (channel_id, user_id, last_read_seq) VALUES (?, ?, 0)',
+        'INSERT INTO channel_members (channel_id, user_id, last_read_seq) VALUES (?, ?, 0)'
       )
       insert.run(channel.id, a)
       if (a !== b) insert.run(channel.id, b)
@@ -374,7 +373,7 @@ export class Store {
       this.db
         .prepare(
           `INSERT INTO messages (id, channel_id, seq, author_id, kind, body, client_msg_id, created_at, file_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           message.id,
@@ -385,7 +384,7 @@ export class Store {
           message.body,
           message.clientMsgId ?? null,
           message.createdAt,
-          input.fileId ?? null,
+          input.fileId ?? null
         )
       if (input.fileId) {
         const file = this.getFile(input.fileId)
@@ -437,8 +436,7 @@ export class Store {
 
   getMessageById(id: string): Message | undefined {
     const row = this.db.prepare(`${MSG_SELECT} WHERE m.id = ?`).get(id) as unknown as
-      | MessageRow
-      | undefined
+      MessageRow | undefined
     return row ? toMessage(row) : undefined
   }
 
@@ -455,7 +453,9 @@ export class Store {
       if (!row) return undefined
       this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
       this.db
-        .prepare('INSERT OR REPLACE INTO deleted_messages (message_id, channel_id, deleted_at) VALUES (?, ?, ?)')
+        .prepare(
+          'INSERT OR REPLACE INTO deleted_messages (message_id, channel_id, deleted_at) VALUES (?, ?, ?)'
+        )
         .run(id, row.channel_id, Date.now())
       if (!row.file_id) return undefined
       const { refs } = this.db
@@ -463,8 +463,7 @@ export class Store {
         .get(row.file_id) as { refs: number }
       if (refs > 0) return undefined
       const file = this.db.prepare('SELECT path FROM files WHERE id = ?').get(row.file_id) as
-        | { path: string }
-        | undefined
+        { path: string } | undefined
       if (!file) return undefined
       this.db.prepare('DELETE FROM files WHERE id = ?').run(row.file_id)
       const { siblings } = this.db
@@ -474,7 +473,9 @@ export class Store {
     })
     if (orphanedPath === undefined) {
       // Either the message never existed — report that — or no blob cleanup.
-      return this.db.prepare('SELECT 1 FROM deleted_messages WHERE message_id = ?').get(id) !== undefined
+      return (
+        this.db.prepare('SELECT 1 FROM deleted_messages WHERE message_id = ?').get(id) !== undefined
+      )
     }
     try {
       unlinkSync(orphanedPath)
@@ -496,7 +497,7 @@ export class Store {
     const rows = this.db
       .prepare(
         `SELECT message_id, channel_id FROM deleted_messages
-         WHERE deleted_at >= ? AND channel_id IN (${placeholders})`,
+         WHERE deleted_at >= ? AND channel_id IN (${placeholders})`
       )
       .all(sinceMs, ...channelIds) as { message_id: string; channel_id: string }[]
     return rows.map((r) => ({ channelId: r.channel_id, messageId: r.message_id }))
@@ -519,7 +520,7 @@ export class Store {
            JOIN messages m ON m.rowid = fts.rowid
            LEFT JOIN files f ON f.id = m.file_id
            WHERE messages_fts MATCH ?
-           ORDER BY m.created_at DESC LIMIT ?`,
+           ORDER BY m.created_at DESC LIMIT ?`
         )
         .all(terms, limit) as unknown as MessageRow[]
       return rows.map(toMessage)
@@ -544,7 +545,7 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO files (id, name, mime, size, sha256, path, created_at, width, height, thumb_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -556,7 +557,7 @@ export class Store {
         Date.now(),
         meta.width ?? null,
         meta.height ?? null,
-        meta.thumbPath ?? null,
+        meta.thumbPath ?? null
       )
     return toFileMeta({
       id,
@@ -576,15 +577,13 @@ export class Store {
 
   getFileRow(id: string): FileRow | undefined {
     return this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as
-      | FileRow
-      | undefined
+      FileRow | undefined
   }
 
   /** Existing stored blob with identical content, for dedupe. */
   findPathBySha(sha256: string): string | undefined {
     const row = this.db.prepare('SELECT path FROM files WHERE sha256 = ? LIMIT 1').get(sha256) as
-      | { path: string }
-      | undefined
+      { path: string } | undefined
     return row?.path
   }
 
@@ -602,7 +601,7 @@ export class Store {
       .prepare(
         `INSERT INTO channel_members (channel_id, user_id, last_read_seq) VALUES (?, ?, ?)
          ON CONFLICT (channel_id, user_id)
-         DO UPDATE SET last_read_seq = MAX(last_read_seq, excluded.last_read_seq)`,
+         DO UPDATE SET last_read_seq = MAX(last_read_seq, excluded.last_read_seq)`
       )
       .run(channelId, userId, seq)
   }
@@ -619,8 +618,7 @@ export class Store {
   /** Raw runtime setting, or undefined if never set (falls back to env/default). */
   getSetting(key: string): string | undefined {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
-      | { value: string }
-      | undefined
+      { value: string } | undefined
     return row?.value
   }
 
@@ -628,7 +626,7 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
       )
       .run(key, value, Date.now())
   }
