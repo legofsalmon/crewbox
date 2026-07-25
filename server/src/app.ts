@@ -9,6 +9,7 @@ import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
+import { DocsRelay, parseRoomName } from './docs.ts'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -111,7 +112,14 @@ export interface AppDeps {
   logger?: boolean
 }
 
-export type App = FastifyInstance & { hub: Hub }
+export type App = FastifyInstance & {
+  hub: Hub
+  docs: DocsRelay
+  /** Resolve a session token to its user (docs WS upgrades reuse this). */
+  authSession: (token: string) => User | undefined
+  /** Module ids this box enables (docs room namespaces are checked against it). */
+  enabledModules: string[]
+}
 
 export function buildApp({
   store,
@@ -145,6 +153,8 @@ export function buildApp({
   })
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy)
+  const docs = new DocsRelay()
+  fastify.addHook('onClose', () => docs.close())
   if (sessionTtlMs) {
     const pruned = store.pruneSessions(sessionTtlMs)
     if (pruned > 0) fastify.log.info(`pruned ${pruned} expired session(s)`)
@@ -183,6 +193,7 @@ export function buildApp({
     version: APP_VERSION,
     uptime: process.uptime(),
     ...hub.stats(),
+    docs: docs.stats(),
   }))
 
   // Public settings the pre-auth join screen and offline screen need.
@@ -579,20 +590,59 @@ export function buildApp({
       })
   })
 
-  return Object.assign(fastify, { hub })
+  return Object.assign(fastify, {
+    hub,
+    docs,
+    authSession: (token: string) => store.getSessionUser(token, sessionTtlMs),
+    enabledModules: modules,
+  })
 }
 
-/** Wire the /ws upgrade path onto a listening app. */
+/** Wire the /ws (chat) and /ws/docs/<room> (shared docs) upgrade paths. */
 export function attachWs(app: App): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 })
   app.hub.attach(wss)
+  // Yjs updates are binary and can far exceed chat frames; own server, own cap.
+  const docsWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 })
+  docsWss.on('connection', (ws, room: string) => app.docs.connect(ws, room))
+
+  const reject = (socket: import('node:stream').Duplex, status: number, label: string) => {
+    socket.write(`HTTP/1.1 ${status} ${label}\r\n\r\n`)
+    socket.destroy()
+  }
+
   app.server.on('upgrade', (req, socket, head) => {
-    const { pathname } = new URL(req.url ?? '/', 'http://localhost')
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    const { pathname } = url
     if (pathname === '/ws') {
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
-    } else {
-      socket.destroy()
+      return
     }
+    if (pathname.startsWith('/ws/docs/')) {
+      // Same credential as everything else: a crewbox session token. The
+      // shared-token relay model this replaces is gone — no session, no docs.
+      const token = url.searchParams.get('token') ?? ''
+      const user = token ? app.authSession(token) : undefined
+      if (!user) {
+        reject(socket, 401, 'Unauthorized')
+        return
+      }
+      let rawRoom: string
+      try {
+        rawRoom = decodeURIComponent(pathname.slice('/ws/docs/'.length))
+      } catch {
+        reject(socket, 403, 'Forbidden')
+        return
+      }
+      const room = parseRoomName(rawRoom, app.enabledModules)
+      if (!room) {
+        reject(socket, 403, 'Forbidden')
+        return
+      }
+      docsWss.handleUpgrade(req, socket, head, (ws) => docsWss.emit('connection', ws, room))
+      return
+    }
+    socket.destroy()
   })
   return wss
 }
