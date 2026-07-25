@@ -12,7 +12,8 @@ one-file box to the full festival rig.
 Crewbox unifies [inter](https://github.com/legofsalmon/inter) and
 [Live Patch](https://github.com/legofsalmon/livepatch); both full histories are
 merged into this repo. See [docs/UNIFICATION_PLAN.md](docs/UNIFICATION_PLAN.md)
-for the plan and roadmap.
+for the plan and roadmap, and [docs/MODULES.md](docs/MODULES.md) for how to add
+a module for another department.
 
 ## Why it's built the way it is
 
