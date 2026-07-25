@@ -6,6 +6,9 @@ core, with specialised department modules (patch sheets first) in one app — al
 served from one box on your own Wi-Fi, with **zero internet dependency** on
 site.
 
+**New here? [QUICKSTART.md](QUICKSTART.md)** — from a laptop trial to the
+one-file box to the full festival rig.
+
 Crewbox unifies [inter](https://github.com/legofsalmon/inter) and
 [Live Patch](https://github.com/legofsalmon/livepatch); both full histories are
 merged into this repo. See [docs/UNIFICATION_PLAN.md](docs/UNIFICATION_PLAN.md)

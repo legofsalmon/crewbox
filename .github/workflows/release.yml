@@ -1,0 +1,87 @@
+name: Release
+
+# Tag v* to publish: single-file box binaries for the three desktop
+# platforms plus the sideloadable Android APK, attached to a GitHub release.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  box:
+    name: Box binary (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w web
+      - run: node scripts/build-box.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: box-${{ matrix.os }}
+          path: build/box/crewbox-*
+
+  apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build:native
+      - run: ./gradlew assembleDebug
+        working-directory: native/android
+      - run: cp native/android/app/build/outputs/apk/debug/app-debug.apk crewbox.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: crewbox.apk
+
+  release:
+    name: Publish release
+    needs: [box, apk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          body: |
+            ## Crewbox box builds
+
+            One file, no install: download the binary for the machine that
+            will be the crew box, run it, and scan the QR it prints (or open
+            `/connect` on any screen). A fresh box mints its own event PIN.
+
+            | Platform | File |
+            | --- | --- |
+            | Linux x64 | `crewbox-linux-x64` |
+            | Windows x64 | `crewbox-win32-x64.exe` |
+            | macOS (Apple Silicon) | `crewbox-darwin-arm64` |
+            | Android (sideload) | `crewbox.apk` — or drop it into the box's data dir to serve it at `/crewbox.apk` |
+
+            macOS/Windows will warn about an unsigned binary on first launch
+            (macOS: right-click → Open). On Linux: `chmod +x` then run.
+
+            For the full festival box (HTTPS, voice, lock-screen alerts),
+            follow `deploy/RUNBOOK.md` instead.

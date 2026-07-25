@@ -7,3 +7,4 @@ data/
 deploy/poster.html
 playwright-report/
 test-results/
+build/

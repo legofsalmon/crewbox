@@ -22,16 +22,19 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:box": "node scripts/build-box.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.0",
     "concurrently": "^9.1.2",
+    "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
+    "postject": "^1.0.0-alpha.6",
     "prettier": "^3.9.6",
     "qrcode": "^1.5.4",
     "typescript": "^5.9.3",

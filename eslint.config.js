@@ -42,7 +42,7 @@ export default tseslint.config(
   },
   { ...reactRefresh.configs.vite, files: ['web/src/**/*.{ts,tsx}'] },
   {
-    files: ['deploy/**/*.mjs', 'web/scripts/**/*.mjs'],
+    files: ['deploy/**/*.mjs', 'scripts/**/*.mjs', 'web/scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',
