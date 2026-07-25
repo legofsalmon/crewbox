@@ -1,0 +1,33 @@
+// Design tokens — the single source for the app's palette (sampled from v1).
+
+// Brand / actions
+$color-primary: #3498db;
+$color-primary-dark: #2980b9;
+$color-accent-green: #27ae60;
+$color-accent-orange: #f39c12;
+$color-danger: #e74c3c;
+$color-danger-dark: #c0392b;
+
+// Selector hero gradient
+$gradient-hero: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+// Neutrals
+$color-ink: #2c3e50;
+$color-ink-soft: #495057;
+$color-muted: #95a5a6;
+$color-border: #ced4da;
+$color-border-soft: #e1e5e9;
+$color-surface: #ffffff;
+$color-surface-alt: #f8f9fa;
+$color-surface-dim: #ecf0f1;
+
+// Grid
+$grid-line: #d5dbdb;
+$grid-header-bg: $color-surface-dim;
+$grid-cell-focus: rgba(52, 152, 219, 0.12);
+
+// Layout
+$radius: 8px;
+$radius-small: 4px;
+$shadow-card: 0 2px 10px rgba(0, 0, 0, 0.08);
+$shadow-popover: 0 8px 30px rgba(0, 0, 0, 0.2);

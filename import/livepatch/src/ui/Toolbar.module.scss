@@ -1,0 +1,122 @@
+@use '../styles/tokens' as *;
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 16px;
+  background: $color-surface;
+  border-bottom: 1px solid $color-border-soft;
+}
+
+.titleSection {
+  flex: 1;
+  min-width: 220px;
+}
+
+.titleInput {
+  width: 100%;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: $color-ink;
+  border: 1px solid transparent;
+  border-radius: $radius-small;
+  padding: 4px 8px;
+  background: transparent;
+
+  &:hover {
+    border-color: $color-border-soft;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+    background: $color-surface;
+  }
+}
+
+.metaSection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  label {
+    font-size: 0.85rem;
+    color: $color-ink-soft;
+    font-weight: 600;
+  }
+
+  input {
+    border: 1px solid $color-border;
+    border-radius: $radius-small;
+    padding: 6px 8px;
+    font-size: 0.9rem;
+    width: 130px;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+
+  button {
+    border: none;
+    border-radius: $radius-small;
+    padding: 7px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: $color-primary;
+    color: #fff;
+
+    &:hover {
+      background: $color-primary-dark;
+    }
+  }
+
+  .export {
+    background: $color-accent-green;
+
+    &:hover {
+      background: #219a52;
+    }
+  }
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media print {
+  .toolbar {
+    border-bottom: 2px solid #000;
+  }
+
+  .buttons {
+    display: none;
+  }
+
+  .titleInput,
+  .field input {
+    border: none;
+  }
+}
