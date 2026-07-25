@@ -13,7 +13,7 @@
             buildForArchiving = "YES"
             buildForAnalyzing = "YES">
             <BuildableReference
-               BuildableState = "buildable"
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "504EC3031FED79650016851F"
                BuildableName = "App.app"
                BlueprintName = "App"
@@ -41,7 +41,7 @@
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
-            BuildableState = "buildable"
+            BuildableIdentifier = "primary"
             BlueprintIdentifier = "504EC3031FED79650016851F"
             BuildableName = "App.app"
             BlueprintName = "App"
