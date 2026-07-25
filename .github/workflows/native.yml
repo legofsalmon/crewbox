@@ -1,0 +1,53 @@
+name: Native builds
+
+# Verifies the native shells on real build infrastructure: a sideloadable
+# Android debug APK (uploaded as an artifact) and an unsigned iOS compile
+# check. The TestFlight archive itself still needs a Mac with the signing
+# certificates — see native/ios/APP-STORE-CHECKLIST.md.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'native/**'
+      - 'web/src/lib/server.ts'
+      - '.github/workflows/native.yml'
+
+jobs:
+  android-apk:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build:native
+      - run: ./gradlew assembleDebug
+        working-directory: native/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crewbox-debug-apk
+          path: native/android/app/build/outputs/apk/debug/app-debug.apk
+
+  ios-compile:
+    name: iOS compile check (unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:native
+      - run: >
+          xcodebuild build -project App.xcodeproj -scheme App
+          -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO
+        working-directory: native/ios/App
