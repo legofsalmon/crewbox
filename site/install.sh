@@ -1,7 +1,7 @@
 #!/bin/sh
 # Crewbox installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/legofsalmon/crewbox/main/install.sh | sh
+#   curl -fsSL https://CREWBOX_SITE/install.sh | sh
 #
 # Downloads the latest box for this machine, clears the quarantine flag that
 # would otherwise make macOS refuse to run it, and starts it. Nothing else to
@@ -9,9 +9,14 @@
 #
 # POSIX sh on purpose: this has to run on a stage laptop, a rented Mac mini,
 # and whatever Linux box the production office had spare.
+#
+# Binaries come from the public crewbox-dist repo, not from the source repo,
+# which stays private. Release builds push them there; see
+# .github/workflows/release.yml.
 set -eu
 
-REPO="legofsalmon/crewbox"
+# The one place the distribution repo is named.
+REPO="${CREWBOX_DIST_REPO:-legofsalmon/crewbox-dist}"
 INSTALL_DIR="${CREWBOX_INSTALL_DIR:-$HOME/.crewbox/bin}"
 
 say() { printf '%s\n' "$*"; }
@@ -26,7 +31,7 @@ arch="$(uname -m)"
 case "$os" in
 Darwin) plat="darwin" ;;
 Linux) plat="linux" ;;
-*) die "no build for $os. Windows: download the .exe from https://github.com/$REPO/releases/latest" ;;
+*) die "no build for $os. Windows: download the .exe from https://CREWBOX_SITE" ;;
 esac
 case "$arch" in
 x86_64 | amd64) cpu="x64" ;;

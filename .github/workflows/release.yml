@@ -114,12 +114,17 @@ jobs:
     name: Publish release
     needs: [validate, box, apk]
     runs-on: ubuntu-latest
+    env:
+      # Job-level so the skip condition below can see it: a step's own env
+      # block is not in scope for that step's `if:`.
+      DIST_TOKEN: ${{ secrets.DIST_REPO_TOKEN }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - name: Publish to the private repo's own releases
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.validate.outputs.version }}
           # Pin the tag to the commit these artifacts were built from.
@@ -142,5 +147,35 @@ jobs:
             macOS/Windows will warn about an unsigned binary on first launch
             (macOS: right-click → Open). On Linux: `chmod +x` then run.
 
-            For the full festival box (HTTPS, voice, lock-screen alerts),
-            follow `deploy/RUNBOOK.md` instead.
+            Voice runs inside the box — nothing else to install. For a
+            dedicated festival rig (HTTPS so browsers get the mic, local
+            DNS, UPS), `deploy/RUNBOOK.md` is the day-of checklist.
+
+      # Admins download from the public crewbox-dist repo, so the source repo
+      # can stay private. Same binaries, no source, no token in anyone's
+      # hands but this workflow's.
+      #
+      # Skipped rather than failed when DIST_REPO_TOKEN is absent: a release
+      # that published to the private repo is still a real release, and
+      # stopping here would leave the tag created but the run red.
+      - name: Publish to the public distribution repo
+        if: env.DIST_TOKEN != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ vars.DIST_REPO || 'legofsalmon/crewbox-dist' }}
+          token: ${{ secrets.DIST_REPO_TOKEN }}
+          tag_name: ${{ needs.validate.outputs.version }}
+          files: artifacts/*
+          body: |
+            Crewbox ${{ needs.validate.outputs.version }} — download the file for the
+            machine that will be the crew box, run it, and scan the QR it prints.
+
+            | Platform | File |
+            | --- | --- |
+            | Linux x64 | `crewbox-linux-x64` |
+            | Windows x64 | `crewbox-win32-x64.exe` |
+            | macOS (Apple Silicon) | `crewbox-darwin-arm64` |
+            | Android | `crewbox.apk` |
+
+            macOS and Windows warn about an unsigned binary on first launch.
+            On Linux: `chmod +x` then run.

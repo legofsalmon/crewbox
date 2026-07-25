@@ -8,14 +8,13 @@ app store, nothing to install on anyone's phone unless they want it.
 **macOS / Linux**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/legofsalmon/crewbox/main/install.sh | sh
+curl -fsSL https://CREWBOX_SITE/install.sh | sh
 ```
 
 Downloads the box for your machine, clears the macOS quarantine flag, and
 starts it.
 
-**Windows** — download `crewbox-win32-x64.exe` from
-[Releases](https://github.com/legofsalmon/crewbox/releases/latest) and
+**Windows** — download `crewbox-win32-x64.exe` from the download page and
 double-click it. SmartScreen will warn about an unsigned app: **More info →
 Run anyway**. That warning means Windows hasn't seen this file before, not
 that anything is wrong with it.

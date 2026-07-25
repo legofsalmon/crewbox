@@ -51,6 +51,7 @@ is the normal state:
 ## Repo layout
 
 ```
+site/     the public download page + install.sh (deployed to Vercel)
 shared/   protocol types + zod schemas (used by both sides)
 server/   Fastify + WebSocket + node:sqlite (no native deps)
 web/      React + Vite PWA — shell + modules
