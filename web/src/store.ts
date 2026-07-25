@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import {
+  HOME_CHANNEL,
   newId,
+  PROTOCOL_VERSION,
   type Channel,
   type Message,
   type PublicConfig,
@@ -24,6 +26,7 @@ import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, initPwa } from './lib/pwa.ts'
 import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
+import { currentRoute, navigate, onRouteChange, type Route } from './shell/router.ts'
 
 const TOKEN_KEY = 'crewbox:token'
 const THEME_KEY = 'crewbox:theme'
@@ -33,7 +36,7 @@ const TYPING_THROTTLE_MS = 2500
 
 /** Last-known Wi-Fi SSID, cached so the offline recovery screen has it. */
 function initialConfig(): PublicConfig {
-  return { wifiSsid: localStorage.getItem(SSID_KEY) ?? '', voiceEnabled: true }
+  return { wifiSsid: localStorage.getItem(SSID_KEY) ?? '', voiceEnabled: true, modules: ['chat'] }
 }
 
 function rememberConfig(config: PublicConfig): void {
@@ -66,7 +69,7 @@ function initialTheme(): Theme {
 export type Phase = 'boot' | 'join' | 'chat'
 export type Connection = 'connecting' | 'online' | 'offline'
 
-interface AppState {
+export interface AppState {
   phase: Phase
   connection: Connection
   /** True once a welcome has been received this session (server was reached). */
@@ -86,6 +89,10 @@ interface AppState {
   pending: Record<string, Pending[]>
   typing: Record<string, Record<string, number>>
   activeChannelId: string | null
+  /** Module owning the main pane (/m/<id> routes); null = chat view. */
+  activeModuleId: string | null
+  /** Subpath within the active module's routes ('' at the module root). */
+  activeModuleSubpath: string
   /** Message to scroll to and flash once rendered (set by search jumps). */
   jumpTarget: { channelId: string; seq: number } | null
   /**
@@ -107,7 +114,8 @@ interface AppState {
   latencyMs: number | null
   /** A newer build is available; show the reload pill. */
   updateReady: boolean
-  flash: string | null
+  /** Transient notices; each auto-dismisses on its own timer. */
+  toasts: { id: number; message: string }[]
   loadingOlder: boolean
   uploading: boolean
   theme: Theme
@@ -124,6 +132,12 @@ interface AppState {
   sendFile: (channelId: string, file: File, caption?: string) => Promise<void>
   sendTyping: (channelId: string) => void
   setActiveChannel: (channelId: string) => void
+  /** Open a module's main view (sidebar tap); pushes /m/<id>. */
+  setActiveModule: (moduleId: string) => void
+  /** Apply a route from the URL (back/forward, initial load) to state. */
+  applyRoute: (route: Route) => void
+  /** Show a transient notice; auto-dismisses after a few seconds. */
+  toast: (message: string) => void
   /** Open a channel scrolled to a specific message (search results). */
   jumpToMessage: (channelId: string, seq: number) => Promise<void>
   clearJumpTarget: () => void
@@ -155,6 +169,7 @@ let voiceManager: VoiceManager | null = null
 let updateSW: ((reload?: boolean) => Promise<void>) | null = null
 let pwaStarted = false
 const lastTypingSent = new Map<string, number>()
+let toastSeq = 0
 
 function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -341,8 +356,22 @@ export const useStore = create<AppState>()((set, get) => {
     }
 
     if (!get().activeChannelId) {
-      const general = msg.channels.find((c) => c.name === 'general') ?? msg.channels[0]
-      if (general) set({ activeChannelId: general.id })
+      const route = currentRoute()
+      const wanted =
+        route.kind === 'channel' ? msg.channels.find((c) => c.id === route.channelId) : undefined
+      const landing = wanted ?? msg.channels.find((c) => c.name === HOME_CHANNEL) ?? msg.channels[0]
+      if (landing) {
+        set({ activeChannelId: landing.id })
+        if (get().activeModuleId === null) {
+          navigate({ kind: 'channel', channelId: landing.id }, { replace: true })
+        }
+      }
+    }
+
+    // A protocol mismatch means this bundle predates the server (they deploy
+    // in lockstep) — surface the reload pill immediately.
+    if (msg.protocolVersion !== undefined && msg.protocolVersion !== PROTOCOL_VERSION) {
+      set({ updateReady: true })
     }
     // The channel on screen counts as read while the app is focused.
     const activeId = get().activeChannelId
@@ -406,9 +435,9 @@ export const useStore = create<AppState>()((set, get) => {
         for (const channelId of Object.keys(pending)) {
           pending[channelId] = pending[channelId].filter((p) => p.clientMsgId !== msg.clientMsgId)
         }
-        set({ pending, flash: `Message not delivered: ${msg.reason}` })
+        set({ pending })
+        get().toast(`Message not delivered: ${msg.reason}`)
         void cache.deleteOutbox(msg.clientMsgId)
-        setTimeout(() => set({ flash: null }), 5000)
         break
       }
       case 'presence':
@@ -435,12 +464,15 @@ export const useStore = create<AppState>()((set, get) => {
         break
       case 'channel': {
         set({ channels: { ...get().channels, [msg.channel.id]: msg.channel } })
-        // A retired channel disappears; move anyone looking at it to #general.
+        // A retired channel disappears; move anyone looking at it home.
         if (msg.channel.retired && get().activeChannelId === msg.channel.id) {
           const fallback = Object.values(get().channels).find(
-            (c) => c.name === 'general' && !c.retired
+            (c) => c.name === HOME_CHANNEL && !c.retired
           )
           set({ activeChannelId: fallback?.id ?? null })
+          if (fallback && get().activeModuleId === null) {
+            navigate({ kind: 'channel', channelId: fallback.id }, { replace: true })
+          }
         }
         const { pendingDmUserId, me } = get()
         if (
@@ -449,6 +481,7 @@ export const useStore = create<AppState>()((set, get) => {
           msg.channel.memberIds?.includes(pendingDmUserId) &&
           msg.channel.memberIds.includes(me?.id ?? '')
         ) {
+          navigate({ kind: 'channel', channelId: msg.channel.id })
           set({ activeChannelId: msg.channel.id, pendingDmUserId: null, sidebarOpen: false })
         }
         persistSnapshot()
@@ -474,8 +507,7 @@ export const useStore = create<AppState>()((set, get) => {
         if (msg.code === 'auth') {
           void get().logout()
         } else {
-          set({ flash: msg.message })
-          setTimeout(() => set({ flash: null }), 5000)
+          get().toast(msg.message)
         }
         break
     }
@@ -516,6 +548,8 @@ export const useStore = create<AppState>()((set, get) => {
     pending: {},
     typing: {},
     activeChannelId: null,
+    activeModuleId: null,
+    activeModuleSubpath: '',
     jumpTarget: null,
     historyGapped: {},
     pendingDmUserId: null,
@@ -525,7 +559,7 @@ export const useStore = create<AppState>()((set, get) => {
     audioSettingsOpen: false,
     latencyMs: null,
     updateReady: false,
-    flash: null,
+    toasts: [],
     loadingOlder: false,
     uploading: false,
     theme: initialTheme(),
@@ -544,14 +578,12 @@ export const useStore = create<AppState>()((set, get) => {
         const { url, token } = await api.voiceToken(getToken() ?? '', channelId)
         await voiceManager.join(channelId, token, url)
       } catch (err) {
-        set({
-          voice: { ...initialVoiceState },
-          flash:
-            err instanceof api.ApiError && err.status === 503
-              ? 'Voice is not set up on this server'
-              : 'Could not join voice — is the voice server running?',
-        })
-        setTimeout(() => set({ flash: null }), 5000)
+        set({ voice: { ...initialVoiceState } })
+        get().toast(
+          err instanceof api.ApiError && err.status === 503
+            ? 'Voice is not set up on this server'
+            : 'Could not join voice — is the voice server running?'
+        )
       }
     },
 
@@ -619,8 +651,15 @@ export const useStore = create<AppState>()((set, get) => {
         readState: snapshot?.readState ?? {},
         mentionSeqs: snapshot?.mentionSeqs ?? {},
       })
-      const general = (snapshot?.channels ?? []).find((c) => c.name === 'general')
-      if (general) set({ activeChannelId: general.id })
+      const route = currentRoute()
+      const cachedChannels = snapshot?.channels ?? []
+      const wanted =
+        route.kind === 'channel' ? cachedChannels.find((c) => c.id === route.channelId) : undefined
+      const landing = wanted ?? cachedChannels.find((c) => c.name === HOME_CHANNEL)
+      if (landing) set({ activeChannelId: landing.id })
+      if (route.kind === 'module') {
+        set({ activeModuleId: route.moduleId, activeModuleSubpath: route.subpath })
+      }
       startWs()
     },
 
@@ -649,8 +688,7 @@ export const useStore = create<AppState>()((set, get) => {
 
     async sendFile(channelId, file, caption = '') {
       if (get().connection !== 'online') {
-        set({ flash: 'Attachments need a connection — try again once reconnected' })
-        setTimeout(() => set({ flash: null }), 5000)
+        get().toast('Attachments need a connection — try again once reconnected')
         return
       }
       set({ uploading: true })
@@ -678,8 +716,7 @@ export const useStore = create<AppState>()((set, get) => {
           fileId: meta.id,
         })
       } catch (err) {
-        set({ flash: err instanceof api.ApiError ? err.message : 'Upload failed' })
-        setTimeout(() => set({ flash: null }), 5000)
+        get().toast(err instanceof api.ApiError ? err.message : 'Upload failed')
       } finally {
         set({ uploading: false })
       }
@@ -693,8 +730,45 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     setActiveChannel(channelId) {
-      set({ activeChannelId: channelId, sidebarOpen: false })
+      navigate({ kind: 'channel', channelId })
+      set({ activeChannelId: channelId, activeModuleId: null, sidebarOpen: false })
       get().markChannelRead(channelId)
+    },
+
+    setActiveModule(moduleId) {
+      navigate({ kind: 'module', moduleId, subpath: '' })
+      set({ activeModuleId: moduleId, activeModuleSubpath: '', sidebarOpen: false })
+    },
+
+    applyRoute(route) {
+      switch (route.kind) {
+        case 'channel': {
+          // Unknown id (deleted channel, stale link): fall back to the
+          // default view rather than rendering a dead pane.
+          if (!get().channels[route.channelId]) {
+            set({ activeModuleId: null })
+            return
+          }
+          set({ activeChannelId: route.channelId, activeModuleId: null })
+          get().markChannelRead(route.channelId)
+          return
+        }
+        case 'module':
+          set({ activeModuleId: route.moduleId, activeModuleSubpath: route.subpath })
+          return
+        case 'home':
+          set({ activeModuleId: null })
+          return
+      }
+    },
+
+    toast(message) {
+      const id = ++toastSeq
+      set({ toasts: [...get().toasts, { id, message }] })
+      // Per-toast timer — a second toast must not cut the first one short.
+      setTimeout(() => {
+        set({ toasts: get().toasts.filter((toast) => toast.id !== id) })
+      }, 5000)
     },
 
     async jumpToMessage(channelId, seq) {
@@ -709,8 +783,7 @@ export const useStore = create<AppState>()((set, get) => {
         }
         if (!ctx.some((m) => m.seq === seq)) {
           // Deleted or unreachable — open the channel normally instead.
-          set({ flash: 'That message is no longer available' })
-          setTimeout(() => set({ flash: null }), 5000)
+          get().toast('That message is no longer available')
           get().setActiveChannel(channelId)
           return
         }
@@ -740,7 +813,13 @@ export const useStore = create<AppState>()((set, get) => {
           })
         }
       }
-      set({ activeChannelId: channelId, sidebarOpen: false, jumpTarget: { channelId, seq } })
+      navigate({ kind: 'channel', channelId })
+      set({
+        activeChannelId: channelId,
+        activeModuleId: null,
+        sidebarOpen: false,
+        jumpTarget: { channelId, seq },
+      })
       // Opening a channel normally marks it read (the old setActiveChannel
       // path did); preserve that for a contiguous jump. When gapped we're
       // viewing detached history, so leave unread state — the "Jump to
@@ -763,8 +842,7 @@ export const useStore = create<AppState>()((set, get) => {
         void cache.saveMessages(tail)
         get().markChannelRead(channelId)
       } catch {
-        set({ flash: 'Could not load the latest messages — check the connection' })
-        setTimeout(() => set({ flash: null }), 5000)
+        get().toast('Could not load the latest messages — check the connection')
       }
     },
 
@@ -900,16 +978,9 @@ export const useStore = create<AppState>()((set, get) => {
 
 applyTheme(useStore.getState().theme)
 
-// Total unread in the tab title so a glance at the phone/laptop shows it.
-useStore.subscribe((state) => {
-  let total = 0
-  for (const channel of Object.values(state.channels)) {
-    if (channel.retired) continue
-    total += Math.max(0, channel.lastSeq - (state.readState[channel.id] ?? 0))
-  }
-  const title = total > 0 ? `(${total}) Crewbox` : 'Crewbox'
-  if (document.title !== title) document.title = title
-})
+// Back/forward buttons apply the URL to state (never push — the entry the
+// user navigated to already exists).
+onRouteChange((route) => useStore.getState().applyRoute(route))
 
 // Test hook for driving the store from the browser console in dev.
 if (import.meta.env.DEV) {

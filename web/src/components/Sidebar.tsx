@@ -1,7 +1,9 @@
-import { useMemo, useState, type FormEvent } from 'react'
-import { channelLabel, unreadCount, useStore } from '../store.ts'
+import { useState } from 'react'
+import { useStore } from '../store.ts'
 import { classifyLatency } from '../lib/quality.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
+import { allModules } from '../shell/registry.ts'
+import { enabledModules } from '../shell/modules.ts'
 import Avatar from './Avatar.tsx'
 import DeleteAccountDialog from './DeleteAccountDialog.tsx'
 
@@ -44,18 +46,13 @@ function connDotClass(connection: string, latencyMs: number | null): string {
   return cls === 'good' ? 'online' : cls
 }
 
+/**
+ * The shell sidebar: brand header, one section per enabled module (chat's
+ * channels and DMs first), and the identity/footer row. Module sections come
+ * from the registry — this component knows nothing about their contents.
+ */
 export default function Sidebar() {
   const me = useStore((s) => s.me)
-  const users = useStore((s) => s.users)
-  const channels = useStore((s) => s.channels)
-  const online = useStore((s) => s.online)
-  const remoteUsers = useStore((s) => s.remoteUsers)
-  const readState = useStore((s) => s.readState)
-  const mentionSeqs = useStore((s) => s.mentionSeqs)
-  const activeChannelId = useStore((s) => s.activeChannelId)
-  const setActiveChannel = useStore((s) => s.setActiveChannel)
-  const openDm = useStore((s) => s.openDm)
-  const createChannel = useStore((s) => s.createChannel)
   const connection = useStore((s) => s.connection)
   const logout = useStore((s) => s.logout)
   const theme = useStore((s) => s.theme)
@@ -64,46 +61,11 @@ export default function Sidebar() {
   const toggleSounds = useStore((s) => s.toggleSounds)
   const setAdminOpen = useStore((s) => s.setAdminOpen)
   const latencyMs = useStore((s) => s.latencyMs)
+  const configModules = useStore((s) => s.config.modules)
 
-  const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
 
-  const publicChannels = useMemo(
-    () =>
-      Object.values(channels)
-        .filter((c) => c.kind === 'public' && !c.retired)
-        .sort((a, b) => a.createdAt - b.createdAt),
-    [channels]
-  )
-  const dmByOther = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const c of Object.values(channels)) {
-      if (c.kind !== 'dm') continue
-      const other = c.memberIds?.find((id) => id !== me?.id) ?? me?.id
-      if (other) map.set(other, c.id)
-    }
-    return map
-  }, [channels, me])
-  const others = useMemo(
-    () =>
-      Object.values(users)
-        .filter((u) => u.id !== me?.id)
-        .sort(
-          (a, b) =>
-            Number(online[b.id] ?? false) - Number(online[a.id] ?? false) ||
-            a.name.localeCompare(b.name)
-        ),
-    [users, me, online]
-  )
-
-  function submitChannel(e: FormEvent) {
-    e.preventDefault()
-    const name = newName.trim().toLowerCase().replace(/\s+/g, '-')
-    if (name) createChannel(name, '')
-    setNewName('')
-    setCreating(false)
-  }
+  const sections = enabledModules(allModules, configModules)
 
   return (
     <aside className="sidebar">
@@ -116,86 +78,9 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-scroll">
-        <div className="section-head">
-          <span>Channels</span>
-          <button
-            className="icon-btn"
-            aria-label="New channel"
-            onClick={() => setCreating((v) => !v)}
-          >
-            +
-          </button>
-        </div>
-        {creating && (
-          <form className="new-channel" onSubmit={submitChannel}>
-            <input
-              autoFocus
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="channel-name"
-              maxLength={32}
-              onKeyDown={(e) => e.key === 'Escape' && setCreating(false)}
-            />
-          </form>
-        )}
-        <ul>
-          {publicChannels.map((channel) => {
-            const unread = unreadCount(channel, readState)
-            // An unseen @mention outranks plain unread — different signal.
-            const mentioned = (mentionSeqs[channel.id] ?? 0) > (readState[channel.id] ?? 0)
-            return (
-              <li key={channel.id}>
-                <button
-                  className={`row ${channel.id === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-                  aria-label={`#${channelLabel(channel, users, me?.id)}${unread ? `, ${unread} unread` : ''}${mentioned ? ', mentions you' : ''}`}
-                  onClick={() => setActiveChannel(channel.id)}
-                >
-                  <span className="row-hash">#</span>
-                  <span className="row-name">{channelLabel(channel, users, me?.id)}</span>
-                  {unread > 0 && (
-                    <span className={`badge ${mentioned ? 'badge-mention' : ''}`}>
-                      {mentioned ? '@' : ''}
-                      {unread > 99 ? '99+' : unread}
-                    </span>
-                  )}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-
-        <div className="section-head">
-          <span>Direct messages</span>
-        </div>
-        <ul>
-          {others.map((user) => {
-            const dmId = dmByOther.get(user.id)
-            const channel = dmId ? channels[dmId] : undefined
-            const unread = channel ? unreadCount(channel, readState) : 0
-            return (
-              <li key={user.id}>
-                <button
-                  className={`row ${dmId && dmId === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-                  aria-label={`Message ${user.name}${online[user.id] ? (remoteUsers[user.id] ? ' (online remotely)' : ' (online)') : ''}${unread ? `, ${unread} unread` : ''}`}
-                  onClick={() => openDm(user.id)}
-                >
-                  <span className={`presence-dot ${online[user.id] ? 'on' : ''}`} />
-                  <span className="row-name">{user.name}</span>
-                  {online[user.id] && remoteUsers[user.id] && (
-                    <span className="office-badge" title="Joining from off-site">
-                      office
-                    </span>
-                  )}
-                  {/* A DM unread is always personal — mention styling. */}
-                  {unread > 0 && (
-                    <span className="badge badge-mention">{unread > 99 ? '99+' : unread}</span>
-                  )}
-                </button>
-              </li>
-            )
-          })}
-          {others.length === 0 && <li className="muted-note">No one else has joined yet</li>}
-        </ul>
+        {sections.map((module) => (
+          <module.SidebarSection key={module.id} />
+        ))}
       </nav>
 
       {me && (

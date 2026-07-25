@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { HOME_CHANNEL } from '@crewbox/shared'
 import { existsSync } from 'node:fs'
 import { config, warnOnDefaults } from './config.ts'
 import { openDb } from './db.ts'
@@ -8,9 +9,9 @@ import { attachWs, buildApp } from './app.ts'
 const db = openDb(join(config.dataDir, 'crewbox.db'))
 const store = new Store(db)
 
-// #general always exists so there is somewhere to land after joining.
-if (!store.getChannelByName('general')) {
-  store.createChannel('general', 'public', 'Everyone, everything')
+// The home channel always exists so there is somewhere to land after joining.
+if (!store.getChannelByName(HOME_CHANNEL)) {
+  store.createChannel(HOME_CHANNEL, 'public', 'Everyone, everything')
 }
 
 const app = buildApp({
@@ -21,6 +22,7 @@ const app = buildApp({
   livekit: config.livekit,
   sessionTtlMs: config.sessionTtlMs,
   trustProxy: config.trustProxy,
+  modules: config.modules,
 })
 const hub = app.hub
 

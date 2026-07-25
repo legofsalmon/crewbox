@@ -11,6 +11,9 @@ import FileDetail from './components/FileDetail.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import { connectionScreen } from './lib/connscreen.ts'
+import { registerShortcut } from './shell/keys.ts'
+import { allModules } from './shell/registry.ts'
+import { enabledModules } from './shell/modules.ts'
 
 export default function App() {
   const phase = useStore((s) => s.phase)
@@ -23,11 +26,26 @@ export default function App() {
 
   if (phase === 'boot') return <div className="boot-screen" />
   if (phase === 'join') return <Join />
-  return <Chat />
+  return <Shell />
 }
 
-function Chat() {
+/** The main pane: an active module's view, else chat's channel view. */
+function Main() {
   const activeChannelId = useStore((s) => s.activeChannelId)
+  const activeModuleId = useStore((s) => s.activeModuleId)
+  const activeModuleSubpath = useStore((s) => s.activeModuleSubpath)
+  const configModules = useStore((s) => s.config.modules)
+
+  if (activeModuleId) {
+    const module = enabledModules(allModules, configModules).find((m) => m.id === activeModuleId)
+    if (module?.Main) return <module.Main subpath={activeModuleSubpath} />
+    return <div className="empty-state">This module isn’t available on this server</div>
+  }
+  if (activeChannelId) return <ChannelView channelId={activeChannelId} />
+  return <div className="empty-state">Pick a channel to start talking</div>
+}
+
+function Shell() {
   const sidebarOpen = useStore((s) => s.sidebarOpen)
   const setSidebarOpen = useStore((s) => s.setSidebarOpen)
   const searchOpen = useStore((s) => s.searchOpen)
@@ -38,20 +56,19 @@ function Chat() {
   const connection = useStore((s) => s.connection)
   const hasConnected = useStore((s) => s.hasConnected)
   const hasCache = useStore((s) => Object.keys(s.channels).length > 0)
-  const flash = useStore((s) => s.flash)
+  const toasts = useStore((s) => s.toasts)
   const updateReady = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        setSearchOpen(!useStore.getState().searchOpen)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [setSearchOpen])
+  useEffect(
+    () =>
+      registerShortcut({
+        key: 'k',
+        mod: true,
+        handler: () => setSearchOpen(!useStore.getState().searchOpen),
+      }),
+    [setSearchOpen]
+  )
 
   // Before any content exists, show a calm connecting / recovery screen instead
   // of an empty shell. Returning users (cache or a prior connect) skip this.
@@ -68,7 +85,15 @@ function Chat() {
             : 'Offline — messages you send will deliver when the connection returns'}
         </div>
       )}
-      {flash && <div className="flash">{flash}</div>}
+      {toasts.length > 0 && (
+        <div className="toast-stack">
+          {toasts.map((toast) => (
+            <div key={toast.id} className="flash">
+              {toast.message}
+            </div>
+          ))}
+        </div>
+      )}
       {updateReady && (
         <button className="update-pill" onClick={applyUpdate}>
           <span>New version available</span>
@@ -80,11 +105,7 @@ function Chat() {
         <Sidebar />
         {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
         <main className="main">
-          {activeChannelId ? (
-            <ChannelView channelId={activeChannelId} />
-          ) : (
-            <div className="empty-state">Pick a channel to start talking</div>
-          )}
+          <Main />
         </main>
       </div>
       {searchOpen && <SearchOverlay />}

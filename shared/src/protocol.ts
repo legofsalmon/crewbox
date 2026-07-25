@@ -3,6 +3,19 @@ import type { Channel, Message, User } from './types.js'
 
 export const MAX_MESSAGE_LENGTH = 4000
 
+/**
+ * Wire-protocol generation. Bump on breaking changes to the shapes in this
+ * file; a client that sees a different value in `welcome` prompts a reload
+ * (server and web bundle deploy in lockstep, so reloading converges).
+ */
+export const PROTOCOL_VERSION = 1
+
+/**
+ * The channel every deployment starts with: created at boot, receives join
+ * announcements, cannot be retired, and is the client's landing channel.
+ */
+export const HOME_CHANNEL = 'general'
+
 // ---------------------------------------------------------------------------
 // Client → server (validated on the server with zod)
 // ---------------------------------------------------------------------------
@@ -77,12 +90,16 @@ export interface PublicConfig {
   wifiSsid: string
   /** Whether the server has a voice (LiveKit) backend configured. */
   voiceEnabled: boolean
+  /** Module ids this box enables; clients hide modules not listed here. */
+  modules: string[]
 }
 
 export interface WelcomeMessage {
   type: 'welcome'
   /** Server build string, so a client on an older build can prompt a reload. */
   serverVersion: string
+  /** Wire-protocol generation (PROTOCOL_VERSION); optional: older servers omit. */
+  protocolVersion?: number
   /** Live public settings (Wi-Fi SSID, voice availability). */
   config: PublicConfig
   me: User

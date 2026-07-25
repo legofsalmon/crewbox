@@ -8,7 +8,7 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
-import { newId, type PublicConfig, type User } from '@crewbox/shared'
+import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -106,6 +106,8 @@ export interface AppDeps {
   sessionTtlMs?: number
   /** Trust X-Forwarded-For (behind cloudflared/Caddy) for client IPs. */
   trustProxy?: boolean
+  /** Module ids this box enables; clients hide modules not listed. */
+  modules?: string[]
   logger?: boolean
 }
 
@@ -119,6 +121,7 @@ export function buildApp({
   livekit,
   sessionTtlMs,
   trustProxy = false,
+  modules = ['chat'],
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -138,6 +141,7 @@ export function buildApp({
   const publicConfig = (): PublicConfig => ({
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
     voiceEnabled: Boolean(livekit?.url),
+    modules,
   })
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy)
@@ -227,7 +231,7 @@ export function buildApp({
     store.createSession(token, user.id)
 
     hub.announceUser(user)
-    const general = store.getChannelByName('general')
+    const general = store.getChannelByName(HOME_CHANNEL)
     if (general) hub.systemMessage(general.id, `${user.name} joined`)
 
     return { token, user, created: true }
@@ -515,9 +519,9 @@ export function buildApp({
     if (name && name !== channel.name && store.getChannelByName(name)) {
       return reply.code(409).send({ error: `#${name} already exists` })
     }
-    // #general anchors join announcements and the default view — keep it.
-    if (retired && channel.name === 'general') {
-      return reply.code(400).send({ error: 'cannot retire #general' })
+    // The home channel anchors join announcements and the default view — keep it.
+    if (retired && channel.name === HOME_CHANNEL) {
+      return reply.code(400).send({ error: `cannot retire #${HOME_CHANNEL}` })
     }
     const updated = store.updateChannel(id, parsed.data)!
     hub.announceChannel(updated)

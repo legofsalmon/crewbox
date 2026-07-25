@@ -150,6 +150,8 @@ describe('join and welcome', () => {
     expect(welcome.me.name).toBe('Alex')
     expect(welcome.me.role).toBe('admin') // first user becomes admin
     expect(welcome.serverVersion).toMatch(/\d+\.\d+\.\d+/) // for client update prompts
+    expect(welcome.protocolVersion).toBe(1)
+    expect(welcome.config.modules).toEqual(['chat'])
     expect(welcome.channels.map((c) => c.name)).toContain('general')
     // join produced a system message in #general
     expect(welcome.missed.some((m) => m.kind === 'system' && m.body.includes('Alex joined'))).toBe(
@@ -1038,7 +1040,7 @@ describe('settings & config', () => {
 
     // Public config: default empty SSID, voice enabled (livekit set in setup).
     const initial = await (await fetch(`${baseUrl}/api/config`)).json()
-    expect(initial).toEqual({ wifiSsid: '', voiceEnabled: true })
+    expect(initial).toEqual({ wifiSsid: '', voiceEnabled: true, modules: ['chat'] })
 
     // A member cannot change settings.
     const denied = await app.inject({

@@ -32,6 +32,15 @@ export const config = {
    * the real client IP instead of lumping all proxied traffic together.
    */
   trustProxy: process.env.CREWBOX_TRUST_PROXY === '1',
+  /** Module ids this box enables (comma-separated). Chat is always on. */
+  modules: [
+    ...new Set(
+      ('chat,' + (process.env.CREWBOX_MODULES ?? ''))
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean)
+    ),
+  ],
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
     /** URL the *client* uses to reach LiveKit. Empty string disables voice. */

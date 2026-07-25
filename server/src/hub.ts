@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import type { WebSocket, WebSocketServer } from 'ws'
 import {
   clientMessageSchema,
+  PROTOCOL_VERSION,
   type Channel,
   type ClientMessage,
   type Message,
@@ -232,6 +233,7 @@ export class Hub {
     this.send(conn.ws, {
       type: 'welcome',
       serverVersion: APP_VERSION,
+      protocolVersion: PROTOCOL_VERSION,
       config: this.getPublicConfig(),
       me: user,
       users: this.store.listUsers(),
