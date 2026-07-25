@@ -38,20 +38,21 @@ The one document to print and keep in the production office.
 ## Health checks
 
 - App: `curl -k https://chat.<yourdomain>/api/health` → `{"ok":true,...}`
-  (shows live connection and online-user counts)
+  (shows live connection and online-user counts, plus `docs` room/connection
+  counts for patch-sheet sync)
 - Voice: `systemctl status livekit`
 - Disk: `df -h /var/lib/crewbox`
 
 ## When things go wrong
 
-| Symptom                    | Fix                                                                                                                        |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.          |
-| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online. |
-| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.    |
-| Voice drops but chat works | `systemctl restart livekit`. Check UDP ports 50000–50200 aren't firewalled.                                                |
-| Server box dies            | Swap in the spare, restore newest USB backup into `/var/lib/crewbox`, same static IP. Crew phones reconnect on their own.  |
-| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                             |
+| Symptom                    | Fix                                                                                                                                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.                                                                                                             |
+| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online.                                                                                                    |
+| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                       |
+| Voice drops but chat works | `systemctl restart livekit`. Check UDP ports 50000–50200 aren't firewalled.                                                                                                                                                   |
+| Server box dies            | Swap in the spare, restore newest USB backup into `/var/lib/crewbox`, same static IP. Crew phones reconnect on their own. Patch sheets are unaffected — every device holds its own copy and they re-sync through the new box. |
+| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                |
 
 ## Teardown
 

@@ -1,10 +1,14 @@
-// Soak test: N fake crew members chatting through the real join + WS path.
+// Soak test: N fake crew members chatting through the real join + WS path,
+// then a shared-docs pass (up to 10 of them converging one Yjs room).
 // Usage: node deploy/soak.mjs [baseUrl] [clients] [seconds]
-// Verifies at the end that every client saw every message exactly once.
+// Verifies at the end that every client saw every message exactly once and
+// that every doc client converged on every doc edit.
 // All clients join from one IP, which trips the per-IP join limiter — start
 // the TARGET server with JOIN_RATE_LIMIT=1000 (a scratch instance, never the
 // real event box; real crew join from distinct phone IPs and are unaffected).
 import { WebSocket } from 'ws'
+import * as Y from 'yjs'
+import { WebsocketProvider } from 'y-websocket'
 
 const base = process.argv[2] ?? 'http://localhost:8787'
 const CLIENTS = Number(process.argv[3] ?? 50)
@@ -61,7 +65,7 @@ async function makeClient(i) {
     }
   }, 1000)
 
-  return { ws, timer, seen, name: `Soak ${i}` }
+  return { ws, timer, seen, token, name: `Soak ${i}` }
 }
 
 console.log(`soaking ${base} with ${CLIENTS} clients for ${SECONDS}s…`)
@@ -79,11 +83,39 @@ for (const c of clients) {
   c.ws.close()
 }
 
+// Shared-docs pass: every doc client contributes one key to one room and
+// must see everyone else's (the patch-sheet sync path, end to end).
+const DOC_CLIENTS = Math.min(CLIENTS, 10)
+const room = `patch/soak-${Date.now().toString(36)}`
+const docPeers = clients.slice(0, DOC_CLIENTS).map((c, i) => {
+  const doc = new Y.Doc()
+  const provider = new WebsocketProvider(`${wsBase}/ws/docs`, room, doc, {
+    WebSocketPolyfill: WebSocket,
+    params: { token: c.token },
+    disableBc: true,
+  })
+  doc.getMap('soak').set(`client-${i}`, i)
+  return { doc, provider }
+})
+const docsDeadline = Date.now() + 15_000
+let docsConverged = false
+while (Date.now() < docsDeadline && !docsConverged) {
+  docsConverged = docPeers.every((p) => p.doc.getMap('soak').size === DOC_CLIENTS)
+  if (!docsConverged) await new Promise((r) => setTimeout(r, 100))
+}
+for (const p of docPeers) p.provider.destroy()
+console.log(`doc sync: ${DOC_CLIENTS} clients converged on ${room}: ${docsConverged}`)
+
 const counts = clients.map((c) => c.seen.size)
 const [min, max] = [Math.min(...counts), Math.max(...counts)]
 console.log(`sent=${stats.sent} acked=${stats.acked} dupes=${stats.dupes} errors=${stats.errors}`)
 console.log(`messages seen per client: min=${min} max=${max} (equal min/max = no loss)`)
 
-const ok = stats.dupes === 0 && stats.errors === 0 && stats.sent === stats.acked && min === max
+const ok =
+  stats.dupes === 0 &&
+  stats.errors === 0 &&
+  stats.sent === stats.acked &&
+  min === max &&
+  docsConverged
 console.log(ok ? 'SOAK PASSED' : 'SOAK FAILED')
 process.exit(ok ? 0 : 1)

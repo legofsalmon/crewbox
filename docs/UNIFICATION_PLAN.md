@@ -13,6 +13,13 @@ This document is the foundation plan: the decisions, the target architecture, an
 phased roadmap. It is grounded in a full architecture review of both codebases
 (July 2026).
 
+**Status (July 2026):** Phases 0–4 are done — history merge + rename, shell/module
+seam, the shared-docs relay, the full Live Patch port (model, store, UI, e2e), and
+the unification features (share-to-chat, admin modules, updated-sheet dots). The
+soak test now exercises doc sync alongside chat. Remaining: Phase 5's native
+rebrand (needs an Android/Xcode build environment to verify) and the Phase 6
+stretch items.
+
 ---
 
 ## 1. Decisions
