@@ -1,0 +1,17 @@
+{
+  "name": "@inter/native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor native shells (Android with background alerts; iOS wrapper)",
+  "scripts": {
+    "sync": "cap sync",
+    "android": "cap open android",
+    "ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/ios": "^8.4.2"
+  }
+}

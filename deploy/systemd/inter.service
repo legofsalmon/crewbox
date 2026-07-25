@@ -1,0 +1,25 @@
+[Unit]
+Description=Inter crew chat server
+After=network.target
+
+[Service]
+Type=simple
+User=inter
+WorkingDirectory=/opt/inter/server
+Environment=NODE_ENV=production
+Environment=INTER_PORT=8787
+Environment=DATA_DIR=/var/lib/inter
+Environment=WEB_DIST=/opt/inter/web/dist
+# CHANGE THESE before the event:
+Environment=EVENT_PIN=2468
+Environment=LIVEKIT_URL=wss://chat.example.com/livekit
+Environment=LIVEKIT_KEY=devkey
+Environment=LIVEKIT_SECRET=secret
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=2
+# The app exits within 3s of SIGTERM by design; don't wait longer.
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

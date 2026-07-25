@@ -1,0 +1,27 @@
+{
+  "name": "inter",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Offline-first LAN chat for festival crews",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "web",
+    "native"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,web -c yellow,cyan \"npm:dev -w server\" \"npm:dev -w web\"",
+    "build": "npm run build -w web && npm run build -w server",
+    "test": "npm run test -w server && npm run test -w web",
+    "start": "npm run start -w server",
+    "build:native": "npm run build -w web && npx -w native cap sync"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "qrcode": "^1.5.4"
+  }
+}

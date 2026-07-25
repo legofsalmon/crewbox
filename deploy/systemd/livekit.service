@@ -1,0 +1,13 @@
+[Unit]
+Description=LiveKit SFU for Inter voice
+After=network.target
+
+[Service]
+Type=simple
+User=inter
+ExecStart=/usr/local/bin/livekit-server --config /etc/inter/livekit.yaml
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
