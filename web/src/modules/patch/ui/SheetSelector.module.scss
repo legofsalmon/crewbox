@@ -196,3 +196,11 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+// The shell's mobile drawer button sits inline with the hero heading.
+
+.heroTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

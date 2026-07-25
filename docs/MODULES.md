@@ -106,6 +106,12 @@ hardcoded whites are how the patch module ended up with invisible text in
 one theme and an invisible button in the other. `e2e/theme.spec.ts` guards
 the contrast ratios.
 
+Every top-level view a module renders **must** include the shell's
+`<DrawerButton />` at the start of its header. Navigating to a module closes
+the sidebar drawer, so a pane without one strands a phone user inside it
+with no way back to chat or to any other module. The button hides itself
+above 900px. `e2e/lighting.spec.ts` guards this for both modules.
+
 ### 4. Register
 
 `modules/<id>/index.ts` exports a `CrewboxModule`:

@@ -765,6 +765,19 @@ ul {
   display: none;
 }
 
+/* Visible to screen readers only. Used for headers whose column is an icon. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .channel-title h2 {
   font-size: 16px;
   display: flex;

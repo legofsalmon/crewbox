@@ -1,0 +1,169 @@
+.selector {
+  padding: 24px;
+  max-width: 820px;
+  margin: 0 auto;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.hero {
+  margin-bottom: 20px;
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    color: var(--text);
+  }
+}
+
+.sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 56ch;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.createButton {
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: inherit;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--accent-strong);
+  }
+}
+
+.cancel {
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.createForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+
+  label {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+}
+
+.input {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 6px;
+
+  &:focus {
+    outline: 2px solid var(--accent);
+  }
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.empty {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.item {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.itemTitle {
+  font-weight: 600;
+}
+
+.itemMeta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.delete {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 18px;
+  padding: 0 14px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--danger);
+  }
+}
+
+@media (max-width: 720px) {
+  .selector {
+    padding: 14px;
+  }
+}
+
+.heroTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

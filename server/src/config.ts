@@ -34,12 +34,14 @@ export const config = {
   trustProxy: process.env.CREWBOX_TRUST_PROXY === '1',
   /**
    * Module ids this box enables beyond chat (comma-separated). Chat is
-   * always on; patch is the default set — set CREWBOX_MODULES='' to run
-   * chat-only, or list extra module ids to enable more.
+   * always on. The default turns on every department module the build
+   * ships, because one box is meant to serve the whole crew and an unused
+   * module costs one collapsed sidebar row. Set CREWBOX_MODULES='' to run
+   * chat-only, or name a subset to trim it.
    */
   modules: [
     ...new Set(
-      ('chat,' + (process.env.CREWBOX_MODULES ?? 'patch'))
+      ('chat,' + (process.env.CREWBOX_MODULES ?? 'patch,lighting'))
         .split(',')
         .map((m) => m.trim())
         .filter(Boolean)

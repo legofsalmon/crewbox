@@ -1,0 +1,146 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  min-height: 0;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoomButton {
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.zoomLabel {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: center;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-inline-start: 8px;
+}
+
+// The plan can outgrow the pane in both directions; scroll it, not the page.
+.canvas {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  touch-action: none;
+  // A small rig in a wide pane looks stranded pinned to the corner.
+  display: flex;
+  justify-content: center;
+
+  svg {
+    flex: none;
+  }
+}
+
+.centreLine {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.stageEdge {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+}
+
+.axisLabel {
+  fill: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.position {
+  stroke: var(--text-muted);
+  stroke-width: 6;
+  stroke-linecap: round;
+  cursor: grab;
+
+  &:hover {
+    stroke: var(--text);
+  }
+}
+
+.positionDragging {
+  stroke: var(--accent);
+  cursor: grabbing;
+}
+
+.positionLabel {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fixtureGroup {
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+  }
+}
+
+.fixture {
+  stroke: var(--bg-raised);
+  stroke-width: 1.5;
+}
+
+.fxTodo {
+  fill: var(--text-faint);
+}
+
+.fxRigged {
+  fill: var(--accent);
+}
+
+.fxOk {
+  fill: var(--ok);
+}
+
+.fxFault {
+  fill: var(--danger);
+}
+
+.fixtureSelected {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+// A clashing fixture gets a ring, so a DMX problem is visible on the plan
+// and not only in the list.
+.fixtureClash {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
+.fixtureLabel {
+  fill: var(--text-muted);
+  font-size: 9px;
+  text-anchor: middle;
+}

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { createSheet, createSheetFromImport, deleteSheet } from '../store/docManager'
 import { useSheetIndex } from '../store/hooks'
 import { isoToDisplay } from '../model/date'
@@ -68,7 +69,10 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
   return (
     <div className={styles.container}>
       <header className={styles.hero}>
-        <h1>Patch Sheets</h1>
+        <div className={styles.heroTop}>
+          <DrawerButton />
+          <h1>Patch Sheets</h1>
+        </div>
         <p>Patch sheets that work with no internet and sync across crew devices</p>
       </header>
 

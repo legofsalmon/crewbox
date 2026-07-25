@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useToasts } from './toastContext.ts'
@@ -216,6 +217,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
       {showHeaders && (
         <header className={styles.appHeader}>
           <div className={styles.headerLeft}>
+            <DrawerButton />
             <button type="button" className={styles.loadButton} onClick={onClose}>
               ← Sheets
             </button>
