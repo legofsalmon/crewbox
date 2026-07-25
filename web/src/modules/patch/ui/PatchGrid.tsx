@@ -20,7 +20,7 @@ import {
   type SheetSnapshot,
 } from '../model/types'
 import { FIELD_SUGGESTIONS, SUB_BOX_FALLBACK_SUGGESTIONS } from '../model/constants'
-import { useRemotePeers } from '../store/useSync'
+import { useSheetRemotePeers } from '../store/useSync'
 import PatchCell from './PatchCell'
 import { useDraft } from './useDraft'
 import { useToasts } from './toastContext'
@@ -94,13 +94,13 @@ function ChannelHeader({
 
 export default function PatchGrid({
   doc,
-  docName,
+  sheetId,
   snapshot,
   matchedCells,
   matchedChannels,
 }: {
   doc: Y.Doc
-  docName: string
+  sheetId: string
   snapshot: SheetSnapshot
   /** Cell ids (`artistId:channelId:field`) highlighted by the find box. */
   matchedCells?: Set<string>
@@ -108,7 +108,7 @@ export default function PatchGrid({
   matchedChannels?: Set<string>
 }) {
   const { channels, artists, subBoxes, patches } = snapshot
-  const remotePeers = useRemotePeers(docName)
+  const remotePeers = useSheetRemotePeers(sheetId)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const { addToast } = useToasts()
 
@@ -137,7 +137,7 @@ export default function PatchGrid({
 
   const remoteEditors: Record<string, { name: string; color: string }> = {}
   for (const peer of remotePeers) {
-    if (peer.editingCell) remoteEditors[peer.editingCell] = { name: peer.name, color: peer.color }
+    if (peer.editing) remoteEditors[peer.editing] = { name: peer.name, color: peer.color }
   }
 
   // Enter/Shift+Enter and the arrow keys move between cells, spreadsheet-style.
@@ -243,7 +243,7 @@ export default function PatchGrid({
                       <PatchCell
                         key={field}
                         doc={doc}
-                        docName={docName}
+                        sheetId={sheetId}
                         artistId={artist.id}
                         channelId={channel.id}
                         field={field}

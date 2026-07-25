@@ -9,8 +9,12 @@ export interface RemotePeer {
   clientId: number
   name: string
   color: string
-  /** `${artistId}:${channelId}:${field}` of the cell the peer is editing, if any. */
-  editingCell: string | null
+  /**
+   * Opaque key of whatever this peer is editing, as defined by the owning
+   * module — patch uses `${artistId}:${channelId}:${field}`. Null when the
+   * peer is present but not in a field.
+   */
+  editing: string | null
 }
 
 const PEER_COLORS = [
@@ -31,13 +35,17 @@ const colorFor = (id: string): string => {
 }
 
 /**
- * Attaches a y-websocket provider to every open patch doc, syncing through
- * the crewbox server's shared-docs relay (/ws/docs, rooms namespaced
- * `patch/<name>`). Where Live Patch had a configurable relay URL, a shared
- * token, and a self-assigned display name, crewbox has exactly one server
- * and one identity: the session token authenticates the socket, and
- * presence is the crew member from the roster — "Sarah is editing this
- * cell" means the actual Sarah from chat.
+ * Attaches a y-websocket provider to every open module doc, syncing through
+ * the crewbox server's shared-docs relay (/ws/docs). Rooms are addressed by
+ * their full `<moduleId>/<docName>` name — the same string the server's
+ * namespace check parses — so one manager serves every module without
+ * knowing what any of them are.
+ *
+ * Where Live Patch had a configurable relay URL, a shared token, and a
+ * self-assigned display name, crewbox has exactly one server and one
+ * identity: the session token authenticates the socket, and presence is the
+ * crew member from the roster — "Sarah is editing this cell" means the
+ * actual Sarah from chat.
  *
  * Without a session (not joined yet) docs simply stay local — the same
  * fully-supported local-only mode Live Patch had without a relay.
@@ -49,27 +57,27 @@ class SyncManager {
   private listeners = new Set<() => void>()
   private peerCache = new Map<string, { key: string; value: RemotePeer[] }>()
 
-  /** Announce which cell this device is editing in the given doc's room. */
-  setEditingCell(name: string, cell: string | null) {
-    this.providers.get(name)?.awareness.setLocalStateField('editing', cell)
+  /** Announce what this device is editing in the given room. */
+  setEditing(room: string, key: string | null) {
+    this.providers.get(room)?.awareness.setLocalStateField('editing', key)
   }
 
-  attach(name: string, doc: Y.Doc) {
-    if (this.docs.has(name)) return
-    this.docs.set(name, doc)
-    this.connectDoc(name, doc)
+  attach(room: string, doc: Y.Doc) {
+    if (this.docs.has(room)) return
+    this.docs.set(room, doc)
+    this.connectDoc(room, doc)
   }
 
-  detach(name: string) {
-    this.disconnectDoc(name)
-    this.docs.delete(name)
+  detach(room: string) {
+    this.disconnectDoc(room)
+    this.docs.delete(room)
     this.emit()
   }
 
   /** Connect docs opened before login; refresh presence after profile changes. */
   refresh() {
-    for (const [name, doc] of this.docs) {
-      if (!this.providers.has(name)) this.connectDoc(name, doc)
+    for (const [room, doc] of this.docs) {
+      if (!this.providers.has(room)) this.connectDoc(room, doc)
     }
     for (const provider of this.providers.values()) {
       provider.awareness.setLocalStateField('user', this.userField())
@@ -85,31 +93,29 @@ class SyncManager {
     }
   }
 
-  private connectDoc(name: string, doc: Y.Doc) {
+  private connectDoc(room: string, doc: Y.Doc) {
     const token = sessionToken()
     if (!token || typeof WebSocket === 'undefined') return
-    const provider = new WebsocketProvider(docsWsUrl(), `patch/${name}`, doc, {
-      params: { token },
-    })
+    const provider = new WebsocketProvider(docsWsUrl(), room, doc, { params: { token } })
     provider.on('status', ({ status }: { status: string }) => {
-      this.connected.set(name, status === 'connected')
+      this.connected.set(room, status === 'connected')
       this.emit()
     })
     // Peers only appear in each other's awareness once a local state is set —
     // an untouched (empty) state is never broadcast on join.
     provider.awareness.setLocalStateField('user', this.userField())
     provider.awareness.on('change', () => this.emit())
-    this.providers.set(name, provider)
+    this.providers.set(room, provider)
   }
 
-  private disconnectDoc(name: string) {
-    const provider = this.providers.get(name)
+  private disconnectDoc(room: string) {
+    const provider = this.providers.get(room)
     if (provider) {
       provider.destroy()
-      this.providers.delete(name)
+      this.providers.delete(room)
     }
-    this.connected.delete(name)
-    this.peerCache.delete(name)
+    this.connected.delete(room)
+    this.peerCache.delete(room)
   }
 
   /** Overall status: connected if any room is, connecting if trying, off without a session. */
@@ -119,21 +125,21 @@ class SyncManager {
     return 'connecting'
   }
 
-  /** Number of devices (including this one) in a doc's room, from awareness. */
-  peers(name: string): number {
-    const provider = this.providers.get(name)
-    if (!provider || !this.connected.get(name)) return 0
+  /** Number of devices (including this one) in a room, from awareness. */
+  peers(room: string): number {
+    const provider = this.providers.get(room)
+    if (!provider || !this.connected.get(room)) return 0
     return provider.awareness.getStates().size
   }
 
   /**
-   * Remote peers in a doc's room (excluding this device). Returns a cached
-   * array reference while the underlying states are unchanged so it can be a
+   * Remote peers in a room (excluding this device). Returns a cached array
+   * reference while the underlying states are unchanged so it can be a
    * useSyncExternalStore snapshot.
    */
-  remotePeers(name: string): RemotePeer[] {
-    const provider = this.providers.get(name)
-    if (!provider || !this.connected.get(name)) return EMPTY_PEERS
+  remotePeers(room: string): RemotePeer[] {
+    const provider = this.providers.get(room)
+    if (!provider || !this.connected.get(room)) return EMPTY_PEERS
     const peers: RemotePeer[] = []
     for (const [clientId, state] of provider.awareness.getStates()) {
       if (clientId === provider.awareness.clientID) continue
@@ -143,14 +149,14 @@ class SyncManager {
         clientId,
         name: user.name?.trim() || 'Crew member',
         color: user.color ?? PEER_COLORS[0]!,
-        editingCell: (state as { editing?: string | null }).editing ?? null,
+        editing: (state as { editing?: string | null }).editing ?? null,
       })
     }
     peers.sort((a, b) => a.clientId - b.clientId)
     const key = JSON.stringify(peers)
-    const cached = this.peerCache.get(name)
+    const cached = this.peerCache.get(room)
     if (cached && cached.key === key) return cached.value
-    this.peerCache.set(name, { key, value: peers })
+    this.peerCache.set(room, { key, value: peers })
     return peers
   }
 

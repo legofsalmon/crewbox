@@ -1,13 +1,13 @@
-import { useSyncExternalStore } from 'react'
-import { syncManager, type RemotePeer, type SyncStatus } from './sync.ts'
+import { sheetRoom } from './docManager.ts'
+import { useRemotePeers, useSyncPeers } from '../../_shared/docs/hooks.ts'
+import type { RemotePeer } from '../../_shared/docs/sync.ts'
 
-export const useSyncStatus = (): SyncStatus =>
-  useSyncExternalStore(syncManager.subscribe, () => syncManager.status())
+export { useSyncStatus } from '../../_shared/docs/hooks.ts'
+export type { RemotePeer, SyncStatus } from '../../_shared/docs/sync.ts'
 
-/** Devices (including this one) currently in the given doc's sync room. */
-export const useSyncPeers = (docName: string): number =>
-  useSyncExternalStore(syncManager.subscribe, () => syncManager.peers(docName))
+/** Devices (including this one) currently in the given sheet's sync room. */
+export const useSheetPeers = (sheetId: string): number => useSyncPeers(sheetRoom(sheetId))
 
-/** Remote peers (name, color, editing cell) in the given doc's sync room. */
-export const useRemotePeers = (docName: string): RemotePeer[] =>
-  useSyncExternalStore(syncManager.subscribe, () => syncManager.remotePeers(docName))
+/** Remote peers (name, color, editing cell) in the given sheet's sync room. */
+export const useSheetRemotePeers = (sheetId: string): RemotePeer[] =>
+  useRemotePeers(sheetRoom(sheetId))
