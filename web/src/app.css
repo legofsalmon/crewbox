@@ -334,6 +334,30 @@ ul {
   gap: 8px;
 }
 
+.updated-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.msg-applink {
+  display: inline-block;
+  padding: 2px 10px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.msg-applink:hover {
+  background: var(--accent-strong);
+}
+
 .flash-info {
   background: var(--bg-raised) !important;
   color: var(--text) !important;

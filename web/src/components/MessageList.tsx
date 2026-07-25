@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { fileUrl, thumbUrl, type FileMeta, type Message } from '@crewbox/shared'
 import { useStore, type Pending } from '../store.ts'
+import { parseRoute } from '../shell/router.ts'
 import { formatBytes } from '../lib/files.ts'
 import { apiUrl } from '../lib/server.ts'
 import Avatar from './Avatar.tsx'
@@ -36,8 +37,41 @@ function time(ts: number): string {
   return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-/** Highlight @mentions of known names (plus @all/@everyone/@channel). */
+const APP_LINK_RE = /\/m\/[a-z0-9-]+(?:\/[A-Za-z0-9._:%/-]+)?/g
+
+/** Render a message body: in-app module links become navigation chips,
+ * everything between them gets mention highlighting. */
 function renderBody(body: string, names: string[], myName: string | undefined): ReactNode {
+  const matches = [...body.matchAll(APP_LINK_RE)]
+  if (matches.length === 0) return renderMentions(body, names, myName)
+  const nodes: ReactNode[] = []
+  let cursor = 0
+  matches.forEach((m, i) => {
+    if (m.index! > cursor) nodes.push(renderMentions(body.slice(cursor, m.index), names, myName))
+    const path = m[0]
+    nodes.push(
+      <button
+        key={`applink-${i}`}
+        type="button"
+        className="msg-applink"
+        onClick={() => {
+          const route = parseRoute(path)
+          if (route.kind === 'module') {
+            useStore.getState().setActiveModule(route.moduleId, route.subpath)
+          }
+        }}
+      >
+        Open ↗
+      </button>
+    )
+    cursor = m.index! + path.length
+  })
+  if (cursor < body.length) nodes.push(renderMentions(body.slice(cursor), names, myName))
+  return nodes
+}
+
+/** Highlight @mentions of known names (plus @all/@everyone/@channel). */
+function renderMentions(body: string, names: string[], myName: string | undefined): ReactNode {
   const candidates = [...names, 'all', 'everyone', 'channel'].sort((a, b) => b.length - a.length)
   const nodes: ReactNode[] = []
   let cursor = 0

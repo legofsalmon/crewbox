@@ -131,6 +131,16 @@ function formatUptime(sec: number): string {
   return `${m}m`
 }
 
+/** Enabled modules from live config (set via CREWBOX_MODULES on the box). */
+function ModulesList() {
+  const configModules = useStore((s) => s.config.modules)
+  return (
+    <>
+      {configModules.join(', ')} <span className="admin-muted">(set via CREWBOX_MODULES)</span>
+    </>
+  )
+}
+
 function ServerSection({ onNote }: { onNote: (note: string) => void }) {
   const [data, setData] = useState<api.AdminSettings | null>(null)
   const [ssid, setSsid] = useState('')
@@ -197,6 +207,12 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
           <div>
             <dt>Version</dt>
             <dd>{info.version}</dd>
+          </div>
+          <div>
+            <dt>Modules</dt>
+            <dd>
+              <ModulesList />
+            </dd>
           </div>
           <div>
             <dt>Uptime</dt>

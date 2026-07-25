@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { registerShortcut } from '../../../shell/keys.ts'
+import { useStore } from '../../../store.ts'
+import { useToasts } from './toastContext.ts'
 import { useSheet } from '../store/hooks'
 import { sheetDocName } from '../store/docManager'
 import { useRemotePeers, useSyncPeers, useSyncStatus } from '../store/useSync'
@@ -83,6 +85,50 @@ function SyncStatusChip({ sheetId }: { sheetId: string }) {
   )
 }
 
+function ShareMenu({
+  sheetId,
+  title,
+  onClose,
+}: {
+  sheetId: string
+  title: string
+  onClose: () => void
+}) {
+  const channels = useStore((s) => s.channels)
+  const sendMessage = useStore((s) => s.sendMessage)
+  const { addToast } = useToasts()
+  const publicChannels = Object.values(channels)
+    .filter((c) => c.kind === 'public' && !c.retired)
+    .sort((a, b) => a.createdAt - b.createdAt)
+
+  return (
+    <div className={styles.shareOverlay} onClick={onClose}>
+      <div
+        className={styles.shareMenu}
+        role="dialog"
+        aria-label="Share sheet to a channel"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className={styles.shareTitle}>Share to channel</p>
+        {publicChannels.map((channel) => (
+          <button
+            key={channel.id}
+            type="button"
+            className={styles.shareChannel}
+            onClick={() => {
+              sendMessage(channel.id, `📋 Patch sheet “${title}” — /m/patch/sheet/${sheetId}`)
+              addToast('Shared', `Sheet link posted in #${channel.name}`, 'success')
+              onClose()
+            }}
+          >
+            #{channel.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function SheetView({ sheetId, onClose }: { sheetId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = useSheet(sheetId)
   const { canUndo, canRedo, undo, redo } = useUndoRedo(undoManager)
@@ -90,6 +136,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   const [showSubBoxes, setShowSubBoxes] = useState(false)
   const [showLineup, setShowLineup] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
+  const [showShare, setShowShare] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const matchCursor = useRef(0)
@@ -224,6 +271,14 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
           </div>
           <div className={styles.headerRight}>
             <PresenceAvatars sheetId={sheetId} />
+            <button
+              type="button"
+              className={styles.loadButton}
+              onClick={() => setShowShare(true)}
+              title="Share this sheet into a chat channel"
+            >
+              Share
+            </button>
             <SyncStatusChip sheetId={sheetId} />
           </div>
         </header>
@@ -256,6 +311,13 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
         <LineupManager doc={doc} snapshot={snapshot} onClose={() => setShowLineup(false)} />
       )}
       {showVersions && <VersionManager doc={doc} onClose={() => setShowVersions(false)} />}
+      {showShare && (
+        <ShareMenu
+          sheetId={sheetId}
+          title={snapshot.meta.title || 'Untitled Sheet'}
+          onClose={() => setShowShare(false)}
+        />
+      )}
     </div>
   )
 }

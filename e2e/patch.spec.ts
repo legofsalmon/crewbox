@@ -99,3 +99,28 @@ test('pasting a Sheets-style block fills the grid and undoes as one step', async
   await expect(cell(page, 'Artist 1', '1', 'Input')).toHaveValue('')
   await expect(cell(page, 'Artist 1', '3', 'Input')).toHaveValue('')
 })
+
+test('sharing a sheet posts a chat link that opens the sheet on another device', async ({
+  browser,
+}) => {
+  const deviceA = await newDevice(browser)
+  await openPatch(deviceA)
+  const sheet = uniqueName('Share Fest')
+  await createSheet(deviceA, sheet)
+  await commitCell(deviceA, 'Artist 1', '1', 'Input', 'Kick')
+
+  await deviceA.getByRole('button', { name: 'Share', exact: true }).click()
+  await deviceA
+    .getByLabel('Share sheet to a channel')
+    .getByRole('button', { name: '#general' })
+    .click()
+
+  // Device B lands in #general by default, sees the share, and the chip
+  // deep-links straight into the patch module.
+  const deviceB = await newDevice(browser)
+  const shareMsg = deviceB.locator('.msg', { hasText: sheet })
+  await expect(shareMsg.first()).toBeVisible()
+  await shareMsg.first().getByRole('button', { name: 'Open ↗' }).click()
+  await expect(deviceB).toHaveURL(/\/m\/patch\/sheet\//)
+  await expect(cell(deviceB, 'Artist 1', '1', 'Input')).toHaveValue('Kick')
+})

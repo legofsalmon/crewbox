@@ -231,3 +231,45 @@
     padding: 0;
   }
 }
+
+.shareOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+}
+
+.shareMenu {
+  min-width: 240px;
+  max-width: 90vw;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: $radius;
+  box-shadow: $shadow-popover;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shareTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.shareChannel {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: $radius-small;
+  color: var(--text);
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
