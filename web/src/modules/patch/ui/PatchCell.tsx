@@ -3,7 +3,7 @@ import { patchSubBoxDisplay, setPatchField, setPatchSubBox } from '../model/shee
 import { emptyPatchEntry, type PatchEntry, type PatchField, type SubBox } from '../model/types'
 import { syncManager } from '../../_shared/docs/sync'
 import { sheetRoom } from '../store/docManager'
-import { useDraft } from './useDraft'
+import { useDraft } from '../../_shared/ui/useDraft'
 import styles from './PatchGrid.module.scss'
 
 export default function PatchCell({

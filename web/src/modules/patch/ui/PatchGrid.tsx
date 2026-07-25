@@ -22,7 +22,7 @@ import {
 import { FIELD_SUGGESTIONS, SUB_BOX_FALLBACK_SUGGESTIONS } from '../model/constants'
 import { useSheetRemotePeers } from '../store/useSync'
 import PatchCell from './PatchCell'
-import { useDraft } from './useDraft'
+import { useDraft } from '../../_shared/ui/useDraft'
 import { useToasts } from './toastContext'
 import styles from './PatchGrid.module.scss'
 
