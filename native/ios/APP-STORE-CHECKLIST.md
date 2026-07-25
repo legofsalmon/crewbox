@@ -1,7 +1,7 @@
 # iOS App Store submission checklist
 
 What the code already handles vs. the manual steps you do in Xcode and App Store
-Connect. Bundle id: `com.colmhewson.inter`. Target: iPhone only.
+Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
 
 ## Done in the codebase (no action needed)
 
@@ -28,7 +28,7 @@ Connect. Bundle id: `com.colmhewson.inter`. Target: iPhone only.
 ## Host the privacy policy (need a public URL)
 
 - Repo Settings → Pages → deploy from `main` / `/docs`. That serves
-  `https://legofsalmon.github.io/inter/privacy-policy.html`.
+  `https://legofsalmon.github.io/crewbox/privacy-policy.html`.
 - Edit `docs/privacy-policy.html`: replace **[YOUR SUPPORT EMAIL]** with a real
   contact address before publishing.
 

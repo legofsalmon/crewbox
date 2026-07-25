@@ -16,9 +16,10 @@ phased roadmap. It is grounded in a full architecture review of both codebases
 **Status (July 2026):** Phases 0–4 are done — history merge + rename, shell/module
 seam, the shared-docs relay, the full Live Patch port (model, store, UI, e2e), and
 the unification features (share-to-chat, admin modules, updated-sheet dots). The
-soak test now exercises doc sync alongside chat. Remaining: Phase 5's native
-rebrand (needs an Android/Xcode build environment to verify) and the Phase 6
-stretch items.
+soak test now exercises doc sync alongside chat. The Phase 5 native rebrand
+to `com.colmhewson.crewbox` is applied (cap sync validated; Java sources
+parse) — run a real `gradlew assembleDebug` / Xcode archive before
+distributing. Remaining: the Phase 6 stretch items.
 
 ---
 

@@ -1,4 +1,4 @@
-package com.colmhewson.inter;
+package com.colmhewson.crewbox;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -243,7 +243,7 @@ public class AlertsService extends Service {
   private Notification serviceNotification(String text) {
     return new NotificationCompat.Builder(this, CH_SERVICE)
         .setSmallIcon(R.mipmap.ic_launcher)
-        .setContentTitle("Inter")
+        .setContentTitle("Crewbox")
         .setContentText(text)
         .setOngoing(true)
         .setContentIntent(openAppIntent())

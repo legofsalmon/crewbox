@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.colmhewson.inter',
-  appName: 'Inter',
+  appId: 'com.colmhewson.crewbox',
+  appName: 'Crewbox',
   // The built PWA bundle is packaged into the app; the crew server address
   // is configured at runtime on the join screen (lib/server.ts).
   webDir: '../web/dist',

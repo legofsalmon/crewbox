@@ -1,4 +1,4 @@
-package com.colmhewson.inter;
+package com.colmhewson.crewbox;
 
 import android.Manifest;
 import android.content.Intent;
@@ -17,11 +17,11 @@ import com.getcapacitor.annotation.PermissionCallback;
 
 /**
  * JS bridge for the background-alerts foreground service. The web app calls
- * InterAlerts.start after a successful welcome (native builds only) and
- * InterAlerts.stop on logout.
+ * CrewboxAlerts.start after a successful welcome (native builds only) and
+ * CrewboxAlerts.stop on logout.
  */
 @CapacitorPlugin(
-    name = "InterAlerts",
+    name = "CrewboxAlerts",
     permissions = {
       @Permission(alias = "notifications", strings = {Manifest.permission.POST_NOTIFICATIONS})
     })
@@ -67,7 +67,7 @@ public class AlertsPlugin extends Plugin {
     PowerManager pm = getContext().getSystemService(PowerManager.class);
     String pkg = getContext().getPackageName();
     if (pm.isIgnoringBatteryOptimizations(pkg)) return;
-    var prefs = getContext().getSharedPreferences("inter-alerts", 0);
+    var prefs = getContext().getSharedPreferences("crewbox-alerts", 0);
     if (prefs.getBoolean("battery-asked", false)) return;
     prefs.edit().putBoolean("battery-asked", true).apply();
     try {

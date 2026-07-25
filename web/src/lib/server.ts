@@ -18,7 +18,7 @@ declare global {
   interface Window {
     Capacitor?: {
       isNativePlatform?: () => boolean
-      Plugins?: { InterAlerts?: AlertsPlugin }
+      Plugins?: { CrewboxAlerts?: AlertsPlugin }
     }
   }
 }
@@ -30,7 +30,7 @@ export function isNative(): boolean {
 
 /** The Android background-alerts bridge, when present (native builds only). */
 export function nativeAlerts(): AlertsPlugin | undefined {
-  return window.Capacitor?.Plugins?.InterAlerts
+  return window.Capacitor?.Plugins?.CrewboxAlerts
 }
 
 /**
