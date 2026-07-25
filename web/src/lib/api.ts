@@ -147,8 +147,8 @@ export function adminGetSettings(token: string): Promise<AdminSettings> {
 
 export function adminUpdateSettings(
   token: string,
-  patch: { wifiSsid?: string }
-): Promise<{ settings: { wifiSsid: string } }> {
+  patch: { wifiSsid?: string; eventPin?: string }
+): Promise<{ settings: { wifiSsid: string; eventPin: string } }> {
   return request('/api/admin/settings', {
     method: 'PATCH',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

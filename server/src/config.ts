@@ -47,8 +47,15 @@ export const config = {
   ],
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
-    /** URL the *client* uses to reach LiveKit. Empty string disables voice. */
-    url: process.env.LIVEKIT_URL ?? 'ws://localhost:7880',
+    /**
+     * URL the *client* uses to reach LiveKit. Empty string disables voice —
+     * the voice button disappears rather than erroring. The localhost dev
+     * default applies only outside production, so a box without LiveKit
+     * doesn't advertise voice it can't deliver.
+     */
+    url:
+      process.env.LIVEKIT_URL ??
+      (process.env.NODE_ENV === 'production' ? '' : 'ws://localhost:7880'),
     key: process.env.LIVEKIT_KEY ?? 'devkey',
     secret: process.env.LIVEKIT_SECRET ?? 'secret',
   },
@@ -60,10 +67,14 @@ export const config = {
  * (CREWBOX_TRUST_PROXY=1) running on the public default event PIN would let
  * anyone on the internet register — fail closed rather than warn.
  */
-export function warnOnDefaults(log: { warn: (msg: string) => void }): string | null {
-  if (!process.env.EVENT_PIN) {
+export function warnOnDefaults(
+  log: { warn: (msg: string) => void },
+  /** An admin-set PIN (settings table) overrides the default, so it's safe. */
+  hasStoredPin = false
+): string | null {
+  if (!process.env.EVENT_PIN && !hasStoredPin) {
     if (config.trustProxy) {
-      return 'EVENT_PIN is unset but CREWBOX_TRUST_PROXY=1 (internet-exposed). Refusing to start on the public default PIN — set EVENT_PIN.'
+      return 'EVENT_PIN is unset but CREWBOX_TRUST_PROXY=1 (internet-exposed). Refusing to start on the public default PIN — set EVENT_PIN (or set one in the admin panel first).'
     }
     log.warn('EVENT_PIN not set — using default dev PIN "1234". Set EVENT_PIN in production!')
   }

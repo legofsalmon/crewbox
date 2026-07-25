@@ -23,10 +23,11 @@ const app = buildApp({
   sessionTtlMs: config.sessionTtlMs,
   trustProxy: config.trustProxy,
   modules: config.modules,
+  dataDir: config.dataDir,
 })
 const hub = app.hub
 
-const fatal = warnOnDefaults(app.log)
+const fatal = warnOnDefaults(app.log, Boolean(store.getSetting('eventPin')))
 if (fatal) {
   app.log.error(fatal)
   process.exit(1)
@@ -48,6 +49,7 @@ await app.listen({ host: config.host, port: config.port })
 attachWs(app)
 
 app.log.info(`crewbox server listening on ${config.host}:${config.port}`)
+app.log.info(`crew onboarding page: http://localhost:${config.port}/connect (QR, PIN, APK)`)
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {

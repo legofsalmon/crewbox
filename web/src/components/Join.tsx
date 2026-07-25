@@ -15,11 +15,16 @@ function initialServer(): string {
   return new URLSearchParams(location.search).get('server') ?? serverOrigin()
 }
 
+/** The QR on the poster/connect page carries ?pin= so crew never type it. */
+function initialEventPin(): string {
+  return new URLSearchParams(location.search).get('pin') ?? ''
+}
+
 export default function Join() {
   const join = useStore((s) => s.join)
   const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
   const [name, setName] = useState('')
-  const [eventPin, setEventPin] = useState('')
+  const [eventPin, setEventPin] = useState(initialEventPin)
   const [personalPin, setPersonalPin] = useState('')
   const [server, setServer] = useState(initialServer)
   const [error, setError] = useState<string | null>(null)

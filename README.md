@@ -72,6 +72,12 @@ Install the files in `deploy/` (systemd units, Caddyfile, livekit.yaml,
 dnsmasq.conf), run `deploy/cert-renew.sh` while you still have internet,
 and walk through `deploy/RUNBOOK.md` — it is the day-of checklist.
 
+Once running, **`/connect`** is the live onboarding page: a QR of the join
+URL (event PIN prefilled), the PIN in print, and the Android APK download
+when `crewbox.apk` sits in `DATA_DIR`. The event PIN is changeable at
+runtime from the admin panel. With `NODE_ENV=production`, voice is off
+unless `LIVEKIT_URL` is set — the voice button simply doesn't appear.
+
 Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_URL`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`,
 `CREWBOX_MODULES` (module ids to enable beyond chat, comma-separated;

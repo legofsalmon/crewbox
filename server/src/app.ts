@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, mkdirSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync } from 'node:fs'
 import { rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -8,6 +8,8 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
+import { networkInterfaces } from 'node:os'
+import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
 import { APP_VERSION } from './version.ts'
@@ -63,8 +65,19 @@ const channelPatchSchema = z.object({
   retired: z.boolean().optional(),
 })
 
+/** Minimal HTML escaping for the server-rendered /connect page. */
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+}
+
 const settingsPatchSchema = z.object({
   wifiSsid: z.string().trim().max(64).optional(),
+  // Changeable mid-event from the admin panel — no SSH, no service restart.
+  eventPin: z.string().trim().min(4).max(64).optional(),
 })
 
 /**
@@ -109,6 +122,8 @@ export interface AppDeps {
   trustProxy?: boolean
   /** Module ids this box enables; clients hide modules not listed. */
   modules?: string[]
+  /** Data directory root; /connect offers crewbox.apk from here when present. */
+  dataDir?: string
   logger?: boolean
 }
 
@@ -130,6 +145,7 @@ export function buildApp({
   sessionTtlMs,
   trustProxy = false,
   modules = ['chat'],
+  dataDir,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -146,6 +162,9 @@ export function buildApp({
   })
 
   // Effective public settings: DB override wins over the deploy-time default.
+  // Admin-set PIN (settings table) wins over the deploy-time env default.
+  const effectiveEventPin = (): string => store.getSetting('eventPin') ?? eventPin
+
   const publicConfig = (): PublicConfig => ({
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
     voiceEnabled: Boolean(livekit?.url),
@@ -199,6 +218,77 @@ export function buildApp({
   // Public settings the pre-auth join screen and offline screen need.
   fastify.get('/api/config', () => publicConfig())
 
+  const apkPath = dataDir ? join(dataDir, 'crewbox.apk') : undefined
+  const apkAvailable = (): boolean => Boolean(apkPath && existsSync(apkPath))
+
+  // Sideloadable Android app, dropped into DATA_DIR by the operator — no
+  // reverse-proxy configuration needed to distribute it on site.
+  fastify.get('/crewbox.apk', (_req, reply) => {
+    if (!apkPath || !apkAvailable()) return reply.code(404).send({ error: 'no APK installed' })
+    return reply
+      .header('content-type', 'application/vnd.android.package-archive')
+      .header('content-disposition', 'attachment; filename="crewbox.apk"')
+      .send(createReadStream(apkPath))
+  })
+
+  /**
+   * The join URL crew should scan: the request host, unless the operator is
+   * looking at localhost — then the first LAN address, which is what phones
+   * can actually reach.
+   */
+  const crewUrl = (req: FastifyRequest): string => {
+    const proto = trustProxy ? ((req.headers['x-forwarded-proto'] as string) ?? 'http') : 'http'
+    const host = req.headers.host ?? 'localhost'
+    if (!/^(localhost|127\.)/.test(host)) return `${proto}://${host}`
+    const port = host.split(':')[1] ?? ''
+    for (const addrs of Object.values(networkInterfaces())) {
+      for (const addr of addrs ?? []) {
+        if (addr.family === 'IPv4' && !addr.internal) {
+          return `http://${addr.address}${port ? `:${port}` : ''}`
+        }
+      }
+    }
+    return `http://${host}`
+  }
+
+  // Live onboarding page: big QR of the join URL (PIN prefilled), the PIN in
+  // print, Wi-Fi guidance, and the APK when installed. Always current — a
+  // PIN change from the admin panel is reflected on the next load, unlike a
+  // printed poster.
+  fastify.get('/connect', (req, reply) => {
+    const config = publicConfig()
+    const pin = effectiveEventPin()
+    const base = crewUrl(req)
+    const joinUrl = `${base}/?pin=${encodeURIComponent(pin)}`
+    const qr = new QRCode({ content: joinUrl, padding: 2, width: 260, height: 260 }).svg()
+    const html = `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join Crewbox</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         background: #12100e; color: #f2eee7; font-family: system-ui, sans-serif; text-align: center; }
+  .card { padding: 32px; }
+  h1 { letter-spacing: 0.06em; margin: 0 0 4px; }
+  .qr { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin: 20px 0; }
+  .url { font-size: 20px; font-weight: 700; word-break: break-all; }
+  .pin { font-size: 17px; margin-top: 10px; color: #f5b73e; }
+  .meta { color: #a29a8c; margin-top: 14px; font-size: 15px; }
+  a { color: #f5b73e; }
+</style></head><body><div class="card">
+  <h1>Crewbox</h1>
+  <p class="meta">Crew chat, voice &amp; patch sheets — on the event network</p>
+  ${config.wifiSsid ? `<p class="meta">1. Join Wi-Fi: <strong>${escapeHtml(config.wifiSsid)}</strong>&nbsp;&nbsp;2. Scan&nbsp;&nbsp;3. Pick a name</p>` : ''}
+  <div class="qr">${qr}</div>
+  <p class="url">${escapeHtml(base.replace(/^https?:\/\//, ''))}</p>
+  <p class="pin">Event PIN: <strong>${escapeHtml(pin)}</strong></p>
+  ${apkAvailable() ? `<p class="meta">Android lock-screen alerts: <a href="${base}/crewbox.apk">download the Crewbox app</a></p>` : ''}
+</div></body></html>`
+    return reply
+      .header('content-type', 'text/html; charset=utf-8')
+      .header('cache-control', 'no-cache')
+      .send(html)
+  })
+
   // Join doubles as login: a known name + matching personal PIN gets a new
   // session; an unknown name + correct event PIN creates the user.
   fastify.post('/api/join', (req, reply) => {
@@ -233,7 +323,7 @@ export function buildApp({
       return { token, user, created: false }
     }
 
-    if (suppliedEventPin !== eventPin) {
+    if (suppliedEventPin !== effectiveEventPin()) {
       return reply.code(401).send({ error: 'Wrong event PIN — check the join poster' })
     }
     const role = store.countUsers() === 0 ? 'admin' : 'member'
@@ -557,8 +647,8 @@ export function buildApp({
         connections: stats.connections,
         onlineUsers: stats.onlineUsers,
         voiceEnabled: Boolean(livekit?.url),
-        // Read-only: shown so admins can put the current PIN on posters.
-        eventPin,
+        // Shown so admins can put the current PIN on posters; editable below.
+        eventPin: effectiveEventPin(),
       },
     }
   })
@@ -572,8 +662,11 @@ export function buildApp({
     if (parsed.data.wifiSsid !== undefined) {
       store.setSetting('wifiSsid', parsed.data.wifiSsid)
     }
+    if (parsed.data.eventPin !== undefined) {
+      store.setSetting('eventPin', parsed.data.eventPin)
+    }
     hub.announceConfig()
-    return { settings: { wifiSsid: publicConfig().wifiSsid } }
+    return { settings: { wifiSsid: publicConfig().wifiSsid, eventPin: effectiveEventPin() } }
   })
 
   // Full JSON dump for the post-event archive.

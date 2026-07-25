@@ -46,7 +46,7 @@ export default defineConfig({
       workbox: {
         // The app shell loads offline; live data comes over our own WS/API
         // (with its own Dexie cache), so never let the SW intercept those.
-        navigateFallbackDenylist: [/^\/api/, /^\/ws/],
+        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/connect/, /^\/crewbox\.apk/],
         runtimeCaching: [
           {
             // Uploaded files are content-addressed → cache forever once seen.

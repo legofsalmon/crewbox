@@ -14,7 +14,10 @@ const pin = process.argv[3] ?? 'SET-EVENT-PIN'
 // APK downloads skip TLS on purpose: Android's installer doesn't care, and
 // http avoids any cert-trust hiccup on a phone that just joined the Wi-Fi.
 const apkUrl = `${url.replace(/^https:/, 'http:').replace(/\/$/, '')}/crewbox.apk`
-const qr = await QRCode.toDataURL(url, { width: 480, margin: 1 })
+// The QR carries ?pin= so scanning prefills the join form — the PIN is
+// printed on this same poster anyway.
+const joinUrl = `${url.replace(/\/$/, '')}/?pin=${encodeURIComponent(pin)}`
+const qr = await QRCode.toDataURL(joinUrl, { width: 480, margin: 1 })
 const apkQr = await QRCode.toDataURL(apkUrl, { width: 240, margin: 1 })
 
 const html = `<!doctype html>

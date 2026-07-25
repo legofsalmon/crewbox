@@ -13,6 +13,7 @@ export default function ChannelView({ channelId }: { channelId: string }) {
   const setSidebarOpen = useStore((s) => s.setSidebarOpen)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
   const voice = useStore((s) => s.voice)
+  const voiceEnabled = useStore((s) => s.config.voiceEnabled)
   const joinVoice = useStore((s) => s.joinVoice)
   const leaveVoice = useStore((s) => s.leaveVoice)
   const latencyMs = useStore((s) => s.latencyMs)
@@ -69,26 +70,28 @@ export default function ChannelView({ channelId }: { channelId: string }) {
             <span className="weak-signal-ms">{latencyMs} ms</span>
           </span>
         )}
-        <button
-          className={`icon-btn voice-btn ${voice.channelId === channelId ? 'voice-active' : ''}`}
-          aria-label={voice.channelId === channelId ? 'Leave voice' : 'Join voice intercom'}
-          title={voice.channelId === channelId ? 'Leave voice' : 'Join voice intercom'}
-          onClick={() => {
-            if (voice.channelId === channelId) void leaveVoice()
-            else void joinVoice(channelId)
-          }}
-        >
-          <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden>
-            <path
-              d="M4 13a8 8 0 0 1 16 0M4 13v4a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2zm16 0v4a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        {voiceEnabled && (
+          <button
+            className={`icon-btn voice-btn ${voice.channelId === channelId ? 'voice-active' : ''}`}
+            aria-label={voice.channelId === channelId ? 'Leave voice' : 'Join voice intercom'}
+            title={voice.channelId === channelId ? 'Leave voice' : 'Join voice intercom'}
+            onClick={() => {
+              if (voice.channelId === channelId) void leaveVoice()
+              else void joinVoice(channelId)
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden>
+              <path
+                d="M4 13a8 8 0 0 1 16 0M4 13v4a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2zm16 0v4a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
         <button
           className="icon-btn search-btn"
           aria-label="Search messages"

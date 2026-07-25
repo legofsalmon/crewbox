@@ -144,6 +144,7 @@ function ModulesList() {
 function ServerSection({ onNote }: { onNote: (note: string) => void }) {
   const [data, setData] = useState<api.AdminSettings | null>(null)
   const [ssid, setSsid] = useState('')
+  const [pin, setPin] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -154,6 +155,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         if (!live) return
         setData(d)
         setSsid(d.settings.wifiSsid)
+        setPin(d.serverInfo.eventPin)
       })
       .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Could not load settings'))
     return () => {
@@ -175,9 +177,47 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
     }
   }
 
+  async function savePin(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const { settings } = await api.adminUpdateSettings(token(), { eventPin: pin.trim() })
+      setPin(settings.eventPin)
+      setData((d) =>
+        d ? { ...d, serverInfo: { ...d.serverInfo, eventPin: settings.eventPin } } : d
+      )
+      onNote('Event PIN changed — update the poster or point crew at /connect')
+    } catch (err) {
+      onNote(err instanceof api.ApiError ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const info = data?.serverInfo
   return (
     <>
+      <form className="admin-setting" onSubmit={(e) => void savePin(e)}>
+        <label htmlFor="admin-event-pin">
+          Event PIN (gates new joins; on the poster and /connect)
+        </label>
+        <div className="admin-setting-row">
+          <input
+            id="admin-event-pin"
+            value={pin}
+            minLength={4}
+            maxLength={64}
+            placeholder="e.g. 2468"
+            onChange={(e) => setPin(e.target.value)}
+          />
+          <button
+            className="admin-btn"
+            disabled={saving || !data || pin.trim().length < 4 || pin === data.serverInfo.eventPin}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </form>
       <form className="admin-setting" onSubmit={(e) => void saveSsid(e)}>
         <label htmlFor="admin-ssid">Wi-Fi network (shown as join guidance)</label>
         <div className="admin-setting-row">
@@ -198,12 +238,6 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
       </form>
       {info && (
         <dl className="admin-info">
-          <div>
-            <dt>Event PIN</dt>
-            <dd>
-              {info.eventPin} <span className="admin-muted">(for posters · set via EVENT_PIN)</span>
-            </dd>
-          </div>
           <div>
             <dt>Version</dt>
             <dd>{info.version}</dd>

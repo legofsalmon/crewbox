@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -122,6 +122,7 @@ beforeEach(async () => {
     store,
     eventPin: EVENT_PIN,
     filesDir,
+    dataDir: filesDir,
     livekit: { url: 'ws://localhost:7880', key: 'devkey', secret: 'secret' },
     // Behind-a-proxy config so the office-badge presence test can exercise
     // forwarded-header handling; the pure-LAN ignore path is unit-tested below.
@@ -1126,5 +1127,79 @@ describe('read state', () => {
     )
     expect(synced.channelId).toBe(general.id)
     expect(synced.seq).toBe(general.lastSeq)
+  })
+})
+
+describe('onboarding & runtime settings', () => {
+  it('lets an admin change the event PIN at runtime, gating new joins', async () => {
+    const adminToken = await join('Alex')
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/api/admin/settings',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { eventPin: '7777' },
+    })
+    expect(patch.statusCode).toBe(200)
+    expect((patch.json() as { settings: { eventPin: string } }).settings.eventPin).toBe('7777')
+
+    // The old PIN no longer admits new crew; the new one does.
+    const oldPin = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Late Larry', eventPin: EVENT_PIN, personalPin: '1234' },
+    })
+    expect(oldPin.statusCode).toBe(401)
+    const newPin = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Late Larry', eventPin: '7777', personalPin: '1234' },
+    })
+    expect(newPin.statusCode).toBe(200)
+
+    // The admin panel shows the effective PIN.
+    const settings = await app.inject({
+      url: '/api/admin/settings',
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    expect((settings.json() as { serverInfo: { eventPin: string } }).serverInfo.eventPin).toBe(
+      '7777'
+    )
+  })
+
+  it('serves the /connect onboarding page with QR, PIN, and no auth', async () => {
+    const res = await fetch(`${baseUrl}/connect`)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('<svg')
+    expect(html).toContain(`Event PIN: <strong>${EVENT_PIN}</strong>`)
+    // No APK installed in this test — the download link must not appear.
+    expect(html).not.toContain('crewbox.apk')
+  })
+
+  it('reflects a runtime PIN change on /connect immediately', async () => {
+    const adminToken = await join('Alex')
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/admin/settings',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { eventPin: '2468' },
+    })
+    const html = await (await fetch(`${baseUrl}/connect`)).text()
+    expect(html).toContain('Event PIN: <strong>2468</strong>')
+  })
+
+  it('serves crewbox.apk from DATA_DIR when installed, 404 otherwise', async () => {
+    const missing = await fetch(`${baseUrl}/crewbox.apk`)
+    expect(missing.status).toBe(404)
+
+    writeFileSync(pathJoin(filesDir, 'crewbox.apk'), 'not-a-real-apk')
+    const found = await fetch(`${baseUrl}/crewbox.apk`)
+    expect(found.status).toBe(200)
+    expect(found.headers.get('content-type')).toBe('application/vnd.android.package-archive')
+    expect(await found.text()).toBe('not-a-real-apk')
+
+    // Once installed, /connect advertises the download.
+    const html = await (await fetch(`${baseUrl}/connect`)).text()
+    expect(html).toContain('crewbox.apk')
   })
 })

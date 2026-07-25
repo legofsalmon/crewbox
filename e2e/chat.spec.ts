@@ -20,3 +20,11 @@ test('two crew members chat in #general and deep-link back into the channel', as
   await deviceA.reload()
   await expect(deviceA.getByText(message)).toBeVisible()
 })
+
+/** The /connect QR carries ?pin= — scanning prefills the join form. */
+test('a ?pin= deep link prefills the event PIN on the join screen', async ({ browser }) => {
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  await page.goto('/?pin=4242')
+  await expect(page.getByLabel('Event PIN')).toHaveValue('4242')
+})

@@ -19,7 +19,8 @@ The one document to print and keep in the production office.
    then restart the service. The server serves whatever `web/dist` holds at request
    time — an old dist next to a new server binary quietly ships stale UI (clients
    will nag "New version available" forever), so treat build + restart as one step.
-3. **Set secrets** in `/etc/systemd/system/crewbox.service`: `EVENT_PIN`, `LIVEKIT_KEY`/`LIVEKIT_SECRET`
+3. **Set secrets** in `/etc/systemd/system/crewbox.service`: `EVENT_PIN` (changeable
+   later from the admin panel — no restart), `LIVEKIT_KEY`/`LIVEKIT_SECRET`
    (generate with `livekit-server generate-keys`; mirror in `/etc/crewbox/livekit.yaml`), then
    `sudo systemctl daemon-reload`.
 4. **Print posters** with the final PIN and domain.
@@ -77,8 +78,8 @@ vibrate on a high-priority channel.
 1. Build it once per release:
    `npm run build:native && cd native/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug`
    → `native/android/app/build/outputs/apk/debug/app-debug.apk`.
-2. Copy it onto the crew box as `crewbox.apk` next to the web dist and serve it
-   (Caddy: `handle /crewbox.apk { root * /opt/crewbox; file_server }` — or just
+2. Copy it onto the crew box as `/var/lib/crewbox/crewbox.apk` — the app
+   serves it at `/crewbox.apk` automatically (and links it from `/connect` — or just
    drop it in the web dist folder before starting the server).
 3. Add a line to the QR poster: "Android? Scan to install the app — it buzzes
    even when locked." QR → `http://chat.<your-domain>/crewbox.apk`. Crew must
