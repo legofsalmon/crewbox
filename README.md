@@ -98,6 +98,13 @@ The build version (`package.json` version + short git commit, e.g.
 is returned by `GET /api/health` and in the WebSocket `welcome`. Bump the
 `web`/`server` `package.json` version for a user-facing release.
 
+To cut a release (box binaries for Linux/Windows/macOS + the Android APK,
+attached to a GitHub release), either push a `v*` tag, or run the **Release**
+workflow from the Actions tab: pick the branch to build and type the version
+(e.g. `v0.1.1`). The tag is created at that commit, so no local tag push is
+needed. The run refuses to publish a version whose tag already points at a
+different commit.
+
 When you deploy a new build, updates reach crew **without forcing anyone to do
 anything mid-task** (the service worker registers in `prompt` mode):
 
