@@ -75,6 +75,14 @@ const manifestPath = join(outDir, 'dist-manifest.json')
 writeFileSync(manifestPath, JSON.stringify(manifest))
 assets['dist-manifest.json'] = manifestPath
 
+// 2b. Embed the LiveKit SFU so voice needs no second install. Optional: a
+// build without it is still a complete box, it just can't run voice itself
+// (see server/src/livekit.ts). Run scripts/fetch-livekit.mjs to get it.
+const livekitExe = process.platform === 'win32' ? 'livekit-server.exe' : 'livekit-server'
+const livekitPath = join(root, 'build', 'livekit', livekitExe)
+const hasLivekit = existsSync(livekitPath)
+if (hasLivekit) assets[`livekit/${livekitExe}`] = livekitPath
+
 // 3. Generate the SEA blob.
 const seaConfigPath = join(outDir, 'sea-config.json')
 writeFileSync(
@@ -114,5 +122,9 @@ if (process.platform === 'darwin') {
 
 const sizeMb = (statSync(binPath).size / 1024 / 1024).toFixed(0)
 console.log(
-  `\nbuilt ${relative(root, binPath)} (${sizeMb} MB, v${version}+${commit}, ${manifest.length} web assets)`
+  `\nbuilt ${relative(root, binPath)} (${sizeMb} MB, v${version}+${commit}, ` +
+    `${manifest.length} web assets, voice ${hasLivekit ? 'embedded' : 'NOT embedded'})`
 )
+if (!hasLivekit) {
+  console.log('  run `node scripts/fetch-livekit.mjs` first to build a box with voice')
+}

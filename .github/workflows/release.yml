@@ -73,6 +73,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w web
+      # Voice ships inside the box, so the SFU is fetched here rather than
+      # installed by whoever runs the box. A failure here is fatal on
+      # purpose: a release binary that silently lost voice is worse than a
+      # red build.
+      - run: node scripts/fetch-livekit.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - run: node scripts/build-box.mjs
       - uses: actions/upload-artifact@v4
         with:

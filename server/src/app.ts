@@ -12,6 +12,7 @@ import { networkInterfaces } from 'node:os'
 import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
+import { LIVEKIT_PORT } from './livekit.ts'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -114,8 +115,14 @@ export interface AppDeps {
   wifiSsid?: string
   /** Directory for uploaded files; omit to disable uploads (tests). */
   filesDir?: string
-  /** LiveKit connection details; omit to disable voice. */
-  livekit?: { url: string; key: string; secret: string }
+  /**
+   * LiveKit connection details; omit to disable voice. `url` is an explicit
+   * override (an SFU someone else runs). `embedded` means the box is running
+   * its own, in which case the client URL is derived from whatever address
+   * that client used to reach the box — a fixed URL would be wrong the
+   * moment the box has two interfaces, which on site it usually does.
+   */
+  livekit?: { url: string; key: string; secret: string; embedded?: boolean }
   /** Sessions idle past this stop working; omit for non-expiring (tests). */
   sessionTtlMs?: number
   /** Trust X-Forwarded-For (behind cloudflared/Caddy) for client IPs. */
@@ -167,7 +174,7 @@ export function buildApp({
 
   const publicConfig = (): PublicConfig => ({
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
-    voiceEnabled: Boolean(livekit?.url),
+    voiceEnabled: voiceAvailable,
     modules,
   })
 
@@ -236,6 +243,19 @@ export function buildApp({
    * looking at localhost — then the first LAN address, which is what phones
    * can actually reach.
    */
+  const voiceAvailable = Boolean(livekit?.url || livekit?.embedded)
+
+  /**
+   * Where this particular client should reach the SFU. An explicit url wins;
+   * otherwise the embedded SFU is on the same host the request arrived on.
+   */
+  const voiceUrl = (req: FastifyRequest): string => {
+    if (livekit?.url) return livekit.url
+    if (!livekit?.embedded) return ''
+    const host = (req.headers.host ?? 'localhost').split(':')[0]
+    return `ws://${host}:${LIVEKIT_PORT}`
+  }
+
   const crewUrl = (req: FastifyRequest): string => {
     const proto = trustProxy ? ((req.headers['x-forwarded-proto'] as string) ?? 'http') : 'http'
     const host = req.headers.host ?? 'localhost'
@@ -514,7 +534,7 @@ export function buildApp({
   fastify.post('/api/voice/token', async (req, reply) => {
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
-    if (!livekit?.url) return reply.code(503).send({ error: 'voice not configured' })
+    if (!voiceAvailable) return reply.code(503).send({ error: 'voice not configured' })
     const parsed = z.object({ channelId: z.string().min(1) }).safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid request' })
     const channel = store.getChannel(parsed.data.channelId)
@@ -522,13 +542,13 @@ export function buildApp({
       return reply.code(404).send({ error: 'channel not found' })
     }
     const { AccessToken } = await import('livekit-server-sdk')
-    const at = new AccessToken(livekit.key, livekit.secret, {
+    const at = new AccessToken(livekit!.key, livekit!.secret, {
       identity: user.id,
       name: user.name,
       ttl: '12h',
     })
     at.addGrant({ room: channel.id, roomJoin: true, canPublish: true, canSubscribe: true })
-    return { url: livekit.url, token: await at.toJwt() }
+    return { url: voiceUrl(req), token: await at.toJwt() }
   })
 
   fastify.get('/api/search', (req, reply) => {
@@ -646,7 +666,7 @@ export function buildApp({
         uptimeSec: Math.round(process.uptime()),
         connections: stats.connections,
         onlineUsers: stats.onlineUsers,
-        voiceEnabled: Boolean(livekit?.url),
+        voiceEnabled: voiceAvailable,
         // Shown so admins can put the current PIN on posters; editable below.
         eventPin: effectiveEventPin(),
       },

@@ -39,6 +39,21 @@ export function boxDataDir(): string {
   return join(homedir(), '.crewbox', 'data')
 }
 
+/**
+ * An embedded asset, or null when this build doesn't carry it. Assets are
+ * optional by design: a box built without the LiveKit binary is still a
+ * complete box, it just can't run voice itself.
+ */
+export function seaAsset(key: string): ArrayBuffer | null {
+  const sea = seaApi()
+  if (!sea) return null
+  try {
+    return sea.getAsset(key) as ArrayBuffer
+  } catch {
+    return null
+  }
+}
+
 /** Extract the embedded web bundle under dataDir; returns the dist path. */
 export function extractWebDist(dataDir: string): string {
   const sea = seaApi()

@@ -7,6 +7,7 @@ import { openDb } from './db.ts'
 import { Store } from './store.ts'
 import { attachWs, buildApp } from './app.ts'
 import { boxDataDir, extractWebDist, isBox, openBrowser, printBoxBanner } from './box.ts'
+import { hasEmbeddedLiveKit, livekitCredentials, startEmbeddedLiveKit } from './livekit.ts'
 
 // No top-level await: the single-binary build bundles this entry as CJS
 // (Node SEA requires a CommonJS main), so startup lives in an async main().
@@ -17,7 +18,6 @@ async function main(): Promise<void> {
   const dataDir = box && !process.env.DATA_DIR ? boxDataDir() : config.dataDir
   mkdirSync(dataDir, { recursive: true })
   const webDist = box ? extractWebDist(dataDir) : config.webDist
-  const livekit = box && !process.env.LIVEKIT_URL ? { ...config.livekit, url: '' } : config.livekit
 
   const db = openDb(join(dataDir, 'crewbox.db'))
   const store = new Store(db)
@@ -32,6 +32,24 @@ async function main(): Promise<void> {
   // The home channel always exists so there is somewhere to land after joining.
   if (!store.getChannelByName(HOME_CHANNEL)) {
     store.createChannel(HOME_CHANNEL, 'public', 'Everyone, everything')
+  }
+
+  // Voice. An explicit LIVEKIT_URL always wins — someone pointing at an SFU
+  // they already run shouldn't have the box start a second one. Otherwise a
+  // box build carrying the SFU starts it, and voice is simply on.
+  let livekit: { url: string; key: string; secret: string; embedded?: boolean } = config.livekit
+  let embedded: Awaited<ReturnType<typeof startEmbeddedLiveKit>> = null
+  if (box && !process.env.LIVEKIT_URL) {
+    if (hasEmbeddedLiveKit()) {
+      const creds = livekitCredentials(
+        (key) => store.getSetting(key),
+        (key, value) => store.setSetting(key, value)
+      )
+      embedded = await startEmbeddedLiveKit({ dataDir, ...creds, log: console })
+    }
+    livekit = embedded
+      ? { url: '', key: embedded.key, secret: embedded.secret, embedded: true }
+      : { ...config.livekit, url: '' }
   }
 
   const app = buildApp({
@@ -83,6 +101,7 @@ async function main(): Promise<void> {
       setTimeout(() => process.exit(1), 3000).unref()
       hub.close()
       await app.close()
+      await embedded?.stop()
       db.close()
       process.exit(0)
     })
