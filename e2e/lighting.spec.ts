@@ -123,6 +123,40 @@ test('a phone can always get back to the sidebar from inside a module', async ({
   await context.close()
 })
 
+test('importing an MVR populates fixtures, footprints and a placed position', async ({
+  browser,
+}) => {
+  const page = await newDevice(browser, 'MVR Tech')
+
+  await openLighting(page)
+  await createPlot(page, uniqueName('MVR Rig'))
+
+  await page.locator('input[type=file]').setInputFiles('e2e/fixtures/rig.mvr')
+
+  await expect(page.getByText(/Imported 4 fixtures across 1 position/)).toBeVisible()
+
+  // The MVR's own layer became the position, not the default truss.
+  await expect(page.getByRole('heading', { name: 'Upstage Truss' })).toBeVisible()
+
+  const rows = page.locator('tbody tr')
+  await expect(rows).toHaveCount(4)
+
+  // Footprints come from the embedded GDTF profile (Sharpy = 16ch), which is
+  // the whole reason MVR beats a CSV.
+  for (let i = 0; i < 4; i++) {
+    await expect(rows.nth(i).getByLabel(/^Footprint/)).toHaveValue('16')
+  }
+
+  // Fixtures are ordered along the bar, not in the order the file listed
+  // them — the file has Sharpy 3 first and Sharpy 1 second.
+  await expect(rows.first().getByLabel(/^Purpose/)).toHaveValue('Sharpy 1')
+  await expect(rows.last().getByLabel(/^Purpose/)).toHaveValue('Sharpy 4')
+
+  // Addressed 1/17/33/49 at 16ch each — nose to tail, so nothing clashes.
+  await expect(page.getByTestId('fixture-warning')).toHaveCount(0)
+  await expect(page.getByText('U1: 64/512')).toBeVisible()
+})
+
 test('a plot survives reload and deep-links back to itself', async ({ browser }) => {
   const page = await newDevice(browser, 'Reload Tech')
   const plotName = uniqueName('Reload Rig')

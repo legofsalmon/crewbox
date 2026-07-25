@@ -14,6 +14,7 @@ import {
   snapshotPlot,
   updateFixture,
   updatePosition,
+  upsertFixtureType,
 } from './plotDoc'
 
 const newPlot = (title = 'Main Stage') => {
@@ -185,6 +186,35 @@ describe('plot doc collaboration', () => {
 
     undo.undo()
     expect(snapshotPlot(doc).fixtures.map((f) => f.address)).toEqual([0, 0])
+  })
+})
+
+describe('fixture types', () => {
+  it('keeps a caller-owned id so imported fixtures still resolve', () => {
+    // MVR keys types by GDTF filename and its fixtures reference that same
+    // string; minting a fresh id would leave every one pointing at nothing.
+    const doc = newPlot()
+    upsertFixtureType(doc, {
+      id: 'Clay Paky@Sharpy@v1.gdtf',
+      name: 'Clay Paky Sharpy',
+      modes: [{ name: 'Standard', footprint: 16 }],
+    })
+    addFixture(doc, { typeId: 'Clay Paky@Sharpy@v1.gdtf' })
+
+    const plot = snapshotPlot(doc)
+    expect(plot.customTypes[0]!.id).toBe('Clay Paky@Sharpy@v1.gdtf')
+    expect(plot.customTypes.some((type) => type.id === plot.fixtures[0]!.typeId)).toBe(true)
+  })
+
+  it('replaces rather than duplicates on a second import', () => {
+    const doc = newPlot()
+    const type = { id: 'spec.gdtf', name: 'Head', modes: [{ name: 'A', footprint: 8 }] }
+    upsertFixtureType(doc, type)
+    upsertFixtureType(doc, { ...type, modes: [{ name: 'A', footprint: 12 }] })
+
+    const types = snapshotPlot(doc).customTypes
+    expect(types).toHaveLength(1)
+    expect(types[0]!.modes[0]!.footprint).toBe(12)
   })
 })
 

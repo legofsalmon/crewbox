@@ -6,7 +6,16 @@ import { parseCsv } from '../../_shared/csv'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { plotCsvFilename, plotSummary, plotToCsv } from '../model/csv'
 import { fixturesFromCsv } from '../model/importCsv'
-import { addFixture, addFixtures, addPosition, setPlotMeta } from '../model/plotDoc'
+import { parseMvr, type MvrFixture } from '../model/mvr'
+import { fitPosition } from '../model/placement'
+import {
+  addFixture,
+  addFixtures,
+  upsertFixtureType,
+  addPosition,
+  setPlotMeta,
+  updatePosition,
+} from '../model/plotDoc'
 import { DMX_UNIVERSE_SIZE } from '../model/types'
 import {
   usePlot,
@@ -158,6 +167,76 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
     )
   }
 
+  /**
+   * MVR carries far more than a CSV: the fixture's own GDTF profile (so the
+   * footprint is authoritative rather than guessed) and real coordinates,
+   * which get fitted onto positions so the plot arrives placed.
+   */
+  const importMvr = async (file: File) => {
+    const result = parseMvr(new Uint8Array(await file.arrayBuffer()))
+    if (result.fixtures.length === 0) {
+      setFlash('Nothing imported — that MVR has no fixtures in it.')
+      return
+    }
+
+    for (const type of result.types) upsertFixtureType(doc, type)
+
+    const byLayer = new Map<string, MvrFixture[]>()
+    for (const fixture of result.fixtures) {
+      const list = byLayer.get(fixture.layer)
+      if (list) list.push(fixture)
+      else byLayer.set(fixture.layer, [fixture])
+    }
+
+    const existing = new Map(snapshot.positions.map((p) => [p.name.toLowerCase(), p.id]))
+
+    for (const [layer, group] of byLayer) {
+      // `order` is placement output, not document state — don't write it in.
+      const { order, ...geometry } = fitPosition(group)
+      let positionId = existing.get(layer.toLowerCase())
+      if (!positionId) {
+        positionId = addPosition(doc, layer)
+        existing.set(layer.toLowerCase(), positionId)
+      }
+      updatePosition(doc, positionId, geometry)
+
+      // Unit numbers follow the order along the bar, so the plot and the
+      // paperwork agree with what someone counting along the truss sees.
+      addFixtures(
+        doc,
+        order.map((index, along) => {
+          const fixture = group[index]!
+          return {
+            channel: fixture.channel,
+            universe: fixture.universe,
+            address: fixture.address,
+            typeId: fixture.typeId,
+            mode: fixture.mode,
+            footprint: fixture.footprint,
+            purpose: fixture.name,
+            positionId,
+            unit: fixture.unit || String(along + 1),
+          }
+        })
+      )
+    }
+
+    setFlash(
+      `Imported ${result.fixtures.length} fixtures across ${byLayer.size} position${
+        byLayer.size === 1 ? '' : 's'
+      }` + (result.warnings.length > 0 ? ` · ${result.warnings.join(' · ')}` : '')
+    )
+  }
+
+  const importFile = async (file: File) => {
+    try {
+      if (file.name.toLowerCase().endsWith('.mvr')) await importMvr(file)
+      else await importCsv(file)
+    } catch (error) {
+      setFlash(`Import failed: ${error instanceof Error ? error.message : 'unreadable file'}`)
+    }
+  }
+
   return (
     <div className={styles.view}>
       <header className={styles.head}>
@@ -203,11 +282,11 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
             Import
             <input
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.mvr,text/csv"
               className={styles.fileInput}
               onChange={(e) => {
                 const file = e.target.files?.[0]
-                if (file) void importCsv(file)
+                if (file) void importFile(file)
                 e.target.value = ''
               }}
             />

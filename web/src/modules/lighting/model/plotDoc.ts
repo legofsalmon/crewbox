@@ -244,6 +244,26 @@ export const addFixtureType = (doc: Y.Doc, type: Omit<FixtureType, 'id'>): strin
   return id
 }
 
+/**
+ * Add or replace a type under an id the caller owns. MVR keys types by their
+ * GDTF filename, and fixtures reference that same string, so minting a new
+ * id here would leave every imported fixture pointing at a type that isn't
+ * in the list. Re-importing the same rig updates rather than duplicates.
+ */
+export const upsertFixtureType = (doc: Y.Doc, type: FixtureType): void => {
+  const { types } = getPlotRoots(doc)
+  const entity = () => mapFrom({ ...type, modes: type.modes.map((m) => ({ ...m })) })
+  const found = findById(types, type.id)
+  transact(doc, () => {
+    if (found) {
+      types.delete(found.index, 1)
+      types.insert(found.index, [entity()])
+    } else {
+      types.push([entity()])
+    }
+  })
+}
+
 export const removeFixtureType = (doc: Y.Doc, typeId: string): void => {
   const { types } = getPlotRoots(doc)
   const found = findById(types, typeId)
