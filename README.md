@@ -74,8 +74,8 @@ and walk through `deploy/RUNBOOK.md` — it is the day-of checklist.
 
 Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_URL`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`,
-`CREWBOX_MODULES` (extra module ids to enable, comma-separated; chat is
-always on).
+`CREWBOX_MODULES` (module ids to enable beyond chat, comma-separated;
+defaults to `patch`, and chat is always on).
 
 ## Load
 

@@ -32,10 +32,14 @@ export const config = {
    * the real client IP instead of lumping all proxied traffic together.
    */
   trustProxy: process.env.CREWBOX_TRUST_PROXY === '1',
-  /** Module ids this box enables (comma-separated). Chat is always on. */
+  /**
+   * Module ids this box enables beyond chat (comma-separated). Chat is
+   * always on; patch is the default set — set CREWBOX_MODULES='' to run
+   * chat-only, or list extra module ids to enable more.
+   */
   modules: [
     ...new Set(
-      ('chat,' + (process.env.CREWBOX_MODULES ?? ''))
+      ('chat,' + (process.env.CREWBOX_MODULES ?? 'patch'))
         .split(',')
         .map((m) => m.trim())
         .filter(Boolean)
