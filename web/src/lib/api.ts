@@ -1,6 +1,16 @@
 import type { Channel, FileMeta, Message, PublicConfig, User } from '@crewbox/shared'
 import { apiUrl } from './server.ts'
 
+export type ReadinessState = 'ok' | 'limited' | 'off'
+
+export interface ReadinessCheck {
+  id: string
+  label: string
+  state: ReadinessState
+  detail: string
+  fix?: string
+}
+
 export interface AdminSettings {
   settings: { wifiSsid: string }
   serverInfo: {
@@ -11,6 +21,9 @@ export interface AdminSettings {
     voiceEnabled: boolean
     eventPin: string
   }
+  /** What this box can actually do right now — see server/src/readiness.ts. */
+  readiness: ReadinessCheck[]
+  readinessState: ReadinessState
 }
 
 export class ApiError extends Error {

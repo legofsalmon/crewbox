@@ -6,8 +6,8 @@ core, with specialised department modules (patch sheets, lighting) in one app �
 served from one box on your own Wi-Fi, with **zero internet dependency** on
 site.
 
-**New here? [QUICKSTART.md](QUICKSTART.md)** — from a laptop trial to the
-one-file box to the full festival rig.
+**New here? [QUICKSTART.md](QUICKSTART.md)** — download it, run it, crew scan
+a QR. One box with everything on; there are no tiers or editions.
 
 Crewbox unifies [inter](https://github.com/legofsalmon/inter) and
 [Live Patch](https://github.com/legofsalmon/livepatch); both full histories are
@@ -41,8 +41,9 @@ is the normal state:
   survives hard power cuts, no database server to babysit.
 - The web app is an installable **PWA** with an offline shell and local
   message cache: it opens and shows history even while the server reboots.
-- Voice is a self-hosted **LiveKit** SFU on the same box (~LAN latency),
-  with a hold-to-talk intercom UI; mic-less users degrade to listen-only.
+- Voice is a self-hosted **LiveKit** SFU that ships _inside_ the box binary
+  and starts with it (~LAN latency), with a hold-to-talk intercom UI;
+  mic-less users degrade to listen-only.
 - Collaboratively edited state (patch sheets) uses **Yjs CRDT documents**
   stored on each device: fully functional offline, merging without conflicts
   when devices sync through the box.
@@ -68,35 +69,39 @@ npm run dev        # server on :8787, web on :5173 (proxied)
 npm test           # server integration tests (reliability protocol) + web unit tests
 ```
 
-Dev event PIN is `1234`. For voice in dev: `brew install livekit` then
+Dev event PIN is `1234`. A dev run has no voice server — that ships inside
+the release binary. For voice while developing: `brew install livekit` then
 `livekit-server --dev`.
 
 Two-user testing: open `http://localhost:5173` and `http://127.0.0.1:5173`
 — different origins get separate logins.
 
-## Production (the festival box)
+## Running it
 
-Ubuntu Server + Node 22+, `livekit-server`, `caddy`. Then:
+Download the box and run it — see [QUICKSTART.md](QUICKSTART.md). The binary
+carries the web app _and_ the voice server, so there is nothing else to
+install and no separate "full" edition.
 
-```bash
-npm install && npm run build
-node deploy/make-poster.mjs https://chat.yourdomain.com <EVENT_PIN>
-```
+**`/connect`** is the live onboarding page: a QR of the join URL (event PIN
+prefilled), the PIN in print, and the Android APK download when
+`crewbox.apk` sits in the data directory. The event PIN is changeable at
+runtime from the admin panel.
 
-Install the files in `deploy/` (systemd units, Caddyfile, livekit.yaml,
-dnsmasq.conf), run `deploy/cert-renew.sh` while you still have internet,
-and walk through `deploy/RUNBOOK.md` — it is the day-of checklist.
+**Admin → This box** reports what actually works on that machine right now —
+voice, HTTPS-gated features, the Android app, disk, crew joined — with the
+fix attached to anything that doesn't. It is the honest answer; this file
+is only a description.
 
-Once running, **`/connect`** is the live onboarding page: a QR of the join
-URL (event PIN prefilled), the PIN in print, and the Android APK download
-when `crewbox.apk` sits in `DATA_DIR`. The event PIN is changeable at
-runtime from the admin panel. With `NODE_ENV=production`, voice is off
-unless `LIVEKIT_URL` is set — the voice button simply doesn't appear.
+For a dedicated festival rig — HTTPS on your own domain so browsers get the
+mic and the installable app, local DNS, UPS and spare-box discipline —
+`deploy/` carries the pieces and `deploy/RUNBOOK.md` is the day-of checklist.
 
 Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_URL`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`,
 `CREWBOX_MODULES` (module ids to enable beyond chat, comma-separated;
 defaults to every department module the build ships, and chat is always on).
+Setting `LIVEKIT_URL` points voice at an SFU you run instead of the one
+inside the box.
 
 ## Load
 
@@ -143,10 +148,11 @@ anything mid-task** (the service worker registers in `prompt` mode):
   holds a WebSocket to the crew server and buzzes for messages and mentions
   while the phone is locked, entirely on-LAN. Alert-critical roles carry
   Android.
-- Mic, install prompt and service worker require HTTPS _in the browser_ —
-  provided on site by the pre-fetched certificate + local DNS trick (see
-  RUNBOOK). **The native apps are exempt**: they talk plain HTTP to the crew
-  server and grant mic permission natively.
+- Mic, install prompt and service worker require HTTPS _in the browser_ — a
+  browser security rule, not something packaging can remove. On site that
+  means a pre-fetched certificate plus the local DNS trick (see RUNBOOK).
+  **The native apps are exempt**: they talk plain HTTP to the crew server and
+  grant mic permission natively, so voice works for them on any box.
 
 ## Native apps
 

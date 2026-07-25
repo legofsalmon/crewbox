@@ -98,7 +98,7 @@ export default function AdminPanel() {
             </ul>
           </section>
           <section>
-            <h3 className="admin-section-title">Server</h3>
+            <h3 className="admin-section-title">This box</h3>
             <ServerSection onNote={setNote} />
           </section>
           <section>
@@ -138,6 +138,37 @@ function ModulesList() {
     <>
       {configModules.join(', ')} <span className="admin-muted">(set via CREWBOX_MODULES)</span>
     </>
+  )
+}
+
+const STATE_LABEL: Record<api.ReadinessState, string> = {
+  ok: 'Working',
+  limited: 'Limited',
+  off: 'Off',
+}
+
+/**
+ * What this box can actually do, right now — replacing the tiered "what you
+ * give up" list the docs used to carry. That list described a hypothetical
+ * install; this describes the machine the admin is standing in front of, and
+ * says what to do about anything that isn't working.
+ */
+function Readiness({ checks }: { checks: api.ReadinessCheck[] }) {
+  return (
+    <ul className="readiness">
+      {checks.map((check) => (
+        <li key={check.id} className={`readiness-row readiness-${check.state}`}>
+          <span className="readiness-state" aria-label={STATE_LABEL[check.state]}>
+            {check.state === 'ok' ? '●' : check.state === 'limited' ? '◐' : '○'}
+          </span>
+          <div className="readiness-body">
+            <span className="readiness-label">{check.label}</span>
+            <span className="readiness-detail">{check.detail}</span>
+            {check.fix && <span className="readiness-fix">{check.fix}</span>}
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -197,6 +228,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
   const info = data?.serverInfo
   return (
     <>
+      {data && <Readiness checks={data.readiness} />}
       <form className="admin-setting" onSubmit={(e) => void savePin(e)}>
         <label htmlFor="admin-event-pin">
           Event PIN (gates new joins; on the poster and /connect)

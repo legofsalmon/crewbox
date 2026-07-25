@@ -13,6 +13,7 @@ import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
 import { LIVEKIT_PORT } from './livekit.ts'
+import { boxReadiness, worstState } from './readiness.ts'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -245,6 +246,10 @@ export function buildApp({
    */
   const voiceAvailable = Boolean(livekit?.url || livekit?.embedded)
 
+  /** Hostname the client used to reach this box, without the port. */
+  const hostOf = (req: FastifyRequest): string =>
+    (req.headers.host ?? 'localhost').split(':')[0] || 'localhost'
+
   /**
    * Where this particular client should reach the SFU. An explicit url wins;
    * otherwise the embedded SFU is on the same host the request arrived on.
@@ -252,8 +257,7 @@ export function buildApp({
   const voiceUrl = (req: FastifyRequest): string => {
     if (livekit?.url) return livekit.url
     if (!livekit?.embedded) return ''
-    const host = (req.headers.host ?? 'localhost').split(':')[0]
-    return `ws://${host}:${LIVEKIT_PORT}`
+    return `ws://${hostOf(req)}:${LIVEKIT_PORT}`
   }
 
   const crewUrl = (req: FastifyRequest): string => {
@@ -659,6 +663,15 @@ export function buildApp({
   fastify.get('/api/admin/settings', (req, reply) => {
     if (!authAdmin(req, reply)) return reply
     const stats = hub.stats()
+    const readiness = boxReadiness({
+      // req.protocol is 'https' for a TLS connection, and honours
+      // x-forwarded-proto only when this box is configured to trust a proxy.
+      secure: req.protocol === 'https',
+      voice: livekit?.embedded ? 'embedded' : livekit?.url ? 'external' : 'off',
+      dataDir: dataDir ?? process.cwd(),
+      crewCount: store.listUsers().length,
+      host: hostOf(req),
+    })
     return {
       settings: { wifiSsid: publicConfig().wifiSsid },
       serverInfo: {
@@ -670,6 +683,8 @@ export function buildApp({
         // Shown so admins can put the current PIN on posters; editable below.
         eventPin: effectiveEventPin(),
       },
+      readiness,
+      readinessState: worstState(readiness),
     }
   })
 
