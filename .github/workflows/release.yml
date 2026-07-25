@@ -1,18 +1,66 @@
 name: Release
 
-# Tag v* to publish: single-file box binaries for the three desktop
-# platforms plus the sideloadable Android APK, attached to a GitHub release.
+# Publishes single-file box binaries for the three desktop platforms plus
+# the sideloadable Android APK, attached to a GitHub release.
+#
+# Two ways to trigger:
+#   - Push a v* tag (git tag v0.1.1 && git push origin v0.1.1), or
+#   - Actions -> Release -> "Run workflow": pick the branch/tag to build and
+#     type the version. The tag is created at that commit if it doesn't
+#     already exist, so no local tag push is needed.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. v0.1.1 (tag is created at the selected ref if absent)'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: resolve
+        env:
+          # On a tag push there is no input; the ref name is the version.
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          VERSION="${INPUT_VERSION:-$REF_NAME}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Version must look like v1.2.3 (got '$VERSION')"
+            exit 1
+          fi
+          # An existing tag wins over target_commitish when the release is
+          # created, so publishing against a tag that points somewhere else
+          # would ship binaries built here beside unrelated source. Refuse.
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            EXISTING="$(git rev-parse "refs/tags/$VERSION^{commit}")"
+            if [ "$EXISTING" != "$BUILD_SHA" ]; then
+              echo "::error::Tag $VERSION already exists at ${EXISTING:0:12} but this run builds ${BUILD_SHA:0:12}. Move the tag, or publish a new version."
+              exit 1
+            fi
+          fi
+          echo "Publishing $VERSION from ${BUILD_SHA:0:12}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   box:
     name: Box binary (${{ matrix.os }})
+    needs: validate
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -33,6 +81,7 @@ jobs:
 
   apk:
     name: Android APK
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +105,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [box, apk]
+    needs: [validate, box, apk]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -65,6 +114,9 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.validate.outputs.version }}
+          # Pin the tag to the commit these artifacts were built from.
+          target_commitish: ${{ github.sha }}
           files: artifacts/*
           body: |
             ## Crewbox box builds
