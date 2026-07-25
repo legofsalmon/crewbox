@@ -36,7 +36,7 @@ export default defineConfig({
       // the suite itself once it grows. The limiter has its own coverage in
       // the server integration tests.
       JOIN_RATE_LIMIT: '1000',
-      CREWBOX_MODULES: 'patch',
+      CREWBOX_MODULES: 'patch,lighting',
       LIVEKIT_URL: '',
     },
   },

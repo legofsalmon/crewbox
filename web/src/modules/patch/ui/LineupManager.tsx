@@ -16,7 +16,7 @@ import {
 } from '../store/files'
 import { formatBytes } from '../../../lib/files.ts'
 import { patchEntryHasContent } from '../model/types'
-import { useDraft } from './useDraft'
+import { useDraft } from '../../_shared/ui/useDraft'
 import { useToasts } from './toastContext'
 import styles from './Manager.module.scss'
 

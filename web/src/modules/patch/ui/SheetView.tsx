@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useToasts } from './toastContext.ts'
 import { useSheet } from '../store/hooks'
-import { sheetDocName } from '../store/docManager'
-import { useRemotePeers, useSyncPeers, useSyncStatus } from '../store/useSync'
+import { useSheetPeers, useSheetRemotePeers, useSyncStatus } from '../store/useSync'
 import { useUndoRedo } from '../store/useUndo'
 import { patchSubBoxDisplay } from '../model/sheetDoc'
 import { PATCH_FIELDS, patchKey, type SheetSnapshot } from '../model/types'
@@ -42,7 +42,7 @@ const findMatches = (snapshot: SheetSnapshot, query: string) => {
 }
 
 function PresenceAvatars({ sheetId }: { sheetId: string }) {
-  const peers = useRemotePeers(sheetDocName(sheetId))
+  const peers = useSheetRemotePeers(sheetId)
   if (peers.length === 0) return null
   return (
     <span
@@ -66,7 +66,7 @@ function PresenceAvatars({ sheetId }: { sheetId: string }) {
 
 function SyncStatusChip({ sheetId }: { sheetId: string }) {
   const status = useSyncStatus()
-  const peers = useSyncPeers(sheetDocName(sheetId))
+  const peers = useSheetPeers(sheetId)
 
   const label =
     status === 'off'
@@ -217,6 +217,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
       {showHeaders && (
         <header className={styles.appHeader}>
           <div className={styles.headerLeft}>
+            <DrawerButton />
             <button type="button" className={styles.loadButton} onClick={onClose}>
               ← Sheets
             </button>
@@ -297,7 +298,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
       <div className={styles.gridArea}>
         <PatchGrid
           doc={doc}
-          docName={sheetDocName(sheetId)}
+          sheetId={sheetId}
           snapshot={snapshot}
           matchedCells={matches?.cells}
           matchedChannels={matches?.channels}

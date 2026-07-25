@@ -4,13 +4,13 @@ import { classifyLatency, LATENCY_LABELS } from '../lib/quality.ts'
 import MessageList from './MessageList.tsx'
 import Composer from './Composer.tsx'
 import SignalBars from './SignalBars.tsx'
+import DrawerButton from '../shell/DrawerButton.tsx'
 
 export default function ChannelView({ channelId }: { channelId: string }) {
   const channel = useStore((s) => s.channels[channelId])
   const users = useStore((s) => s.users)
   const me = useStore((s) => s.me)
   const online = useStore((s) => s.online)
-  const setSidebarOpen = useStore((s) => s.setSidebarOpen)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
   const voice = useStore((s) => s.voice)
   const voiceEnabled = useStore((s) => s.config.voiceEnabled)
@@ -28,21 +28,7 @@ export default function ChannelView({ channelId }: { channelId: string }) {
   return (
     <div className="channel-view">
       <header className="channel-head">
-        <button
-          className="icon-btn hamburger"
-          aria-label="Open channels"
-          onClick={() => setSidebarOpen(true)}
-        >
-          {/* Drawn, not the ☰ glyph — the iOS webview font lacks it (tofu box). */}
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
-            <path
-              d="M4 6h16M4 12h16M4 18h16"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+        <DrawerButton />
         <div className="channel-title">
           <h2>
             {channel.kind === 'dm' ? (

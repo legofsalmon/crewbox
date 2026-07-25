@@ -3,10 +3,9 @@ import PatchSidebar from './PatchSidebar.tsx'
 import PatchMain from './PatchMain.tsx'
 
 /**
- * Patch Sheets — placeholder registration. The Live Patch port lands here in
- * Phase 3 (docs/UNIFICATION_PLAN.md); until then the module is hidden unless
- * the box enables it (CREWBOX_MODULES=patch), where it proves the module
- * seam end to end: config gating, sidebar section, /m/patch route.
+ * Patch Sheets — the ported Live Patch app, and the reference implementation
+ * of a shared-doc module (docs/MODULES.md). Visible only where the box
+ * enables it: CREWBOX_MODULES=patch, which also gates the docs relay.
  */
 export const patchModule: CrewboxModule = {
   id: 'patch',

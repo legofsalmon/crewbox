@@ -2,7 +2,7 @@
 
 Offline-first crew communication for temporary events — outdoor music festivals
 first. Slack-style channels, DMs, file sharing and push-to-talk voice as the
-core, with specialised department modules (patch sheets first) in one app — all
+core, with specialised department modules (patch sheets, lighting) in one app — all
 served from one box on your own Wi-Fi, with **zero internet dependency** on
 site.
 
@@ -12,7 +12,19 @@ one-file box to the full festival rig.
 Crewbox unifies [inter](https://github.com/legofsalmon/inter) and
 [Live Patch](https://github.com/legofsalmon/livepatch); both full histories are
 merged into this repo. See [docs/UNIFICATION_PLAN.md](docs/UNIFICATION_PLAN.md)
-for the plan and roadmap.
+for the plan and roadmap, and [docs/MODULES.md](docs/MODULES.md) for how to add
+a module for another department.
+
+## Modules
+
+Crewbox is a shell (identity, chat, offline storage, routing) plus department
+modules. A box chooses which to run with `CREWBOX_MODULES`; chat is always on.
+
+| Module           | What it does                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**         | Channels, DMs, mentions, files, push-to-talk voice. Always enabled.                                                             |
+| **Patch Sheets** | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                     |
+| **Lighting**     | Fixture patch with DMX collision detection, rigging positions, a schematic plot, and MVR/GDTF + Lightwright/console CSV import. |
 
 ## Why it's built the way it is
 
@@ -84,7 +96,7 @@ unless `LIVEKIT_URL` is set — the voice button simply doesn't appear.
 Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_URL`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`,
 `CREWBOX_MODULES` (module ids to enable beyond chat, comma-separated;
-defaults to `patch`, and chat is always on).
+defaults to every department module the build ships, and chat is always on).
 
 ## Load
 

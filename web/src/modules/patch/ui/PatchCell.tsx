@@ -1,13 +1,14 @@
 import type * as Y from 'yjs'
 import { patchSubBoxDisplay, setPatchField, setPatchSubBox } from '../model/sheetDoc'
 import { emptyPatchEntry, type PatchEntry, type PatchField, type SubBox } from '../model/types'
-import { syncManager } from '../store/sync'
-import { useDraft } from './useDraft'
+import { syncManager } from '../../_shared/docs/sync'
+import { sheetRoom } from '../store/docManager'
+import { useDraft } from '../../_shared/ui/useDraft'
 import styles from './PatchGrid.module.scss'
 
 export default function PatchCell({
   doc,
-  docName,
+  sheetId,
   artistId,
   channelId,
   field,
@@ -23,7 +24,7 @@ export default function PatchCell({
   isMatch,
 }: {
   doc: Y.Doc
-  docName: string
+  sheetId: string
   artistId: string
   channelId: string
   field: PatchField
@@ -76,11 +77,11 @@ export default function PatchCell({
         list={datalistId}
         title={remoteEditor ? `${remoteEditor.name} is editing this cell` : undefined}
         onFocus={() => {
-          syncManager.setEditingCell(docName, cellId)
+          syncManager.setEditing(sheetRoom(sheetId), cellId)
         }}
         onBlur={() => {
           onBlur()
-          syncManager.setEditingCell(docName, null)
+          syncManager.setEditing(sheetRoom(sheetId), null)
         }}
         onPaste={(e) => {
           const text = e.clipboardData.getData('text/plain')

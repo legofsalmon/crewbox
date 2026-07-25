@@ -3,7 +3,7 @@ import type * as Y from 'yjs'
 import { addSubBox, removeSubBox, updateSubBox } from '../model/sheetDoc'
 import { STAGE_POSITIONS } from '../model/constants'
 import type { SheetSnapshot, SubBox } from '../model/types'
-import { useDraft } from './useDraft'
+import { useDraft } from '../../_shared/ui/useDraft'
 import styles from './Manager.module.scss'
 
 function SubBoxRow({ doc, subBox }: { doc: Y.Doc; subBox: SubBox }) {

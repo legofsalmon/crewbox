@@ -1,50 +1,35 @@
-import * as Y from 'yjs'
+import type * as Y from 'yjs'
+import {
+  removeIndexEntry as removeEntry,
+  snapshotIndex as snapshotDocIndex,
+  upsertIndexEntry as upsertEntry,
+} from '../../_shared/docs/indexDoc'
 import type { SheetIndexEntry } from './types'
 import { LOCAL_ORIGIN } from './sheetDoc'
 
 /**
- * The index doc is a single small Y.Doc listing every known sheet, so the
- * selector can show sheets that exist on other devices before their full
- * documents have synced.
+ * Patch's view of the shared index doc: sheets carry a stage and a date
+ * alongside the universal title/lastModified, and the selector wants them as
+ * plain fields rather than digging through `meta`.
  */
 
-const getSheets = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>('sheets')
+const DEFAULT_TITLE = 'Untitled Sheet'
 
 export const upsertIndexEntry = (
   doc: Y.Doc,
   sheetId: string,
   fields: Partial<Omit<SheetIndexEntry, 'sheetId'>>
-) => {
-  doc.transact(() => {
-    const sheets = getSheets(doc)
-    let entry = sheets.get(sheetId)
-    if (!entry) {
-      entry = new Y.Map<unknown>()
-      sheets.set(sheetId, entry)
-    }
-    for (const [k, v] of Object.entries(fields)) entry.set(k, v)
-  }, LOCAL_ORIGIN)
-}
+) => upsertEntry(doc, sheetId, fields as Record<string, string>, LOCAL_ORIGIN)
 
-export const removeIndexEntry = (doc: Y.Doc, sheetId: string) => {
-  doc.transact(() => {
-    getSheets(doc).delete(sheetId)
-  }, LOCAL_ORIGIN)
-}
+export const removeIndexEntry = (doc: Y.Doc, sheetId: string) =>
+  removeEntry(doc, sheetId, LOCAL_ORIGIN)
 
 /** All entries, most recently modified first. */
-export const snapshotIndex = (doc: Y.Doc): SheetIndexEntry[] => {
-  const entries: SheetIndexEntry[] = []
-  for (const [sheetId, entry] of getSheets(doc).entries()) {
-    const json = entry.toJSON() as Partial<SheetIndexEntry>
-    entries.push({
-      sheetId,
-      title: json.title ?? 'Untitled Sheet',
-      stage: json.stage ?? '',
-      date: json.date ?? '',
-      lastModified: json.lastModified ?? '',
-    })
-  }
-  entries.sort((a, b) => (a.lastModified < b.lastModified ? 1 : -1))
-  return entries
-}
+export const snapshotIndex = (doc: Y.Doc): SheetIndexEntry[] =>
+  snapshotDocIndex(doc, DEFAULT_TITLE).map((entry) => ({
+    sheetId: entry.id,
+    title: entry.title,
+    stage: entry.meta.stage ?? '',
+    date: entry.meta.date ?? '',
+    lastModified: entry.lastModified,
+  }))
