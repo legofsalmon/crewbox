@@ -14,12 +14,16 @@
     "livekit-client": "^2.20.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "y-indexeddb": "^9.0.12",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.31",
     "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.4",
+    "sass": "^1.102.0",
     "sharp": "^0.35.3",
     "typescript": "^5.8.3",
     "vite": "^8.1.5",
