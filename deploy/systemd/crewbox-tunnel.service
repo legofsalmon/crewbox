@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudflare tunnel for Crewbox remote support access
+Documentation=https://github.com/legofsalmon/crewbox/blob/main/deploy/RUNBOOK.md
+# The tunnel is strictly optional: it may fail or be stopped at any time
+# without affecting site chat, so it wants Crewbox but Crewbox never wants it.
+After=network-online.target crewbox.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
+Restart=always
+RestartSec=5
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target

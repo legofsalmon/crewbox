@@ -1,0 +1,1988 @@
+/* ---------------------------------------------------------------- tokens */
+:root {
+  color-scheme: dark;
+  --bg: #12100e;
+  --bg-raised: #1a1714;
+  --bg-hover: #242019;
+  --bg-active: #2e2820;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #f2eee7;
+  --text-muted: #a29a8c;
+  --text-faint: #6f695e;
+  --accent: #f5b73e;
+  --accent-strong: #ffcd66;
+  --accent-contrast: #1c1608;
+  --danger: #ef6a5a;
+  --ok: #58c98a;
+  --radius: 12px;
+  --sidebar-w: 280px;
+  --font:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f2ec;
+  --bg-raised: #fdfbf7;
+  --bg-hover: #ece7dd;
+  --bg-active: #e3dccd;
+  --border: rgba(30, 25, 15, 0.12);
+  --text: #26221b;
+  --text-muted: #5f594c;
+  --text-faint: #8d8574;
+  --accent: #c07f00;
+  --accent-strong: #a06a00;
+  --accent-contrast: #fffaf0;
+  --danger: #c53a2a;
+  --ok: #1e8a54;
+}
+
+/* ----------------------------------------------------------------- base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  /* Pin the document to the viewport so it can never scroll on its own —
+     on iOS standalone, an input-focus scroll used to get stuck with the
+     top bar pushed off-screen. All scrolling lives in inner containers. */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Keyboard navigation is visible on every control, not just text fields
+   (which style their own :focus via border-color). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+ul {
+  list-style: none;
+}
+
+/* ----------------------------------------------------------------- boot */
+.boot-screen {
+  height: 100%;
+  background: var(--bg);
+}
+
+/* ----------------------------------------------------------------- join */
+.join-screen {
+  min-height: 100%;
+  min-height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+  overflow-y: auto; /* keyboard up on a short screen can still reveal fields */
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%), var(--bg);
+}
+
+.join-card {
+  width: min(400px, 100%);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.join-brand {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.join-logo {
+  width: 52px;
+  height: 52px;
+  color: var(--accent);
+}
+
+.join-brand h1 {
+  font-size: 30px;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+}
+
+.join-brand p {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.join-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.join-card input {
+  height: 48px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.join-card input:focus {
+  border-color: var(--accent);
+}
+
+.join-card .hint {
+  font-weight: 400;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.join-card button[type='submit'] {
+  height: 50px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+  font-size: 16px;
+  transition: background 0.15s;
+}
+
+.join-card button[type='submit']:hover {
+  background: var(--accent-strong);
+}
+
+.join-card button[type='submit']:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.join-error {
+  background: rgba(239, 106, 90, 0.12);
+  border: 1px solid rgba(239, 106, 90, 0.4);
+  color: var(--danger);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+/* ------------------------------------------------- centered boot screens */
+.center-screen {
+  height: 100%;
+  height: var(--app-height, 100dvh);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%), var(--bg);
+}
+
+.center-card {
+  width: min(400px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.center-logo {
+  width: 56px;
+  height: 56px;
+  color: var(--accent);
+}
+
+.center-card h1 {
+  font-size: 22px;
+}
+
+.center-card p {
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.center-retry {
+  height: 50px;
+  min-width: 180px;
+  padding: 0 24px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+  font-size: 16px;
+  margin-top: 4px;
+}
+
+.center-retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.center-meta {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.center-version {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.center-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+/* --------------------------------------------------------------- layout */
+.app {
+  /* --app-height tracks the *visible* viewport (set from visualViewport in
+     main.tsx) so the composer stays above the iOS keyboard; falls back to
+     the dynamic viewport unit, then to 100%. */
+  height: 100%;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  display: flex;
+  flex-direction: column;
+  /* viewport-fit=cover extends under the iOS status bar / Dynamic Island —
+     without this the channel header sits beneath the clock in the native
+     wrapper and the installed PWA. Zero everywhere else. */
+  padding-top: env(safe-area-inset-top);
+}
+
+.layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.conn-banner {
+  padding: 7px 16px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.conn-connecting {
+  background: var(--bg-active);
+  color: var(--text-muted);
+}
+
+.conn-offline {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.toast-stack {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.updated-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.msg-applink {
+  display: inline-block;
+  padding: 2px 10px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.msg-applink:hover {
+  background: var(--accent-strong);
+}
+
+.flash-info {
+  background: var(--bg-raised) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border);
+}
+
+.flash-warning {
+  background: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+}
+
+.flash {
+  background: var(--danger);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.empty-state {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  padding: 40px;
+  text-align: center;
+}
+
+.update-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 16px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.update-pill strong {
+  text-decoration: underline;
+  font-weight: 800;
+}
+
+.sidebar-footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 16px 10px;
+}
+
+.delete-account-link {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.delete-account-link:hover {
+  color: var(--danger);
+}
+
+.app-version {
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------- confirm dialog */
+.confirm-panel {
+  width: min(420px, 100%);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.confirm-panel h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.confirm-panel p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.confirm-field input {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+}
+
+.confirm-field input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.confirm-cancel,
+.confirm-delete {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.confirm-cancel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.confirm-delete {
+  background: var(--danger);
+  color: #fff;
+}
+
+.confirm-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.join-version {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: -6px;
+}
+
+/* -------------------------------------------------------------- sidebar */
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 18px 12px;
+}
+
+.sidebar-brand h1 {
+  font-size: 19px;
+  letter-spacing: 0.05em;
+}
+
+.conn-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.conn-dot-online {
+  background: var(--ok);
+}
+
+.conn-dot-connecting {
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.conn-dot-offline {
+  background: var(--danger);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 10px 12px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 8px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.new-channel input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  margin: 2px 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  outline: none;
+  font-size: 14px;
+}
+
+.row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: var(--text-muted);
+  text-align: left;
+  min-height: 38px;
+}
+
+.row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.row.active {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.row.has-unread {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.row-hash {
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+.row-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 99px;
+  padding: 2px 7px;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* Someone @-mentioned you (or it's a DM) — louder than plain unread. */
+.badge-mention {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Online from off-site (tunnel) — support staff at the office/warehouse. */
+.office-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1.5px solid var(--text-faint);
+  flex-shrink: 0;
+}
+
+.presence-dot.on {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.muted-note {
+  color: var(--text-faint);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.sidebar-me {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.me-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.me-name {
+  font-weight: 700;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.me-status {
+  font-size: 12px;
+  color: var(--text-faint);
+  /* "Connected · 32 ms" must never wrap the unit onto its own line. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* -------------------------------------------------------------- channel */
+.channel-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.channel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.hamburger {
+  display: none;
+}
+
+.channel-title h2 {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.channel-topic {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------- messages */
+.message-scroll {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.message-inner {
+  margin-top: auto;
+  padding: 18px 0 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.day-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.day-divider::before,
+.day-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.system-msg {
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  padding: 5px 18px;
+}
+
+.msg {
+  display: flex;
+  gap: 12px;
+  padding: 3px 18px;
+  /* Skip layout/paint for rows far off-screen; keeps long transcripts
+     cheap on old phones. The intrinsic hint avoids scrollbar wobble. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 46px;
+}
+
+/* Search-jump landing: pulse the found message so the eye finds it. */
+.msg-flash {
+  animation: msg-flash 1.6s ease-out;
+}
+
+@keyframes msg-flash {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.msg:not(.grouped) {
+  margin-top: 12px;
+}
+
+.msg:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.msg-gutter {
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 700;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.msg-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.msg-author {
+  font-weight: 700;
+  font-size: 14.5px;
+}
+
+.msg-time {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.msg-state {
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.msg-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg.pending {
+  opacity: 0.55;
+}
+
+.jump-pill {
+  position: sticky;
+  bottom: 12px;
+  align-self: center;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 99px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.typing-line {
+  height: 20px;
+  padding: 0 20px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------- composer */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 0 14px calc(14px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 13px 16px;
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+  line-height: 1.4;
+  outline: none;
+  max-height: 160px;
+  transition: border-color 0.15s;
+}
+
+.composer textarea:focus {
+  border-color: var(--accent);
+}
+
+.composer textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.send-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
+}
+
+.send-btn:hover {
+  background: var(--accent-strong);
+}
+
+.send-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------- attachments */
+.composer-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.attach-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  flex-shrink: 0;
+}
+
+.attach-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Attachment triggers are buttons (they open the file modal, not a tab). */
+.msg-image-link {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.msg-image {
+  display: block;
+  max-width: min(360px, 100%);
+  max-height: 300px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin-top: 4px;
+  object-fit: contain;
+  background: var(--bg-raised);
+}
+
+.file-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  text-decoration: none;
+  max-width: 320px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-card:hover {
+  border-color: var(--accent);
+}
+
+.file-card svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.file-card-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.file-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-card-size {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.msg-file-pending {
+  color: var(--text-muted);
+}
+
+.message-scroll.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}
+
+.drop-hint {
+  position: sticky;
+  bottom: 16px;
+  align-self: center;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+  padding: 8px 18px;
+  border-radius: 99px;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------- mentions */
+.mention {
+  background: rgba(245, 183, 62, 0.18);
+  color: var(--accent-strong);
+  border-radius: 4px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+
+.mention-me {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.mention-pop {
+  position: absolute;
+  bottom: 100%;
+  left: 76px;
+  margin-bottom: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  min-width: 200px;
+}
+
+.mention-pop button {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mention-pop button:hover {
+  background: var(--bg-hover);
+}
+
+.mention-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 4px 10px 2px;
+}
+
+/* ---------------------------------------------------------------- voice */
+.voice-btn {
+  margin-left: auto;
+}
+
+.voice-btn.voice-active {
+  color: var(--accent);
+  background: rgba(245, 183, 62, 0.14);
+}
+
+.voice-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--bg-raised);
+  border-bottom: 2px solid var(--accent);
+  font-size: 13.5px;
+  flex-shrink: 0;
+}
+
+.voice-bar.voice-reconnecting {
+  border-bottom-color: var(--danger);
+}
+
+.voice-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.voice-room {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.voice-people {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.voice-chip {
+  padding: 3px 10px;
+  border-radius: 99px;
+  border: 1.5px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-size: 12.5px;
+  transition:
+    border-color 0.1s,
+    color 0.1s;
+}
+
+.voice-chip.speaking {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.voice-note {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.voice-leave {
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+.voice-leave:hover {
+  background: rgba(239, 106, 90, 0.12);
+}
+
+.ptt-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 96px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Transient status pills, anchored above the dock and out of flow so the
+   latch + talk buttons never move when someone starts/stops speaking. */
+.ptt-alerts {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  /* Absolute positioning shrinks children to min-content — give pills room. */
+  width: max-content;
+  max-width: min(70vw, 260px);
+}
+
+.ptt-btn {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  border: 3px solid var(--accent);
+  color: var(--accent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* While live, an inline box-shadow (set in VoiceBar from the mic level) grows
+   the halo ring so the speaker can see the system hearing them. This rule is
+   the resting fallback. Shadow only — the button itself must never move or
+   resize under a pressed finger. */
+.ptt-btn.talking {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow:
+    0 0 0 8px rgba(245, 183, 62, 0.25),
+    0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.latch-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  border: 1.5px solid var(--border);
+  font-size: 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.latch-btn.on {
+  border-color: var(--accent);
+  background: rgba(245, 183, 62, 0.18);
+}
+
+.ptt-speaking {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------- connection quality */
+.conn-dot-fair {
+  background: var(--accent);
+}
+
+.conn-dot-poor {
+  background: var(--danger);
+}
+
+.weak-signal {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.weak-signal + .voice-btn {
+  margin-left: 0;
+}
+
+.signal-bars .bar-on {
+  fill: currentColor;
+}
+
+.signal-bars .bar-off {
+  fill: currentColor;
+  opacity: 0.22;
+}
+
+.signal-fair {
+  color: var(--accent);
+}
+
+.signal-poor {
+  color: var(--danger);
+}
+
+.q-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+  background: var(--text-faint);
+  vertical-align: 1px;
+}
+
+.q-dot.q-excellent,
+.q-dot.q-good {
+  background: var(--ok);
+}
+
+.q-dot.q-poor {
+  background: var(--accent);
+}
+
+.q-dot.q-lost {
+  background: var(--danger);
+}
+
+.ptt-weak {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-radius: 99px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  max-width: 230px;
+  text-align: center;
+}
+
+/* -------------------------------------------------------- audio settings */
+.audio-panel {
+  width: min(440px, 100%);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  align-self: flex-start;
+}
+
+.audio-panel h3 {
+  font-size: 17px;
+}
+
+.audio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.audio-field select {
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.mic-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mic-meter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mic-meter {
+  flex: 1;
+  height: 12px;
+  border-radius: 99px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.mic-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ok), var(--accent));
+  border-radius: 99px;
+  transition: width 0.1s linear;
+}
+
+.audio-hint {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.audio-error {
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.audio-done {
+  height: 46px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+/* ----------------------------------------------------------- file detail */
+.file-panel {
+  width: min(520px, 100%);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  align-self: flex-start;
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 84vh;
+}
+
+.file-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-name {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.file-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 72px;
+  overflow: hidden;
+}
+
+.file-preview-media {
+  max-width: 100%;
+  max-height: 55vh;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  object-fit: contain;
+  background: var(--bg);
+}
+
+.file-preview-audio {
+  width: 100%;
+}
+
+.file-preview-icon {
+  color: var(--accent);
+  padding: 18px 0 6px;
+}
+
+.file-meta-line {
+  text-align: center;
+  font-size: 14px;
+}
+
+.file-meta-muted {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.file-act {
+  flex: 1 1 auto;
+  min-width: 104px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.file-act:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.file-act.danger {
+  color: var(--danger);
+}
+
+.file-act.danger:hover,
+.file-act.danger.confirm {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.file-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* Zoomable image surface: transform lives on the img, gestures on the box. */
+.file-zoom {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  touch-action: none;
+  cursor: zoom-in;
+}
+
+.file-zoom .file-preview-media {
+  will-change: transform;
+}
+
+.file-zoom-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------- iOS tip */
+.ios-tip {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-size: 13.5px;
+  max-width: min(420px, calc(100vw - 24px));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.ios-tip button {
+  font-size: 15px;
+  color: var(--text-muted);
+  padding: 6px;
+}
+
+/* --------------------------------------------------------------- search */
+
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  padding: 10vh 16px 0;
+}
+
+.search-panel {
+  width: min(560px, 100%);
+  max-height: 70vh;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  align-self: flex-start;
+}
+
+.search-panel input {
+  border: none;
+  outline: none;
+  background: none;
+  padding: 18px 20px;
+  font-size: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-results {
+  overflow-y: auto;
+}
+
+.search-note {
+  padding: 18px 20px;
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+.search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-hit:hover {
+  background: var(--bg-hover);
+}
+
+.search-hit-meta {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.search-hit-body {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- admin */
+
+.admin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  padding: 8vh 16px 0;
+}
+
+.admin-panel {
+  width: min(640px, 100%);
+  max-height: 80vh;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  align-self: flex-start;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-head h2 {
+  font-size: 17px;
+}
+
+.admin-note {
+  padding: 10px 20px;
+  font-size: 13.5px;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-scroll {
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+
+.admin-section-title {
+  padding: 16px 20px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  min-height: 44px;
+}
+
+.admin-row-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-muted {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.admin-topic {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-row > .admin-btn,
+.admin-row > .admin-inline-form {
+  margin-left: auto;
+}
+
+.role-tag {
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 99px;
+  padding: 0 8px;
+  line-height: 1.7;
+}
+
+.admin-btn {
+  padding: 6px 12px;
+  font-size: 13.5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-hover);
+  white-space: nowrap;
+}
+
+.admin-btn:hover:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.admin-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.admin-btn.danger {
+  color: var(--danger);
+}
+
+.admin-btn.danger.confirm {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.admin-inline-form {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-inline-form input,
+.admin-channel-form input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+  outline: none;
+}
+
+.admin-inline-form input {
+  width: 110px;
+}
+
+.admin-inline-form input:focus,
+.admin-channel-form input:focus {
+  border-color: var(--accent);
+}
+
+.admin-channel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 20px 12px 40px;
+}
+
+.admin-channel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-hint {
+  padding: 0 20px 8px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.admin-export {
+  padding: 0 20px;
+}
+
+.admin-setting {
+  padding: 0 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-setting label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.admin-setting-row {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-setting-row input {
+  flex: 1;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.admin-info {
+  padding: 4px 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-info div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+}
+
+.admin-info dt {
+  color: var(--text-muted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.admin-info dd {
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- mobile */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    width: min(var(--sidebar-w), 85vw);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    /* Fixed drawer escapes .app's safe-area padding — re-apply it. */
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.5);
+    /* A plain black scrim vanishes on the dark theme — the blur keeps the
+       "tap outside to close" affordance visible on both. */
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  .hamburger {
+    display: grid;
+    font-size: 18px;
+  }
+
+  .row {
+    min-height: 44px; /* comfortable touch targets */
+  }
+}
+
+/* -------------------------------------------------------- reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

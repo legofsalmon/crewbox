@@ -1,0 +1,198 @@
+@use '../styles/tokens' as *;
+
+.container {
+  min-height: 100vh;
+  background: $gradient-hero;
+  padding: 32px 16px 64px;
+}
+
+.hero {
+  text-align: center;
+  color: #fff;
+  margin-bottom: 28px;
+
+  h1 {
+    font-size: 2.2rem;
+    letter-spacing: 0.5px;
+  }
+
+  p {
+    margin-top: 6px;
+    opacity: 0.85;
+  }
+}
+
+.syncButton {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.22);
+  }
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.createButton {
+  background: #fff;
+  color: $color-ink;
+  border: none;
+  border-radius: $radius;
+  padding: 12px 22px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: $shadow-card;
+
+  &:hover {
+    transform: translateY(-1px);
+  }
+}
+
+.importButton {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: $radius;
+  padding: 12px 22px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 10px;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
+}
+
+.hiddenFile {
+  display: none;
+}
+
+.createForm {
+  display: flex;
+  gap: 8px;
+  width: min(520px, 100%);
+
+  input {
+    flex: 1;
+    padding: 10px 12px;
+    border: none;
+    border-radius: $radius-small;
+    font-size: 0.95rem;
+  }
+
+  button {
+    border: none;
+    border-radius: $radius-small;
+    padding: 10px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    background: $color-accent-green;
+    color: #fff;
+  }
+
+  .secondary {
+    background: rgba(255, 255, 255, 0.25);
+  }
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.9);
+
+  h2 {
+    margin-bottom: 6px;
+  }
+}
+
+.card {
+  position: relative;
+  background: $color-surface;
+  border-radius: $radius;
+  box-shadow: $shadow-card;
+  display: flex;
+}
+
+.cardOpen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  border-radius: $radius;
+
+  &:hover {
+    background: $color-surface-alt;
+  }
+}
+
+.cardTitle {
+  font-weight: 600;
+  color: $color-ink;
+  font-size: 1.05rem;
+}
+
+.cardMeta {
+  display: flex;
+  gap: 10px;
+  color: $color-muted;
+  font-size: 0.85rem;
+}
+
+.cardEdited {
+  color: $color-muted;
+  font-size: 0.75rem;
+}
+
+.cardDelete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: none;
+  background: none;
+  color: $color-muted;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: $radius-small;
+
+  &:hover {
+    color: $color-danger;
+    background: $color-surface-dim;
+  }
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

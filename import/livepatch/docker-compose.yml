@@ -1,0 +1,14 @@
+services:
+  livepatch:
+    build: .
+    ports:
+      - '1234:1234'
+    environment:
+      # Empty = open relay; fine on a trusted production LAN, set it otherwise.
+      LIVEPATCH_TOKEN: ${LIVEPATCH_TOKEN:-}
+    volumes:
+      - livepatch-data:/data
+    restart: unless-stopped
+
+volumes:
+  livepatch-data:

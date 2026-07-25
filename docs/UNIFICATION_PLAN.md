@@ -13,18 +13,26 @@ This document is the foundation plan: the decisions, the target architecture, an
 phased roadmap. It is grounded in a full architecture review of both codebases
 (July 2026).
 
+**Status (July 2026):** Phases 0–4 are done — history merge + rename, shell/module
+seam, the shared-docs relay, the full Live Patch port (model, store, UI, e2e), and
+the unification features (share-to-chat, admin modules, updated-sheet dots). The
+soak test now exercises doc sync alongside chat. The Phase 5 native rebrand
+to `com.colmhewson.crewbox` is applied (cap sync validated; Java sources
+parse) — run a real `gradlew assembleDebug` / Xcode archive before
+distributing. Remaining: the Phase 6 stretch items.
+
 ---
 
 ## 1. Decisions
 
 Settled with Colm before writing this plan:
 
-| Decision | Choice | Rationale |
-|---|---|---|
-| Foundation | **Inter's codebase is the base.** Crewbox evolves from inter's monorepo; Live Patch ports in as the first module. | Inter already has the platform: identity & sessions, offline outbox with exactly-once delivery, PWA + update flow, native shells (Android alerts service), voice, and the festival-box deploy kit. Live Patch's most valuable layer — its domain model — is framework-free, fully unit-tested, and lifts almost verbatim. |
-| Module UX | **One shell, sidebar sections.** Inter's chat layout is the shell; the sidebar grows module sections (Channels, Direct messages, Patch Sheets, …). | Chat is the common home. Modules are one tap away, share the connection banner, unread badges, search, and the update pill. Revisit (e.g. a module rail) only if the sidebar gets crowded with many modules. |
-| Data compatibility | **Greenfield.** Fresh `crewbox-*` storage names, unified auth, no live-data migration. | Deployments are per-event and ephemeral. Escape hatches already exist: Live Patch CSV export/import round-trips sheets; inter has an admin JSON export. |
-| Git history | **Merge both histories** into crewbox via subtree merges. | `git log`/`blame` keep working for every line — both codebases carry comments referencing bugs fixed in history. Cheap at bootstrap, impossible to retrofit. |
+| Decision           | Choice                                                                                                                                             | Rationale                                                                                                                                                                                                                                                                                                                 |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation         | **Inter's codebase is the base.** Crewbox evolves from inter's monorepo; Live Patch ports in as the first module.                                  | Inter already has the platform: identity & sessions, offline outbox with exactly-once delivery, PWA + update flow, native shells (Android alerts service), voice, and the festival-box deploy kit. Live Patch's most valuable layer — its domain model — is framework-free, fully unit-tested, and lifts almost verbatim. |
+| Module UX          | **One shell, sidebar sections.** Inter's chat layout is the shell; the sidebar grows module sections (Channels, Direct messages, Patch Sheets, …). | Chat is the common home. Modules are one tap away, share the connection banner, unread badges, search, and the update pill. Revisit (e.g. a module rail) only if the sidebar gets crowded with many modules.                                                                                                              |
+| Data compatibility | **Greenfield.** Fresh `crewbox-*` storage names, unified auth, no live-data migration.                                                             | Deployments are per-event and ephemeral. Escape hatches already exist: Live Patch CSV export/import round-trips sheets; inter has an admin JSON export.                                                                                                                                                                   |
+| Git history        | **Merge both histories** into crewbox via subtree merges.                                                                                          | `git log`/`blame` keep working for every line — both codebases carry comments referencing bugs fixed in history. Cheap at bootstrap, impossible to retrofit.                                                                                                                                                              |
 
 ---
 
@@ -125,15 +133,15 @@ lack, and the chat refactor to use them is the proof the seams work.
 
 ```ts
 interface CrewboxModule {
-  id: string                          // 'chat', 'patch'
-  title: string                       // 'Patch Sheets'
-  icon: string                        // inline SVG path (inter convention — no icon fonts)
-  load(): Promise<ModuleImpl>         // lazy chunk; precedent: inter's dynamic import of LiveKit
+  id: string // 'chat', 'patch'
+  title: string // 'Patch Sheets'
+  icon: string // inline SVG path (inter convention — no icon fonts)
+  load(): Promise<ModuleImpl> // lazy chunk; precedent: inter's dynamic import of LiveKit
 }
 interface ModuleImpl {
-  SidebarSection: Component           // rows under the module's sidebar header
-  Main: Component                     // rendered in the main pane for the module's routes
-  unreadCount?(): number              // contributes to tab title / badges
+  SidebarSection: Component // rows under the module's sidebar header
+  Main: Component // rendered in the main pane for the module's routes
+  unreadCount?(): number // contributes to tab title / badges
   // later: searchProvider, adminSection, alertRules
 }
 ```
@@ -153,10 +161,10 @@ The deepest architectural fact of this merger: the two apps have **different and
 complementary** sync models, and both are correct for their domain. Crewbox keeps both
 and offers them as services future modules choose between:
 
-| Primitive | Model | Source | Right for |
-|---|---|---|---|
-| **Ordered log** | Server-authoritative per-channel seq, client outbox, ack/resume, exactly-once | inter | Messages, events, anything append-only where order and delivery guarantees matter (chat; later: cues called, camera tally log) |
-| **Shared doc** | Yjs CRDT, client-durable (IndexedDB), relay in-memory, offline merge | Live Patch | Collaboratively edited state (patch sheets; later: lighting plots, camera assignments, run sheets) |
+| Primitive       | Model                                                                         | Source     | Right for                                                                                                                      |
+| --------------- | ----------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Ordered log** | Server-authoritative per-channel seq, client outbox, ack/resume, exactly-once | inter      | Messages, events, anything append-only where order and delivery guarantees matter (chat; later: cues called, camera tally log) |
+| **Shared doc**  | Yjs CRDT, client-durable (IndexedDB), relay in-memory, offline merge          | Live Patch | Collaboratively edited state (patch sheets; later: lighting plots, camera assignments, run sheets)                             |
 
 They stay on **separate WebSocket endpoints** — the chat protocol is a JSON
 discriminated union on `/ws`; Yjs speaks its own binary protocol on `/ws/docs/:room`.
@@ -191,12 +199,12 @@ from the client; a flat, global namespace ends here).
 
 ### 3.5 Storage naming (greenfield)
 
-| Kind | Name |
-|---|---|
-| localStorage | `crewbox:token`, `crewbox:theme`, `crewbox:server-url`, … (inter's pattern, renamed) |
-| Dexie (chat cache + outbox) | db `crewbox` |
-| y-indexeddb (patch) | `crewbox-patch-sheet-<id>`, `crewbox-patch-index` |
-| Yjs rooms | `patch/sheet-<id>`, `patch/index` |
+| Kind                        | Name                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| localStorage                | `crewbox:token`, `crewbox:theme`, `crewbox:server-url`, … (inter's pattern, renamed) |
+| Dexie (chat cache + outbox) | db `crewbox`                                                                         |
+| y-indexeddb (patch)         | `crewbox-patch-sheet-<id>`, `crewbox-patch-index`                                    |
+| Yjs rooms                   | `patch/sheet-<id>`, `patch/index`                                                    |
 
 Two livepatch behaviours do **not** carry over:
 
@@ -220,18 +228,18 @@ Two livepatch behaviours do **not** carry over:
 
 ### 3.7 Tooling & stack convergence
 
-| Concern | Decision |
-|---|---|
-| Node | ≥ 22.12 everywhere (server needs `node:sqlite`). Livepatch's separate server project (Node ≥ 18) disappears. |
-| React | 19 (both already). |
-| Vite | Converge on one major at bootstrap (inter: 7, livepatch: 8 — both on `vite-plugin-pwa` 1.3; expect 8, verify plugin compat). |
-| zod | v3 (protocol schemas; inter's). |
-| yjs | 13.6.x (both already agree). |
-| y-websocket | Reconcile the skew: client 3.0.0 vs relay-utils 2.1.0 (wire-compatible via `y-protocols` 1.0.7, but pin deliberately and drop the unused LevelDB tree that v2's utils drag in). |
-| State | Shell + chat: zustand. Patch module: Yjs + `useSyncExternalStore` internally. No forced convergence — the module boundary is exactly where this difference belongs. |
-| Lint/format | Livepatch's ESLint flat config + Prettier, repo-wide (inter currently has none). |
-| CI | Livepatch's two-job pattern, extended: format → lint → typecheck → unit (server integration + patch model + web pure fns) → build → Playwright e2e. |
-| Versioning | Inter's single build string (`0.1.0+<commit>`) shown in UI, `/api/health`, and `welcome`; drives the update pill. **Add an explicit `protocolVersion` to `welcome`** — neither app has one today, and a module ecosystem needs it. |
+| Concern     | Decision                                                                                                                                                                                                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node        | ≥ 22.12 everywhere (server needs `node:sqlite`). Livepatch's separate server project (Node ≥ 18) disappears.                                                                                                                       |
+| React       | 19 (both already).                                                                                                                                                                                                                 |
+| Vite        | Converge on one major at bootstrap (inter: 7, livepatch: 8 — both on `vite-plugin-pwa` 1.3; expect 8, verify plugin compat).                                                                                                       |
+| zod         | v3 (protocol schemas; inter's).                                                                                                                                                                                                    |
+| yjs         | 13.6.x (both already agree).                                                                                                                                                                                                       |
+| y-websocket | Reconcile the skew: client 3.0.0 vs relay-utils 2.1.0 (wire-compatible via `y-protocols` 1.0.7, but pin deliberately and drop the unused LevelDB tree that v2's utils drag in).                                                    |
+| State       | Shell + chat: zustand. Patch module: Yjs + `useSyncExternalStore` internally. No forced convergence — the module boundary is exactly where this difference belongs.                                                                |
+| Lint/format | Livepatch's ESLint flat config + Prettier, repo-wide (inter currently has none).                                                                                                                                                   |
+| CI          | Livepatch's two-job pattern, extended: format → lint → typecheck → unit (server integration + patch model + web pure fns) → build → Playwright e2e.                                                                                |
+| Versioning  | Inter's single build string (`0.1.0+<commit>`) shown in UI, `/api/health`, and `welcome`; drives the update pill. **Add an explicit `protocolVersion` to `welcome`** — neither app has one today, and a module ecosystem needs it. |
 
 ---
 
@@ -250,7 +258,7 @@ The user-facing payoff that neither app has alone:
    message.
 4. **One box, one runbook** — a single service to deploy, back up, health-check, and
    power-cycle at 6 a.m.
-5. **One update pill** — a redeploy updates chat *and* patch in lockstep, never
+5. **One update pill** — a redeploy updates chat _and_ patch in lockstep, never
    mid-task, with unsent work protected (chat outbox; patch sheets are CRDTs —
    reloading is always safe).
 6. **Offline everywhere, one story** — the PWA shell opens with cached history and
@@ -357,24 +365,24 @@ crewbox sessions.
 
 ## 6. Risks & mitigations
 
-| Risk | Detail | Mitigation |
-|---|---|---|
-| **`crypto.randomUUID` in non-secure contexts** | Livepatch calls it at module scope; it's undefined on plain-HTTP LAN origins — and **inter's Android webview is exactly that** (`androidScheme: 'http'`, deliberate). Hard boot crash if ported naively. | All id generation goes through `@crewbox/shared`'s `newId()` (works everywhere) or a UUID helper with a non-crypto fallback. Lint rule against direct `crypto.randomUUID`. Phase 3 acceptance includes running in the native shell. |
-| y-websocket client/server major skew | Client 3.0.0, relay utils 2.1.0 — works today via `y-protocols` 1.0.7, silently fragile. | Pin one version at Phase 2; add a wire-compat integration test; drop the unused LevelDB dependency tree. |
-| CSS collisions between shell and modules | Inter's global stylesheet uses very generic class names. | Modules: scoped styles only (enforced in review). Shell: namespace opportunistically; tokens are the shared surface. |
-| SW/manifest ownership | Both apps currently register their own SW at scope `/` with their own manifest and update policy. | Shell owns both; `prompt` mode; modules never touch SW APIs. |
-| Keyboard/title/global-listener fights | Both apps bind window-level handlers and write `document.title`. | Shell registry (Phase 1); module handlers active only on module routes; dialogs use the shared overlay layer's single Escape handler. |
-| Session token in Yjs upgrade query string | Appears in server logs / proxy logs. | Fine on the LAN box (logs are ours). For tunnel deployments: short-lived WS ticket endpoint, listed in the RUNBOOK hardening section alongside inter's existing remote-access guidance. |
-| Yjs doc growth (version snapshots embed full sheet JSON) | Unbounded doc growth synced to every device. | Accept for v1 (real sheets are small); add snapshot pruning/limits when it hurts; keep an eye via the e2e data sizes. |
-| Big-sheet re-render cost inside a busier shell | Patch rebuilds the full sheet snapshot per doc update. | Measure once embedded (Phase 3); memoise per-root snapshots only if needed. |
-| Protocol evolution across modules | Chat's WS union is closed; server→client frames aren't runtime-validated. | Modules don't extend the chat union — they get their own endpoints. `protocolVersion` in `welcome` from Phase 1. Zod-validate server frames where cheap. |
-| Scope creep before the seam is proven | The module contract could over-generalise. | The contract is validated by exactly two consumers (chat, patch) before any new module is designed. Anything speculative (search providers, alert rules, department roles) stays deferred until a module needs it. |
+| Risk                                                     | Detail                                                                                                                                                                                                   | Mitigation                                                                                                                                                                                                                          |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`crypto.randomUUID` in non-secure contexts**           | Livepatch calls it at module scope; it's undefined on plain-HTTP LAN origins — and **inter's Android webview is exactly that** (`androidScheme: 'http'`, deliberate). Hard boot crash if ported naively. | All id generation goes through `@crewbox/shared`'s `newId()` (works everywhere) or a UUID helper with a non-crypto fallback. Lint rule against direct `crypto.randomUUID`. Phase 3 acceptance includes running in the native shell. |
+| y-websocket client/server major skew                     | Client 3.0.0, relay utils 2.1.0 — works today via `y-protocols` 1.0.7, silently fragile.                                                                                                                 | Pin one version at Phase 2; add a wire-compat integration test; drop the unused LevelDB dependency tree.                                                                                                                            |
+| CSS collisions between shell and modules                 | Inter's global stylesheet uses very generic class names.                                                                                                                                                 | Modules: scoped styles only (enforced in review). Shell: namespace opportunistically; tokens are the shared surface.                                                                                                                |
+| SW/manifest ownership                                    | Both apps currently register their own SW at scope `/` with their own manifest and update policy.                                                                                                        | Shell owns both; `prompt` mode; modules never touch SW APIs.                                                                                                                                                                        |
+| Keyboard/title/global-listener fights                    | Both apps bind window-level handlers and write `document.title`.                                                                                                                                         | Shell registry (Phase 1); module handlers active only on module routes; dialogs use the shared overlay layer's single Escape handler.                                                                                               |
+| Session token in Yjs upgrade query string                | Appears in server logs / proxy logs.                                                                                                                                                                     | Fine on the LAN box (logs are ours). For tunnel deployments: short-lived WS ticket endpoint, listed in the RUNBOOK hardening section alongside inter's existing remote-access guidance.                                             |
+| Yjs doc growth (version snapshots embed full sheet JSON) | Unbounded doc growth synced to every device.                                                                                                                                                             | Accept for v1 (real sheets are small); add snapshot pruning/limits when it hurts; keep an eye via the e2e data sizes.                                                                                                               |
+| Big-sheet re-render cost inside a busier shell           | Patch rebuilds the full sheet snapshot per doc update.                                                                                                                                                   | Measure once embedded (Phase 3); memoise per-root snapshots only if needed.                                                                                                                                                         |
+| Protocol evolution across modules                        | Chat's WS union is closed; server→client frames aren't runtime-validated.                                                                                                                                | Modules don't extend the chat union — they get their own endpoints. `protocolVersion` in `welcome` from Phase 1. Zod-validate server frames where cheap.                                                                            |
+| Scope creep before the seam is proven                    | The module contract could over-generalise.                                                                                                                                                               | The contract is validated by exactly two consumers (chat, patch) before any new module is designed. Anything speculative (search providers, alert rules, department roles) stays deferred until a module needs it.                  |
 
 ---
 
 ## 7. Open questions (non-blocking, decide during build)
 
-- **Patch sheets ↔ chat channels**: should a sheet optionally *belong* to a channel
+- **Patch sheets ↔ chat channels**: should a sheet optionally _belong_ to a channel
   (e.g. `#stage-a`) for grouping/permissions, or stay a flat per-event list (Live
   Patch's current model)? Flat for v1; revisit with real use.
 - **Voice while in a module**: the VoiceBar is shell chrome and stays visible on module

@@ -1,0 +1,81 @@
+@use '../styles/tokens' as *;
+
+.container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(340px, calc(100vw - 32px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: $color-surface;
+  border-left: 4px solid $color-primary;
+  border-radius: $radius-small;
+  box-shadow: $shadow-card;
+  animation: slide-in 0.25s ease;
+}
+
+.success {
+  border-left-color: $color-accent-green;
+}
+.warning {
+  border-left-color: $color-accent-orange;
+}
+.error {
+  border-left-color: $color-danger;
+}
+
+.icon {
+  font-weight: 700;
+  color: $color-ink-soft;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: $color-ink;
+}
+
+.message {
+  font-size: 0.8rem;
+  color: $color-ink-soft;
+  margin-top: 2px;
+}
+
+.close {
+  border: none;
+  background: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: $color-muted;
+  cursor: pointer;
+  padding: 0 2px;
+
+  &:hover {
+    color: $color-ink;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

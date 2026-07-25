@@ -1,0 +1,23 @@
+# Crewbox — TLS front for the festival LAN.
+#
+# Replace chat.example.com with your real domain everywhere in deploy/.
+# Certificates come from deploy/cert-renew.sh (run BEFORE the event, with
+# internet). Caddy validates them locally — no internet needed on site.
+
+chat.example.com {
+	tls /etc/crewbox/certs/fullchain.pem /etc/crewbox/certs/privkey.pem
+
+	# LiveKit signalling (WebSocket). Media flows directly over UDP to the
+	# server's LAN IP, not through Caddy.
+	handle_path /livekit/* {
+		reverse_proxy localhost:7880
+	}
+
+	# App: API + WebSocket + built web app, all one Node process.
+	reverse_proxy localhost:8787
+}
+
+# Convenience: plain-HTTP requests to the bare IP redirect to the real name.
+http:// {
+	redir https://chat.example.com{uri}
+}

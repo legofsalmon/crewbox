@@ -1,0 +1,17 @@
+# LiveKit config for the festival box.
+# Start with: livekit-server --config /etc/crewbox/livekit.yaml
+port: 7880
+bind_addresses:
+  - 127.0.0.1 # signalling only via Caddy; media binds separately below
+rtc:
+  port_range_start: 50000
+  port_range_end: 50200
+  tcp_port: 7881
+  # Everyone is on the same LAN — advertise host candidates only.
+  use_external_ip: false
+keys:
+  # Generate a real pair with: livekit-server generate-keys
+  # Must match LIVEKIT_KEY / LIVEKIT_SECRET in crewbox.service.
+  devkey: secret
+logging:
+  level: info

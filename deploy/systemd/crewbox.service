@@ -1,0 +1,25 @@
+[Unit]
+Description=Crewbox crew comms server
+After=network.target
+
+[Service]
+Type=simple
+User=crewbox
+WorkingDirectory=/opt/crewbox/server
+Environment=NODE_ENV=production
+Environment=CREWBOX_PORT=8787
+Environment=DATA_DIR=/var/lib/crewbox
+Environment=WEB_DIST=/opt/crewbox/web/dist
+# CHANGE THESE before the event:
+Environment=EVENT_PIN=2468
+Environment=LIVEKIT_URL=wss://chat.example.com/livekit
+Environment=LIVEKIT_KEY=devkey
+Environment=LIVEKIT_SECRET=secret
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=2
+# The app exits within 3s of SIGTERM by design; don't wait longer.
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

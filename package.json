@@ -1,0 +1,43 @@
+{
+  "name": "crewbox",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Offline-first crew comms for temporary events — chat, voice, and department modules from one box",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "web",
+    "native"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,web -c yellow,cyan \"npm:dev -w server\" \"npm:dev -w web\"",
+    "build": "npm run build -w web && npm run build -w server",
+    "test": "npm run test -w server && npm run test -w web",
+    "start": "npm run start -w server",
+    "build:native": "npm run build -w web && npx -w native cap sync",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:e2e": "playwright test",
+    "build:box": "node scripts/build-box.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
+    "concurrently": "^9.1.2",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "postject": "^1.0.0-alpha.6",
+    "prettier": "^3.9.6",
+    "qrcode": "^1.5.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0"
+  }
+}

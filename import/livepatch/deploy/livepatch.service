@@ -1,0 +1,23 @@
+# systemd unit for running the Live Patch box without Docker.
+# Install:
+#   sudo cp deploy/livepatch.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now livepatch
+# Adjust User and the /opt/livepatch path to your machine.
+[Unit]
+Description=Live Patch festival box (app + sync relay)
+After=network.target
+
+[Service]
+Type=simple
+User=livepatch
+WorkingDirectory=/opt/livepatch/server
+Environment=PORT=1234
+Environment=DATA_DIR=/opt/livepatch/data
+Environment=STATIC_DIR=/opt/livepatch/dist
+# Environment=LIVEPATCH_TOKEN=choose-a-token
+ExecStart=/usr/bin/node index.cjs
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
