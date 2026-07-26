@@ -55,11 +55,7 @@ setup address too, and any device on the same network can open it.
 Everything. There are no tiers or editions.
 
 - **Chat** — channels, DMs, mentions, files, presence
-- **Push-to-talk voice** — the voice server runs inside the box, nothing to
-  install. **Linux and Windows boxes only**: LiveKit publishes no macOS build,
-  so a Mac box has everything except voice. If voice matters, make the box a
-  Linux or Windows machine — or run `livekit-server` yourself (it's in
-  Homebrew) and start the box with `LIVEKIT_URL` pointing at it.
+- **Push-to-talk voice** — the voice server runs inside the box, nothing to install
 - **Patch sheets** — input patch per artist, sub-boxes, lineup, CSV in and out
 - **Lighting** — fixture patch with DMX clash detection, positions, a plot, MVR/GDTF and Lightwright/console CSV import
 - **Offline throughout** — the box needs no internet, and neither do the crew

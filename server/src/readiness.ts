@@ -35,12 +35,6 @@ export interface ReadinessInput {
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
   host: string
-  /**
-   * `process.platform`. Only used to explain a missing voice server: LiveKit
-   * publishes no macOS binary, so "download the release binary" — the right
-   * advice everywhere else — is a dead end on a Mac.
-   */
-  platform?: string
 }
 
 /** Bytes free on the data volume, or null if it can't be determined. */
@@ -72,10 +66,7 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
           label: 'Push-to-talk voice',
           state: 'off',
           detail: 'No voice server on this box.',
-          fix:
-            input.platform === 'darwin'
-              ? 'LiveKit publishes no macOS build, so the macOS box cannot carry one. Run `brew install livekit && livekit-server` and start the box with LIVEKIT_URL pointing at it — or run the box on Linux or Windows, where voice is built in.'
-              : 'This build ships without one. Download the release binary rather than running from source, or set LIVEKIT_URL to an SFU you run.',
+          fix: 'This build ships without one. Download the release binary rather than running from source, or set LIVEKIT_URL to an SFU you run.',
         }
       : {
           id: 'voice',

@@ -43,9 +43,9 @@ is the normal state:
   message cache: it opens and shows history even while the server reboots.
 - Voice is a self-hosted **LiveKit** SFU that ships _inside_ the box binary
   and starts with it (~LAN latency), with a hold-to-talk intercom UI;
-  mic-less users degrade to listen-only. LiveKit publishes no macOS binary,
-  so the macOS box carries no SFU — it reports voice as off and names the
-  workaround. Linux and Windows boxes have it built in.
+  mic-less users degrade to listen-only. Upstream ships no macOS binary, so
+  the darwin box compiles one from source at build time — same program, same
+  pinned version, so voice is inside the box on all three platforms.
 - Collaboratively edited state (patch sheets) uses **Yjs CRDT documents**
   stored on each device: fully functional offline, merging without conflicts
   when devices sync through the box.

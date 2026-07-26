@@ -73,6 +73,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w web
+      # LiveKit publishes no macOS binary, so the darwin box compiles one from
+      # source (see scripts/fetch-livekit.mjs). Pure Go, no cgo — this is what
+      # Homebrew's formula does. Only macOS needs the toolchain.
+      - uses: actions/setup-go@v5
+        if: runner.os == 'macOS'
+        with:
+          go-version: stable
       # Voice ships inside the box, so the SFU is fetched here rather than
       # installed by whoever runs the box. A failure here is fatal on
       # purpose: a release binary that silently lost voice is worse than a
