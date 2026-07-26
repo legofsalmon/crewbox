@@ -12,6 +12,17 @@ import { networkInterfaces } from 'node:os'
 import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
+import { escapeHtml, PAGE_CSS } from './html.ts'
+import { LIVEKIT_PORT } from './livekit.ts'
+import { boxReadiness, worstState } from './readiness.ts'
+import { setupPage } from './setup.ts'
+import {
+  isVoiceUpgrade,
+  proxyVoiceHttp,
+  proxyVoiceSocket,
+  rejectVoiceUpgrade,
+  VOICE_PROXY_PATH,
+} from './voiceProxy.ts'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -65,16 +76,9 @@ const channelPatchSchema = z.object({
   retired: z.boolean().optional(),
 })
 
-/** Minimal HTML escaping for the server-rendered /connect page. */
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
 const settingsPatchSchema = z.object({
+  /** What crew see instead of "Crewbox" once the box is set up for an event. */
+  eventName: z.string().trim().max(64).optional(),
   wifiSsid: z.string().trim().max(64).optional(),
   // Changeable mid-event from the admin panel — no SSH, no service restart.
   eventPin: z.string().trim().min(4).max(64).optional(),
@@ -114,8 +118,14 @@ export interface AppDeps {
   wifiSsid?: string
   /** Directory for uploaded files; omit to disable uploads (tests). */
   filesDir?: string
-  /** LiveKit connection details; omit to disable voice. */
-  livekit?: { url: string; key: string; secret: string }
+  /**
+   * LiveKit connection details; omit to disable voice. `url` is an explicit
+   * override (an SFU someone else runs). `embedded` means the box is running
+   * its own, in which case the client URL is derived from whatever address
+   * that client used to reach the box — a fixed URL would be wrong the
+   * moment the box has two interfaces, which on site it usually does.
+   */
+  livekit?: { url: string; key: string; secret: string; embedded?: boolean; port?: number }
   /** Sessions idle past this stop working; omit for non-expiring (tests). */
   sessionTtlMs?: number
   /** Trust X-Forwarded-For (behind cloudflared/Caddy) for client IPs. */
@@ -124,6 +134,8 @@ export interface AppDeps {
   modules?: string[]
   /** Data directory root; /connect offers crewbox.apk from here when present. */
   dataDir?: string
+  /** Certificate material; when present the box serves HTTPS itself. */
+  tls?: { cert: Buffer; key: Buffer; ca?: Buffer }
   logger?: boolean
 }
 
@@ -134,6 +146,8 @@ export type App = FastifyInstance & {
   authSession: (token: string) => User | undefined
   /** Module ids this box enables (docs room namespaces are checked against it). */
   enabledModules: string[]
+  /** SFU port to proxy voice signalling to, when the box runs its own. */
+  voiceProxyPort?: number
 }
 
 export function buildApp({
@@ -146,10 +160,15 @@ export function buildApp({
   trustProxy = false,
   modules = ['chat'],
   dataDir,
+  tls,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
     logger: logger ? { level: process.env.LOG_LEVEL ?? 'info' } : false,
+    // Serving TLS directly is what removes Caddy from the deployment. Without
+    // it the box can't ever give a browser a microphone or an installable
+    // app, however the rest is packaged.
+    ...(tls ? { https: { cert: tls.cert, key: tls.key, ...(tls.ca ? { ca: tls.ca } : {}) } } : {}),
     // Open WebSockets must never block shutdown — restarts have to be instant
     // and unattended on the festival box.
     forceCloseConnections: true,
@@ -166,8 +185,9 @@ export function buildApp({
   const effectiveEventPin = (): string => store.getSetting('eventPin') ?? eventPin
 
   const publicConfig = (): PublicConfig => ({
+    eventName: store.getSetting('eventName') ?? '',
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
-    voiceEnabled: Boolean(livekit?.url),
+    voiceEnabled: voiceAvailable,
     modules,
   })
 
@@ -200,6 +220,17 @@ export function buildApp({
   // no CSRF surface on the crew LAN.
   void fastify.register(cors, { origin: true })
   void fastify.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 2 } })
+
+  // The first-run setup page is a plain HTML form, so that it works before any
+  // JavaScript has loaded and on whatever browser the box happened to open.
+  // Fastify parses JSON only; this is the one route that posts a form.
+  fastify.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string', bodyLimit: 4096 },
+    (_req, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(body as string)))
+    }
+  )
 
   const authUser = (req: FastifyRequest): User | undefined => {
     const header = req.headers.authorization
@@ -236,20 +267,97 @@ export function buildApp({
    * looking at localhost — then the first LAN address, which is what phones
    * can actually reach.
    */
+  const voiceAvailable = Boolean(livekit?.url || livekit?.embedded)
+
+  /** Hostname the client used to reach this box, without the port. */
+  const hostOf = (req: FastifyRequest): string =>
+    (req.headers.host ?? 'localhost').split(':')[0] || 'localhost'
+
+  /**
+   * Where this particular client should reach the SFU. An explicit url wins;
+   * otherwise the embedded SFU is on the same host the request arrived on.
+   */
+  const voiceUrl = (req: FastifyRequest): string => {
+    if (livekit?.url) return livekit.url
+    if (!livekit?.embedded) return ''
+    // Same origin as the page, so an https:// box doesn't hand back a ws://
+    // URL the browser will refuse as mixed content. See voiceProxy.ts.
+    const scheme = req.protocol === 'https' ? 'wss' : 'ws'
+    return `${scheme}://${req.headers.host ?? 'localhost'}${VOICE_PROXY_PATH}`
+  }
+
   const crewUrl = (req: FastifyRequest): string => {
-    const proto = trustProxy ? ((req.headers['x-forwarded-proto'] as string) ?? 'http') : 'http'
+    // req.protocol is 'https' when this box serves TLS itself, and falls back
+    // to x-forwarded-proto only when trustProxy is on. Hardcoding http here
+    // would print a QR pointing at a port that only speaks TLS.
+    const proto = req.protocol
     const host = req.headers.host ?? 'localhost'
     if (!/^(localhost|127\.)/.test(host)) return `${proto}://${host}`
     const port = host.split(':')[1] ?? ''
     for (const addrs of Object.values(networkInterfaces())) {
       for (const addr of addrs ?? []) {
         if (addr.family === 'IPv4' && !addr.internal) {
-          return `http://${addr.address}${port ? `:${port}` : ''}`
+          return `${proto}://${addr.address}${port ? `:${port}` : ''}`
         }
       }
     }
-    return `http://${host}`
+    return `${proto}://${host}`
   }
+
+  /**
+   * First-run setup. Open only while nobody has joined — at that point anyone
+   * who can reach the box can join and become admin anyway, so this grants
+   * nothing extra; once the first person joins it closes for good and the
+   * admin panel takes over. See setup.ts.
+   */
+  const setupOpen = (): boolean => store.countUsers() === 0
+
+  const setupValues = () => ({
+    eventName: store.getSetting('eventName') ?? '',
+    wifiSsid: publicConfig().wifiSsid,
+    eventPin: effectiveEventPin(),
+  })
+
+  const sendHtml = (reply: FastifyReply, html: string) =>
+    reply
+      .header('content-type', 'text/html; charset=utf-8')
+      .header('cache-control', 'no-store')
+      .send(html)
+
+  fastify.get('/setup', (req, reply) => {
+    if (!setupOpen()) return reply.redirect('/connect')
+    return sendHtml(reply, setupPage({ values: setupValues(), base: crewUrl(req) }))
+  })
+
+  fastify.post('/setup', (req, reply) => {
+    if (!setupOpen()) return reply.redirect('/connect')
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const parsed = settingsPatchSchema.safeParse({
+      eventName: String(body.eventName ?? ''),
+      wifiSsid: String(body.wifiSsid ?? ''),
+      eventPin: String(body.eventPin ?? ''),
+    })
+    if (!parsed.success) {
+      // Re-render with what they typed rather than throwing away the form.
+      return sendHtml(
+        reply.code(400),
+        setupPage({
+          values: {
+            eventName: String(body.eventName ?? ''),
+            wifiSsid: String(body.wifiSsid ?? ''),
+            eventPin: String(body.eventPin ?? ''),
+          },
+          base: crewUrl(req),
+          error: 'Event PIN needs at least 4 characters — everything else is optional.',
+        })
+      )
+    }
+    store.setSetting('eventName', parsed.data.eventName ?? '')
+    store.setSetting('wifiSsid', parsed.data.wifiSsid ?? '')
+    if (parsed.data.eventPin) store.setSetting('eventPin', parsed.data.eventPin)
+    hub.announceConfig()
+    return reply.redirect('/connect')
+  })
 
   // Live onboarding page: big QR of the join URL (PIN prefilled), the PIN in
   // print, Wi-Fi guidance, and the APK when installed. Always current — a
@@ -263,19 +371,13 @@ export function buildApp({
     const qr = new QRCode({ content: joinUrl, padding: 2, width: 260, height: 260 }).svg()
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Join Crewbox</title>
-<style>
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         background: #12100e; color: #f2eee7; font-family: system-ui, sans-serif; text-align: center; }
-  .card { padding: 32px; }
-  h1 { letter-spacing: 0.06em; margin: 0 0 4px; }
+<title>Join ${escapeHtml(config.eventName || 'Crewbox')}</title>
+<style>${PAGE_CSS}
   .qr { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin: 20px 0; }
   .url { font-size: 20px; font-weight: 700; word-break: break-all; }
   .pin { font-size: 17px; margin-top: 10px; color: #f5b73e; }
-  .meta { color: #a29a8c; margin-top: 14px; font-size: 15px; }
-  a { color: #f5b73e; }
 </style></head><body><div class="card">
-  <h1>Crewbox</h1>
+  <h1>${escapeHtml(config.eventName || 'Crewbox')}</h1>
   <p class="meta">Crew chat, voice &amp; patch sheets — on the event network</p>
   ${config.wifiSsid ? `<p class="meta">1. Join Wi-Fi: <strong>${escapeHtml(config.wifiSsid)}</strong>&nbsp;&nbsp;2. Scan&nbsp;&nbsp;3. Pick a name</p>` : ''}
   <div class="qr">${qr}</div>
@@ -510,11 +612,19 @@ export function buildApp({
     return { ok: true }
   })
 
+  // Voice signalling, proxied so it shares the box's port and certificate.
+  if (livekit?.embedded) {
+    fastify.all(`${VOICE_PROXY_PATH}/*`, (req, reply) => {
+      proxyVoiceHttp(req.raw, reply.raw, livekit.port ?? LIVEKIT_PORT)
+      return reply
+    })
+  }
+
   // Voice: mint a LiveKit room token for a channel's intercom room.
   fastify.post('/api/voice/token', async (req, reply) => {
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
-    if (!livekit?.url) return reply.code(503).send({ error: 'voice not configured' })
+    if (!voiceAvailable) return reply.code(503).send({ error: 'voice not configured' })
     const parsed = z.object({ channelId: z.string().min(1) }).safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid request' })
     const channel = store.getChannel(parsed.data.channelId)
@@ -522,13 +632,13 @@ export function buildApp({
       return reply.code(404).send({ error: 'channel not found' })
     }
     const { AccessToken } = await import('livekit-server-sdk')
-    const at = new AccessToken(livekit.key, livekit.secret, {
+    const at = new AccessToken(livekit!.key, livekit!.secret, {
       identity: user.id,
       name: user.name,
       ttl: '12h',
     })
     at.addGrant({ room: channel.id, roomJoin: true, canPublish: true, canSubscribe: true })
-    return { url: livekit.url, token: await at.toJwt() }
+    return { url: voiceUrl(req), token: await at.toJwt() }
   })
 
   fastify.get('/api/search', (req, reply) => {
@@ -639,17 +749,28 @@ export function buildApp({
   fastify.get('/api/admin/settings', (req, reply) => {
     if (!authAdmin(req, reply)) return reply
     const stats = hub.stats()
+    const readiness = boxReadiness({
+      // req.protocol is 'https' for a TLS connection, and honours
+      // x-forwarded-proto only when this box is configured to trust a proxy.
+      secure: req.protocol === 'https',
+      voice: livekit?.embedded ? 'embedded' : livekit?.url ? 'external' : 'off',
+      dataDir: dataDir ?? process.cwd(),
+      crewCount: store.listUsers().length,
+      host: hostOf(req),
+    })
     return {
-      settings: { wifiSsid: publicConfig().wifiSsid },
+      settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },
       serverInfo: {
         version: APP_VERSION,
         uptimeSec: Math.round(process.uptime()),
         connections: stats.connections,
         onlineUsers: stats.onlineUsers,
-        voiceEnabled: Boolean(livekit?.url),
+        voiceEnabled: voiceAvailable,
         // Shown so admins can put the current PIN on posters; editable below.
         eventPin: effectiveEventPin(),
       },
+      readiness,
+      readinessState: worstState(readiness),
     }
   })
 
@@ -659,6 +780,9 @@ export function buildApp({
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
     }
+    if (parsed.data.eventName !== undefined) {
+      store.setSetting('eventName', parsed.data.eventName)
+    }
     if (parsed.data.wifiSsid !== undefined) {
       store.setSetting('wifiSsid', parsed.data.wifiSsid)
     }
@@ -666,7 +790,14 @@ export function buildApp({
       store.setSetting('eventPin', parsed.data.eventPin)
     }
     hub.announceConfig()
-    return { settings: { wifiSsid: publicConfig().wifiSsid, eventPin: effectiveEventPin() } }
+    const config = publicConfig()
+    return {
+      settings: {
+        eventName: config.eventName,
+        wifiSsid: config.wifiSsid,
+        eventPin: effectiveEventPin(),
+      },
+    }
   })
 
   // Full JSON dump for the post-event archive.
@@ -688,6 +819,7 @@ export function buildApp({
     docs,
     authSession: (token: string) => store.getSessionUser(token, sessionTtlMs),
     enabledModules: modules,
+    voiceProxyPort: livekit?.embedded ? (livekit.port ?? LIVEKIT_PORT) : undefined,
   })
 }
 
@@ -697,6 +829,8 @@ export function attachWs(app: App): WebSocketServer {
   app.hub.attach(wss)
   // Yjs updates are binary and can far exceed chat frames; own server, own cap.
   const docsWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 })
+  // Signalling frames are small; the cap is a guard, not a limit anyone hits.
+  const voiceWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 })
   docsWss.on('connection', (ws, room: string) => app.docs.connect(ws, room))
 
   const reject = (socket: import('node:stream').Duplex, status: number, label: string) => {
@@ -709,6 +843,17 @@ export function attachWs(app: App): WebSocketServer {
     const { pathname } = url
     if (pathname === '/ws') {
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+      return
+    }
+    if (isVoiceUpgrade(pathname)) {
+      if (!app.voiceProxyPort) {
+        rejectVoiceUpgrade(socket)
+        return
+      }
+      const port = app.voiceProxyPort
+      voiceWss.handleUpgrade(req, socket, head, (ws) => {
+        proxyVoiceSocket(ws, req.url ?? '/', port)
+      })
       return
     }
     if (pathname.startsWith('/ws/docs/')) {

@@ -7,6 +7,8 @@ import { openDb } from './db.ts'
 import { Store } from './store.ts'
 import { attachWs, buildApp } from './app.ts'
 import { boxDataDir, extractWebDist, isBox, openBrowser, printBoxBanner } from './box.ts'
+import { hasEmbeddedLiveKit, livekitCredentials, startEmbeddedLiveKit } from './livekit.ts'
+import { loadTls } from './tls.ts'
 
 // No top-level await: the single-binary build bundles this entry as CJS
 // (Node SEA requires a CommonJS main), so startup lives in an async main().
@@ -17,7 +19,6 @@ async function main(): Promise<void> {
   const dataDir = box && !process.env.DATA_DIR ? boxDataDir() : config.dataDir
   mkdirSync(dataDir, { recursive: true })
   const webDist = box ? extractWebDist(dataDir) : config.webDist
-  const livekit = box && !process.env.LIVEKIT_URL ? { ...config.livekit, url: '' } : config.livekit
 
   const db = openDb(join(dataDir, 'crewbox.db'))
   const store = new Store(db)
@@ -34,6 +35,30 @@ async function main(): Promise<void> {
     store.createChannel(HOME_CHANNEL, 'public', 'Everyone, everything')
   }
 
+  // Voice. An explicit LIVEKIT_URL always wins — someone pointing at an SFU
+  // they already run shouldn't have the box start a second one. Otherwise a
+  // box build carrying the SFU starts it, and voice is simply on.
+  let livekit: { url: string; key: string; secret: string; embedded?: boolean } = config.livekit
+  let embedded: Awaited<ReturnType<typeof startEmbeddedLiveKit>> = null
+  if (box && !process.env.LIVEKIT_URL) {
+    if (hasEmbeddedLiveKit()) {
+      const creds = livekitCredentials(
+        (key) => store.getSetting(key),
+        (key, value) => store.setSetting(key, value)
+      )
+      embedded = await startEmbeddedLiveKit({ dataDir, ...creds, log: console })
+    }
+    livekit = embedded
+      ? { url: '', key: embedded.key, secret: embedded.secret, embedded: true }
+      : { ...config.livekit, url: '' }
+  }
+
+  // A certificate in the data directory turns on HTTPS, and with it the
+  // browser microphone and install-to-home-screen. Missing or broken
+  // material never stops the box: it logs why and serves plain HTTP, which
+  // is a working product minus those two things.
+  const { tls, reason: tlsReason } = loadTls(dataDir)
+
   const app = buildApp({
     store,
     eventPin: config.eventPin,
@@ -44,6 +69,7 @@ async function main(): Promise<void> {
     trustProxy: config.trustProxy,
     modules: config.modules,
     dataDir,
+    ...(tls ? { tls } : {}),
   })
   const hub = app.hub
 
@@ -68,11 +94,23 @@ async function main(): Promise<void> {
   await app.listen({ host: config.host, port: config.port })
   attachWs(app)
 
-  app.log.info(`crewbox server listening on ${config.host}:${config.port}`)
-  app.log.info(`crew onboarding page: http://localhost:${config.port}/connect (QR, PIN, APK)`)
+  if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
+  app.log.info(
+    `crewbox server listening on ${config.host}:${config.port} (${tls ? 'https' : 'http'})`
+  )
+  const origin = `${tls ? 'https' : 'http'}://localhost:${config.port}`
+  app.log.info(`crew onboarding page: ${origin}/connect (QR, PIN, APK)`)
   if (box) {
-    printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin)
-    openBrowser(`http://localhost:${config.port}/connect`)
+    // Nobody has joined yet means nobody has set this box up yet, so send the
+    // admin to the three questions rather than to a QR for an unnamed event.
+    // /setup redirects to /connect once anyone has joined, so a box that has
+    // run before goes straight to the QR.
+    const firstRun = store.countUsers() === 0
+    printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin, Boolean(tls), {
+      eventName: store.getSetting('eventName') ?? '',
+      firstRun,
+    })
+    openBrowser(`${origin}${firstRun ? '/setup' : '/connect'}`)
   }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -83,6 +121,7 @@ async function main(): Promise<void> {
       setTimeout(() => process.exit(1), 3000).unref()
       hub.close()
       await app.close()
+      await embedded?.stop()
       db.close()
       process.exit(0)
     })

@@ -23,7 +23,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
-    "build:box": "node scripts/build-box.mjs"
+    "build:box": "node scripts/fetch-livekit.mjs && node scripts/build-box.mjs",
+    "fetch:livekit": "node scripts/fetch-livekit.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useStore } from '../store.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
-import { effectiveSsid } from '../lib/settings.ts'
+import { displayName, effectiveSsid } from '../lib/settings.ts'
 import { isNative, normalizeOrigin, serverOrigin, setServerOrigin } from '../lib/server.ts'
 
 /** Native builds aren't served by the crew server, so they must be told
@@ -23,6 +23,7 @@ function initialEventPin(): string {
 export default function Join() {
   const join = useStore((s) => s.join)
   const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
+  const eventName = useStore((s) => displayName(s.config.eventName))
   const [name, setName] = useState('')
   const [eventPin, setEventPin] = useState(initialEventPin)
   const [personalPin, setPersonalPin] = useState('')
@@ -76,7 +77,7 @@ export default function Join() {
             />
             <circle cx="24" cy="33" r="3.5" fill="currentColor" />
           </svg>
-          <h1>Crewbox</h1>
+          <h1>{eventName}</h1>
           <p>Crew chat that works with no internet</p>
         </div>
 

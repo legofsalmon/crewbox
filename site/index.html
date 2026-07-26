@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Crewbox — crew comms for temporary events</title>
+    <meta
+      name="description"
+      content="Offline-first crew chat, push-to-talk voice, patch sheets and lighting plots. One file, no install, no internet needed on site."
+    />
+    <style>
+      /* Same tokens as the app (web/src/app.css) so the download page and the
+         thing it downloads look like one product. */
+      :root {
+        color-scheme: dark;
+        --bg: #12100e;
+        --bg-raised: #1a1714;
+        --bg-hover: #242019;
+        --border: rgba(255, 255, 255, 0.08);
+        --text: #f2eee7;
+        --text-muted: #a29a8c;
+        --text-faint: #6f695e;
+        --accent: #f5b73e;
+        --accent-strong: #ffcd66;
+        --accent-contrast: #1c1608;
+        --ok: #58c98a;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --bg: #f5f2ec;
+          --bg-raised: #fdfbf7;
+          --bg-hover: #ece7dd;
+          --border: rgba(30, 25, 15, 0.12);
+          --text: #26221b;
+          --text-muted: #5f594c;
+          --text-faint: #8d8574;
+          /* Darker than the dark-theme amber: on a pale surface the bright
+             one drops under 4.5:1 against --accent-contrast. */
+          --accent: #9a6600;
+          --accent-strong: #7d5300;
+          --accent-contrast: #fffaf0;
+          --ok: #1e8a54;
+        }
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 56px 22px 80px;
+      }
+      h1 {
+        font-size: 40px;
+        letter-spacing: -0.02em;
+        margin-bottom: 10px;
+      }
+      .tagline {
+        font-size: 18px;
+        color: var(--text-muted);
+        margin-bottom: 36px;
+        max-width: 34em;
+      }
+      h2 {
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-faint);
+        margin: 40px 0 14px;
+      }
+      p {
+        margin-bottom: 12px;
+      }
+      a {
+        color: var(--accent-strong);
+      }
+      .download {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--accent);
+        color: var(--accent-contrast);
+        font-size: 17px;
+        font-weight: 700;
+        padding: 15px 28px;
+        border-radius: 12px;
+        text-decoration: none;
+      }
+      .download:hover {
+        background: var(--accent-strong);
+      }
+      .under {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-top: 10px;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13.5px;
+      }
+      pre {
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 16px;
+        overflow-x: auto;
+      }
+      ul {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      li {
+        display: flex;
+        gap: 10px;
+      }
+      li b {
+        color: var(--text);
+      }
+      .dot {
+        color: var(--ok);
+      }
+      .note {
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--accent);
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 14px;
+        font-size: 14.5px;
+        color: var(--text-muted);
+      }
+      .note b {
+        color: var(--text);
+      }
+      .others {
+        font-size: 14px;
+        color: var(--text-muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 16px;
+      }
+      footer {
+        margin-top: 56px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+        color: var(--text-faint);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Crewbox</h1>
+      <p class="tagline">
+        Crew comms for temporary events. Chat, push-to-talk voice, patch sheets and lighting plots —
+        running from one box on your own Wi-Fi, with no internet on site.
+      </p>
+
+      <a
+        class="download"
+        id="download"
+        href="https://github.com/legofsalmon/crewbox-dist/releases/latest"
+      >
+        Download Crewbox
+      </a>
+      <p class="under" id="platform">Pick your platform below.</p>
+
+      <div class="others" id="others"></div>
+
+      <h2>Or one line</h2>
+      <pre><code>curl -fsSL https://crewbox.letissier.ie/install.sh | sh</code></pre>
+      <p class="under">
+        macOS and Linux. Downloads the box, clears the macOS quarantine flag, and starts it.
+      </p>
+
+      <h2>What you get</h2>
+      <ul>
+        <li>
+          <span class="dot">●</span
+          ><span><b>Chat</b> — channels, DMs, mentions, files, who's online</span>
+        </li>
+        <li>
+          <span class="dot">●</span
+          ><span
+            ><b>Push-to-talk voice</b> — the voice server is inside the box, nothing to
+            install</span
+          >
+        </li>
+        <li>
+          <span class="dot">●</span
+          ><span
+            ><b>Patch sheets</b> — input patch per artist, sub-boxes, lineup, CSV in and out</span
+          >
+        </li>
+        <li>
+          <span class="dot">●</span
+          ><span
+            ><b>Lighting</b> — fixture patch with DMX clash detection, positions, a plot, MVR/GDTF
+            import</span
+          >
+        </li>
+        <li>
+          <span class="dot">●</span
+          ><span
+            ><b>Offline throughout</b> — the box needs no internet, and neither do the crew</span
+          >
+        </li>
+      </ul>
+
+      <h2>Running it</h2>
+      <p>
+        Run the box on any machine on the venue network — a laptop is fine. It prints a join URL, a
+        freshly minted event PIN and a QR code. Crew scan it, pick a name, and they're in. No
+        accounts, no app store.
+      </p>
+      <p>
+        The first person to join is the admin. <b>Admin → This box</b> shows what's actually working
+        on your machine and what to do about anything that isn't.
+      </p>
+
+      <h2>Two things worth knowing</h2>
+      <div class="note">
+        <b>Browsers won't grant a microphone over plain http://.</b> That's a browser security rule,
+        not a crewbox limitation, and the same rule blocks "add to home screen". Voice works today
+        in the Android and iOS apps, which are exempt. For browsers too, the box needs HTTPS on a
+        name you control.
+      </div>
+      <div class="note">
+        <b>iOS can't do lock-screen alerts with no internet.</b> Apple's push servers are
+        unreachable and no app can work around it. The Android app holds its own connection to the
+        box and buzzes while the phone is locked, entirely on the LAN — give Android phones to the
+        roles that must not miss a call.
+      </div>
+
+      <footer>
+        Crewbox is built for outdoor music festivals, where the Wi-Fi drops and the schedule
+        doesn't.
+      </footer>
+    </main>
+
+    <script>
+      // Name the file the visitor actually needs, rather than making a
+      // production manager work out what "darwin-arm64" means.
+      const DIST = 'https://github.com/legofsalmon/crewbox-dist/releases/latest/download/'
+      const BUILDS = [
+        { id: 'crewbox-darwin-arm64', label: 'macOS (Apple Silicon)' },
+        { id: 'crewbox-win32-x64.exe', label: 'Windows' },
+        { id: 'crewbox-linux-x64', label: 'Linux' },
+        { id: 'crewbox.apk', label: 'Android app' },
+      ]
+
+      const ua = navigator.userAgent
+      const guess = /Mac/i.test(ua)
+        ? 'crewbox-darwin-arm64'
+        : /Win/i.test(ua)
+          ? 'crewbox-win32-x64.exe'
+          : /Android/i.test(ua)
+            ? 'crewbox.apk'
+            : /Linux/i.test(ua)
+              ? 'crewbox-linux-x64'
+              : null
+
+      const button = document.getElementById('download')
+      const caption = document.getElementById('platform')
+      const others = document.getElementById('others')
+
+      const chosen = BUILDS.find((b) => b.id === guess)
+      if (chosen) {
+        button.href = DIST + chosen.id
+        button.textContent = 'Download for ' + chosen.label
+        caption.textContent =
+          chosen.id === 'crewbox.apk'
+            ? 'The phone app. To run the box itself, use a laptop.'
+            : 'About 120 MB — it carries the app and the voice server inside it.'
+      }
+
+      for (const build of BUILDS) {
+        if (build.id === guess) continue
+        const link = document.createElement('a')
+        link.href = DIST + build.id
+        link.textContent = build.label
+        others.appendChild(link)
+      }
+    </script>
+  </body>
+</html>

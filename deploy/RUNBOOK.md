@@ -14,7 +14,12 @@ The one document to print and keep in the production office.
 ## Before the event (needs internet — do at home/office)
 
 1. **Certificate** (calendar this — expires every 90 days):
-   `deploy/cert-renew.sh` on the server box. Verify: `openssl x509 -enddate -noout -in /etc/crewbox/certs/fullchain.pem`
+   `deploy/cert-renew.sh` on the server box. It fetches the cert and installs
+   it as `cert.pem` / `key.pem` in the box's data directory, then restarts the
+   service — the box serves HTTPS itself, so there is no reverse proxy in the
+   picture. It prints the expiry; **Admin → This box** confirms it took.
+   The name here is the box's own (`chat.<yourdomain>`, resolving to its LAN
+   IP), not the public download site.
 2. **Software up to date**: `git pull && npm install && npm run build` in `/opt/crewbox`,
    then restart the service. The server serves whatever `web/dist` holds at request
    time — an old dist next to a new server binary quietly ships stale UI (clients
@@ -23,6 +28,9 @@ The one document to print and keep in the production office.
    later from the admin panel — no restart), `LIVEKIT_KEY`/`LIVEKIT_SECRET`
    (generate with `livekit-server generate-keys`; mirror in `/etc/crewbox/livekit.yaml`), then
    `sudo systemctl daemon-reload`.
+   Then open `/setup` once from any browser to name the event and set the
+   Wi-Fi hint. It only answers until the first person joins, so do it before
+   the rehearsal join in step 5 — after that it's **Admin → This box**.
 4. **Print posters** with the final PIN and domain.
 5. **Full rehearsal**: power everything off, power on cold, phone joins via QR
    with the internet unplugged. If this works at home it works in a field.
@@ -32,7 +40,7 @@ The one document to print and keep in the production office.
 1. Power order: router → APs → server box (all on the UPS).
 2. Router: static IP for the server; `deploy/dnsmasq.conf` installed so
    `chat.<yourdomain>` → server IP; DHCP hands out the router as DNS.
-3. `systemctl status crewbox livekit caddy` — all green.
+3. `systemctl status crewbox livekit the box itself` — all green.
 4. Phone test: scan poster → green padlock → join → send message → PTT to a
    second phone. **Do this before the crew arrives.**
 

@@ -1,8 +1,18 @@
 import type { Channel, FileMeta, Message, PublicConfig, User } from '@crewbox/shared'
 import { apiUrl } from './server.ts'
 
+export type ReadinessState = 'ok' | 'limited' | 'off'
+
+export interface ReadinessCheck {
+  id: string
+  label: string
+  state: ReadinessState
+  detail: string
+  fix?: string
+}
+
 export interface AdminSettings {
-  settings: { wifiSsid: string }
+  settings: { eventName: string; wifiSsid: string }
   serverInfo: {
     version: string
     uptimeSec: number
@@ -11,6 +21,9 @@ export interface AdminSettings {
     voiceEnabled: boolean
     eventPin: string
   }
+  /** What this box can actually do right now — see server/src/readiness.ts. */
+  readiness: ReadinessCheck[]
+  readinessState: ReadinessState
 }
 
 export class ApiError extends Error {
@@ -147,8 +160,8 @@ export function adminGetSettings(token: string): Promise<AdminSettings> {
 
 export function adminUpdateSettings(
   token: string,
-  patch: { wifiSsid?: string; eventPin?: string }
-): Promise<{ settings: { wifiSsid: string; eventPin: string } }> {
+  patch: { eventName?: string; wifiSsid?: string; eventPin?: string }
+): Promise<{ settings: { eventName: string; wifiSsid: string; eventPin: string } }> {
   return request('/api/admin/settings', {
     method: 'PATCH',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

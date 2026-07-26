@@ -98,7 +98,7 @@ export default function AdminPanel() {
             </ul>
           </section>
           <section>
-            <h3 className="admin-section-title">Server</h3>
+            <h3 className="admin-section-title">This box</h3>
             <ServerSection onNote={setNote} />
           </section>
           <section>
@@ -141,8 +141,87 @@ function ModulesList() {
   )
 }
 
+const STATE_LABEL: Record<api.ReadinessState, string> = {
+  ok: 'Working',
+  limited: 'Limited',
+  off: 'Off',
+}
+
+/**
+ * What this box can actually do, right now — replacing the tiered "what you
+ * give up" list the docs used to carry. That list described a hypothetical
+ * install; this describes the machine the admin is standing in front of, and
+ * says what to do about anything that isn't working.
+ */
+function Readiness({ checks }: { checks: api.ReadinessCheck[] }) {
+  return (
+    <ul className="readiness">
+      {checks.map((check) => (
+        <li key={check.id} className={`readiness-row readiness-${check.state}`}>
+          <span className="readiness-state" aria-label={STATE_LABEL[check.state]}>
+            {check.state === 'ok' ? '●' : check.state === 'limited' ? '◐' : '○'}
+          </span>
+          <div className="readiness-body">
+            <span className="readiness-label">{check.label}</span>
+            <span className="readiness-detail">{check.detail}</span>
+            {check.fix && <span className="readiness-fix">{check.fix}</span>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** One save-on-submit text setting. Three of these, so it's a component. */
+function SettingField({
+  id,
+  label,
+  value,
+  saved,
+  placeholder,
+  minLength,
+  saving,
+  onChange,
+  onSave,
+}: {
+  id: string
+  label: string
+  value: string
+  /** What the server currently holds — Save is off until they differ. */
+  saved: string | undefined
+  placeholder: string
+  minLength?: number
+  saving: boolean
+  onChange: (value: string) => void
+  onSave: (e: FormEvent) => void
+}) {
+  const tooShort = minLength !== undefined && value.trim().length < minLength
+  return (
+    <form className="admin-setting" onSubmit={onSave}>
+      <label htmlFor={id}>{label}</label>
+      <div className="admin-setting-row">
+        <input
+          id={id}
+          value={value}
+          minLength={minLength}
+          maxLength={64}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          className="admin-btn"
+          disabled={saving || saved === undefined || tooShort || value === saved}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 function ServerSection({ onNote }: { onNote: (note: string) => void }) {
   const [data, setData] = useState<api.AdminSettings | null>(null)
+  const [eventName, setEventName] = useState('')
   const [ssid, setSsid] = useState('')
   const [pin, setPin] = useState('')
   const [saving, setSaving] = useState(false)
@@ -154,6 +233,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
       .then((d) => {
         if (!live) return
         setData(d)
+        setEventName(d.settings.eventName)
         setSsid(d.settings.wifiSsid)
         setPin(d.serverInfo.eventPin)
       })
@@ -163,79 +243,74 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
     }
   }, [onNote])
 
-  async function saveSsid(e: FormEvent) {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const { settings } = await api.adminUpdateSettings(token(), { wifiSsid: ssid.trim() })
-      setSsid(settings.wifiSsid)
-      onNote('Wi-Fi network saved')
-    } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Save failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function savePin(e: FormEvent) {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const { settings } = await api.adminUpdateSettings(token(), { eventPin: pin.trim() })
-      setPin(settings.eventPin)
-      setData((d) =>
-        d ? { ...d, serverInfo: { ...d.serverInfo, eventPin: settings.eventPin } } : d
-      )
-      onNote('Event PIN changed — update the poster or point crew at /connect')
-    } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Save failed')
-    } finally {
-      setSaving(false)
+  /** Patch one setting, then refresh local state from what the server kept. */
+  function save(
+    patch: Parameters<typeof api.adminUpdateSettings>[1],
+    note: string
+  ): (e: FormEvent) => void {
+    return (e) => {
+      e.preventDefault()
+      setSaving(true)
+      void api
+        .adminUpdateSettings(token(), patch)
+        .then(({ settings }) => {
+          setEventName(settings.eventName)
+          setSsid(settings.wifiSsid)
+          setPin(settings.eventPin)
+          setData((d) =>
+            d
+              ? {
+                  ...d,
+                  settings: { eventName: settings.eventName, wifiSsid: settings.wifiSsid },
+                  serverInfo: { ...d.serverInfo, eventPin: settings.eventPin },
+                }
+              : d
+          )
+          onNote(note)
+        })
+        .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Save failed'))
+        .finally(() => setSaving(false))
     }
   }
 
   const info = data?.serverInfo
   return (
     <>
-      <form className="admin-setting" onSubmit={(e) => void savePin(e)}>
-        <label htmlFor="admin-event-pin">
-          Event PIN (gates new joins; on the poster and /connect)
-        </label>
-        <div className="admin-setting-row">
-          <input
-            id="admin-event-pin"
-            value={pin}
-            minLength={4}
-            maxLength={64}
-            placeholder="e.g. 2468"
-            onChange={(e) => setPin(e.target.value)}
-          />
-          <button
-            className="admin-btn"
-            disabled={saving || !data || pin.trim().length < 4 || pin === data.serverInfo.eventPin}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </form>
-      <form className="admin-setting" onSubmit={(e) => void saveSsid(e)}>
-        <label htmlFor="admin-ssid">Wi-Fi network (shown as join guidance)</label>
-        <div className="admin-setting-row">
-          <input
-            id="admin-ssid"
-            value={ssid}
-            maxLength={64}
-            placeholder="e.g. CrewNet"
-            onChange={(e) => setSsid(e.target.value)}
-          />
-          <button
-            className="admin-btn"
-            disabled={saving || !data || ssid === data.settings.wifiSsid}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </form>
+      {data && <Readiness checks={data.readiness} />}
+      <SettingField
+        id="admin-event-name"
+        label="Event name (shown to crew instead of “Crewbox”)"
+        value={eventName}
+        saved={data?.settings.eventName}
+        placeholder="e.g. Ashton Court 2026"
+        saving={saving}
+        onChange={setEventName}
+        onSave={save({ eventName: eventName.trim() }, 'Event name saved')}
+      />
+      <SettingField
+        id="admin-event-pin"
+        label="Event PIN (gates new joins; on the poster and /connect)"
+        value={pin}
+        saved={data?.serverInfo.eventPin}
+        placeholder="e.g. 2468"
+        minLength={4}
+        saving={saving}
+        onChange={setPin}
+        onSave={save(
+          { eventPin: pin.trim() },
+          'Event PIN changed — update the poster or point crew at /connect'
+        )}
+      />
+      <SettingField
+        id="admin-ssid"
+        label="Wi-Fi network (shown as join guidance)"
+        value={ssid}
+        saved={data?.settings.wifiSsid}
+        placeholder="e.g. CrewNet"
+        saving={saving}
+        onChange={setSsid}
+        onSave={save({ wifiSsid: ssid.trim() }, 'Wi-Fi network saved')}
+      />
       {info && (
         <dl className="admin-info">
           <div>

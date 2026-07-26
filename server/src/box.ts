@@ -39,6 +39,21 @@ export function boxDataDir(): string {
   return join(homedir(), '.crewbox', 'data')
 }
 
+/**
+ * An embedded asset, or null when this build doesn't carry it. Assets are
+ * optional by design: a box built without the LiveKit binary is still a
+ * complete box, it just can't run voice itself.
+ */
+export function seaAsset(key: string): ArrayBuffer | null {
+  const sea = seaApi()
+  if (!sea) return null
+  try {
+    return sea.getAsset(key) as ArrayBuffer
+  } catch {
+    return null
+  }
+}
+
 /** Extract the embedded web bundle under dataDir; returns the dist path. */
 export function extractWebDist(dataDir: string): string {
   const sea = seaApi()
@@ -54,11 +69,12 @@ export function extractWebDist(dataDir: string): string {
 }
 
 /** Reachable LAN URLs for the crew (non-internal IPv4s). */
-export function lanUrls(port: number): string[] {
+export function lanUrls(port: number, secure = false): string[] {
   const urls: string[] = []
+  const scheme = secure ? 'https' : 'http'
   for (const addrs of Object.values(networkInterfaces())) {
     for (const addr of addrs ?? []) {
-      if (addr.family === 'IPv4' && !addr.internal) urls.push(`http://${addr.address}:${port}`)
+      if (addr.family === 'IPv4' && !addr.internal) urls.push(`${scheme}://${addr.address}:${port}`)
     }
   }
   return urls
@@ -83,14 +99,25 @@ export function openBrowser(url: string): void {
 }
 
 /** Terminal banner with join URL, PIN, and a scannable QR (TTY only). */
-export function printBoxBanner(port: number, eventPin: string): void {
-  const urls = lanUrls(port)
-  const joinUrl = urls[0] ?? `http://localhost:${port}`
+export function printBoxBanner(
+  port: number,
+  eventPin: string,
+  secure = false,
+  { eventName = '', firstRun = false }: { eventName?: string; firstRun?: boolean } = {}
+): void {
+  const urls = lanUrls(port, secure)
+  const joinUrl = urls[0] ?? `${secure ? 'https' : 'http'}://localhost:${port}`
   const lines = [
     '',
     '  ┌─────────────────────────────────────────────┐',
-    '    Crewbox is running',
+    `    ${eventName || 'Crewbox'} is running`,
     '',
+    ...(firstRun
+      ? // A browser is opening on this too, but headless boxes (systemd, a
+        // laptop over SSH) only get the terminal — so the address has to be
+        // here as well, or setup is unreachable for them.
+        [`    Set up:    ${joinUrl}/setup`, '']
+      : []),
     `    Join:      ${joinUrl}`,
     ...urls.slice(1).map((u) => `               ${u}`),
     `    Event PIN: ${eventPin}`,
