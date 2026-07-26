@@ -40,6 +40,8 @@ describe('box readiness', () => {
     const voice = find(boxReadiness(input({ secure: false })), 'voice')
     expect(voice.state).toBe('limited')
     expect(voice.fix).toMatch(/Android and iOS apps/)
+    // Name the actual fix, not a vague 'needs HTTPS'.
+    expect(voice.fix).toMatch(/cert\.pem/)
   })
 
   it('calls voice fully working once the box is on HTTPS', () => {

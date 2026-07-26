@@ -14,7 +14,10 @@ The one document to print and keep in the production office.
 ## Before the event (needs internet — do at home/office)
 
 1. **Certificate** (calendar this — expires every 90 days):
-   `deploy/cert-renew.sh` on the server box. Verify: `openssl x509 -enddate -noout -in /etc/crewbox/certs/fullchain.pem`
+   `deploy/cert-renew.sh` on the server box, then copy the pair into the
+   box's data directory as `cert.pem` and `key.pem` — the box serves HTTPS
+   itself, so there is no reverse proxy to restart. Verify:
+   `openssl x509 -enddate -noout -in /etc/crewbox/certs/fullchain.pem`
 2. **Software up to date**: `git pull && npm install && npm run build` in `/opt/crewbox`,
    then restart the service. The server serves whatever `web/dist` holds at request
    time — an old dist next to a new server binary quietly ships stale UI (clients
@@ -32,7 +35,7 @@ The one document to print and keep in the production office.
 1. Power order: router → APs → server box (all on the UPS).
 2. Router: static IP for the server; `deploy/dnsmasq.conf` installed so
    `chat.<yourdomain>` → server IP; DHCP hands out the router as DNS.
-3. `systemctl status crewbox livekit caddy` — all green.
+3. `systemctl status crewbox livekit the box itself` — all green.
 4. Phone test: scan poster → green padlock → join → send message → PTT to a
    second phone. **Do this before the crew arrives.**
 

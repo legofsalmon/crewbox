@@ -69,11 +69,12 @@ export function extractWebDist(dataDir: string): string {
 }
 
 /** Reachable LAN URLs for the crew (non-internal IPv4s). */
-export function lanUrls(port: number): string[] {
+export function lanUrls(port: number, secure = false): string[] {
   const urls: string[] = []
+  const scheme = secure ? 'https' : 'http'
   for (const addrs of Object.values(networkInterfaces())) {
     for (const addr of addrs ?? []) {
-      if (addr.family === 'IPv4' && !addr.internal) urls.push(`http://${addr.address}:${port}`)
+      if (addr.family === 'IPv4' && !addr.internal) urls.push(`${scheme}://${addr.address}:${port}`)
     }
   }
   return urls
@@ -98,9 +99,9 @@ export function openBrowser(url: string): void {
 }
 
 /** Terminal banner with join URL, PIN, and a scannable QR (TTY only). */
-export function printBoxBanner(port: number, eventPin: string): void {
-  const urls = lanUrls(port)
-  const joinUrl = urls[0] ?? `http://localhost:${port}`
+export function printBoxBanner(port: number, eventPin: string, secure = false): void {
+  const urls = lanUrls(port, secure)
+  const joinUrl = urls[0] ?? `${secure ? 'https' : 'http'}://localhost:${port}`
   const lines = [
     '',
     '  ┌─────────────────────────────────────────────┐',

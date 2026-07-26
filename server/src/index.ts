@@ -8,6 +8,7 @@ import { Store } from './store.ts'
 import { attachWs, buildApp } from './app.ts'
 import { boxDataDir, extractWebDist, isBox, openBrowser, printBoxBanner } from './box.ts'
 import { hasEmbeddedLiveKit, livekitCredentials, startEmbeddedLiveKit } from './livekit.ts'
+import { loadTls } from './tls.ts'
 
 // No top-level await: the single-binary build bundles this entry as CJS
 // (Node SEA requires a CommonJS main), so startup lives in an async main().
@@ -52,6 +53,12 @@ async function main(): Promise<void> {
       : { ...config.livekit, url: '' }
   }
 
+  // A certificate in the data directory turns on HTTPS, and with it the
+  // browser microphone and install-to-home-screen. Missing or broken
+  // material never stops the box: it logs why and serves plain HTTP, which
+  // is a working product minus those two things.
+  const { tls, reason: tlsReason } = loadTls(dataDir)
+
   const app = buildApp({
     store,
     eventPin: config.eventPin,
@@ -62,6 +69,7 @@ async function main(): Promise<void> {
     trustProxy: config.trustProxy,
     modules: config.modules,
     dataDir,
+    ...(tls ? { tls } : {}),
   })
   const hub = app.hub
 
@@ -86,11 +94,15 @@ async function main(): Promise<void> {
   await app.listen({ host: config.host, port: config.port })
   attachWs(app)
 
-  app.log.info(`crewbox server listening on ${config.host}:${config.port}`)
-  app.log.info(`crew onboarding page: http://localhost:${config.port}/connect (QR, PIN, APK)`)
+  if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
+  app.log.info(
+    `crewbox server listening on ${config.host}:${config.port} (${tls ? 'https' : 'http'})`
+  )
+  const origin = `${tls ? 'https' : 'http'}://localhost:${config.port}`
+  app.log.info(`crew onboarding page: ${origin}/connect (QR, PIN, APK)`)
   if (box) {
-    printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin)
-    openBrowser(`http://localhost:${config.port}/connect`)
+    printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin, Boolean(tls))
+    openBrowser(`${origin}/connect`)
   }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {

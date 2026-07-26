@@ -14,6 +14,13 @@ import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shar
 import { DocsRelay, parseRoomName } from './docs.ts'
 import { LIVEKIT_PORT } from './livekit.ts'
 import { boxReadiness, worstState } from './readiness.ts'
+import {
+  isVoiceUpgrade,
+  proxyVoiceHttp,
+  proxyVoiceSocket,
+  rejectVoiceUpgrade,
+  VOICE_PROXY_PATH,
+} from './voiceProxy.ts'
 import { APP_VERSION } from './version.ts'
 import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
@@ -123,7 +130,7 @@ export interface AppDeps {
    * that client used to reach the box — a fixed URL would be wrong the
    * moment the box has two interfaces, which on site it usually does.
    */
-  livekit?: { url: string; key: string; secret: string; embedded?: boolean }
+  livekit?: { url: string; key: string; secret: string; embedded?: boolean; port?: number }
   /** Sessions idle past this stop working; omit for non-expiring (tests). */
   sessionTtlMs?: number
   /** Trust X-Forwarded-For (behind cloudflared/Caddy) for client IPs. */
@@ -132,6 +139,8 @@ export interface AppDeps {
   modules?: string[]
   /** Data directory root; /connect offers crewbox.apk from here when present. */
   dataDir?: string
+  /** Certificate material; when present the box serves HTTPS itself. */
+  tls?: { cert: Buffer; key: Buffer; ca?: Buffer }
   logger?: boolean
 }
 
@@ -142,6 +151,8 @@ export type App = FastifyInstance & {
   authSession: (token: string) => User | undefined
   /** Module ids this box enables (docs room namespaces are checked against it). */
   enabledModules: string[]
+  /** SFU port to proxy voice signalling to, when the box runs its own. */
+  voiceProxyPort?: number
 }
 
 export function buildApp({
@@ -154,10 +165,15 @@ export function buildApp({
   trustProxy = false,
   modules = ['chat'],
   dataDir,
+  tls,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
     logger: logger ? { level: process.env.LOG_LEVEL ?? 'info' } : false,
+    // Serving TLS directly is what removes Caddy from the deployment. Without
+    // it the box can't ever give a browser a microphone or an installable
+    // app, however the rest is packaged.
+    ...(tls ? { https: { cert: tls.cert, key: tls.key, ...(tls.ca ? { ca: tls.ca } : {}) } } : {}),
     // Open WebSockets must never block shutdown — restarts have to be instant
     // and unattended on the festival box.
     forceCloseConnections: true,
@@ -257,7 +273,10 @@ export function buildApp({
   const voiceUrl = (req: FastifyRequest): string => {
     if (livekit?.url) return livekit.url
     if (!livekit?.embedded) return ''
-    return `ws://${hostOf(req)}:${LIVEKIT_PORT}`
+    // Same origin as the page, so an https:// box doesn't hand back a ws://
+    // URL the browser will refuse as mixed content. See voiceProxy.ts.
+    const scheme = req.protocol === 'https' ? 'wss' : 'ws'
+    return `${scheme}://${req.headers.host ?? 'localhost'}${VOICE_PROXY_PATH}`
   }
 
   const crewUrl = (req: FastifyRequest): string => {
@@ -534,6 +553,14 @@ export function buildApp({
     return { ok: true }
   })
 
+  // Voice signalling, proxied so it shares the box's port and certificate.
+  if (livekit?.embedded) {
+    fastify.all(`${VOICE_PROXY_PATH}/*`, (req, reply) => {
+      proxyVoiceHttp(req.raw, reply.raw, livekit.port ?? LIVEKIT_PORT)
+      return reply
+    })
+  }
+
   // Voice: mint a LiveKit room token for a channel's intercom room.
   fastify.post('/api/voice/token', async (req, reply) => {
     const user = authUser(req)
@@ -723,6 +750,7 @@ export function buildApp({
     docs,
     authSession: (token: string) => store.getSessionUser(token, sessionTtlMs),
     enabledModules: modules,
+    voiceProxyPort: livekit?.embedded ? (livekit.port ?? LIVEKIT_PORT) : undefined,
   })
 }
 
@@ -732,6 +760,8 @@ export function attachWs(app: App): WebSocketServer {
   app.hub.attach(wss)
   // Yjs updates are binary and can far exceed chat frames; own server, own cap.
   const docsWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 })
+  // Signalling frames are small; the cap is a guard, not a limit anyone hits.
+  const voiceWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 })
   docsWss.on('connection', (ws, room: string) => app.docs.connect(ws, room))
 
   const reject = (socket: import('node:stream').Duplex, status: number, label: string) => {
@@ -744,6 +774,17 @@ export function attachWs(app: App): WebSocketServer {
     const { pathname } = url
     if (pathname === '/ws') {
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+      return
+    }
+    if (isVoiceUpgrade(pathname)) {
+      if (!app.voiceProxyPort) {
+        rejectVoiceUpgrade(socket)
+        return
+      }
+      const port = app.voiceProxyPort
+      voiceWss.handleUpgrade(req, socket, head, (ws) => {
+        proxyVoiceSocket(ws, req.url ?? '/', port)
+      })
       return
     }
     if (pathname.startsWith('/ws/docs/')) {

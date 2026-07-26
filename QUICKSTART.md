@@ -58,8 +58,14 @@ including this one.
 **Browsers won't grant a microphone over plain `http://`.** That's a browser
 security rule rather than a crewbox limitation, and the same rule blocks "add
 to home screen" and the offline shell. Voice works today in the **Android and
-iOS apps**, which are exempt. To get it in browsers too the box needs HTTPS on
-a name you control — see `deploy/RUNBOOK.md`.
+iOS apps**, which are exempt.
+
+To get it in browsers too, give the box a certificate for a name you control:
+drop `cert.pem` and `key.pem` into its data directory (the readiness panel
+names the path) and restart. **The box serves HTTPS itself** — there is no
+reverse proxy to install. Where the certificate comes from is up to you:
+certbot, a wildcard you already own, whatever your IT department hands over.
+On site, point the venue's DNS at the box so the name resolves locally.
 
 **iOS can't get lock-screen alerts with no internet.** Apple's push servers
 are unreachable and no app can work around it. The **Android app** solves this

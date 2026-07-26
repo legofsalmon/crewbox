@@ -56,8 +56,9 @@ shared/   protocol types + zod schemas (used by both sides)
 server/   Fastify + WebSocket + node:sqlite (no native deps)
 web/      React + Vite PWA — shell + modules
 native/   Capacitor wrappers (Android with offline lock-screen alerts, iOS)
-deploy/   Caddyfile, livekit.yaml, systemd units, dnsmasq config,
-          cert-renew.sh, backup.sh, make-poster.mjs, soak.mjs, RUNBOOK.md
+deploy/   systemd units, dnsmasq config, cert-renew.sh, backup.sh,
+          make-poster.mjs, soak.mjs, RUNBOOK.md (the box serves TLS and
+          voice itself, so no Caddy or livekit-server to install)
 import/   pristine import of the Live Patch codebase (ports into web/ and
           server/ over Phases 2–3, then retires)
 ```
