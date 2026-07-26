@@ -202,8 +202,8 @@
         <li>
           <span class="dot">●</span
           ><span
-            ><b>Push-to-talk voice</b> — the voice server is inside the box, nothing to install
-            (Linux and Windows boxes; LiveKit ships no macOS build)</span
+            ><b>Push-to-talk voice</b> — the voice server is inside the box, nothing to
+            install</span
           >
         </li>
         <li>
@@ -262,8 +262,11 @@
       // Name the file the visitor actually needs, rather than making a
       // production manager work out what "darwin-arm64" means.
       const DIST = 'https://github.com/legofsalmon/crewbox-dist/releases/latest/download/'
+      // The Mac download is a universal .dmg, so there is no Intel vs Apple
+      // Silicon choice to get wrong — which matters, because a browser can't
+      // tell them apart anyway (both report "MacIntel").
       const BUILDS = [
-        { id: 'crewbox-darwin-arm64', label: 'macOS (Apple Silicon)' },
+        { id: 'Crewbox.dmg', label: 'macOS' },
         { id: 'crewbox-win32-x64.exe', label: 'Windows' },
         { id: 'crewbox-linux-x64', label: 'Linux' },
         { id: 'crewbox.apk', label: 'Android app' },
@@ -271,7 +274,7 @@
 
       const ua = navigator.userAgent
       const guess = /Mac/i.test(ua)
-        ? 'crewbox-darwin-arm64'
+        ? 'Crewbox.dmg'
         : /Win/i.test(ua)
           ? 'crewbox-win32-x64.exe'
           : /Android/i.test(ua)
@@ -288,13 +291,11 @@
       if (chosen) {
         button.href = DIST + chosen.id
         button.textContent = 'Download for ' + chosen.label
-        // The macOS build carries no SFU — LiveKit publishes no darwin
-        // binary — so it must not claim one on the page a Mac user lands on.
         caption.textContent =
           chosen.id === 'crewbox.apk'
             ? 'The phone app. To run the box itself, use a laptop.'
-            : chosen.id === 'crewbox-darwin-arm64'
-              ? 'Everything except voice — LiveKit publishes no macOS build. For voice, run the box on Linux or Windows.'
+            : chosen.id === 'Crewbox.dmg'
+              ? 'Works on any Mac, Intel or Apple Silicon. Open it and drag Crewbox to Applications.'
               : 'About 120 MB — it carries the app and the voice server inside it.'
       }
 

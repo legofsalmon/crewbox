@@ -5,14 +5,23 @@ app store, nothing to install on anyone's phone unless they want it.
 
 ## Run it
 
-**macOS / Linux**
+**macOS** — download `Crewbox.dmg` from the download page, open it, drag
+Crewbox to Applications, and launch it. One file works on every Mac, Intel or
+Apple Silicon. It keeps the machine awake while it runs, so a laptop with the
+lid shut is still a working box.
+
+Until the app is signed (see [docs/MACOS_SIGNING.md](docs/MACOS_SIGNING.md)),
+macOS refuses it on first launch: **right-click → Open** clears that once, or
+use the one-line installer below, which handles it for you.
+
+**macOS / Linux, one line**
 
 ```sh
 curl -fsSL https://crewbox.letissier.ie/install.sh | sh
 ```
 
 Downloads the box for your machine, clears the macOS quarantine flag, and
-starts it.
+starts it. This is the path with the least friction on an unsigned build.
 
 **Windows** — download `crewbox-win32-x64.exe` from the download page and
 double-click it. SmartScreen will warn about an unsigned app: **More info →
@@ -55,11 +64,7 @@ setup address too, and any device on the same network can open it.
 Everything. There are no tiers or editions.
 
 - **Chat** — channels, DMs, mentions, files, presence
-- **Push-to-talk voice** — the voice server runs inside the box, nothing to
-  install. **Linux and Windows boxes only**: LiveKit publishes no macOS build,
-  so a Mac box has everything except voice. If voice matters, make the box a
-  Linux or Windows machine — or run `livekit-server` yourself (it's in
-  Homebrew) and start the box with `LIVEKIT_URL` pointing at it.
+- **Push-to-talk voice** — the voice server runs inside the box, nothing to install
 - **Patch sheets** — input patch per artist, sub-boxes, lineup, CSV in and out
 - **Lighting** — fixture patch with DMX clash detection, positions, a plot, MVR/GDTF and Lightwright/console CSV import
 - **Offline throughout** — the box needs no internet, and neither do the crew

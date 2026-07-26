@@ -8,6 +8,7 @@ import { Store } from './store.ts'
 import { attachWs, buildApp } from './app.ts'
 import { boxDataDir, extractWebDist, isBox, openBrowser, printBoxBanner } from './box.ts'
 import { hasEmbeddedLiveKit, livekitCredentials, startEmbeddedLiveKit } from './livekit.ts'
+import { preventSleep } from './nosleep.ts'
 import { loadTls } from './tls.ts'
 
 // No top-level await: the single-binary build bundles this entry as CJS
@@ -105,6 +106,8 @@ async function main(): Promise<void> {
     // admin to the three questions rather than to a QR for an unnamed event.
     // /setup redirects to /connect once anyone has joined, so a box that has
     // run before goes straight to the QR.
+    // A Mac box that sleeps takes the whole crew's comms with it.
+    preventSleep(app.log)
     const firstRun = store.countUsers() === 0
     printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin, Boolean(tls), {
       eventName: store.getSetting('eventName') ?? '',

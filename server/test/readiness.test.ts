@@ -51,19 +51,13 @@ describe('box readiness', () => {
   })
 
   it('says so plainly when the build has no voice server at all', () => {
-    const voice = find(boxReadiness(input({ voice: 'off', platform: 'linux' })), 'voice')
+    // Every release binary carries an SFU on every platform — macOS compiles
+    // one from source at build time — so this state means a build from
+    // source, and the fix says so.
+    const voice = find(boxReadiness(input({ voice: 'off' })), 'voice')
     expect(voice.state).toBe('off')
     expect(voice.detail).toMatch(/No voice server/)
     expect(voice.fix).toMatch(/Download the release binary/)
-  })
-
-  it('does not tell a Mac admin to download a build that cannot exist', () => {
-    // LiveKit publishes no darwin binary at all, so the advice that's right
-    // everywhere else — "use the release binary" — is a dead end here.
-    const voice = find(boxReadiness(input({ voice: 'off', platform: 'darwin' })), 'voice')
-    expect(voice.fix).not.toMatch(/Download the release binary/)
-    expect(voice.fix).toMatch(/brew install livekit/)
-    expect(voice.fix).toMatch(/LIVEKIT_URL/)
   })
 
   it('names the real address when install is unavailable', () => {

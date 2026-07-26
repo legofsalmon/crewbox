@@ -24,29 +24,27 @@ if (existsSync(target) && !process.env.LIVEKIT_REFETCH) {
 }
 
 /**
- * Platforms LiveKit ships no release binary for. macOS is distributed through
- * Homebrew only — there is no darwin asset on any release — so a macOS box
- * cannot carry an SFU however the build is arranged.
+ * Platforms LiveKit publishes no release binary for. macOS is the only one:
+ * every release carries linux and windows archives and nothing for darwin,
+ * because upstream distributes macOS through Homebrew.
  *
- * This is deliberately an allowlist of *known* gaps rather than a general
- * "asset missing, carry on". A missing asset on Linux or Windows still fails
- * the build loudly: that would mean upstream renamed something, and a
- * silently voiceless box is worse than a red release. The macOS box builds
- * fine without it and reports voice as off in Admin → This box.
+ * Homebrew's formula compiles it, and so do we — livekit-server is pure Go
+ * with no cgo, so `go install` produces the same program the tarballs carry.
+ * That keeps the promise that matters on every platform: voice is inside the
+ * box, with nothing for an admin to install.
+ *
+ * This is an allowlist of *known* gaps, not a general "asset missing, carry
+ * on". A missing asset on Linux or Windows still fails the build loudly —
+ * that would mean upstream renamed something, and a silently voiceless box is
+ * worse than a red release.
  */
-const NO_UPSTREAM_BUILD = new Set(['darwin'])
-if (NO_UPSTREAM_BUILD.has(process.platform)) {
-  console.log(
-    `livekit publishes no ${process.platform} binary (Homebrew only) — ` +
-      'building a box without the voice server.'
-  )
-  process.exit(0)
-}
+const BUILD_FROM_SOURCE = new Set(['darwin'])
+const fromSource = BUILD_FROM_SOURCE.has(process.platform)
 
 /** LiveKit's release asset naming, e.g. livekit_1.9.0_linux_amd64.tar.gz */
 const platform = { linux: 'linux', win32: 'windows' }[process.platform]
 const arch = { x64: 'amd64', arm64: 'arm64' }[process.arch]
-if (!platform || !arch) {
+if (!fromSource && (!platform || !arch)) {
   console.error(`no livekit-server build for ${process.platform}/${process.arch}`)
   process.exit(1)
 }
@@ -59,6 +57,58 @@ const release = await fetch(api, { headers }).then((r) => {
   if (!r.ok) throw new Error(`GitHub API ${r.status} fetching the latest livekit release`)
   return r.json()
 })
+
+if (fromSource) {
+  // Pin to the same tag the other platforms download, so one release never
+  // ships three different SFU versions. The module path is the repo plus
+  // /cmd/server — the root package has no main.
+  const version = release.tag_name
+  const module = `github.com/livekit/livekit-server/cmd/server@${version}`
+
+  const goVersion = (() => {
+    try {
+      return execFileSync('go', ['version'], { encoding: 'utf8' }).trim()
+    } catch {
+      return null
+    }
+  })()
+
+  if (!goVersion) {
+    // On CI this must be fatal: a release binary that quietly lost voice is
+    // the exact failure this script exists to prevent. A developer building
+    // locally gets a working box without voice instead of a hard stop.
+    const message = 'go toolchain not found, needed to build livekit-server for macOS'
+    if (process.env.CI) {
+      console.error(`${message}. Add actions/setup-go to this job.`)
+      process.exit(1)
+    }
+    console.log(`${message} — building a box without the voice server.`)
+    process.exit(0)
+  }
+
+  console.log(`building livekit-server ${version} from source with ${goVersion}`)
+  rmSync(outDir, { recursive: true, force: true })
+  mkdirSync(outDir, { recursive: true })
+
+  // GOBIN puts the binary straight where the box build looks. Go verifies
+  // every module against sum.golang.org on the way in, which is a stronger
+  // integrity guarantee than the unsigned tarballs the other platforms get.
+  execFileSync('go', ['install', module], {
+    stdio: 'inherit',
+    env: { ...process.env, GOBIN: outDir },
+  })
+
+  // cmd/server builds as `server`; the box expects the upstream name.
+  const built = join(outDir, 'server')
+  if (!existsSync(built)) {
+    console.error(`go install produced no binary at ${built}`)
+    process.exit(1)
+  }
+  renameSync(built, target)
+
+  console.log(`livekit-server ${version} ready at ${target}`)
+  process.exit(0)
+}
 
 const wanted = `${platform}_${arch}`
 const asset = release.assets.find((a) => a.name.includes(wanted) && /\.(tar\.gz|zip)$/.test(a.name))

@@ -63,7 +63,11 @@ jobs:
     needs: validate
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macos-13 is the Intel runner; macos-latest is Apple Silicon. Both are
+        # needed because a Mac mini or an older MacBook is a very plausible
+        # first box, and an arm64 binary cannot run on an Intel Mac at all —
+        # Rosetta translates Intel to ARM, never the reverse.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-13]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -73,6 +77,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w web
+      # LiveKit publishes no macOS binary, so the darwin box compiles one from
+      # source (see scripts/fetch-livekit.mjs). Pure Go, no cgo — this is what
+      # Homebrew's formula does. Only macOS needs the toolchain.
+      - uses: actions/setup-go@v5
+        if: runner.os == 'macOS'
+        with:
+          go-version: stable
       # Voice ships inside the box, so the SFU is fetched here rather than
       # installed by whoever runs the box. A failure here is fatal on
       # purpose: a release binary that silently lost voice is worse than a
@@ -85,6 +96,53 @@ jobs:
         with:
           name: box-${{ matrix.os }}
           path: build/box/crewbox-*
+
+  macapp:
+    name: macOS app (.dmg)
+    needs: [validate, box]
+    runs-on: macos-latest
+    # Only the trust step needs Apple credentials; the packaging runs either
+    # way so the path is exercised on every release rather than first tried
+    # on the day the certificate arrives.
+    env:
+      MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+      MAC_NOTARY_APPLE_ID: ${{ secrets.MAC_NOTARY_APPLE_ID }}
+      MAC_NOTARY_PASSWORD: ${{ secrets.MAC_NOTARY_PASSWORD }}
+      MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+      # Job-level so the import step's `if:` can see it — a step's own env
+      # block is not in scope for that step's own condition.
+      MAC_SIGN_CERT_P12: ${{ secrets.MAC_SIGN_CERT_P12 }}
+      MAC_SIGN_CERT_PASSWORD: ${{ secrets.MAC_SIGN_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: box-macos-*
+          path: mac
+          merge-multiple: true
+      # The signing certificate lives in a throwaway keychain that dies with
+      # the runner, so the private key never touches the default one.
+      - name: Import signing certificate
+        if: env.MAC_SIGN_CERT_P12 != ''
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASSWORD="$(uuidgen)"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          echo "$MAC_SIGN_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MAC_SIGN_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+      - run: chmod +x mac/crewbox-darwin-*
+      - run: node scripts/build-mac-app.mjs mac/crewbox-darwin-x64 mac/crewbox-darwin-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macapp
+          path: build/mac/Crewbox.dmg
 
   apk:
     name: Android APK
@@ -112,7 +170,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [validate, box, apk]
+    needs: [validate, box, macapp, apk]
     runs-on: ubuntu-latest
     env:
       # Job-level so the skip condition below can see it: a step's own env
@@ -141,7 +199,8 @@ jobs:
             | --- | --- |
             | Linux x64 | `crewbox-linux-x64` |
             | Windows x64 | `crewbox-win32-x64.exe` |
-            | macOS (Apple Silicon) | `crewbox-darwin-arm64` |
+            | **macOS** | **`Crewbox.dmg`** — universal, works on Intel and Apple Silicon |
+            | macOS (bare binary) | `crewbox-darwin-arm64` / `crewbox-darwin-x64` |
             | Android (sideload) | `crewbox.apk` — or drop it into the box's data dir to serve it at `/crewbox.apk` |
 
             macOS/Windows will warn about an unsigned binary on first launch
@@ -174,7 +233,8 @@ jobs:
             | --- | --- |
             | Linux x64 | `crewbox-linux-x64` |
             | Windows x64 | `crewbox-win32-x64.exe` |
-            | macOS (Apple Silicon) | `crewbox-darwin-arm64` |
+            | **macOS** | **`Crewbox.dmg`** — universal, works on Intel and Apple Silicon |
+            | macOS (bare binary) | `crewbox-darwin-arm64` / `crewbox-darwin-x64` |
             | Android | `crewbox.apk` |
 
             macOS and Windows warn about an unsigned binary on first launch.
