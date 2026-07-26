@@ -202,8 +202,8 @@
         <li>
           <span class="dot">●</span
           ><span
-            ><b>Push-to-talk voice</b> — the voice server is inside the box, nothing to
-            install</span
+            ><b>Push-to-talk voice</b> — the voice server is inside the box, nothing to install
+            (Linux and Windows boxes; LiveKit ships no macOS build)</span
           >
         </li>
         <li>
@@ -288,10 +288,14 @@
       if (chosen) {
         button.href = DIST + chosen.id
         button.textContent = 'Download for ' + chosen.label
+        // The macOS build carries no SFU — LiveKit publishes no darwin
+        // binary — so it must not claim one on the page a Mac user lands on.
         caption.textContent =
           chosen.id === 'crewbox.apk'
             ? 'The phone app. To run the box itself, use a laptop.'
-            : 'About 120 MB — it carries the app and the voice server inside it.'
+            : chosen.id === 'crewbox-darwin-arm64'
+              ? 'Everything except voice — LiveKit publishes no macOS build. For voice, run the box on Linux or Windows.'
+              : 'About 120 MB — it carries the app and the voice server inside it.'
       }
 
       for (const build of BUILDS) {
