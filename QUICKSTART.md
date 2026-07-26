@@ -8,7 +8,7 @@ app store, nothing to install on anyone's phone unless they want it.
 **macOS / Linux**
 
 ```sh
-curl -fsSL https://CREWBOX_SITE/install.sh | sh
+curl -fsSL https://crewbox.letissier.ie/install.sh | sh
 ```
 
 Downloads the box for your machine, clears the macOS quarantine flag, and

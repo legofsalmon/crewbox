@@ -1,7 +1,7 @@
 #!/bin/sh
 # Crewbox installer.
 #
-#   curl -fsSL https://CREWBOX_SITE/install.sh | sh
+#   curl -fsSL https://crewbox.letissier.ie/install.sh | sh
 #
 # Downloads the latest box for this machine, clears the quarantine flag that
 # would otherwise make macOS refuse to run it, and starts it. Nothing else to
@@ -31,7 +31,7 @@ arch="$(uname -m)"
 case "$os" in
 Darwin) plat="darwin" ;;
 Linux) plat="linux" ;;
-*) die "no build for $os. Windows: download the .exe from https://CREWBOX_SITE" ;;
+*) die "no build for $os. Windows: download the .exe from https://crewbox.letissier.ie" ;;
 esac
 case "$arch" in
 x86_64 | amd64) cpu="x64" ;;
