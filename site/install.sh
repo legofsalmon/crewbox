@@ -40,12 +40,6 @@ arm64 | aarch64) cpu="arm64" ;;
 esac
 
 asset="crewbox-$plat-$cpu"
-# Only Apple Silicon gets a macOS build today; Intel Macs run the x64 one
-# under Rosetta, which works but is worth saying out loud.
-if [ "$plat" = "darwin" ] && [ "$cpu" = "x64" ]; then
-  asset="crewbox-darwin-arm64"
-  say "note: no Intel Mac build — using the Apple Silicon one under Rosetta."
-fi
 
 url="https://github.com/$REPO/releases/latest/download/$asset"
 target="$INSTALL_DIR/crewbox"

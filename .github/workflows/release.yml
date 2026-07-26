@@ -63,7 +63,11 @@ jobs:
     needs: validate
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macos-13 is the Intel runner; macos-latest is Apple Silicon. Both are
+        # needed because a Mac mini or an older MacBook is a very plausible
+        # first box, and an arm64 binary cannot run on an Intel Mac at all —
+        # Rosetta translates Intel to ARM, never the reverse.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-13]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -149,6 +153,7 @@ jobs:
             | Linux x64 | `crewbox-linux-x64` |
             | Windows x64 | `crewbox-win32-x64.exe` |
             | macOS (Apple Silicon) | `crewbox-darwin-arm64` |
+            | macOS (Intel) | `crewbox-darwin-x64` |
             | Android (sideload) | `crewbox.apk` — or drop it into the box's data dir to serve it at `/crewbox.apk` |
 
             macOS/Windows will warn about an unsigned binary on first launch
@@ -182,6 +187,7 @@ jobs:
             | Linux x64 | `crewbox-linux-x64` |
             | Windows x64 | `crewbox-win32-x64.exe` |
             | macOS (Apple Silicon) | `crewbox-darwin-arm64` |
+            | macOS (Intel) | `crewbox-darwin-x64` |
             | Android | `crewbox.apk` |
 
             macOS and Windows warn about an unsigned binary on first launch.

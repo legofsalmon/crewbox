@@ -264,6 +264,7 @@
       const DIST = 'https://github.com/legofsalmon/crewbox-dist/releases/latest/download/'
       const BUILDS = [
         { id: 'crewbox-darwin-arm64', label: 'macOS (Apple Silicon)' },
+        { id: 'crewbox-darwin-x64', label: 'macOS (Intel)' },
         { id: 'crewbox-win32-x64.exe', label: 'Windows' },
         { id: 'crewbox-linux-x64', label: 'Linux' },
         { id: 'crewbox.apk', label: 'Android app' },
@@ -288,10 +289,15 @@
       if (chosen) {
         button.href = DIST + chosen.id
         button.textContent = 'Download for ' + chosen.label
+        // A browser can't tell an Intel Mac from an Apple Silicon one — both
+        // report "MacIntel" — so say that rather than guess wrong. The
+        // one-line installer reads `uname -m` and always gets it right.
         caption.textContent =
           chosen.id === 'crewbox.apk'
             ? 'The phone app. To run the box itself, use a laptop.'
-            : 'About 120 MB — it carries the app and the voice server inside it.'
+            : chosen.id === 'crewbox-darwin-arm64'
+              ? 'About 120 MB. On an Intel Mac (2020 or earlier) take the Intel build below — or use the one-line installer, which picks for you.'
+              : 'About 120 MB — it carries the app and the voice server inside it.'
       }
 
       for (const build of BUILDS) {
