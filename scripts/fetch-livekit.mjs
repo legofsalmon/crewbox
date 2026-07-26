@@ -23,8 +23,28 @@ if (existsSync(target) && !process.env.LIVEKIT_REFETCH) {
   process.exit(0)
 }
 
+/**
+ * Platforms LiveKit ships no release binary for. macOS is distributed through
+ * Homebrew only — there is no darwin asset on any release — so a macOS box
+ * cannot carry an SFU however the build is arranged.
+ *
+ * This is deliberately an allowlist of *known* gaps rather than a general
+ * "asset missing, carry on". A missing asset on Linux or Windows still fails
+ * the build loudly: that would mean upstream renamed something, and a
+ * silently voiceless box is worse than a red release. The macOS box builds
+ * fine without it and reports voice as off in Admin → This box.
+ */
+const NO_UPSTREAM_BUILD = new Set(['darwin'])
+if (NO_UPSTREAM_BUILD.has(process.platform)) {
+  console.log(
+    `livekit publishes no ${process.platform} binary (Homebrew only) — ` +
+      'building a box without the voice server.'
+  )
+  process.exit(0)
+}
+
 /** LiveKit's release asset naming, e.g. livekit_1.9.0_linux_amd64.tar.gz */
-const platform = { linux: 'linux', darwin: 'darwin', win32: 'windows' }[process.platform]
+const platform = { linux: 'linux', win32: 'windows' }[process.platform]
 const arch = { x64: 'amd64', arm64: 'arm64' }[process.arch]
 if (!platform || !arch) {
   console.error(`no livekit-server build for ${process.platform}/${process.arch}`)

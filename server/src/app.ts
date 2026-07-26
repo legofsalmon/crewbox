@@ -757,6 +757,7 @@ export function buildApp({
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,
       host: hostOf(req),
+      platform: process.platform,
     })
     return {
       settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },
