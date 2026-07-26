@@ -86,6 +86,12 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>
 
 /** Non-sensitive settings sent to every client (admin-editable subset + info). */
 export interface PublicConfig {
+  /**
+   * What this box is for — "Ashton Court 2026". Shown instead of "Crewbox"
+   * on the join screen, the sidebar and the tab title. '' when unset, which
+   * is the honest state for a box nobody has set up yet.
+   */
+  eventName: string
   /** Wi-Fi network name shown as join guidance; '' when unset. */
   wifiSsid: string
   /** Whether the server has a voice (LiveKit) backend configured. */

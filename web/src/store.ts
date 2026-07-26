@@ -31,17 +31,31 @@ import { currentRoute, navigate, onRouteChange, type Route } from './shell/route
 const TOKEN_KEY = 'crewbox:token'
 const THEME_KEY = 'crewbox:theme'
 const SSID_KEY = 'crewbox:wifi-ssid'
+const EVENT_NAME_KEY = 'crewbox:event-name'
 const TYPING_TTL_MS = 4000
 const TYPING_THROTTLE_MS = 2500
 
-/** Last-known Wi-Fi SSID, cached so the offline recovery screen has it. */
+/**
+ * Last-known Wi-Fi SSID and event name, cached so a cold offline start shows
+ * the event it belongs to and the network to rejoin rather than generic copy.
+ */
 function initialConfig(): PublicConfig {
-  return { wifiSsid: localStorage.getItem(SSID_KEY) ?? '', voiceEnabled: true, modules: ['chat'] }
+  return {
+    eventName: localStorage.getItem(EVENT_NAME_KEY) ?? '',
+    wifiSsid: localStorage.getItem(SSID_KEY) ?? '',
+    voiceEnabled: true,
+    modules: ['chat'],
+  }
+}
+
+function remember(key: string, value: string | undefined): void {
+  if (value) localStorage.setItem(key, value)
+  else localStorage.removeItem(key)
 }
 
 function rememberConfig(config: PublicConfig): void {
-  if (config.wifiSsid) localStorage.setItem(SSID_KEY, config.wifiSsid)
-  else localStorage.removeItem(SSID_KEY)
+  remember(SSID_KEY, config.wifiSsid)
+  remember(EVENT_NAME_KEY, config.eventName)
 }
 
 export interface Pending {

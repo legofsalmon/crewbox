@@ -32,12 +32,23 @@ no way forward.
 
 ## What happens next
 
-The box prints a join URL, a freshly minted event PIN and a QR, then opens
-`/connect` — the same thing as a page you can leave on a spare screen or
-print. Crew scan it, pick a name, and they're in.
+The first time it runs, the box opens a browser on **three questions**: what
+the event is called, which Wi-Fi crew join, and the event PIN (already filled
+in with a random one — change it or keep it). Save, and you land on the QR
+page.
 
-The first person to join is the admin. Channels, the event PIN and the Wi-Fi
-hint all live in the app under **Admin**.
+That page is `/connect`, and it's the one to leave on a spare screen or print:
+a QR of the join link with the PIN already in it, the PIN in print, and the
+Android app when you've put it on the box. Crew scan it, pick a name, and
+they're in. Every run after the first goes straight here.
+
+The first person to join is the admin. Everything from the setup screen — plus
+channels and crew — is editable afterwards in the app under **Admin**, so
+nothing you type on the first run is permanent. The setup screen itself closes
+once someone has joined.
+
+No screen on the box (a headless machine, or SSH)? The terminal prints the
+setup address too, and any device on the same network can open it.
 
 ## What you get
 

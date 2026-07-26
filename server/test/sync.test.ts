@@ -1041,7 +1041,12 @@ describe('settings & config', () => {
 
     // Public config: default empty SSID, voice enabled (livekit set in setup).
     const initial = await (await fetch(`${baseUrl}/api/config`)).json()
-    expect(initial).toEqual({ wifiSsid: '', voiceEnabled: true, modules: ['chat'] })
+    expect(initial).toEqual({
+      eventName: '',
+      wifiSsid: '',
+      voiceEnabled: true,
+      modules: ['chat'],
+    })
 
     // A member cannot change settings.
     const denied = await app.inject({

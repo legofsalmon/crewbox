@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store.ts'
 import { classifyLatency } from '../lib/quality.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
+import { displayName } from '../lib/settings.ts'
 import { allModules } from '../shell/registry.ts'
 import { enabledModules } from '../shell/modules.ts'
 import Avatar from './Avatar.tsx'
@@ -62,6 +63,7 @@ export default function Sidebar() {
   const setAdminOpen = useStore((s) => s.setAdminOpen)
   const latencyMs = useStore((s) => s.latencyMs)
   const configModules = useStore((s) => s.config.modules)
+  const eventName = useStore((s) => displayName(s.config.eventName))
 
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -74,7 +76,7 @@ export default function Sidebar() {
           className={`conn-dot conn-dot-${connDotClass(connection, latencyMs)}`}
           title={connection}
         />
-        <h1>Crewbox</h1>
+        <h1>{eventName}</h1>
       </div>
 
       <nav className="sidebar-scroll">

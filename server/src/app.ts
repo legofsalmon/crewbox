@@ -12,8 +12,10 @@ import { networkInterfaces } from 'node:os'
 import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
+import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT } from './livekit.ts'
 import { boxReadiness, worstState } from './readiness.ts'
+import { setupPage } from './setup.ts'
 import {
   isVoiceUpgrade,
   proxyVoiceHttp,
@@ -74,16 +76,9 @@ const channelPatchSchema = z.object({
   retired: z.boolean().optional(),
 })
 
-/** Minimal HTML escaping for the server-rendered /connect page. */
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
 const settingsPatchSchema = z.object({
+  /** What crew see instead of "Crewbox" once the box is set up for an event. */
+  eventName: z.string().trim().max(64).optional(),
   wifiSsid: z.string().trim().max(64).optional(),
   // Changeable mid-event from the admin panel — no SSH, no service restart.
   eventPin: z.string().trim().min(4).max(64).optional(),
@@ -190,6 +185,7 @@ export function buildApp({
   const effectiveEventPin = (): string => store.getSetting('eventPin') ?? eventPin
 
   const publicConfig = (): PublicConfig => ({
+    eventName: store.getSetting('eventName') ?? '',
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
     voiceEnabled: voiceAvailable,
     modules,
@@ -224,6 +220,17 @@ export function buildApp({
   // no CSRF surface on the crew LAN.
   void fastify.register(cors, { origin: true })
   void fastify.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 2 } })
+
+  // The first-run setup page is a plain HTML form, so that it works before any
+  // JavaScript has loaded and on whatever browser the box happened to open.
+  // Fastify parses JSON only; this is the one route that posts a form.
+  fastify.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string', bodyLimit: 4096 },
+    (_req, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(body as string)))
+    }
+  )
 
   const authUser = (req: FastifyRequest): User | undefined => {
     const header = req.headers.authorization
@@ -280,19 +287,77 @@ export function buildApp({
   }
 
   const crewUrl = (req: FastifyRequest): string => {
-    const proto = trustProxy ? ((req.headers['x-forwarded-proto'] as string) ?? 'http') : 'http'
+    // req.protocol is 'https' when this box serves TLS itself, and falls back
+    // to x-forwarded-proto only when trustProxy is on. Hardcoding http here
+    // would print a QR pointing at a port that only speaks TLS.
+    const proto = req.protocol
     const host = req.headers.host ?? 'localhost'
     if (!/^(localhost|127\.)/.test(host)) return `${proto}://${host}`
     const port = host.split(':')[1] ?? ''
     for (const addrs of Object.values(networkInterfaces())) {
       for (const addr of addrs ?? []) {
         if (addr.family === 'IPv4' && !addr.internal) {
-          return `http://${addr.address}${port ? `:${port}` : ''}`
+          return `${proto}://${addr.address}${port ? `:${port}` : ''}`
         }
       }
     }
-    return `http://${host}`
+    return `${proto}://${host}`
   }
+
+  /**
+   * First-run setup. Open only while nobody has joined — at that point anyone
+   * who can reach the box can join and become admin anyway, so this grants
+   * nothing extra; once the first person joins it closes for good and the
+   * admin panel takes over. See setup.ts.
+   */
+  const setupOpen = (): boolean => store.countUsers() === 0
+
+  const setupValues = () => ({
+    eventName: store.getSetting('eventName') ?? '',
+    wifiSsid: publicConfig().wifiSsid,
+    eventPin: effectiveEventPin(),
+  })
+
+  const sendHtml = (reply: FastifyReply, html: string) =>
+    reply
+      .header('content-type', 'text/html; charset=utf-8')
+      .header('cache-control', 'no-store')
+      .send(html)
+
+  fastify.get('/setup', (req, reply) => {
+    if (!setupOpen()) return reply.redirect('/connect')
+    return sendHtml(reply, setupPage({ values: setupValues(), base: crewUrl(req) }))
+  })
+
+  fastify.post('/setup', (req, reply) => {
+    if (!setupOpen()) return reply.redirect('/connect')
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const parsed = settingsPatchSchema.safeParse({
+      eventName: String(body.eventName ?? ''),
+      wifiSsid: String(body.wifiSsid ?? ''),
+      eventPin: String(body.eventPin ?? ''),
+    })
+    if (!parsed.success) {
+      // Re-render with what they typed rather than throwing away the form.
+      return sendHtml(
+        reply.code(400),
+        setupPage({
+          values: {
+            eventName: String(body.eventName ?? ''),
+            wifiSsid: String(body.wifiSsid ?? ''),
+            eventPin: String(body.eventPin ?? ''),
+          },
+          base: crewUrl(req),
+          error: 'Event PIN needs at least 4 characters — everything else is optional.',
+        })
+      )
+    }
+    store.setSetting('eventName', parsed.data.eventName ?? '')
+    store.setSetting('wifiSsid', parsed.data.wifiSsid ?? '')
+    if (parsed.data.eventPin) store.setSetting('eventPin', parsed.data.eventPin)
+    hub.announceConfig()
+    return reply.redirect('/connect')
+  })
 
   // Live onboarding page: big QR of the join URL (PIN prefilled), the PIN in
   // print, Wi-Fi guidance, and the APK when installed. Always current — a
@@ -306,19 +371,13 @@ export function buildApp({
     const qr = new QRCode({ content: joinUrl, padding: 2, width: 260, height: 260 }).svg()
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Join Crewbox</title>
-<style>
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         background: #12100e; color: #f2eee7; font-family: system-ui, sans-serif; text-align: center; }
-  .card { padding: 32px; }
-  h1 { letter-spacing: 0.06em; margin: 0 0 4px; }
+<title>Join ${escapeHtml(config.eventName || 'Crewbox')}</title>
+<style>${PAGE_CSS}
   .qr { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin: 20px 0; }
   .url { font-size: 20px; font-weight: 700; word-break: break-all; }
   .pin { font-size: 17px; margin-top: 10px; color: #f5b73e; }
-  .meta { color: #a29a8c; margin-top: 14px; font-size: 15px; }
-  a { color: #f5b73e; }
 </style></head><body><div class="card">
-  <h1>Crewbox</h1>
+  <h1>${escapeHtml(config.eventName || 'Crewbox')}</h1>
   <p class="meta">Crew chat, voice &amp; patch sheets — on the event network</p>
   ${config.wifiSsid ? `<p class="meta">1. Join Wi-Fi: <strong>${escapeHtml(config.wifiSsid)}</strong>&nbsp;&nbsp;2. Scan&nbsp;&nbsp;3. Pick a name</p>` : ''}
   <div class="qr">${qr}</div>
@@ -700,7 +759,7 @@ export function buildApp({
       host: hostOf(req),
     })
     return {
-      settings: { wifiSsid: publicConfig().wifiSsid },
+      settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },
       serverInfo: {
         version: APP_VERSION,
         uptimeSec: Math.round(process.uptime()),
@@ -721,6 +780,9 @@ export function buildApp({
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
     }
+    if (parsed.data.eventName !== undefined) {
+      store.setSetting('eventName', parsed.data.eventName)
+    }
     if (parsed.data.wifiSsid !== undefined) {
       store.setSetting('wifiSsid', parsed.data.wifiSsid)
     }
@@ -728,7 +790,14 @@ export function buildApp({
       store.setSetting('eventPin', parsed.data.eventPin)
     }
     hub.announceConfig()
-    return { settings: { wifiSsid: publicConfig().wifiSsid, eventPin: effectiveEventPin() } }
+    const config = publicConfig()
+    return {
+      settings: {
+        eventName: config.eventName,
+        wifiSsid: config.wifiSsid,
+        eventPin: effectiveEventPin(),
+      },
+    }
   })
 
   // Full JSON dump for the post-event archive.

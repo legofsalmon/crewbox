@@ -12,7 +12,7 @@ export interface ReadinessCheck {
 }
 
 export interface AdminSettings {
-  settings: { wifiSsid: string }
+  settings: { eventName: string; wifiSsid: string }
   serverInfo: {
     version: string
     uptimeSec: number
@@ -160,8 +160,8 @@ export function adminGetSettings(token: string): Promise<AdminSettings> {
 
 export function adminUpdateSettings(
   token: string,
-  patch: { wifiSsid?: string; eventPin?: string }
-): Promise<{ settings: { wifiSsid: string; eventPin: string } }> {
+  patch: { eventName?: string; wifiSsid?: string; eventPin?: string }
+): Promise<{ settings: { eventName: string; wifiSsid: string; eventPin: string } }> {
   return request('/api/admin/settings', {
     method: 'PATCH',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

@@ -99,14 +99,25 @@ export function openBrowser(url: string): void {
 }
 
 /** Terminal banner with join URL, PIN, and a scannable QR (TTY only). */
-export function printBoxBanner(port: number, eventPin: string, secure = false): void {
+export function printBoxBanner(
+  port: number,
+  eventPin: string,
+  secure = false,
+  { eventName = '', firstRun = false }: { eventName?: string; firstRun?: boolean } = {}
+): void {
   const urls = lanUrls(port, secure)
   const joinUrl = urls[0] ?? `${secure ? 'https' : 'http'}://localhost:${port}`
   const lines = [
     '',
     '  ┌─────────────────────────────────────────────┐',
-    '    Crewbox is running',
+    `    ${eventName || 'Crewbox'} is running`,
     '',
+    ...(firstRun
+      ? // A browser is opening on this too, but headless boxes (systemd, a
+        // laptop over SSH) only get the terminal — so the address has to be
+        // here as well, or setup is unreachable for them.
+        [`    Set up:    ${joinUrl}/setup`, '']
+      : []),
     `    Join:      ${joinUrl}`,
     ...urls.slice(1).map((u) => `               ${u}`),
     `    Event PIN: ${eventPin}`,

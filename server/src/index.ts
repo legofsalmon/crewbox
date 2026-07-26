@@ -101,8 +101,16 @@ async function main(): Promise<void> {
   const origin = `${tls ? 'https' : 'http'}://localhost:${config.port}`
   app.log.info(`crew onboarding page: ${origin}/connect (QR, PIN, APK)`)
   if (box) {
-    printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin, Boolean(tls))
-    openBrowser(`${origin}/connect`)
+    // Nobody has joined yet means nobody has set this box up yet, so send the
+    // admin to the three questions rather than to a QR for an unnamed event.
+    // /setup redirects to /connect once anyone has joined, so a box that has
+    // run before goes straight to the QR.
+    const firstRun = store.countUsers() === 0
+    printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin, Boolean(tls), {
+      eventName: store.getSetting('eventName') ?? '',
+      firstRun,
+    })
+    openBrowser(`${origin}${firstRun ? '/setup' : '/connect'}`)
   }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {

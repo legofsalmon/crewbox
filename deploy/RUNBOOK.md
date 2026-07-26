@@ -26,6 +26,9 @@ The one document to print and keep in the production office.
    later from the admin panel — no restart), `LIVEKIT_KEY`/`LIVEKIT_SECRET`
    (generate with `livekit-server generate-keys`; mirror in `/etc/crewbox/livekit.yaml`), then
    `sudo systemctl daemon-reload`.
+   Then open `/setup` once from any browser to name the event and set the
+   Wi-Fi hint. It only answers until the first person joins, so do it before
+   the rehearsal join in step 5 — after that it's **Admin → This box**.
 4. **Print posters** with the final PIN and domain.
 5. **Full rehearsal**: power everything off, power on cold, phone joins via QR
    with the internet unplugged. If this works at home it works in a field.

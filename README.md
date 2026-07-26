@@ -84,10 +84,16 @@ Download the box and run it — see [QUICKSTART.md](QUICKSTART.md). The binary
 carries the web app _and_ the voice server, so there is nothing else to
 install and no separate "full" edition.
 
+**`/setup`** is the first run: event name, Wi-Fi network and event PIN, asked
+once in a browser the box opens for you, then straight to the QR. It exists
+only while nobody has joined — at that point anyone who can reach the box can
+join and become admin anyway, so an open form grants nothing extra, and the
+moment someone joins it closes and the admin panel takes over.
+
 **`/connect`** is the live onboarding page: a QR of the join URL (event PIN
 prefilled), the PIN in print, and the Android APK download when
-`crewbox.apk` sits in the data directory. The event PIN is changeable at
-runtime from the admin panel.
+`crewbox.apk` sits in the data directory. The event name, event PIN and Wi-Fi
+hint are all changeable at runtime from the admin panel.
 
 **Admin → This box** reports what actually works on that machine right now —
 voice, HTTPS-gated features, the Android app, disk, crew joined — with the

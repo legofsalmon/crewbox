@@ -1,6 +1,7 @@
 import { useStore } from '../store.ts'
 import { allModules } from './registry.ts'
 import { enabledModules } from './modules.ts'
+import { displayName } from '../lib/settings.ts'
 
 /**
  * Tab-title service: aggregates every enabled module's unread count into the
@@ -15,6 +16,7 @@ useStore.subscribe((state) => {
   for (const module of enabledModules(allModules, state.config.modules)) {
     total += module.unreadCount?.(state) ?? 0
   }
-  const title = total > 0 ? `(${total}) Crewbox` : 'Crewbox'
+  const name = displayName(state.config.eventName)
+  const title = total > 0 ? `(${total}) ${name}` : name
   if (document.title !== title) document.title = title
 })
