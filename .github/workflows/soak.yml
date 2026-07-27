@@ -1,0 +1,79 @@
+name: Soak
+
+# Simulated crew hammering a real server, asserting exactly-once delivery and
+# doc convergence. Nightly rather than per-PR because it is a concurrency
+# test: the failures it catches are races that a single run can miss and a
+# repeated one eventually hits, so it earns its keep by running often against
+# a moving main, not by gating every change.
+#
+# The unit tests cover the reliability protocol's logic. This covers what
+# fifty phones actually do to it at once.
+
+on:
+  schedule:
+    # 03:10 UTC daily. Off the hour because GitHub delays scheduled runs that
+    # pile up on :00, and nothing here is time-sensitive.
+    - cron: '10 3 * * *'
+  workflow_dispatch:
+    inputs:
+      clients:
+        description: 'Simulated crew members'
+        default: '50'
+        type: string
+      seconds:
+        description: 'How long to chat for'
+        default: '120'
+        type: string
+
+# GitHub disables scheduled workflows in repos with no commits for 60 days.
+# If this stops running, that is usually why, not a failure.
+
+jobs:
+  soak:
+    name: Exactly-once delivery under load
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w web
+
+      # A scratch instance, never a real box: every simulated client joins
+      # from one IP, which would otherwise trip the per-IP join limiter that
+      # exists to stop exactly this pattern from a stranger.
+      - name: Start a scratch server
+        env:
+          CREWBOX_PORT: '8787'
+          DATA_DIR: ${{ runner.temp }}/soak-data
+          EVENT_PIN: '1234'
+          JOIN_RATE_LIMIT: '1000'
+          LOG_LEVEL: warn
+        run: |
+          set -euo pipefail
+          WEB_DIST="$PWD/web/dist" npm run start -w server > soak-server.log 2>&1 &
+          echo $! > soak.pid
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8787/api/health >/dev/null 2>&1 && break
+            [ "$i" = 60 ] && { echo "server never came up"; cat soak-server.log; exit 1; }
+            sleep 1
+          done
+
+      - name: Soak
+        env:
+          EVENT_PIN: '1234'
+        run: |
+          node deploy/soak.mjs http://127.0.0.1:8787 \
+            "${{ inputs.clients || '50' }}" "${{ inputs.seconds || '120' }}"
+
+      # Always, so a failed soak still shows what the server was doing —
+      # which is usually more informative than the client-side assertion.
+      - name: Server log
+        if: always()
+        run: |
+          kill "$(cat soak.pid)" 2>/dev/null || true
+          echo "--- server log ---"
+          tail -100 soak-server.log || true

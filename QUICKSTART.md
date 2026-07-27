@@ -73,6 +73,18 @@ Everything. There are no tiers or editions.
 and what to do about anything that isn't. Trust that over any document,
 including this one.
 
+## Checking a download before the event
+
+```sh
+scripts/smoke-box.sh ./crewbox-darwin-arm64
+```
+
+Starts the box on a scratch port, walks setup → join → admin, confirms the
+voice server came up, and cleans up after itself. Needs nothing but `curl`.
+Every release runs the same script on every platform, so a failure here means
+something specific to your machine — worth knowing in the office rather than
+on site.
+
 ## Two things worth knowing
 
 **Browsers won't grant a microphone over plain `http://`.** That's a browser

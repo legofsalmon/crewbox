@@ -23,37 +23,103 @@ Silicon Macs, so nobody has to know which machine they own.
 **Apple Developer Program membership — $99/year.** There is no free tier for
 notarisation. Enrol at <https://developer.apple.com/programs/>.
 
-From that account:
+Enrolling as an **Individual** is enough; Organization needs a D-U-N-S number
+and takes longer. The Apple ID needs two-factor turned on.
+
+**You need a Mac for the certificate steps** — they go through Keychain
+Access.
 
 1. A **Developer ID Application** certificate. In Xcode:
    _Settings → Accounts → Manage Certificates → + → Developer ID Application_.
-   Not "Apple Development" and not "Mac App Distribution" — those sign for
-   the App Store and for your own machines, neither of which is this.
-2. Export it from Keychain Access as a `.p12` with a password. Export the
-   **certificate together with its private key** — right-click the
-   certificate, not the key.
-3. An **app-specific password** for notarisation, from
-   <https://appleid.apple.com> → Sign-In and Security → App-Specific
-   Passwords. Your real Apple ID password will not work.
-4. Your **Team ID**, the ten-character string at
-   <https://developer.apple.com/account> → Membership.
+   Without Xcode: generate a CSR in Keychain Access (_Certificate Assistant →
+   Request a Certificate From a Certificate Authority_, save to disk) and
+   upload it at <https://developer.apple.com/account> → Certificates → +.
+
+   It must be **Developer ID Application**. "Apple Development" signs for your
+   own machines and "Mac App Distribution" signs for the App Store; neither
+   works for an app someone downloads.
+
+2. Export it from Keychain Access as a `.p12` with a password. Right-click the
+   **certificate** row, not the private key nested under it — the certificate
+   row carries both, and exporting the key alone produces a `.p12` that fails
+   to sign.
 
 ## The secrets
 
-Add these under _Settings → Secrets and variables → Actions_ in the crewbox
-repo:
+Six, added under _Settings → Secrets and variables → Actions_ in the crewbox
+repo. Each one below says exactly what the value looks like, because most of
+these fail in CI with an error that doesn't name the real cause.
 
-| Secret                   | Value                                                            |
-| ------------------------ | ---------------------------------------------------------------- |
-| `MAC_SIGN_CERT_P12`      | The `.p12`, base64 encoded: `base64 -i cert.p12 \| pbcopy`       |
-| `MAC_SIGN_CERT_PASSWORD` | The password you set when exporting the `.p12`                   |
-| `MAC_SIGN_IDENTITY`      | `Developer ID Application: Your Name (TEAMID)` — copy it exactly |
-| `MAC_NOTARY_APPLE_ID`    | The Apple ID email on the developer account                      |
-| `MAC_NOTARY_PASSWORD`    | The app-specific password from step 3                            |
-| `MAC_NOTARY_TEAM_ID`     | The ten-character Team ID                                        |
+### `MAC_SIGN_IDENTITY`
 
-`security find-identity -v -p codesigning` prints `MAC_SIGN_IDENTITY` in the
-exact form codesign wants, once the certificate is in your keychain.
+```sh
+security find-identity -v -p codesigning
+```
+
+```
+  1) 8A3F2C1D9B7E5A4F6C2D8B1E3A7F9C5D2B4E6A8F "Developer ID Application: Your Name (AB12CD34EF)"
+     1 valid identities found
+```
+
+The secret is the quoted part **without the quotes** — not the hex hash:
+
+```
+Developer ID Application: Your Name (AB12CD34EF)
+```
+
+Nothing printed means the certificate isn't in the keychain yet.
+
+### `MAC_SIGN_CERT_P12`
+
+```sh
+base64 -i cert.p12 | tr -d '\n' | pbcopy
+```
+
+`tr -d '\n'` is not optional — a wrapped value fails to decode on the runner.
+
+### `MAC_SIGN_CERT_PASSWORD`
+
+The password typed into the Export dialog. Not the Mac login password, not the
+Apple ID password.
+
+### `MAC_NOTARY_APPLE_ID`
+
+The email address of the Apple ID enrolled in the Developer Program.
+
+### `MAC_NOTARY_PASSWORD`
+
+An **app-specific password**: <https://appleid.apple.com> → Sign-In and
+Security → App-Specific Passwords → +. Comes out as `abcd-efgh-ijkl-mnop`;
+keep the hyphens, and copy it straight away because Apple shows it once. A
+real Apple ID password is rejected here.
+
+### `MAC_NOTARY_TEAM_ID`
+
+Ten alphanumeric characters, at <https://developer.apple.com/account> →
+Membership details. It is also the string in parentheses at the end of
+`MAC_SIGN_IDENTITY` — if those two disagree, one of them is wrong.
+
+## Check the .p12 before uploading it
+
+Two commands that catch the two mistakes actually worth catching:
+
+```sh
+# Is the password right, and does the identity match what you'll paste?
+openssl pkcs12 -in cert.p12 -passin pass:'YOURPASSWORD' -nokeys | openssl x509 -noout -subject
+
+# Is the private key in there at all?
+openssl pkcs12 -in cert.p12 -passin pass:'YOURPASSWORD' -nocerts -noout && echo "private key present"
+```
+
+The first prints a subject containing `CN=Developer ID Application: …`, which
+should equal `MAC_SIGN_IDENTITY` exactly. If the second errors, the export
+picked up the certificate without its private key — the usual cause is
+right-clicking the key row rather than the certificate row in Keychain Access.
+That one fails in CI as an opaque keychain error, well after the point where
+it is obvious what happened.
+
+Put a space before those commands if your shell keeps history; the password is
+on the line.
 
 ## What happens then
 
@@ -67,8 +133,19 @@ Apple. A crew box is often set up on a network that cannot reach Apple at
 all — a shed at a festival site with no uplink — and an un-stapled app gets
 refused exactly there.
 
-Notarisation adds a few minutes to the release. It is the only step that
-talks to Apple.
+Notarisation adds a few minutes to the release, and the first submission on a
+new account is usually the slowest. It is the only step that talks to Apple.
+
+To confirm it took, download the `.dmg` on a Mac that has never seen it —
+quarantine is only applied to downloaded files, so a copy moved over by USB
+proves nothing — then:
+
+```sh
+spctl -a -vv /Applications/Crewbox.app
+```
+
+`accepted` with `source=Notarized Developer ID` is the answer you want.
+`rejected` means the ticket didn't staple, and the release log will say why.
 
 ## Until then
 

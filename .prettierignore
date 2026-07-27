@@ -4,7 +4,6 @@ dev-dist/
 build/
 data/
 package-lock.json
-import/
 native/android/
 native/ios/
 docs/privacy-policy.html
