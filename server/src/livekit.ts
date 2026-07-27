@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createConnection } from 'node:net'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { seaAsset } from './box.ts'
 
 /**
@@ -25,6 +25,8 @@ const LIVEKIT_TCP_PORT = 7881
 const LIVEKIT_UDP_PORT = 7882
 
 const assetName = () => (process.platform === 'win32' ? 'livekit-server.exe' : 'livekit-server')
+/** Records the running SFU so a later boot can clear one this box orphaned. */
+const PID_FILE = 'livekit.pid'
 
 /** Whether this build carries an SFU it can run. */
 export const hasEmbeddedLiveKit = (): boolean => seaAsset(`livekit/${assetName()}`) !== null
@@ -132,6 +134,73 @@ export function unpackLiveKit(
 }
 
 /**
+ * Kill an SFU left behind by a previous run, and wait for its port to free.
+ *
+ * The box stops its SFU on SIGTERM and SIGINT, but not when it is killed
+ * outright — and being force-quit is a supported way to stop a box, since the
+ * store is SQLite in WAL mode and the whole product assumes hard power cuts.
+ * The orphan keeps holding 7880, which is worse than it sounds: the next box
+ * spawns its own SFU, that one dies of EADDRINUSE, and waitForPort sees the
+ * orphan still listening and reports success. Voice then looks fine and is
+ * served by a process holding the previous run's keys, so tokens minted by
+ * the new box are rejected and nobody can talk.
+ *
+ * Returns true if it reaped something, so the caller can say so.
+ */
+export async function reapOrphanLiveKit(dir: string, log: BoxLog): Promise<boolean> {
+  const pidPath = join(dir, PID_FILE)
+  let pid: number
+  try {
+    pid = Number(readFileSync(pidPath, 'utf8').trim())
+  } catch {
+    return false
+  }
+  if (!Number.isInteger(pid) || pid <= 0) return false
+
+  const alive = (): boolean => {
+    try {
+      // Signal 0 tests for existence without touching the process.
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  if (!alive()) {
+    rmSync(pidPath, { force: true })
+    return false
+  }
+
+  log.warn(`voice: an SFU from a previous run is still running (pid ${pid}) — stopping it`)
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    // Gone between the check and the signal, or not ours to kill.
+  }
+
+  // Wait for it to actually go rather than guessing at a delay: it takes a
+  // moment to close rooms, and returning early would hand the next spawn a
+  // port that is still held and an executable still in use.
+  const deadline = Date.now() + 5000
+  while (alive() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  if (alive()) {
+    log.warn(`voice: SFU ${pid} ignored SIGTERM; killing it`)
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Raced us, or not ours.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+
+  rmSync(pidPath, { force: true })
+  return true
+}
+
+/**
  * Start an already-unpacked SFU and wait for it to listen. Returns null if it
  * won't run or never comes up; the caller leaves voice off either way.
  */
@@ -149,12 +218,18 @@ export async function spawnLiveKit(
     return null
   }
 
+  // Recorded before the wait, so a box killed mid-startup still leaves a
+  // trail for the next one to clean up.
+  const pidPath = join(dirname(binPath), PID_FILE)
+  if (child.pid) writeFileSync(pidPath, String(child.pid))
+
   let exited = false
   child.on('error', () => {
     exited = true
   })
   child.on('exit', (code) => {
     exited = true
+    rmSync(pidPath, { force: true })
     if (code !== 0 && code !== null) log.warn(`voice: SFU exited with code ${code}`)
   })
   // The SFU's own logging goes to the box log so a failure is diagnosable.
@@ -196,6 +271,14 @@ export async function startEmbeddedLiveKit(
 ): Promise<EmbeddedLiveKit | null> {
   const asset = seaAsset(`livekit/${assetName()}`)
   if (!asset) return null
+
+  // Before anything else. A box that was killed rather than stopped leaves
+  // its SFU running, and that orphan is *executing the very file* the unpack
+  // below overwrites — on Linux you cannot write to a running executable, so
+  // unpacking first fails with ETXTBSY and voice stays off for good. Clearing
+  // it first also frees the port, which the orphan would otherwise hold while
+  // answering with the previous run's keys.
+  await reapOrphanLiveKit(join(options.dataDir, 'livekit'), options.log)
 
   let unpacked: { binPath: string; configPath: string }
   try {
