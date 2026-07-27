@@ -24,23 +24,30 @@ The one document to print and keep in the production office.
    then restart the service. The server serves whatever `web/dist` holds at request
    time — an old dist next to a new server binary quietly ships stale UI (clients
    will nag "New version available" forever), so treat build + restart as one step.
-3. **Set secrets** in `/etc/systemd/system/crewbox.service`: `EVENT_PIN` (changeable
-   later from the admin panel — no restart), `LIVEKIT_KEY`/`LIVEKIT_SECRET`
-   (generate with `livekit-server generate-keys`; mirror in `/etc/crewbox/livekit.yaml`), then
-   `sudo systemctl daemon-reload`.
+3. **Set `EVENT_PIN`** in `/etc/systemd/system/crewbox.service` (changeable
+   later from the admin panel — no restart), then `sudo systemctl daemon-reload`.
+   Voice needs no keys: the box generates its own and keeps them, so tokens
+   minted before a restart still work after one. `LIVEKIT_*` are only for
+   pointing at an SFU you run yourself instead.
    Then open `/setup` once from any browser to name the event and set the
    Wi-Fi hint. It only answers until the first person joins, so do it before
    the rehearsal join in step 5 — after that it's **Admin → This box**.
 4. **Print posters** with the final PIN and domain.
 5. **Full rehearsal**: power everything off, power on cold, phone joins via QR
    with the internet unplugged. If this works at home it works in a field.
+6. **Rehearse the swap too** — an untested backup is not a backup:
+   `deploy/backup.sh`, then on the spare `deploy/restore.sh`, start it, and
+   check **Admin → This box**. You should get the event name, the PIN, the
+   crew list and HTTPS back, and anyone already signed in stays signed in.
+   Ten minutes at home; an hour of guesswork in a field.
 
 ## Setup on site
 
 1. Power order: router → APs → server box (all on the UPS).
 2. Router: static IP for the server; `deploy/dnsmasq.conf` installed so
    `chat.<yourdomain>` → server IP; DHCP hands out the router as DNS.
-3. `systemctl status crewbox livekit the box itself` — all green.
+3. `systemctl status crewbox` — green. There is no separate voice service:
+   the SFU runs inside the box and starts and stops with it.
 4. Phone test: scan poster → green padlock → join → send message → PTT to a
    second phone. **Do this before the crew arrives.**
 
@@ -49,19 +56,21 @@ The one document to print and keep in the production office.
 - App: `curl -k https://chat.<yourdomain>/api/health` → `{"ok":true,...}`
   (shows live connection and online-user counts, plus `docs` room/connection
   counts for patch-sheet sync)
-- Voice: `systemctl status livekit`
+- Voice: **Admin → This box**. It reports whether the SFU is actually
+  running, which `systemctl` cannot tell you now that it lives inside the
+  box process.
 - Disk: `df -h /var/lib/crewbox`
 
 ## When things go wrong
 
-| Symptom                    | Fix                                                                                                                                                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.                                                                                                             |
-| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online.                                                                                                    |
-| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                       |
-| Voice drops but chat works | `systemctl restart livekit`. Check UDP ports 50000–50200 aren't firewalled.                                                                                                                                                   |
-| Server box dies            | Swap in the spare, restore newest USB backup into `/var/lib/crewbox`, same static IP. Crew phones reconnect on their own. Patch sheets are unaffected — every device holds its own copy and they re-sync through the new box. |
-| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                |
+| Symptom                    | Fix                                                                                                                                                                                                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.                                                                                                                                                                      |
+| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online.                                                                                                                                                             |
+| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                                                                                |
+| Voice drops but chat works | `systemctl restart crewbox` — the SFU is inside the box, so it restarts with it. Check UDP **7882** and TCP **7881** aren't firewalled: the SFU pins one UDP port rather than a range, so there is exactly one hole to open.                                                           |
+| Server box dies            | Swap in the spare, `deploy/restore.sh` (takes the newest backup by default), same static IP. Crew phones reconnect on their own and stay signed in — sessions are in the database. Patch sheets and plots are unaffected either way: every device holds its own copy and they re-sync. |
+| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                                                                         |
 
 ## Teardown
 

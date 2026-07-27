@@ -58,9 +58,9 @@ shared/   protocol types + zod schemas (used by both sides)
 server/   Fastify + WebSocket + node:sqlite (no native deps)
 web/      React + Vite PWA — shell + modules
 native/   Capacitor wrappers (Android with offline lock-screen alerts, iOS)
-deploy/   systemd units, dnsmasq config, cert-renew.sh, backup.sh,
-          make-poster.mjs, soak.mjs, RUNBOOK.md (the box serves TLS and
-          voice itself, so no Caddy or livekit-server to install)
+deploy/   systemd unit, dnsmasq config, cert-renew.sh, backup.sh,
+          restore.sh, make-poster.mjs, soak.mjs, RUNBOOK.md (the box serves
+          TLS and voice itself, so no Caddy or livekit-server to install)
 ```
 
 Live Patch used to sit under `import/` while it was being ported. That port is
