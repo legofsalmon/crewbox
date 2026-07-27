@@ -93,6 +93,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - run: node scripts/build-box.mjs
+      # Start the box we just built and use it. A box can build perfectly and
+      # still ship without working voice — a missing asset, an SFU that won't
+      # execute on this OS — and none of that appears in a build log. This is
+      # the only step that proves the release actually runs, so it gates the
+      # release on every platform except Windows, where the runner has no sh.
+      - name: Smoke-test the box
+        if: runner.os != 'Windows'
+        run: ./scripts/smoke-box.sh build/box/crewbox-*
       # The Intel Mac box, built here rather than on an Intel runner. A SEA
       # blob is architecture-independent, so it can be injected into an x64
       # Node; the embedded SFU is native, so it is recompiled for amd64 with
@@ -164,6 +172,12 @@ jobs:
       # this still produces a working Apple Silicon app instead of failing.
       # build-mac-app.mjs takes one binary or two.
       - run: node scripts/build-mac-app.mjs mac/crewbox-darwin-*
+      # Run the universal app itself, not just the binaries that went into it.
+      # lipo has to preserve each slice's injected SEA section; if it doesn't,
+      # the app can't find its own payload and this is where that surfaces.
+      # Only the native slice actually executes here, so this proves arm64 —
+      # the Intel slice is covered by the smoke test in the box job.
+      - run: ./scripts/smoke-box.sh build/mac/Crewbox.app/Contents/MacOS/Crewbox
       - uses: actions/upload-artifact@v4
         with:
           name: macapp

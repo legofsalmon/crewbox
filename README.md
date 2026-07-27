@@ -118,6 +118,19 @@ inside the box.
 `node deploy/soak.mjs http://localhost:8787 50 60` runs 50 simulated crew
 members for a minute and asserts exactly-once delivery for every client.
 
+## Smoke-testing a build
+
+`scripts/smoke-box.sh build/box/crewbox-linux-x64` starts a built box, walks
+setup → join → admin, and asserts the voice server actually came up. Plain sh
+and curl, so it also runs on a festival admin's Mac against a downloaded
+release.
+
+Every release runs it on each platform, including against the universal
+`Crewbox.app`. It exists because a box can build perfectly and still ship
+without working voice — a missing SFU asset, an SFU that won't execute on that
+OS, a universal binary whose slices lost their payload — and none of that
+appears in a build log.
+
 ## Versioning & updates
 
 The build version (`package.json` version + short git commit, e.g.
