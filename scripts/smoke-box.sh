@@ -62,7 +62,16 @@ chmod +x "$BIN" 2>/dev/null || true
 # and the failure looks like a crash rather than a policy decision.
 [ "$(uname -s)" = "Darwin" ] && xattr -d com.apple.quarantine "$BIN" 2>/dev/null
 
-DATA_DIR="$DATA" CREWBOX_PORT="$PORT" EVENT_PIN="$PIN" CREWBOX_NO_OPEN=1 \
+# Under Git Bash a path like /tmp/tmp.abc means nothing to a native Windows
+# binary — Node would resolve it against the current drive and write to
+# C:\tmp\… while this script cleans up somewhere else entirely. Hand the box a
+# Windows path so both ends agree on where the data directory is.
+DATA_ARG="$DATA"
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) DATA_ARG="$(cygpath -w "$DATA")" ;;
+esac
+
+DATA_DIR="$DATA_ARG" CREWBOX_PORT="$PORT" EVENT_PIN="$PIN" CREWBOX_NO_OPEN=1 \
   "$BIN" >"$LOG" 2>&1 &
 PID=$!
 
