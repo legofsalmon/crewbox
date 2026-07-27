@@ -97,7 +97,10 @@ drop `cert.pem` and `key.pem` into its data directory (the readiness panel
 names the path) and restart. **The box serves HTTPS itself** — there is no
 reverse proxy to install. Where the certificate comes from is up to you:
 certbot, a wildcard you already own, whatever your IT department hands over.
-On site, point the venue's DNS at the box so the name resolves locally.
+On site, point the venue's DNS at the box so the name resolves locally —
+**Admin → This network** writes that config for you. If you're on a venue
+network you don't control, `deploy/RUNBOOK.md` covers the one case where a
+public record works instead.
 
 **iOS can't get lock-screen alerts with no internet.** Apple's push servers
 are unreachable and no app can work around it. The **Android app** solves this

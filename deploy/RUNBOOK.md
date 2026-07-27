@@ -59,6 +59,44 @@ The one document to print and keep in the production office.
 4. Phone test: scan poster → green padlock → join → send message → PTT to a
    second phone. **Do this before the crew arrives.**
 
+## When you can't touch the venue's DNS
+
+The normal path is the local override on your own router — **Admin → This
+network** generates the exact line. Use it whenever you control the router,
+which on an isolated site is the only thing that can work at all: with no
+uplink, nothing on site can reach public DNS, so a public record is not a
+fallback, it is nothing.
+
+There is one shape where a public record does earn its keep: you are plugged
+into a **venue network that has internet and runs its own DHCP/DNS**, and
+nobody will add an entry for you. Crew phones on that network can resolve
+public names, so an A record pointing at the box's address _on that network_
+reaches it, and HTTPS works.
+
+```sh
+VERCEL_TOKEN=… node deploy/vercel-dns.mjs --dry-run   # says what it would do
+VERCEL_TOKEN=… node deploy/vercel-dns.mjs             # does it
+```
+
+It defaults to the name on the box's certificate and the box's own address;
+`--hostname` and `--ip` override both. `VERCEL_TEAM_ID` if the domain is on a
+team rather than a personal account.
+
+- **The token is not a config value.** It can rewrite every record in the
+  zone. Keep it out of the box's data directory — `deploy/backup.sh` copies
+  that directory to the USB stick gaffer-taped to the server.
+- **Re-run it when the address moves.** On someone else's DHCP it will. The
+  script is idempotent and does nothing when the record is already right, so
+  cron it: `*/5 * * * * VERCEL_TOKEN=… node /opt/crewbox/deploy/vercel-dns.mjs`.
+- **It can still be defeated**, and not visibly: consumer routers often drop
+  public answers that point into private address space (DNS rebinding
+  protection). If the name resolves nowhere from a phone, that is why, and
+  the answer is the venue's own DNS or handing out the IP address.
+- It publishes an internal address publicly. Usually a shrug, worth knowing.
+
+Untested against the live API as of writing — do the `--dry-run` at the office,
+not in a field.
+
 ## Health checks
 
 - App: `curl -k https://chat.<yourdomain>/api/health` → `{"ok":true,...}`
