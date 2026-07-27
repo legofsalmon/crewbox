@@ -52,11 +52,19 @@ one.
 
 ## Before it works
 
-**`legofsalmon/crewbox-dist`** must exist as a **public** repo (it needs no
-content — the release workflow creates releases in it), and the private repo
-needs a **`DIST_REPO_TOKEN`** secret: a fine-grained PAT with
-`contents: read and write` on `crewbox-dist` only. That's the one credential
-in this arrangement, and it can do nothing except publish binaries.
+**`legofsalmon/crewbox-dist`** must exist as a **public** repo **with at least
+one commit in it.** A README is enough. An empty repo looks like it should
+work — the workflow uploads every asset successfully — and then fails on the
+final call with `Validation Failed: Repository is empty`, because a release
+needs a default branch to anchor its tag to. That cost a release once.
+
+The private repo needs a **`DIST_REPO_TOKEN`** secret: a fine-grained PAT with
+**Contents: Read and write** on `crewbox-dist` only. Read-only is the default
+and produces `403 Resource not accessible by personal access token` at the
+create-release step — a 403 rather than a 404 means the token can see the repo
+but can't write to it, which is the quickest way to tell the two mistakes
+apart. That's the one credential in this arrangement, and it can do nothing
+except publish binaries.
 
 Until the first release the download links 404, which is honest — there is
 nothing to download yet.
