@@ -32,8 +32,11 @@ DATA="$(mktemp -d)"
 LOG="$DATA/box.log"
 PID=""
 
+REPORTED=0
+
 pass() { echo "  ok    $1"; }
 fail() {
+  REPORTED=1
   echo "  FAIL  $1" >&2
   echo "" >&2
   echo "--- box output ---" >&2
@@ -42,8 +45,18 @@ fail() {
 }
 
 cleanup() {
+  status=$?
   [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
   rm -rf "$DATA"
+  # A non-zero exit with no FAIL line above it means the script died rather
+  # than the box failing a check — almost always a command tripping `set -e`.
+  # Say which, because a silent exit 1 reads as "this box is broken" and
+  # sends someone hunting the wrong thing.
+  if [ "$status" -ne 0 ] && [ "$REPORTED" -eq 0 ]; then
+    echo "" >&2
+    echo "smoke test aborted (exit $status) before any check ran." >&2
+    echo "That is this script failing, not the box. Re-run with 'sh -x' to see where." >&2
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -60,7 +73,14 @@ fi
 chmod +x "$BIN" 2>/dev/null || true
 # Downloaded binaries are quarantined; without this macOS refuses to run it
 # and the failure looks like a crash rather than a policy decision.
-[ "$(uname -s)" = "Darwin" ] && xattr -d com.apple.quarantine "$BIN" 2>/dev/null
+#
+# `|| true` is load-bearing. A binary that was built here rather than
+# downloaded has no quarantine attribute, so `xattr -d` exits non-zero, and
+# under `set -e` that killed the whole script — on macOS only, and only when
+# the binary was *not* quarantined, which is exactly the CI case.
+if [ "$(uname -s)" = "Darwin" ]; then
+  xattr -d com.apple.quarantine "$BIN" 2>/dev/null || true
+fi
 
 # Under Git Bash a path like /tmp/tmp.abc means nothing to a native Windows
 # binary — Node would resolve it against the current drive and write to
