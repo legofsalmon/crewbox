@@ -63,11 +63,12 @@ jobs:
     needs: validate
     strategy:
       matrix:
-        # macos-13 is the Intel runner; macos-latest is Apple Silicon. Both are
-        # needed because a Mac mini or an older MacBook is a very plausible
-        # first box, and an arm64 binary cannot run on an Intel Mac at all —
-        # Rosetta translates Intel to ARM, never the reverse.
-        os: [ubuntu-latest, windows-latest, macos-latest, macos-13]
+        # No macos-13 here despite Intel Macs mattering: it is GitHub's last
+        # Intel image and on the way out, and during the v0.5.0 release it sat
+        # unschedulable for the best part of an hour while every other job
+        # finished, blocking the release entirely. The Intel box is now
+        # cross-built on the Apple Silicon runner instead — see the step below.
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +93,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - run: node scripts/build-box.mjs
+      # The Intel Mac box, built here rather than on an Intel runner. A SEA
+      # blob is architecture-independent, so it can be injected into an x64
+      # Node; the embedded SFU is native, so it is recompiled for amd64 with
+      # cgo on (only a Mac can do that for a darwin target).
+      #
+      # Soft on purpose. Everything above has already succeeded by this point,
+      # and shipping Linux, Windows, Apple Silicon and the APK beats failing
+      # the whole release over one architecture. A skipped Intel build shows
+      # up as a missing asset, which is visible, rather than a broken one.
+      - name: Cross-build the Intel Mac box
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        env:
+          CREWBOX_TARGET_ARCH: x64
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          LIVEKIT_REFETCH=1 node scripts/fetch-livekit.mjs
+          CREWBOX_BASE_NODE="$(node scripts/fetch-node.mjs darwin x64)" \
+            node scripts/build-box.mjs
+          file build/box/crewbox-darwin-x64
       - uses: actions/upload-artifact@v4
         with:
           name: box-${{ matrix.os }}
@@ -138,7 +160,10 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
           rm -f "$RUNNER_TEMP/cert.p12"
       - run: chmod +x mac/crewbox-darwin-*
-      - run: node scripts/build-mac-app.mjs mac/crewbox-darwin-x64 mac/crewbox-darwin-arm64
+      # Glob rather than naming both: if the Intel cross-build was skipped,
+      # this still produces a working Apple Silicon app instead of failing.
+      # build-mac-app.mjs takes one binary or two.
+      - run: node scripts/build-mac-app.mjs mac/crewbox-darwin-*
       - uses: actions/upload-artifact@v4
         with:
           name: macapp

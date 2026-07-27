@@ -65,6 +65,21 @@ if (fromSource) {
   const version = release.tag_name
   const module = `github.com/livekit/livekit-server/cmd/server@${version}`
 
+  // CREWBOX_TARGET_ARCH cross-builds the Intel Mac SFU on an Apple Silicon
+  // runner (see scripts/fetch-node.mjs), because GitHub is retiring its Intel
+  // runners and one became unschedulable mid-release.
+  //
+  // This branch only ever runs on macOS, which is what makes it possible:
+  // livekit's darwin CPU stats are cgo-only, and clang on a Mac targets both
+  // architectures. The same build from Linux fails on undefined cpu.Get,
+  // because a darwin target there forces CGO_ENABLED=0.
+  const targetArch = process.env.CREWBOX_TARGET_ARCH ?? process.arch
+  const goarch = { x64: 'amd64', arm64: 'arm64' }[targetArch]
+  if (!goarch) {
+    console.error(`no GOARCH for ${targetArch}`)
+    process.exit(1)
+  }
+
   const goVersion = (() => {
     try {
       return execFileSync('go', ['version'], { encoding: 'utf8' }).trim()
@@ -86,22 +101,37 @@ if (fromSource) {
     process.exit(0)
   }
 
-  console.log(`building livekit-server ${version} from source with ${goVersion}`)
+  console.log(`building livekit-server ${version} for darwin/${goarch} with ${goVersion}`)
   rmSync(outDir, { recursive: true, force: true })
   mkdirSync(outDir, { recursive: true })
 
-  // GOBIN puts the binary straight where the box build looks. Go verifies
-  // every module against sum.golang.org on the way in, which is a stronger
-  // integrity guarantee than the unsigned tarballs the other platforms get.
+  // A GOPATH we own rather than GOBIN: `go install` refuses outright to write
+  // a cross-compiled binary when GOBIN is set, and a build that only works
+  // for the host architecture is no use here. Go verifies every module
+  // against sum.golang.org on the way in, which is a stronger integrity
+  // guarantee than the unsigned tarballs the other platforms get.
+  const gopath = join(root, 'build', 'gopath')
   execFileSync('go', ['install', module], {
     stdio: 'inherit',
-    env: { ...process.env, GOBIN: outDir },
+    env: {
+      ...process.env,
+      GOPATH: gopath,
+      GOBIN: '',
+      GOARCH: goarch,
+      GOOS: 'darwin',
+      // Explicit because it is load-bearing, not incidental: livekit's darwin
+      // CPU stats are cgo-only, and a build with cgo off fails to compile.
+      CGO_ENABLED: '1',
+    },
   })
 
-  // cmd/server builds as `server`; the box expects the upstream name.
-  const built = join(outDir, 'server')
+  // cmd/server builds as `server`. A cross-compile lands under
+  // bin/<goos>_<goarch>/; a native one goes straight into bin/.
+  const cross = join(gopath, 'bin', `darwin_${goarch}`, 'server')
+  const native = join(gopath, 'bin', 'server')
+  const built = existsSync(cross) ? cross : native
   if (!existsSync(built)) {
-    console.error(`go install produced no binary at ${built}`)
+    console.error(`go install produced no binary at ${cross} or ${native}`)
     process.exit(1)
   }
   renameSync(built, target)
