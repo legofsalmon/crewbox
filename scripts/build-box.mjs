@@ -97,10 +97,19 @@ writeFileSync(
 execFileSync(process.execPath, ['--experimental-sea-config', seaConfigPath], { stdio: 'inherit' })
 
 // 4. Copy the node binary and inject the blob.
+//
+// The blob holds JavaScript and assets, not machine code, so it can be
+// injected into a Node built for another architecture. That is how the Intel
+// Mac box gets built on an Apple Silicon runner: point CREWBOX_BASE_NODE at
+// an x64 Node (scripts/fetch-node.mjs) and set CREWBOX_TARGET_ARCH to match.
+// The embedded livekit-server is native, so it has to be built for the same
+// target — see CREWBOX_TARGET_ARCH in scripts/fetch-livekit.mjs.
+const targetArch = process.env.CREWBOX_TARGET_ARCH ?? process.arch
+const baseNode = process.env.CREWBOX_BASE_NODE ?? process.execPath
 const exe = process.platform === 'win32' ? '.exe' : ''
-const binName = `crewbox-${process.platform}-${process.arch}${exe}`
+const binName = `crewbox-${process.platform}-${targetArch}${exe}`
 const binPath = join(outDir, binName)
-copyFileSync(process.execPath, binPath)
+copyFileSync(baseNode, binPath)
 if (process.platform === 'darwin') {
   execSync(`codesign --remove-signature "${binPath}"`)
 }
