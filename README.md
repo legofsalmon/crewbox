@@ -61,9 +61,12 @@ native/   Capacitor wrappers (Android with offline lock-screen alerts, iOS)
 deploy/   systemd units, dnsmasq config, cert-renew.sh, backup.sh,
           make-poster.mjs, soak.mjs, RUNBOOK.md (the box serves TLS and
           voice itself, so no Caddy or livekit-server to install)
-import/   pristine import of the Live Patch codebase (ports into web/ and
-          server/ over Phases 2–3, then retires)
 ```
+
+Live Patch used to sit under `import/` while it was being ported. That port is
+finished and the directory is gone; its history is still here, reachable
+through the merge commit that brought it in (`git log 23d20ec`), so
+`git show 23d20ec:<path>` still resolves any original file.
 
 ## Development
 

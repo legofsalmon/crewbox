@@ -280,6 +280,9 @@ Each phase leaves the app shippable.
      target root layout.
    - Subtree-merge livepatch under `import/livepatch/` (`git read-tree --prefix=…`);
      later file moves are ordinary commits, `git log --follow` works.
+     **Retired after Phase 3.** The directory is deleted now the port is done;
+     the merge commit keeps the 49 commits of Live Patch history reachable, so
+     `git show 23d20ec:<path>` still resolves any original file.
 2. Rename: workspaces to `@crewbox/*`, env prefix `CREWBOX_*` (e.g. `CREWBOX_PORT`;
    keep `DATA_DIR`, `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_*` names), brand strings, PWA
    manifest, localStorage keys, Dexie db name.

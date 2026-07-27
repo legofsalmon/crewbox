@@ -12,9 +12,6 @@ export default tseslint.config(
       '**/dev-dist/',
       '**/build/',
       '**/data/',
-      // Pristine Live Patch import — ports into web/ and server/ over
-      // Phases 2-3, linted once it lands in its crewbox home.
-      'import/',
       // Generated native platform projects (Phase 5 owns these).
       'native/android/',
       'native/ios/',
