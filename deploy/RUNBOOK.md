@@ -6,7 +6,15 @@ The one document to print and keep in the production office.
 
 - Server box (mini-PC, e.g. Intel N100 — fanless is nice in dust) + spare
 - UPS (even a small one rides out generator switchovers)
-- Router + enough Wi-Fi APs to cover stages/gates (wired backhaul if possible)
+- Router **running dnsmasq** — OpenWRT, or a GL.iNet unit, which ships it.
+  This is not a preference: the box generates its local DNS entry in dnsmasq
+  form (Admin → This network), and that entry is what lets crew reach the box
+  by the name on its certificate. A router without a DNS override means no
+  HTTPS by name, and so no microphone in the browser.
+  With no uplink to use, a two-port travel router's WAN port can be
+  reassigned as a second LAN port — but plan a small switch in anyway.
+- Enough Wi-Fi APs to cover stages/gates (wired backhaul if possible). A
+  travel router covers a production office, not a site.
 - USB stick for backups, gaffer-taped to the server
 - Printed QR join posters (`node deploy/make-poster.mjs https://chat.<yourdomain> <EVENT_PIN>`)
 - This runbook
