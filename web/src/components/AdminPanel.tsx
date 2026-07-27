@@ -230,7 +230,23 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
     }
   }, [])
 
+  async function downloadDns() {
+    try {
+      const blob = await api.adminDnsConfig(token())
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'crewbox-dns.conf'
+      a.click()
+      URL.revokeObjectURL(url)
+      onNote('DNS config downloaded — put it on the venue router')
+    } catch (err) {
+      onNote(err instanceof api.ApiError ? err.message : 'Could not build the DNS config')
+    }
+  }
+
   const pending = !report || report.pending
+  const needsDns = report?.checks.some((c) => c.id === 'hostname' && c.state !== 'ok') ?? false
   return (
     <>
       {pending ? (
@@ -242,6 +258,13 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
         <button className="admin-btn" disabled={busy} onClick={() => load(true)}>
           {busy ? 'Checking…' : 'Check again'}
         </button>
+        {/* Only offered when the name is actually wrong — a download button
+            for a problem you don't have is just clutter. */}
+        {needsDns && (
+          <button className="admin-btn" onClick={() => void downloadDns()}>
+            Download DNS config
+          </button>
+        )}
         {!pending && <span className="admin-muted">Checked {ago(report.probedAt)}</span>}
       </div>
     </>

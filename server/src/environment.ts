@@ -301,7 +301,7 @@ async function hostnameCheck(probes: Probes, addresses: string[]): Promise<EnvCh
       label: `Crew can reach ${name} by name`,
       state: 'limited',
       detail: `${name} does not resolve on this network.`,
-      fix: `Crew phones will not find the box by name, so the certificate goes unused and they get no microphone. Point the venue DNS at this box — deploy/dnsmasq.conf does exactly this — or hand out the IP address instead and accept the certificate warning.`,
+      fix: `Crew phones will not find the box by name, so the certificate goes unused and they get no microphone. Download the DNS config below and put it on the venue router, or hand out the IP address instead and accept the certificate warning.`,
     }
   }
 
@@ -313,7 +313,7 @@ async function hostnameCheck(probes: Probes, addresses: string[]): Promise<EnvCh
       state: 'limited',
       // Usually the public DNS record, or last year's box.
       detail: `${name} resolves to ${resolved.join(', ')}, which is not this machine.`,
-      fix: `Crew following that name will land somewhere else entirely. Update the local DNS entry to ${addresses[0] ?? 'this box'} before the event.`,
+      fix: `Crew following that name will land somewhere else entirely — often a web host, if the domain has a wildcard record. Public DNS cannot fix this: a site with no uplink cannot reach it, and routers commonly refuse public answers pointing at private addresses. Download the DNS config below and put it on the venue router, which overrides both.`,
     }
   }
 

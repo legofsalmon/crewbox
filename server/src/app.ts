@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, mkdirSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -12,7 +12,8 @@ import { networkInterfaces } from 'node:os'
 import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
-import { boxProbes, createEnvironmentCache, type Probes } from './environment.ts'
+import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
+import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT } from './livekit.ts'
 import { boxReadiness, worstState } from './readiness.ts'
@@ -279,6 +280,28 @@ export function buildApp({
   const voiceAvailable = Boolean(livekit?.url || livekit?.embedded)
 
   /** Hostname the client used to reach this box, without the port. */
+  /** The box's own certificate, when it has one. */
+  const readCertPem = (): string | null => {
+    if (!dataDir) return null
+    try {
+      return readFileSync(join(dataDir, 'cert.pem'), 'utf8')
+    } catch {
+      return null
+    }
+  }
+
+  /** First routable IPv4, which is what a local DNS entry should point at. */
+  const lanAddress = (): string | undefined => {
+    for (const addrs of Object.values(networkInterfaces())) {
+      for (const addr of addrs ?? []) {
+        if (addr.family === 'IPv4' && !addr.internal && !addr.address.startsWith('169.254.')) {
+          return addr.address
+        }
+      }
+    }
+    return undefined
+  }
+
   const hostOf = (req: FastifyRequest): string =>
     (req.headers.host ?? 'localhost').split(':')[0] || 'localhost'
 
@@ -784,6 +807,32 @@ export function buildApp({
     const refresh = (req.query as { refresh?: string } | undefined)?.refresh === '1'
     if (refresh) return environment.refresh()
     return environment.current() ?? { checks: [], probedAt: 0, pending: true }
+  })
+
+  /**
+   * The local DNS entry this box needs, as a file to paste onto the router.
+   *
+   * The environment panel can tell an admin the name doesn't point here; this
+   * is the part they can act on. Generated rather than documented because the
+   * box already knows both halves — its address and its certificate's name —
+   * and typing either one wrong fails silently.
+   */
+  fastify.get('/api/admin/dns-config', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const pem = readCertPem()
+    const hostname = pem ? certNames(pem)[0] : undefined
+    const address = lanAddress()
+    if (!hostname || !address) {
+      return reply.code(404).send({
+        error: !hostname
+          ? 'This box has no certificate, so there is no name to point anywhere.'
+          : 'This box has no LAN address to point a name at.',
+      })
+    }
+    return reply
+      .header('content-type', 'text/plain; charset=utf-8')
+      .header('content-disposition', 'attachment; filename="crewbox-dns.conf"')
+      .send(dnsConfigFile(dnsPlan(hostname, address)))
   })
 
   fastify.get('/api/admin/settings', (req, reply) => {

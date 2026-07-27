@@ -178,6 +178,18 @@ export function adminGetEnvironment(token: string, refresh = false): Promise<Env
   })
 }
 
+/** The local DNS config for this box, as a file to put on the venue router. */
+export async function adminDnsConfig(token: string): Promise<Blob> {
+  const res = await fetch(apiUrl('/api/admin/dns-config'), {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)
+  }
+  return res.blob()
+}
+
 export function adminGetSettings(token: string): Promise<AdminSettings> {
   return request('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } })
 }

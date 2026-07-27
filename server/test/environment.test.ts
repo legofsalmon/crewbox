@@ -151,7 +151,10 @@ describe('the local DNS trick', () => {
     const host = find(checks, 'hostname')!
     expect(host.state).toBe('limited')
     expect(host.detail).toContain('203.0.113.7')
-    expect(host.fix).toMatch(/192\.168\.1\.50/)
+    // The advice must rule out the obvious-but-wrong fix, or someone will
+    // "solve" it with a public A record that cannot resolve in a field.
+    expect(host.fix).toMatch(/Public DNS cannot fix this/)
+    expect(host.fix).toMatch(/venue router/)
   })
 
   it('warns when the name does not resolve, so the certificate goes unused', async () => {
@@ -160,7 +163,7 @@ describe('the local DNS trick', () => {
     )
     const host = find(checks, 'hostname')!
     expect(host.state).toBe('limited')
-    expect(host.fix).toMatch(/dnsmasq/)
+    expect(host.fix).toMatch(/DNS config/)
   })
 
   it('says nothing at all on a box with no certificate', async () => {
