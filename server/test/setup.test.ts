@@ -3,6 +3,7 @@ import { buildApp, type App } from '../src/app.ts'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
 import { hashPin } from '../src/auth.ts'
+import type { Probes } from '../src/environment.ts'
 
 /**
  * The first-run setup page. Two things carry weight here: that it saves what
@@ -16,12 +17,26 @@ afterEach(async () => {
   for (const app of apps.splice(0)) await app.close()
 })
 
-const newApp = () => {
+const newApp = (probes?: Probes) => {
   const store = new Store(openDb(':memory:'))
-  const app = buildApp({ store, eventPin: '1234', logger: false })
+  const app = buildApp({ store, eventPin: '1234', logger: false, probes })
   apps.push(app)
   return { app, store }
 }
+
+/** Probes with nothing wrong and no internet — a box in a field. */
+const offlineProbes = (over: Partial<Probes> = {}): Probes => ({
+  tcpReachable: async () => false,
+  noContentOk: async () => false,
+  resolve4: async () => [],
+  localAddresses: () => ['192.168.1.50'],
+  certPem: () => null,
+  now: () => Date.now(),
+  ...over,
+})
+
+/** The environment sweep starts at construction; give it a tick to land. */
+const settled = () => new Promise((r) => setTimeout(r, 50))
 
 const form = (fields: Record<string, string>) => ({
   method: 'POST' as const,
@@ -110,5 +125,35 @@ describe('event name over the API', () => {
     await app.inject(form({ eventName: 'Ashton Court 2026', wifiSsid: '', eventPin: '1234' }))
     const res = await app.inject({ method: 'GET', url: '/api/config' })
     expect(res.json()).toMatchObject({ eventName: 'Ashton Court 2026' })
+  })
+})
+
+describe('environment warnings on the setup page', () => {
+  it('stays silent about a box with no internet', async () => {
+    // The single most important behaviour in this feature. A festival box has
+    // no uplink by design, and greeting a new admin with a warning about the
+    // product working as intended would be worse than showing nothing.
+    const { app } = newApp(offlineProbes())
+    await settled()
+    const res = await app.inject({ method: 'GET', url: '/setup' })
+    expect(res.body).not.toContain('class="warn"')
+  })
+
+  it('warns before setup when no DHCP lease arrived', async () => {
+    // Much cheaper to discover here than after the posters are printed.
+    const { app } = newApp(offlineProbes({ localAddresses: () => ['169.254.4.4'] }))
+    await settled()
+    const res = await app.inject({ method: 'GET', url: '/setup' })
+    expect(res.body).toContain('class="warn"')
+    expect(res.body).toMatch(/no DHCP/)
+  })
+
+  it('escapes warning copy rather than reflecting it', async () => {
+    const { app } = newApp(
+      offlineProbes({ localAddresses: () => ['192.168.1.1', '<script>x</script>'] })
+    )
+    await settled()
+    const res = await app.inject({ method: 'GET', url: '/setup' })
+    expect(res.body).not.toContain('<script>x</script>')
   })
 })

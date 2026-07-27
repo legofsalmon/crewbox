@@ -6,7 +6,15 @@ The one document to print and keep in the production office.
 
 - Server box (mini-PC, e.g. Intel N100 — fanless is nice in dust) + spare
 - UPS (even a small one rides out generator switchovers)
-- Router + enough Wi-Fi APs to cover stages/gates (wired backhaul if possible)
+- Router **running dnsmasq** — OpenWRT, or a GL.iNet unit, which ships it.
+  This is not a preference: the box generates its local DNS entry in dnsmasq
+  form (Admin → This network), and that entry is what lets crew reach the box
+  by the name on its certificate. A router without a DNS override means no
+  HTTPS by name, and so no microphone in the browser.
+  With no uplink to use, a two-port travel router's WAN port can be
+  reassigned as a second LAN port — but plan a small switch in anyway.
+- Enough Wi-Fi APs to cover stages/gates (wired backhaul if possible). A
+  travel router covers a production office, not a site.
 - USB stick for backups, gaffer-taped to the server
 - Printed QR join posters (`node deploy/make-poster.mjs https://chat.<yourdomain> <EVENT_PIN>`)
 - This runbook
@@ -24,44 +32,91 @@ The one document to print and keep in the production office.
    then restart the service. The server serves whatever `web/dist` holds at request
    time — an old dist next to a new server binary quietly ships stale UI (clients
    will nag "New version available" forever), so treat build + restart as one step.
-3. **Set secrets** in `/etc/systemd/system/crewbox.service`: `EVENT_PIN` (changeable
-   later from the admin panel — no restart), `LIVEKIT_KEY`/`LIVEKIT_SECRET`
-   (generate with `livekit-server generate-keys`; mirror in `/etc/crewbox/livekit.yaml`), then
-   `sudo systemctl daemon-reload`.
+3. **Set `EVENT_PIN`** in `/etc/systemd/system/crewbox.service` (changeable
+   later from the admin panel — no restart), then `sudo systemctl daemon-reload`.
+   Voice needs no keys: the box generates its own and keeps them, so tokens
+   minted before a restart still work after one. `LIVEKIT_*` are only for
+   pointing at an SFU you run yourself instead.
    Then open `/setup` once from any browser to name the event and set the
    Wi-Fi hint. It only answers until the first person joins, so do it before
    the rehearsal join in step 5 — after that it's **Admin → This box**.
 4. **Print posters** with the final PIN and domain.
 5. **Full rehearsal**: power everything off, power on cold, phone joins via QR
    with the internet unplugged. If this works at home it works in a field.
+6. **Rehearse the swap too** — an untested backup is not a backup:
+   `deploy/backup.sh`, then on the spare `deploy/restore.sh`, start it, and
+   check **Admin → This box**. You should get the event name, the PIN, the
+   crew list and HTTPS back, and anyone already signed in stays signed in.
+   Ten minutes at home; an hour of guesswork in a field.
 
 ## Setup on site
 
 1. Power order: router → APs → server box (all on the UPS).
 2. Router: static IP for the server; `deploy/dnsmasq.conf` installed so
    `chat.<yourdomain>` → server IP; DHCP hands out the router as DNS.
-3. `systemctl status crewbox livekit the box itself` — all green.
+3. `systemctl status crewbox` — green. There is no separate voice service:
+   the SFU runs inside the box and starts and stops with it.
 4. Phone test: scan poster → green padlock → join → send message → PTT to a
    second phone. **Do this before the crew arrives.**
+
+## When you can't touch the venue's DNS
+
+The normal path is the local override on your own router — **Admin → This
+network** generates the exact line. Use it whenever you control the router,
+which on an isolated site is the only thing that can work at all: with no
+uplink, nothing on site can reach public DNS, so a public record is not a
+fallback, it is nothing.
+
+There is one shape where a public record does earn its keep: you are plugged
+into a **venue network that has internet and runs its own DHCP/DNS**, and
+nobody will add an entry for you. Crew phones on that network can resolve
+public names, so an A record pointing at the box's address _on that network_
+reaches it, and HTTPS works.
+
+```sh
+VERCEL_TOKEN=… node deploy/vercel-dns.mjs --dry-run   # says what it would do
+VERCEL_TOKEN=… node deploy/vercel-dns.mjs             # does it
+```
+
+It defaults to the name on the box's certificate and the box's own address;
+`--hostname` and `--ip` override both. `VERCEL_TEAM_ID` if the domain is on a
+team rather than a personal account.
+
+- **The token is not a config value.** It can rewrite every record in the
+  zone. Keep it out of the box's data directory — `deploy/backup.sh` copies
+  that directory to the USB stick gaffer-taped to the server.
+- **Re-run it when the address moves.** On someone else's DHCP it will. The
+  script is idempotent and does nothing when the record is already right, so
+  cron it: `*/5 * * * * VERCEL_TOKEN=… node /opt/crewbox/deploy/vercel-dns.mjs`.
+- **It can still be defeated**, and not visibly: consumer routers often drop
+  public answers that point into private address space (DNS rebinding
+  protection). If the name resolves nowhere from a phone, that is why, and
+  the answer is the venue's own DNS or handing out the IP address.
+- It publishes an internal address publicly. Usually a shrug, worth knowing.
+
+Untested against the live API as of writing — do the `--dry-run` at the office,
+not in a field.
 
 ## Health checks
 
 - App: `curl -k https://chat.<yourdomain>/api/health` → `{"ok":true,...}`
   (shows live connection and online-user counts, plus `docs` room/connection
   counts for patch-sheet sync)
-- Voice: `systemctl status livekit`
+- Voice: **Admin → This box**. It reports whether the SFU is actually
+  running, which `systemctl` cannot tell you now that it lives inside the
+  box process.
 - Disk: `df -h /var/lib/crewbox`
 
 ## When things go wrong
 
-| Symptom                    | Fix                                                                                                                                                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.                                                                                                             |
-| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online.                                                                                                    |
-| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                       |
-| Voice drops but chat works | `systemctl restart livekit`. Check UDP ports 50000–50200 aren't firewalled.                                                                                                                                                   |
-| Server box dies            | Swap in the spare, restore newest USB backup into `/var/lib/crewbox`, same static IP. Crew phones reconnect on their own. Patch sheets are unaffected — every device holds its own copy and they re-sync through the new box. |
-| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                |
+| Symptom                    | Fix                                                                                                                                                                                                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.                                                                                                                                                                      |
+| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online.                                                                                                                                                             |
+| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                                                                                |
+| Voice drops but chat works | `systemctl restart crewbox` — the SFU is inside the box, so it restarts with it. Check UDP **7882** and TCP **7881** aren't firewalled: the SFU pins one UDP port rather than a range, so there is exactly one hole to open.                                                           |
+| Server box dies            | Swap in the spare, `deploy/restore.sh` (takes the newest backup by default), same static IP. Crew phones reconnect on their own and stay signed in — sessions are in the database. Patch sheets and plots are unaffected either way: every device holds its own copy and they re-sync. |
+| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                                                                         |
 
 ## Teardown
 

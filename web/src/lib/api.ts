@@ -2,6 +2,8 @@ import type { Channel, FileMeta, Message, PublicConfig, User } from '@crewbox/sh
 import { apiUrl } from './server.ts'
 
 export type ReadinessState = 'ok' | 'limited' | 'off'
+/** Environment checks add `info`: worth knowing, nothing to fix. */
+export type EnvState = ReadinessState | 'info'
 
 export interface ReadinessCheck {
   id: string
@@ -24,6 +26,22 @@ export interface AdminSettings {
   /** What this box can actually do right now — see server/src/readiness.ts. */
   readiness: ReadinessCheck[]
   readinessState: ReadinessState
+}
+
+export interface EnvCheck {
+  id: string
+  label: string
+  state: EnvState
+  detail: string
+  fix?: string
+}
+
+/** What the box has been plugged into — see server/src/environment.ts. */
+export interface EnvironmentReport {
+  checks: EnvCheck[]
+  probedAt: number
+  /** True before the first sweep finishes; the panel shows "checking". */
+  pending?: boolean
 }
 
 export class ApiError extends Error {
@@ -152,6 +170,24 @@ export function deleteAccount(token: string): Promise<{ ok: true }> {
     method: 'DELETE',
     headers: { authorization: `Bearer ${token}` },
   })
+}
+
+export function adminGetEnvironment(token: string, refresh = false): Promise<EnvironmentReport> {
+  return request(`/api/admin/environment${refresh ? '?refresh=1' : ''}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+}
+
+/** The local DNS config for this box, as a file to put on the venue router. */
+export async function adminDnsConfig(token: string): Promise<Blob> {
+  const res = await fetch(apiUrl('/api/admin/dns-config'), {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)
+  }
+  return res.blob()
 }
 
 export function adminGetSettings(token: string): Promise<AdminSettings> {

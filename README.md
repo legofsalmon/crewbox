@@ -58,9 +58,9 @@ shared/   protocol types + zod schemas (used by both sides)
 server/   Fastify + WebSocket + node:sqlite (no native deps)
 web/      React + Vite PWA — shell + modules
 native/   Capacitor wrappers (Android with offline lock-screen alerts, iOS)
-deploy/   systemd units, dnsmasq config, cert-renew.sh, backup.sh,
-          make-poster.mjs, soak.mjs, RUNBOOK.md (the box serves TLS and
-          voice itself, so no Caddy or livekit-server to install)
+deploy/   systemd unit, dnsmasq config, cert-renew.sh, backup.sh,
+          restore.sh, make-poster.mjs, soak.mjs, RUNBOOK.md (the box serves
+          TLS and voice itself, so no Caddy or livekit-server to install)
 ```
 
 Live Patch used to sit under `import/` while it was being ported. That port is
@@ -104,6 +104,18 @@ hint are all changeable at runtime from the admin panel.
 voice, HTTPS-gated features, the Android app, disk, crew joined — with the
 fix attached to anything that doesn't. It is the honest answer; this file
 is only a description.
+
+**Admin → This network** is the same idea one scope out: what the box has been
+plugged into. A DHCP lease that never arrived, a hostname still pointing at
+last year's box, a certificate expiring on the Saturday — none of those are
+software faults, and none of them surface until crew can't connect. Real
+problems also appear on `/setup`, where they are far cheaper to fix than after
+the posters are printed.
+
+**No internet is reported as normal, not as a fault**, because that is the
+state this product exists for. Those rows carry an `info` state that never
+colours the summary. A captive portal is different and _is_ flagged: it looks
+exactly like a working uplink while silently breaking certificate renewal.
 
 For a dedicated festival rig — HTTPS on your own domain so browsers get the
 mic and the installable app, local DNS, UPS and spare-box discipline —

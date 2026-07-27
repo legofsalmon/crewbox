@@ -102,6 +102,14 @@ export default function AdminPanel() {
             <ServerSection onNote={setNote} />
           </section>
           <section>
+            <h3 className="admin-section-title">This network</h3>
+            <p className="admin-hint">
+              What the box has been plugged into. No internet is normal on site — nothing here needs
+              it.
+            </p>
+            <Environment onNote={setNote} />
+          </section>
+          <section>
             <h3 className="admin-section-title">Export</h3>
             <p className="admin-hint">
               Download every user, channel and message as a JSON file for the post-event archive.
@@ -141,25 +149,34 @@ function ModulesList() {
   )
 }
 
-const STATE_LABEL: Record<api.ReadinessState, string> = {
+const STATE_LABEL: Record<api.EnvState, string> = {
   ok: 'Working',
   limited: 'Limited',
   off: 'Off',
+  // Not "Unknown" or "Warning": this state means there is nothing to fix,
+  // and the label is read aloud by screen readers.
+  info: 'For information',
+}
+
+const STATE_DOT: Record<api.EnvState, string> = {
+  ok: '●',
+  limited: '◐',
+  off: '○',
+  info: '·',
 }
 
 /**
- * What this box can actually do, right now — replacing the tiered "what you
- * give up" list the docs used to carry. That list described a hypothetical
- * install; this describes the machine the admin is standing in front of, and
- * says what to do about anything that isn't working.
+ * Rows for both panels: what this box can do (readiness) and what it has been
+ * plugged into (environment). One component because they are the same idea at
+ * two scopes, and an admin should not have to learn two vocabularies.
  */
-function Readiness({ checks }: { checks: api.ReadinessCheck[] }) {
+function Readiness({ checks }: { checks: (api.ReadinessCheck | api.EnvCheck)[] }) {
   return (
     <ul className="readiness">
       {checks.map((check) => (
         <li key={check.id} className={`readiness-row readiness-${check.state}`}>
           <span className="readiness-state" aria-label={STATE_LABEL[check.state]}>
-            {check.state === 'ok' ? '●' : check.state === 'limited' ? '◐' : '○'}
+            {STATE_DOT[check.state]}
           </span>
           <div className="readiness-body">
             <span className="readiness-label">{check.label}</span>
@@ -169,6 +186,88 @@ function Readiness({ checks }: { checks: api.ReadinessCheck[] }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+/** How long ago the environment was probed, for the "checked" line. */
+function ago(ms: number): string {
+  const mins = Math.floor((Date.now() - ms) / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`
+}
+
+/**
+ * The network around the box, as opposed to the box itself.
+ *
+ * Probed rather than rendered live: finding out there is no uplink is done by
+ * waiting for a timeout, and an admin panel that stalls on that is worse than
+ * one showing a result from a minute ago. Refresh is a button because the
+ * answer only changes when someone changes the site.
+ */
+function Environment({ onNote }: { onNote: (note: string) => void }) {
+  const [report, setReport] = useState<api.EnvironmentReport | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = (refresh: boolean) => {
+    setBusy(true)
+    api
+      .adminGetEnvironment(token(), refresh)
+      .then(setReport)
+      .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Could not check'))
+      .finally(() => setBusy(false))
+  }
+
+  useEffect(() => {
+    let live = true
+    api
+      .adminGetEnvironment(token())
+      .then((r) => live && setReport(r))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
+
+  async function downloadDns() {
+    try {
+      const blob = await api.adminDnsConfig(token())
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'crewbox-dns.conf'
+      a.click()
+      URL.revokeObjectURL(url)
+      onNote('DNS config downloaded — put it on the venue router')
+    } catch (err) {
+      onNote(err instanceof api.ApiError ? err.message : 'Could not build the DNS config')
+    }
+  }
+
+  const pending = !report || report.pending
+  const needsDns = report?.checks.some((c) => c.id === 'hostname' && c.state !== 'ok') ?? false
+  return (
+    <>
+      {pending ? (
+        <p className="admin-hint">Checking the network around this box…</p>
+      ) : (
+        <Readiness checks={report.checks} />
+      )}
+      <div className="admin-export">
+        <button className="admin-btn" disabled={busy} onClick={() => load(true)}>
+          {busy ? 'Checking…' : 'Check again'}
+        </button>
+        {/* Only offered when the name is actually wrong — a download button
+            for a problem you don't have is just clutter. */}
+        {needsDns && (
+          <button className="admin-btn" onClick={() => void downloadDns()}>
+            Download DNS config
+          </button>
+        )}
+        {!pending && <span className="admin-muted">Checked {ago(report.probedAt)}</span>}
+      </div>
+    </>
   )
 }
 

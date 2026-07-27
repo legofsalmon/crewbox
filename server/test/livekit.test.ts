@@ -1,4 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -6,6 +14,7 @@ import {
   LIVEKIT_PORT,
   livekitConfigYaml,
   livekitCredentials,
+  reapOrphanLiveKit,
   spawnLiveKit,
   unpackLiveKit,
   type EmbeddedLiveKit,
@@ -149,4 +158,72 @@ describe('supervisor', () => {
     )
     expect(handle).toBeNull()
   }, 20_000)
+})
+
+describe('orphaned SFU from a killed box', () => {
+  /**
+   * Being force-quit is a supported way to stop a box — the store is SQLite
+   * in WAL mode and the product assumes hard power cuts — but that path skips
+   * the shutdown handler, so the SFU keeps holding the port. The next box
+   * then spawns one that dies of EADDRINUSE while the orphan answers with the
+   * previous run's keys, which reads as working voice that nobody can talk on.
+   */
+  it('records the running SFU so a later boot can find it', async () => {
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    const handle = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    expect(handle).not.toBeNull()
+    running.push(handle!)
+
+    const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+    expect(Number.isInteger(pid)).toBe(true)
+    // Signal 0 proves the recorded pid is the process actually running.
+    expect(() => process.kill(pid, 0)).not.toThrow()
+  }, 15_000)
+
+  it('clears the record when the SFU stops cleanly', async () => {
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    const handle = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    await handle!.stop()
+    // A stale file would make the next boot kill an unrelated process that
+    // happened to inherit the number.
+    await new Promise((r) => setTimeout(r, 300))
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  }, 15_000)
+
+  it('kills an orphan it finds, and frees the port', async () => {
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    const orphan = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    expect(orphan).not.toBeNull()
+    const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+
+    // The box goes away without running its shutdown handler; the SFU lives.
+    const warnings: string[] = []
+    const reaped = await reapOrphanLiveKit(join(dir, 'livekit'), {
+      info: () => {},
+      warn: (m) => warnings.push(m),
+    })
+    expect(reaped).toBe(true)
+    expect(warnings.join(' ')).toMatch(/previous run/)
+
+    // reapOrphanLiveKit waits for the process to actually go, so this holds
+    // immediately — no sleep, which would hide a reap that returned early.
+    expect(() => process.kill(pid, 0)).toThrow()
+  }, 15_000)
+
+  it('says nothing when there is no orphan to reap', async () => {
+    const dir = tempDir()
+    expect(await reapOrphanLiveKit(dir, silentLog)).toBe(false)
+  })
+
+  it('ignores a stale record whose process is long gone', async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, 'livekit'), { recursive: true })
+    // A pid that cannot be running: the file outlived a reboot.
+    writeFileSync(join(dir, 'livekit', 'livekit.pid'), '2147483646')
+    expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
 })

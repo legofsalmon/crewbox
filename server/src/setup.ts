@@ -29,6 +29,13 @@ export interface SetupPageOptions {
   base: string
   /** Validation message to show above the form, when a submit bounced. */
   error?: string
+  /**
+   * Environment problems worth raising before anyone sets up an event —
+   * a dead network is much cheaper to fix now than after the posters are
+   * printed. Only genuine problems belong here: this is a setup form, not a
+   * dashboard, and "no internet" is normal and must stay silent.
+   */
+  warnings?: { label: string; detail: string; fix?: string }[]
 }
 
 const field = (id: string, label: string, value: string, hint: string, attrs: string): string => `
@@ -36,7 +43,7 @@ const field = (id: string, label: string, value: string, hint: string, attrs: st
   <input id="${id}" name="${id}" value="${escapeHtml(value)}" ${attrs}>
   <span class="hint">${escapeHtml(hint)}</span>`
 
-export function setupPage({ values, base, error }: SetupPageOptions): string {
+export function setupPage({ values, base, error, warnings = [] }: SetupPageOptions): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Set up Crewbox</title>
@@ -53,11 +60,24 @@ export function setupPage({ values, base, error }: SetupPageOptions): string {
            border: 0; border-radius: 10px; cursor: pointer; }
   .error { margin-top: 18px; padding: 10px 12px; border-radius: 10px;
            background: #4a1f1c; color: #ffd9d4; text-align: left; font-size: 15px; }
+  .warn { margin-top: 18px; padding: 12px 14px; border-radius: 10px; text-align: left;
+          background: #3a2c14; color: #f6e3bd; font-size: 14px; }
+  .warn b { display: block; color: #f5b73e; }
+  .warn p { margin: 4px 0 0; }
+  .warn + .warn { margin-top: 8px; }
   .skip { display: block; margin-top: 18px; font-size: 14px; }
 </style></head><body><div class="card">
   <h1>Crewbox</h1>
   <p class="meta">Two minutes of setup, then crew scan a QR and you're running.</p>
   ${error ? `<p class="error">${escapeHtml(error)}</p>` : ''}
+  ${warnings
+    .map(
+      (w) =>
+        `<div class="warn"><b>${escapeHtml(w.label)}</b><p>${escapeHtml(w.detail)}</p>${
+          w.fix ? `<p>${escapeHtml(w.fix)}</p>` : ''
+        }</div>`
+    )
+    .join('')}
   <form method="post" action="/setup">
     ${field('eventName', 'Event name', values.eventName, 'Shown to crew when they join. Change it any time.', 'maxlength="64" placeholder="e.g. Ashton Court 2026" autofocus')}
     ${field('wifiSsid', 'Wi-Fi network', values.wifiSsid, "The network crew join to reach this box. Leave blank if you don't know it yet.", 'maxlength="64" placeholder="e.g. CrewNet" autocomplete="off" autocapitalize="none" spellcheck="false"')}
