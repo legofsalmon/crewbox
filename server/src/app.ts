@@ -12,6 +12,7 @@ import { networkInterfaces } from 'node:os'
 import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
+import { boxProbes, createEnvironmentCache, type Probes } from './environment.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT } from './livekit.ts'
 import { boxReadiness, worstState } from './readiness.ts'
@@ -136,6 +137,8 @@ export interface AppDeps {
   dataDir?: string
   /** Certificate material; when present the box serves HTTPS itself. */
   tls?: { cert: Buffer; key: Buffer; ca?: Buffer }
+  /** Environment probes; injected in tests so nothing touches a network. */
+  probes?: Probes
   logger?: boolean
 }
 
@@ -161,6 +164,7 @@ export function buildApp({
   modules = ['chat'],
   dataDir,
   tls,
+  probes,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -190,6 +194,11 @@ export function buildApp({
     voiceEnabled: voiceAvailable,
     modules,
   })
+
+  // Warmed at startup so the admin panel reads a result rather than waiting
+  // on one; see the route below.
+  const environment = createEnvironmentCache(probes ?? boxProbes(dataDir))
+  void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy)
   const docs = new DocsRelay()
@@ -324,9 +333,24 @@ export function buildApp({
       .header('cache-control', 'no-store')
       .send(html)
 
+  /**
+   * Problems with the network the box is plugged into, worth raising here
+   * because a dead DHCP lease or a hostname pointing at last year's box is
+   * far cheaper to fix before the posters are printed. Only real problems:
+   * `info` (chiefly "no internet", which is normal) stays silent, or the
+   * first thing a new admin sees is a warning about something correct.
+   */
+  const setupWarnings = () =>
+    (environment.current()?.checks ?? [])
+      .filter((check) => check.state === 'off' || check.state === 'limited')
+      .map(({ label, detail, fix }) => ({ label, detail, fix }))
+
   fastify.get('/setup', (req, reply) => {
     if (!setupOpen()) return reply.redirect('/connect')
-    return sendHtml(reply, setupPage({ values: setupValues(), base: crewUrl(req) }))
+    return sendHtml(
+      reply,
+      setupPage({ values: setupValues(), base: crewUrl(req), warnings: setupWarnings() })
+    )
   })
 
   fastify.post('/setup', (req, reply) => {
@@ -746,6 +770,22 @@ export function buildApp({
   })
 
   // Editable settings + read-only server info for the admin panel.
+  /**
+   * What the box has been plugged into, as opposed to what the box can do.
+   * Separate from /api/admin/settings because probing a dead uplink is
+   * discovered by waiting, and the settings panel must stay instant.
+   *
+   * The first sweep is kicked off at startup, so this is normally warm. A
+   * caller that arrives first gets `null` and a "checking" state rather than
+   * a request that hangs for several seconds.
+   */
+  fastify.get('/api/admin/environment', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const refresh = (req.query as { refresh?: string } | undefined)?.refresh === '1'
+    if (refresh) return environment.refresh()
+    return environment.current() ?? { checks: [], probedAt: 0, pending: true }
+  })
+
   fastify.get('/api/admin/settings', (req, reply) => {
     if (!authAdmin(req, reply)) return reply
     const stats = hub.stats()

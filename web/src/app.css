@@ -2044,6 +2044,18 @@ ul {
   color: var(--text-faint);
 }
 
+/* Environment rows only. `info` is "worth knowing, nothing to fix" — most
+   often no internet, which is the state this product exists for. It must not
+   read as a fault, so it gets the muted dot and, below, a muted fix line
+   rather than the accent that means "act on this". */
+.readiness-info .readiness-state {
+  color: var(--text-muted);
+}
+
+.readiness-info .readiness-fix {
+  color: var(--text-muted);
+}
+
 .readiness-body {
   display: flex;
   flex-direction: column;
