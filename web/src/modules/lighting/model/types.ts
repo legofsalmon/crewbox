@@ -1,3 +1,5 @@
+import type { GdtfChannel } from './gdtf'
+
 /**
  * The lighting module's domain types.
  *
@@ -107,6 +109,13 @@ export interface Fixture {
 export interface FixtureMode {
   name: string
   footprint: number
+  /**
+   * What each channel of this mode does, from the manufacturer's GDTF
+   * profile. Present only for modes an MVR import found in use — the live
+   * view degrades to peak-in-footprint without it, which is what a
+   * hand-typed fixture gets anyway.
+   */
+  channels?: GdtfChannel[]
 }
 
 /**
@@ -121,10 +130,14 @@ export interface FixtureType {
   weight?: number
   /**
    * Space it takes along a bar, in metres — used to work out how much truss
-   * a run of fixtures needs. Optional: an MVR-imported type has no width in
-   * the file, and `truss.ts` falls back to a sensible default.
+   * a run of fixtures needs. Optional: `truss.ts` falls back to a sensible
+   * default for a type whose profile doesn't say.
    */
   width?: number
+  /** Overall height in metres, from the GDTF models. */
+  height?: number
+  /** Beam angle in degrees, for drawing beams in the 3D view. */
+  beamAngle?: number
 }
 
 export interface PlotMeta {

@@ -435,14 +435,55 @@ const readChannels = (
   geometries: GeometryMap,
   wheels: Map<string, { name: string; colour: string }[]>,
   units: Map<string, string>
-): GdtfChannel[] => {
+): { channels: GdtfChannel[]; footprint: number } => {
   const out: GdtfChannel[] = []
+  let footprint = 0
   const channels = mode.getElementsByTagName('DMXChannel')
 
   for (let i = 0; i < channels.length; i++) {
     const element = channels[i]!
     const offsets = channelOffsets(element)
+    // No offsets means a virtual channel, which occupies nothing.
     if (offsets.length === 0) continue
+
+    const geometry = attr(element, 'Geometry')
+    const rawBreak = element.getAttribute('DMXBreak')?.trim() ?? ''
+    const overwrites = rawBreak.toLowerCase() === 'overwrite'
+    const declaredBreak = overwrites ? null : Number(rawBreak || '1')
+    const dmxBreak = declaredBreak !== null && Number.isFinite(declaredBreak) ? declaredBreak : 1
+
+    // Where this channel lands, once per instance of its geometry.
+    const named = geometries.byName.get(geometry)
+    const instances = named
+      ? [named]
+      : geometries.references.get(geometries.topLevel.get(geometry) ?? geometry)
+    const placed: { offsets: number[]; dmxBreak: number }[] = []
+    if (!instances || instances.length === 0) {
+      placed.push({ offsets, dmxBreak })
+    } else {
+      // A referenced geometry's channels exist once per reference. Emitting
+      // only the references, never the bare channel, is what keeps a 12-cell
+      // bar from being counted as one cell.
+      for (const instance of instances) {
+        const resolved = overwrites
+          ? instance.overwrite
+          : { dmxBreak, offset: instance.breaks.get(dmxBreak) ?? 1 }
+        if (!resolved) continue
+        const shift = resolved.offset - 1
+        placed.push({
+          offsets: offsets.map((offset) => offset + shift),
+          dmxBreak: resolved.dmxBreak,
+        })
+      }
+    }
+
+    // The footprint counts every channel that takes up room, whether or not
+    // this can say what it does. A profile whose channels carry no attribute
+    // is unusual but still tells you how many slots the fixture eats, and
+    // that number drives collision detection.
+    for (const instance of placed) {
+      for (const offset of instance.offsets) footprint = Math.max(footprint, offset)
+    }
 
     const logical = Array.from(element.children).find((c) => c.tagName === 'LogicalChannel')
     // The attribute lives on the logical channel; a channel function carries
@@ -458,52 +499,20 @@ const readChannels = (
     )
     if (!attribute || attribute === 'NoFeature') continue
 
-    const geometry = attr(element, 'Geometry')
-    const rawBreak = element.getAttribute('DMXBreak')?.trim() ?? ''
-    const overwrites = rawBreak.toLowerCase() === 'overwrite'
-    const declaredBreak = overwrites ? null : Number(rawBreak || '1')
-    const dmxBreak = declaredBreak !== null && Number.isFinite(declaredBreak) ? declaredBreak : 1
-
     const { functions, slots } = logical
       ? readFunctions(logical, offsets.length, wheels)
       : { functions: [], slots: [] }
 
-    const unit = units.get(attribute) ?? FALLBACK_UNITS[attribute] ?? ''
-
-    const base: Omit<GdtfChannel, 'offsets' | 'dmxBreak'> = {
+    const base = {
       attribute,
       geometry,
-      unit,
+      unit: units.get(attribute) ?? FALLBACK_UNITS[attribute] ?? '',
       ...(functionsAreInformative(functions) ? { functions } : {}),
       ...(slots.length > 0 ? { slots } : {}),
     }
-
-    const named = geometries.byName.get(geometry)
-    const instances = named
-      ? [named]
-      : geometries.references.get(geometries.topLevel.get(geometry) ?? geometry)
-    if (!instances || instances.length === 0) {
-      out.push({ ...base, offsets, dmxBreak })
-      continue
-    }
-
-    // A referenced geometry's channels exist once per reference. Emitting
-    // only the references (never the bare channel) is what keeps a 12-cell
-    // bar from being counted as one cell.
-    for (const instance of instances) {
-      const resolved = overwrites
-        ? instance.overwrite
-        : { dmxBreak, offset: instance.breaks.get(dmxBreak) ?? 1 }
-      if (!resolved) continue
-      const shift = resolved.offset - 1
-      out.push({
-        ...base,
-        offsets: offsets.map((offset) => offset + shift),
-        dmxBreak: resolved.dmxBreak,
-      })
-    }
+    for (const instance of placed) out.push({ ...base, ...instance })
   }
-  return out
+  return { channels: out, footprint }
 }
 
 // --- Physical ---------------------------------------------------------------
@@ -598,11 +607,7 @@ export function parseGdtfProfile(doc: Document): GdtfProfile | null {
   const modeElements = fixtureType.getElementsByTagName('DMXMode')
   for (let i = 0; i < modeElements.length; i++) {
     const element = modeElements[i]!
-    const channels = readChannels(element, geometries, wheels, units)
-    let footprint = 0
-    for (const channel of channels) {
-      for (const offset of channel.offsets) footprint = Math.max(footprint, offset)
-    }
+    const { channels, footprint } = readChannels(element, geometries, wheels, units)
     if (footprint === 0) continue
     modes.push({
       name: attr(element, 'Name') || `Mode ${i + 1}`,

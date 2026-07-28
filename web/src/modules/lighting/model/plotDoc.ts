@@ -1,6 +1,7 @@
 import { newId } from '@crewbox/shared'
 import * as Y from 'yjs'
 import { DEFAULT_TRIM } from './geometry'
+import type { GdtfChannel } from './gdtf'
 import {
   emptyFixture,
   type Fixture,
@@ -285,6 +286,62 @@ const nullableNum = (value: unknown): number | null =>
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 /**
+ * A mode's GDTF channel map, if it has one that survives inspection.
+ *
+ * This is the deepest structure in the document and the one most likely to
+ * arrive malformed — it comes from an MVR someone imported on a different
+ * build, and it drives what the live view claims about a fixture. A channel
+ * with no offsets can't be read from the wire, so it's dropped rather than
+ * kept as a row that silently never resolves.
+ */
+const readChannels = (value: unknown): GdtfChannel[] | undefined => {
+  if (!Array.isArray(value)) return undefined
+  const channels: GdtfChannel[] = []
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue
+    const entry = raw as Record<string, unknown>
+    const offsets = Array.isArray(entry.offsets)
+      ? entry.offsets.filter(
+          (offset): offset is number => typeof offset === 'number' && offset >= 1 && offset <= 512
+        )
+      : []
+    const attribute = str(entry.attribute)
+    if (offsets.length === 0 || !attribute) continue
+
+    const functions = Array.isArray(entry.functions)
+      ? entry.functions
+          .filter((fn): fn is Record<string, unknown> => !!fn && typeof fn === 'object')
+          .map((fn) => ({
+            name: str(fn.name),
+            from: num(fn.from, 0),
+            physicalFrom: num(fn.physicalFrom, 0),
+            physicalTo: num(fn.physicalTo, 1),
+          }))
+      : []
+    const slots = Array.isArray(entry.slots)
+      ? entry.slots
+          .filter((slot): slot is Record<string, unknown> => !!slot && typeof slot === 'object')
+          .map((slot) => ({
+            from: num(slot.from, 0),
+            name: str(slot.name),
+            colour: str(slot.colour) || '#ffffff',
+          }))
+      : []
+
+    channels.push({
+      offsets,
+      attribute,
+      geometry: str(entry.geometry),
+      dmxBreak: num(entry.dmxBreak, 1),
+      unit: str(entry.unit),
+      ...(functions.length > 0 ? { functions } : {}),
+      ...(slots.length > 0 ? { slots } : {}),
+    })
+  }
+  return channels.length > 0 ? channels : undefined
+}
+
+/**
  * Plain-object view of the doc for rendering. Every field is read
  * defensively: a doc can arrive from a peer running an older build, and a
  * missing field should degrade to a sensible default rather than crash the
@@ -355,10 +412,19 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
         name: str(json.name),
         modes: modes
           .filter((mode): mode is Record<string, unknown> => !!mode && typeof mode === 'object')
-          .map((mode) => ({ name: str(mode.name), footprint: num(mode.footprint, 1) })),
+          .map((mode) => {
+            const channels = readChannels(mode.channels)
+            return {
+              name: str(mode.name),
+              footprint: num(mode.footprint, 1),
+              ...(channels ? { channels } : {}),
+            }
+          }),
         watts: nullableNum(json.watts) ?? undefined,
         weight: nullableNum(json.weight) ?? undefined,
         width: nullableNum(json.width) ?? undefined,
+        height: nullableNum(json.height) ?? undefined,
+        beamAngle: nullableNum(json.beamAngle) ?? undefined,
       }
     }),
   }

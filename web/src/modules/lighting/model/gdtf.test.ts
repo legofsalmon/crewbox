@@ -157,6 +157,15 @@ describe('reading a mode', () => {
     expect(profile!.modes[0]!.channels.map((c) => c.attribute)).toEqual(['Dimmer'])
   })
 
+  it('still counts a channel it cannot describe towards the footprint', () => {
+    // A channel with no logical channel at all says nothing about what it
+    // does, but it still eats a slot — and that number is what the address
+    // collision check runs on. Losing it would be worse than not knowing
+    // what the channel is for.
+    const profile = simple(`<DMXChannel DMXBreak="1" Offset="8" Geometry="Base"/>`)
+    expect(profile!.modes[0]).toMatchObject({ footprint: 8, channels: [] })
+  })
+
   it('carries a channel on another break without pretending to place it', () => {
     // crewbox patches a fixture at one address, so a break-2 channel is not
     // at a knowable slot. Keeping it lets the readout say so.
