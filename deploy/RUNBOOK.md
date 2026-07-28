@@ -19,6 +19,65 @@ The one document to print and keep in the production office.
 - Printed QR join posters (`node deploy/make-poster.mjs https://chat.<yourdomain> <EVENT_PIN>`)
 - This runbook
 
+## A laptop box — trials, small rooms, and the spare in the car
+
+Everything below this section describes the full festival rig: a dedicated
+server box, a router you control, a certificate, systemd. That is the right
+answer for a site. It is far too much for twenty people in a rehearsal room,
+and it is not what you reach for when the real box has died.
+
+For that, a Mac running `Crewbox.dmg` is a complete crew server. Same
+software, same data, same everything — it just has no certificate and no
+router of its own, and that costs exactly two things (below).
+
+1. **Install.** Download `Crewbox.dmg`, drag Crewbox to Applications, launch
+   it. An icon appears **beside the clock**. There is deliberately no Dock
+   icon: it is a server, and the menu is where you check on it and stop it.
+2. **First launch opens `/setup`** — event name, the Wi-Fi crew join, the
+   event PIN, and the admin password. **Write the admin password down now.**
+   It is not the event PIN and it is not shown again.
+3. **Menu bar → Open the QR poster page.** That is `/connect`: the QR, the
+   PIN in print, and the Android app. Leave it on a spare screen, or print it.
+4. **Give the Mac a fixed address** — a DHCP reservation on whatever router
+   you are on, or a manual IP. On a lease it will move, and when it does every
+   QR already scanned points at nothing.
+5. **macOS will ask to allow incoming connections** the first time. Say
+   Allow. If you clicked past it: System Settings → Network → Firewall →
+   Options.
+6. **Sleep is already handled** — the box holds a `caffeinate` assertion for
+   as long as it runs, lid included. One exception it cannot beat: a MacBook
+   on **battery** with the lid shut still sleeps. Keep it on mains.
+
+### The two things a laptop box costs you
+
+Both come from having no HTTPS, and both are visible in **Admin → This box**,
+which reports them as `limited` rather than pretending:
+
+- **No push-to-talk from a phone browser.** The voice server really is
+  running — but browsers refuse the microphone outside a secure context, and
+  `http://192.168.x.x` is not one. Chat, files, patch sheets and lighting are
+  all completely unaffected.
+- **No install-to-home-screen**, for the same reason.
+
+Crew on **Android with the APK do get voice**, because a native app is not
+subject to that rule. If you need push-to-talk in browsers, you need a real
+certificate and a DNS name — which is the festival rig, from here down.
+
+Know this before the crew do. "Voice doesn't work" discovered by a stage
+manager mid-trial reads as a broken product; said in advance it is a
+deployment choice.
+
+### Running it
+
+|                          |                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Stop it                  | Menu bar → **Stop Crewbox and quit**                                                                                          |
+| Stop it from a terminal  | `/Applications/Crewbox.app/Contents/Resources/crewbox-server --stop`                                                          |
+| Is it running, and where | same path, `--status`                                                                                                         |
+| Last resort              | `pkill -f Crewbox`                                                                                                            |
+| Where the data lives     | `~/.crewbox/data` — the whole event is in there                                                                               |
+| Update it                | Quit first (macOS will not replace a running app), swap in the new `Crewbox.dmg`, launch. Data survives; crew stay signed in. |
+
 ## Before the event (needs internet — do at home/office)
 
 1. **Certificate** (calendar this — expires every 90 days):
@@ -28,10 +87,22 @@ The one document to print and keep in the production office.
    picture. It prints the expiry; **Admin → This box** confirms it took.
    The name here is the box's own (`chat.<yourdomain>`, resolving to its LAN
    IP), not the public download site.
-2. **Software up to date**: `git pull && npm install && npm run build` in `/opt/crewbox`,
-   then restart the service. The server serves whatever `web/dist` holds at request
-   time — an old dist next to a new server binary quietly ships stale UI (clients
-   will nag "New version available" forever), so treat build + restart as one step.
+2. **Software up to date.** Which of these you do depends on how the box was
+   installed:
+   - **A release binary or `Crewbox.dmg`** (the normal case): download the new
+     one, stop the old box, put the new one in place, start it. The web app
+     ships _inside_ the binary, so there is no separate build and nothing can
+     fall out of step. Stop it first — macOS and Windows both refuse to
+     replace a running program.
+   - **A git checkout** (`/opt/crewbox`): `git pull && npm install && npm run build`,
+     then restart the service. Here the server serves whatever `web/dist` holds
+     at request time, so an old dist beside a new server quietly ships stale UI
+     — clients will nag "New version available" forever. Treat build + restart
+     as one step.
+
+   Either way the crew do not have to do anything: an open tab notices the new
+   version and offers **Reload**.
+
 3. **Write down the admin password.** The box mints one on first start and
    prints it to its own console; it opens the cog in the sidebar and is not
    the event PIN. Change it in **Admin → This box**. If it is ever lost, set

@@ -264,6 +264,29 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      # Exactly these six, no more and no fewer.
+      #
+      # The jobs above upload by glob (build/box/crewbox-*), and v0.7.2 shipped
+      # a stray 11 KB crewbox-tray.exe because the Windows tray helper happened
+      # to be built into that directory — already embedded in the .exe, so
+      # pointless on a download page and confusing beside it. A glob quietly
+      # gaining a file is invisible; a missing one is worse, because it looks
+      # like a successful release that simply lacks your platform.
+      - name: The release has exactly the expected assets
+        run: |
+          set -euo pipefail
+          EXPECTED="Crewbox.dmg crewbox-darwin-arm64 crewbox-darwin-x64 crewbox-linux-x64 crewbox-win32-x64.exe crewbox.apk"
+          ACTUAL="$(cd artifacts && ls | sort | tr '\n' ' ' | sed 's/ $//')"
+          SORTED_EXPECTED="$(echo "$EXPECTED" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
+          echo "assets: $ACTUAL"
+          if [ "$ACTUAL" != "$SORTED_EXPECTED" ]; then
+            echo "::error::Release assets are not what they should be."
+            echo "  expected: $SORTED_EXPECTED"
+            echo "  actual:   $ACTUAL"
+            exit 1
+          fi
+
       - name: Publish to the private repo's own releases
         uses: softprops/action-gh-release@v2
         with:

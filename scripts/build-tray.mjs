@@ -71,7 +71,8 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '
     console.error('no csc.exe found — is the .NET Framework present?')
     process.exit(1)
   }
-  const out = process.argv[2] ?? join(root, 'build', 'box', 'crewbox-tray.exe')
+  // Never build/box: the release globs build/box/crewbox-* into its assets.
+  const out = process.argv[2] ?? join(root, 'build', 'tray', 'crewbox-tray.exe')
   buildTray(out)
   console.log(`built ${out}`)
 }
