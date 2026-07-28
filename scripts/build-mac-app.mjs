@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildMenuBar } from './build-menubar.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', ...opts })
@@ -89,24 +90,10 @@ chmodSync(server, 0o755)
 // swiftc ships with the Xcode command line tools, which every macOS runner
 // has and anyone building this locally needs anyway for codesign.
 const exec = join(macosDir, 'Crewbox')
-const menubarSource = join(root, 'native', 'macos', 'CrewboxMenuBar.swift')
 // Match the architectures actually in the server binary, so the wrapper runs
 // wherever the box does rather than silently narrowing a universal build.
-const archFlags = capture('lipo', ['-archs', server])
-  .split(/\s+/)
-  .filter(Boolean)
-  .flatMap((arch) => ['-target', `${arch}-apple-macos11.0`])
-run('swiftc', [
-  ...archFlags,
-  '-O',
-  // The bundle is signed as a whole below; an ad-hoc signature here would
-  // just be replaced.
-  '-Xlinker',
-  '-no_adhoc_codesign',
-  '-o',
-  exec,
-  menubarSource,
-])
+const archs = capture('lipo', ['-archs', server]).split(/\s+/).filter(Boolean)
+buildMenuBar(exec, archs)
 chmodSync(exec, 0o755)
 console.log(`menu-bar wrapper: ${capture('lipo', ['-archs', exec])}`)
 

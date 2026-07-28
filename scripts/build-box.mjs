@@ -18,6 +18,7 @@ import {
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { buildTray } from './build-tray.mjs'
 
 // fileURLToPath, not URL.pathname — the latter yields /C:/... on Windows,
 // which every fs call then fails to resolve.
@@ -95,40 +96,20 @@ if (hasLivekit) assets[`livekit/${livekitExe}`] = livekitPath
 // LiveKit is: a box built without it still works, it just has no tray.
 let hasTray = false
 if (process.platform === 'win32') {
-  const csc = join(
-    process.env.WINDIR ?? 'C:\\Windows',
-    'Microsoft.NET',
-    'Framework64',
-    'v4.0.30319',
-    'csc.exe'
-  )
-  const trayExe = join(outDir, 'crewbox-tray.exe')
-  if (existsSync(csc)) {
-    try {
-      execFileSync(
-        csc,
-        [
-          '/nologo',
-          '/target:winexe',
-          '/optimize+',
-          `/out:${trayExe}`,
-          '/reference:System.dll',
-          '/reference:System.Drawing.dll',
-          '/reference:System.Windows.Forms.dll',
-          '/reference:System.Runtime.Serialization.dll',
-          join(root, 'native', 'windows', 'CrewboxTray.cs'),
-        ],
-        { stdio: 'inherit' }
-      )
+  try {
+    const trayExe = buildTray(join(outDir, 'crewbox-tray.exe'))
+    if (trayExe) {
       assets['helper/crewbox-tray.exe'] = trayExe
       hasTray = true
-    } catch {
-      // Never fail the box over its tray icon: a box with no tray is the
-      // situation before this existed, a box that won't build is worse.
-      console.warn('could not compile the tray helper — building without it')
+    } else {
+      console.warn('no csc.exe found — building without the tray helper')
     }
-  } else {
-    console.warn(`no csc.exe at ${csc} — building without the tray helper`)
+  } catch {
+    // Never fail the box over its tray icon: a box with no tray is the
+    // situation before this existed, a box that won't build is worse. CI
+    // compiles it on every pull request, so a real breakage is caught there
+    // rather than being quietly swallowed here.
+    console.warn('could not compile the tray helper — building without it')
   }
 }
 
