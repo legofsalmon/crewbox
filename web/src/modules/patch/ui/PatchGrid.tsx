@@ -108,6 +108,9 @@ export default function PatchGrid({
   matchedChannels?: Set<string>
 }) {
   const { channels, artists, subBoxes, patches } = snapshot
+  // "Nothing typed yet": no patch data at all. A fresh sheet has channels
+  // (the numbered rows) but no patches, so this is the honest test.
+  const untouched = Object.keys(patches).length === 0
   const remotePeers = useSheetRemotePeers(sheetId)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const { addToast } = useToasts()
@@ -271,6 +274,15 @@ export default function PatchGrid({
         <button type="button" onClick={() => addChannel(doc)}>
           + Add Channel
         </button>
+        {/* A brand-new sheet is ten blank rows and no clue what to do with
+            them. Only shown while nothing has been filled in, so it never
+            nags anyone working. */}
+        {untouched && (
+          <p className={styles.startHint}>
+            Type straight into the grid, or bring one in from the sheet list with{' '}
+            <strong>Import CSV</strong>.
+          </p>
+        )}
       </div>
     </div>
   )
