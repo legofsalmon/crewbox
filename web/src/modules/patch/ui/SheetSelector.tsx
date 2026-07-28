@@ -106,26 +106,52 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
         </p>
       </header>
 
+      {/* Buttons stay put and the form opens below them, the same way a
+          lighting plot does it — swapping the actions out for a form made the
+          page jump and hid Import while you were naming a sheet. */}
       <div className={styles.actions}>
-        {creating ? (
-          <form
-            className={styles.createForm}
-            onSubmit={(e) => {
-              e.preventDefault()
-              handleCreate()
-            }}
-          >
-            <label className={styles.visuallyHidden} htmlFor="new-sheet-name">
-              Sheet name
-            </label>
-            <input
-              id="new-sheet-name"
-              type="text"
-              placeholder="Sheet name (e.g. Summer Fest — Main Stage)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
+        <button type="button" className={styles.createButton} onClick={() => setCreating(true)}>
+          + New Sheet
+        </button>
+        <button
+          type="button"
+          className={styles.importButton}
+          onClick={() => importRef.current?.click()}
+          title="Import a CSV exported from Google Sheets, Excel, or Live Patch"
+        >
+          ⇪ Import CSV
+        </button>
+        <input
+          ref={importRef}
+          type="file"
+          accept=".csv,text/csv"
+          className={styles.hiddenFile}
+          aria-label="Import CSV file"
+          onChange={(e) => {
+            void handleImportFile(e.target.files?.[0])
+            e.target.value = ''
+          }}
+        />
+      </div>
+
+      {creating && (
+        <form
+          className={styles.createForm}
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleCreate()
+          }}
+        >
+          <label htmlFor="new-sheet-name">Sheet name</label>
+          <input
+            id="new-sheet-name"
+            type="text"
+            placeholder="Summer Fest — Main Stage"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
+          <div className={styles.formActions}>
             <button type="submit">Create</button>
             <button
               type="button"
@@ -137,34 +163,9 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
             >
               Cancel
             </button>
-          </form>
-        ) : (
-          <>
-            <button type="button" className={styles.createButton} onClick={() => setCreating(true)}>
-              + New Sheet
-            </button>
-            <button
-              type="button"
-              className={styles.importButton}
-              onClick={() => importRef.current?.click()}
-              title="Import a CSV exported from Google Sheets, Excel, or Live Patch"
-            >
-              ⇪ Import CSV
-            </button>
-            <input
-              ref={importRef}
-              type="file"
-              accept=".csv,text/csv"
-              className={styles.hiddenFile}
-              aria-label="Import CSV file"
-              onChange={(e) => {
-                void handleImportFile(e.target.files?.[0])
-                e.target.value = ''
-              }}
-            />
-          </>
-        )}
-      </div>
+          </div>
+        </form>
+      )}
 
       <div className={styles.list}>
         {!loaded && entries.length === 0 ? (

@@ -130,10 +130,10 @@ export const setMetaField = (doc: Y.Doc, field: 'title' | 'stage' | 'date', valu
  * Callers must already be inside a transaction, so an insert and the
  * renumbering it causes undo as one action rather than two.
  */
-const renumberChannels = (channels: Y.Array<Y.Map<string>>): void => {
+const renumberChannels = (channels: Y.Array<YEntity>): void => {
   for (let i = 0; i < channels.length; i++) {
     const channel = channels.get(i)
-    const label = channel.get('label') ?? ''
+    const label = String(channel.get('label') ?? '')
     if (!/^\d+$/.test(label)) continue
     const positional = String(i + 1)
     // Only write when it actually changes: every set is a CRDT update that

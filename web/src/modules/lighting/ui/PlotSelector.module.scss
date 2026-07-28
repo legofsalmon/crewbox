@@ -1,3 +1,5 @@
+@use '../../_shared/ui/controls' as c;
+
 .selector {
   padding: 24px;
   max-width: 820px;
@@ -30,61 +32,24 @@
 }
 
 .createButton {
-  border: 0;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font: inherit;
-  font-weight: 600;
-  padding: 9px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-
-  &:hover {
-    background: var(--accent-strong);
-  }
+  @include c.primary-button;
 }
 
 .cancel {
-  border: 1px solid var(--border);
-  background: var(--bg-raised);
-  color: var(--text);
-  font: inherit;
-  padding: 9px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-
-  &:hover {
-    background: var(--bg-hover);
-  }
+  @include c.secondary-button;
 }
 
 .createForm {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px;
+  @include c.form-panel;
   margin-bottom: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
 
   label {
-    font-size: 12px;
-    color: var(--text-muted);
+    @include c.field-label;
   }
 }
 
 .input {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  padding: 8px 10px;
-  border-radius: 6px;
-
-  &:focus {
-    outline: 2px solid var(--accent);
-  }
+  @include c.field-input;
 }
 
 .formActions {
