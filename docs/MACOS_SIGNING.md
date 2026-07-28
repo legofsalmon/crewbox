@@ -139,29 +139,40 @@ on the line.
 
 ## What happens then
 
-The next release signs the app with a hardened runtime, wraps it in a `.dmg`,
-submits that to Apple's notary service, waits for the result, and **staples**
-the ticket into the image.
+The next release signs the app with a hardened runtime, notarises **the app**
+and staples its ticket, then builds the `.dmg` around that stapled app and
+notarises and staples the image too.
 
-Stapling is the part that matters for this product: it writes the
-notarisation ticket into the file, so Gatekeeper can clear it without asking
-Apple. A crew box is often set up on a network that cannot reach Apple at
-all — a shed at a festival site with no uplink — and an un-stapled app gets
-refused exactly there.
+Both, in that order, and it matters. Stapling only the disk image looks right
+in a build log and leaves the app someone drags to /Applications carrying no
+ticket at all — which sends Gatekeeper to ask Apple on first launch. A crew
+box is routinely set up on a network that cannot reach Apple, a shed at a
+festival site with no uplink, and that is exactly where an un-stapled app is
+refused.
 
-Notarisation adds a few minutes to the release, and the first submission on a
-new account is usually the slowest. It is the only step that talks to Apple.
+Two round trips to Apple rather than one, so a few more minutes per release.
+The first submission on a new account is usually the slowest. These are the
+only steps that talk to Apple.
 
 To confirm it took, download the `.dmg` on a Mac that has never seen it —
 quarantine is only applied to downloaded files, so a copy moved over by USB
-proves nothing — then:
+proves nothing — then run **both** of these on the installed app:
 
 ```sh
-spctl -a -vv /Applications/Crewbox.app
+spctl -a -vv /Applications/Crewbox.app       # is it accepted?
+xcrun stapler validate /Applications/Crewbox.app   # is the ticket *in* it?
 ```
 
-`accepted` with `source=Notarized Developer ID` is the answer you want.
-`rejected` means the ticket didn't staple, and the release log will say why.
+`accepted` with `source=Notarized Developer ID` from the first, and
+`The validate action worked!` from the second.
+
+**Run the second one.** `spctl` will happily say `accepted` for an app with no
+stapled ticket, because it can ask Apple over the internet — which is exactly
+the thing a crew box cannot do. `stapler validate` is the only check that
+proves the ticket travelled inside the file, and that is what makes the app
+open in a shed with no uplink. A v0.7.0 build passed `spctl` and failed
+`stapler validate`: the release had stapled the disk image but never the app
+dragged out of it.
 
 ## Until then
 
