@@ -175,10 +175,17 @@ jobs:
       - name: What happens next
         run: |
           echo ""
-          echo "All six check out. The next release will sign, notarise and staple."
+          echo "All six check out. The next release will sign, notarise and staple"
+          echo "the app, then notarise and staple the disk image around it."
+          echo ""
           echo "Confirm on a Mac that *downloaded* the .dmg — a USB copy carries no"
-          echo "quarantine flag and so proves nothing:"
-          echo "  spctl -a -vv /Applications/Crewbox.app"
+          echo "quarantine flag and so proves nothing. Run both:"
+          echo "  spctl -a -vv /Applications/Crewbox.app          # is it accepted?"
+          echo "  xcrun stapler validate /Applications/Crewbox.app # is the ticket in it?"
+          echo ""
+          echo "The second one is the one that matters. spctl says 'accepted' for an"
+          echo "un-stapled app because it can ask Apple over the internet — which is"
+          echo "exactly what a crew box in a shed cannot do."
 
       - name: Clean up
         if: always()

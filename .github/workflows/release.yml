@@ -262,8 +262,11 @@ jobs:
             | macOS (bare binary) | `crewbox-darwin-arm64` / `crewbox-darwin-x64` |
             | Android (sideload) | `crewbox.apk` — or drop it into the box's data dir to serve it at `/crewbox.apk` |
 
-            macOS/Windows will warn about an unsigned binary on first launch
-            (macOS: right-click → Open). On Linux: `chmod +x` then run.
+            `Crewbox.dmg` is signed, notarised and stapled — it opens with no
+            warning, and with no internet. The bare `crewbox-darwin-*` binaries
+            are not signed and still need **right-click → Open**. Windows warns
+            about an unsigned app: **More info → Run anyway**. On Linux:
+            `chmod +x` then run.
 
             Voice runs inside the box — nothing else to install. For a
             dedicated festival rig (HTTPS so browsers get the mic, local
@@ -296,5 +299,6 @@ jobs:
             | macOS (bare binary) | `crewbox-darwin-arm64` / `crewbox-darwin-x64` |
             | Android | `crewbox.apk` |
 
-            macOS and Windows warn about an unsigned binary on first launch.
-            On Linux: `chmod +x` then run.
+            `Crewbox.dmg` is signed and notarised — it just opens. The bare
+            macOS binaries and the Windows `.exe` are unsigned and warn on
+            first launch. On Linux: `chmod +x` then run.
