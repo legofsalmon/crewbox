@@ -46,3 +46,48 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # The menu-bar item and the tray icon are the only native code in the repo,
+  # and until this job existed nothing built them outside a release — so a
+  # typo in either would have surfaced for the first time on release day, in
+  # the middle of cutting a version. Both compile in seconds; the release is
+  # the wrong place to find out.
+  #
+  # Compiling is all this proves. Whether a menu appears, and whether Quit
+  # stops the box, needs a real desktop session and a person looking at it.
+  helpers:
+    name: Desktop helpers compile (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS menu bar
+            os: macos-latest
+          - name: Windows tray
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the macOS menu-bar wrapper
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          # Both slices, matching what build-mac-app.mjs produces, so an
+          # arch-specific mistake cannot hide behind the runner's own.
+          swiftc -target arm64-apple-macos11.0 -target x86_64-apple-macos11.0 \
+            -O -o /tmp/CrewboxMenuBar native/macos/CrewboxMenuBar.swift
+          lipo -archs /tmp/CrewboxMenuBar
+      - name: Compile the Windows tray helper
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CSC="$WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+          [ -f "$CSC" ] || { echo "::error::no csc.exe at $CSC"; exit 1; }
+          "$CSC" /nologo /target:winexe /optimize+ /out:/tmp/crewbox-tray.exe \
+            /reference:System.dll /reference:System.Drawing.dll \
+            /reference:System.Windows.Forms.dll \
+            /reference:System.Runtime.Serialization.dll \
+            native/windows/CrewboxTray.cs
+          ls -l /tmp/crewbox-tray.exe
