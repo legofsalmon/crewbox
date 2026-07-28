@@ -190,12 +190,24 @@ jobs:
       # this still produces a working Apple Silicon app instead of failing.
       # build-mac-app.mjs takes one binary or two.
       - run: node scripts/build-mac-app.mjs mac/crewbox-darwin-*
-      # Run the universal app itself, not just the binaries that went into it.
-      # lipo has to preserve each slice's injected SEA section; if it doesn't,
-      # the app can't find its own payload and this is where that surfaces.
-      # Only the native slice actually executes here, so this proves arm64 —
-      # the Intel slice is covered by the smoke test in the box job.
-      - run: ./scripts/smoke-box.sh build/mac/Crewbox.app/Contents/MacOS/Crewbox
+      # Run the universal box from inside the built app, not just the binaries
+      # that went into it. lipo has to preserve each slice's injected SEA
+      # section; if it doesn't, the app can't find its own payload and this is
+      # where that surfaces. Only the native slice actually executes here, so
+      # this proves arm64 — the Intel slice is covered by the box job.
+      #
+      # Resources/, not MacOS/: the bundle's executable is the menu-bar
+      # wrapper now, and a GUI app with a run loop is not something a headless
+      # runner can smoke-test. The box is what this check is about.
+      - run: ./scripts/smoke-box.sh build/mac/Crewbox.app/Contents/Resources/crewbox-server
+      # The wrapper is the thing someone double-clicks, so at least prove it
+      # built for both architectures and is signed. Whether the menu appears
+      # is a question only a real desktop session can answer.
+      - name: The menu-bar wrapper is universal and signed
+        run: |
+          set -euo pipefail
+          lipo -archs build/mac/Crewbox.app/Contents/MacOS/Crewbox
+          codesign --verify --strict --verbose=2 build/mac/Crewbox.app/Contents/MacOS/Crewbox
       - uses: actions/upload-artifact@v4
         with:
           name: macapp

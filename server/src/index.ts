@@ -3,10 +3,19 @@ import { HOME_CHANNEL } from '@crewbox/shared'
 import { existsSync, mkdirSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
 import { config, warnOnDefaults } from './config.ts'
-import { openDb } from './db.ts'
-import { Store } from './store.ts'
 import { attachWs, buildApp } from './app.ts'
-import { boxDataDir, extractWebDist, isBox, openBrowser, printBoxBanner } from './box.ts'
+import {
+  boxDataDir,
+  clearBoxStatus,
+  extractWebDist,
+  isBox,
+  lanUrls,
+  openBrowser,
+  printBoxBanner,
+  printBoxStatus,
+  stopRunningBox,
+  writeBoxStatus,
+} from './box.ts'
 import { hasEmbeddedLiveKit, livekitCredentials, startEmbeddedLiveKit } from './livekit.ts'
 import { preventSleep } from './nosleep.ts'
 import { loadTls } from './tls.ts'
@@ -18,7 +27,24 @@ async function main(): Promise<void> {
   // the binary, and voice stays off unless explicitly configured.
   const box = isBox()
   const dataDir = box && !process.env.DATA_DIR ? boxDataDir() : config.dataDir
+
+  // Handled before anything opens the database or binds a port: these are
+  // questions about a box that is already running, asked by a second process.
+  //
+  // `--stop` is the answer that works everywhere. The menu-bar item and the
+  // tray icon are nicer, but a headless Linux box in a shed has neither, and
+  // until now a double-clicked macOS app had no way to be stopped at all.
+  const flag = process.argv.slice(2).find((arg) => arg === '--stop' || arg === '--status')
+  if (flag === '--stop') process.exit(await stopRunningBox(dataDir))
+  if (flag === '--status') process.exit(printBoxStatus(dataDir))
+
   mkdirSync(dataDir, { recursive: true })
+
+  // Imported here rather than at the top so `--stop` and `--status` never
+  // load node:sqlite — it prints an ExperimentalWarning on load, which is
+  // three lines of noise beside a command whose whole output is one.
+  const { openDb } = await import('./db.ts')
+  const { Store } = await import('./store.ts')
   const webDist = box ? extractWebDist(dataDir) : config.webDist
 
   const db = openDb(join(dataDir, 'crewbox.db'))
@@ -110,10 +136,25 @@ async function main(): Promise<void> {
     // A Mac box that sleeps takes the whole crew's comms with it.
     preventSleep(app.log)
     const firstRun = store.countUsers() === 0
-    printBoxBanner(config.port, store.getSetting('eventPin') ?? config.eventPin, Boolean(tls), {
-      eventName: store.getSetting('eventName') ?? '',
-      firstRun,
+    const eventPin = store.getSetting('eventPin') ?? config.eventPin
+    const eventName = store.getSetting('eventName') ?? ''
+    printBoxBanner(config.port, eventPin, Boolean(tls), { eventName, firstRun })
+
+    // Tell the menu-bar/tray helper what to show and, crucially, which
+    // process to stop. Written after listen() so its presence means the box
+    // is actually answering, not merely starting.
+    const urls = lanUrls(config.port, Boolean(tls))
+    writeBoxStatus(dataDir, {
+      pid: process.pid,
+      port: config.port,
+      secure: Boolean(tls),
+      joinUrl: urls[0] ?? origin,
+      urls,
+      eventPin,
+      eventName,
+      version: process.env.DEPLOY_VERSION ?? '',
     })
+
     openBrowser(`${origin}${firstRun ? '/setup' : '/connect'}`)
   }
 
@@ -123,6 +164,9 @@ async function main(): Promise<void> {
       // Belt and braces: if anything hangs, exit anyway so the supervisor
       // (systemd/tsx watch) can start a fresh process.
       setTimeout(() => process.exit(1), 3000).unref()
+      // First, so a helper watching this file stops offering to open a box
+      // that is on its way down.
+      if (box) clearBoxStatus(dataDir)
       hub.close()
       await app.close()
       await embedded?.stop()
