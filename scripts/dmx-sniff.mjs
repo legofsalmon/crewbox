@@ -117,7 +117,15 @@ function decodeArtNet(buf, fromIp) {
   }
 }
 
-/** An E1.31 data packet, or null. */
+/**
+ * An E1.31 data packet, or null.
+ *
+ * Deliberately laxer than `server/src/dmx/sacn.ts`, which additionally checks
+ * the postamble and the DMP layer's addressing fields. A sniffer's job is to
+ * show what is on the wire, including things the box itself would ignore —
+ * "the sniffer sees it and crewbox doesn't" is a useful thing to be able to
+ * discover, not a contradiction to be tidied away.
+ */
 function decodeSacn(buf, fromIp) {
   if (buf.length < 126) return null
   if (buf.readUInt16BE(0) !== 0x0010) return null

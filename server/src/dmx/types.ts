@@ -17,8 +17,32 @@ export type DmxProtocol = 'artnet' | 'sacn'
 /** sACN's default when a source doesn't care, and what Art-Net is treated as. */
 export const DEFAULT_PRIORITY = 100
 
+/** The most a legal sACN source may claim (E1.31 §6.2.3). */
+export const MAX_PRIORITY = 200
+
 /** Slots in a DMX universe. */
 export const UNIVERSE_SIZE = 512
+
+/**
+ * How long a source may go quiet before it is treated as gone.
+ *
+ * The two protocols are not close on this and using one number for both is a
+ * bug that only shows up on a rig sitting still:
+ *
+ * - **sACN** sources send continuously, and E1.31 §6.7.1 gives a network data
+ *   loss timeout of 2.5 seconds.
+ * - **Art-Net** senders are explicitly allowed to stop repeating themselves
+ *   when nothing is changing, re-transmitting the last frame only about every
+ *   4 seconds. Judging them at 2.5 seconds drops a perfectly healthy console
+ *   between its own keep-alives, so the panel flaps between "receiving" and
+ *   "nothing arriving" for a rig that is simply parked on a look — which is
+ *   most of a show. 10 seconds is the Art-Net merge timeout, and it tolerates
+ *   two missed re-transmissions.
+ */
+export const DATA_LOSS_MS: Record<DmxProtocol, number> = {
+  sacn: 2500,
+  artnet: 10_000,
+}
 
 /**
  * A universe's worth of levels from one source, at one moment.

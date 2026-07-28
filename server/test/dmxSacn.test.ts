@@ -82,6 +82,30 @@ describe('sACN: what it rejects', () => {
     expect(parseSacn(sacnData({ acnId: 'ASC-E1.31\0\0\0' }))).toBeNull()
   })
 
+  it('checks the DMP layer addresses one flat run of bytes from zero', () => {
+    // E1.31 fixes all three: a DMX packet always writes single-byte
+    // properties, starting at address 0, stepping by 1. Something on the
+    // port that addresses differently is not levels, and reading it as
+    // levels would put real-looking numbers at offsets that mean nothing.
+    //
+    // Both implementations this was cross-checked against — libe131 and the
+    // Hundemeier Python library — reject on all three; crewbox checked none
+    // of them until this test.
+    expect(parseSacn(sacnData({ addressType: 0xa2 }))).toBeNull()
+    expect(parseSacn(sacnData({ firstAddress: 0x0001 }))).toBeNull()
+    expect(parseSacn(sacnData({ addressIncrement: 0x0002 }))).toBeNull()
+    expect(parseSacn(sacnData())).not.toBeNull()
+  })
+
+  it('caps a priority above the legal ceiling instead of believing it', () => {
+    // 200 is the most a legal source may ask for. Letting 255 through would
+    // hand the universe to whatever is malformed over a console correctly
+    // asking for 200 — and dropping the packet would lose a rig over a byte.
+    expect(parseSacn(sacnData({ priority: 255 }))!.priority).toBe(200)
+    expect(parseSacn(sacnData({ priority: 200 }))!.priority).toBe(200)
+    expect(parseSacn(sacnData({ priority: 100 }))!.priority).toBe(100)
+  })
+
   it('ignores start codes that are not DMX', () => {
     // 0xcc is RDM. Reading it as levels would show a rig doing nonsense.
     expect(parseSacn(sacnData({ startCode: 0xcc }))).toBeNull()

@@ -72,6 +72,10 @@ export interface SacnOptions {
   dmpVector?: number
   preamble?: number
   acnId?: string
+  /** DMP addressing, which E1.31 fixes — overridable so rejection is testable. */
+  addressType?: number
+  firstAddress?: number
+  addressIncrement?: number
   /** Override the declared property value count (which includes the start code). */
   declaredCount?: number
 }
@@ -96,9 +100,9 @@ export function sacnData(options: SacnOptions = {}): Buffer {
   buf.writeUInt16BE(options.universe ?? 1, 113)
   buf.writeUInt16BE(0x7000 | (buf.length - 115), 115)
   buf[117] = options.dmpVector ?? 0x02
-  buf[118] = 0xa1
-  buf.writeUInt16BE(0x0000, 119)
-  buf.writeUInt16BE(0x0001, 121)
+  buf[118] = options.addressType ?? 0xa1
+  buf.writeUInt16BE(options.firstAddress ?? 0x0000, 119)
+  buf.writeUInt16BE(options.addressIncrement ?? 0x0001, 121)
   buf.writeUInt16BE(options.declaredCount ?? slots.length + 1, 123)
   buf[125] = options.startCode ?? 0x00
   for (let i = 0; i < slots.length; i++) buf[126 + i] = slots[i]!

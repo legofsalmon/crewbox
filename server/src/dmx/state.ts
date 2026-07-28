@@ -1,5 +1,5 @@
-import { NETWORK_DATA_LOSS_MS, SEQUENCE_DISCARD_WINDOW } from './sacn.ts'
-import { UNIVERSE_SIZE, type DmxFrame, type DmxProtocol } from './types.ts'
+import { SEQUENCE_DISCARD_WINDOW } from './sacn.ts'
+import { DATA_LOSS_MS, UNIVERSE_SIZE, type DmxFrame, type DmxProtocol } from './types.ts'
 
 /**
  * What the lighting network is doing, kept in memory and never written down.
@@ -190,11 +190,18 @@ export class DmxState {
     }
   }
 
-  /** Drop sources that have stopped sending. Call on a timer. */
+  /**
+   * Drop sources that have stopped sending. Call on a timer.
+   *
+   * The deadline is the sending protocol's, not one number for both — see
+   * `DATA_LOSS_MS`. An Art-Net console parked on a look re-transmits only
+   * every few seconds, and judging it by sACN's 2.5 s would report a healthy
+   * rig as coming and going.
+   */
   sweep(now: number): void {
     for (const record of this.universes.values()) {
       for (const [id, source] of record.sources) {
-        if (now - source.lastSeen > NETWORK_DATA_LOSS_MS) record.sources.delete(id)
+        if (now - source.lastSeen > DATA_LOSS_MS[source.protocol]) record.sources.delete(id)
       }
       this.pickWinner(record)
     }

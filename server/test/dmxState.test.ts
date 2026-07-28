@@ -117,6 +117,33 @@ describe('who is sending', () => {
     expect(state.health()[0].sources).toHaveLength(0)
   })
 
+  it('gives an Art-Net source the longer rope its protocol expects', () => {
+    // The bug this pins: sACN sources stream continuously and E1.31 times
+    // them out at 2.5 s, but an Art-Net sender parked on an unchanging look
+    // is allowed to go quiet and re-send only every ~4 s. Judging it by
+    // sACN's clock drops a healthy console between its own keep-alives, so
+    // the panel flaps between "receiving" and "nothing arriving" for most of
+    // a show — a monitor crying wolf is worse than no monitor.
+    const state = new DmxState({ artnetBase: 0 })
+    state.apply(frame({ protocol: 'artnet', sourceId: '2.0.0.7' }), 1000)
+
+    // Well past sACN's timeout, and past a 4 s re-transmit interval.
+    state.sweep(6000)
+    expect(state.health()[0].sources).toHaveLength(1)
+
+    // Two missed re-transmissions is genuinely gone.
+    state.sweep(12_000)
+    expect(state.health()[0].sources).toHaveLength(0)
+  })
+
+  it('times the two protocols independently on the same universe', () => {
+    const state = new DmxState({ artnetBase: 0 })
+    state.apply(frame({ protocol: 'sacn', sourceId: 'desk' }), 1000)
+    state.apply(frame({ protocol: 'artnet', sourceId: '2.0.0.7' }), 1000)
+    state.sweep(5000)
+    expect(state.health()[0].sources.map((s) => s.protocol)).toEqual(['artnet'])
+  })
+
   it('remembers the universe after every source has gone', () => {
     // "This universe was live and now nothing is sending it" is a much more
     // useful thing to say than forgetting it ever existed.
