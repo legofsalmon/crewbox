@@ -1,0 +1,184 @@
+name: Check macOS signing
+
+# Answers one question — are the six signing secrets right? — without
+# building or publishing anything.
+#
+# Worth having because the alternative is cutting a release and finding out
+# ten minutes later, and because every one of these fails in a way that does
+# not name its own cause: a .p12 exported without its private key surfaces as
+# an opaque keychain error, a real Apple ID password instead of an
+# app-specific one surfaces as a generic auth failure, and a misspelled secret
+# name surfaces as nothing at all, because the release skips signing silently
+# when a secret is absent.
+#
+# Run it from Actions → Check macOS signing → Run workflow. Nothing here
+# mutates anything, at Apple's end or ours.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Signing secrets
+    runs-on: macos-latest
+    env:
+      MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+      MAC_SIGN_CERT_P12: ${{ secrets.MAC_SIGN_CERT_P12 }}
+      MAC_SIGN_CERT_PASSWORD: ${{ secrets.MAC_SIGN_CERT_PASSWORD }}
+      MAC_NOTARY_APPLE_ID: ${{ secrets.MAC_NOTARY_APPLE_ID }}
+      MAC_NOTARY_PASSWORD: ${{ secrets.MAC_NOTARY_PASSWORD }}
+      MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+    steps:
+      # All six at once, because the usual mistake is a typo in one name and
+      # reporting them one per run is six runs.
+      - name: All six secrets are present
+        run: |
+          set -uo pipefail
+          # A string rather than an array: macOS runners still use bash 3.2,
+          # where expanding an empty array under `set -u` is itself an error.
+          missing=""
+          for name in MAC_SIGN_IDENTITY MAC_SIGN_CERT_P12 MAC_SIGN_CERT_PASSWORD \
+                      MAC_NOTARY_APPLE_ID MAC_NOTARY_PASSWORD MAC_NOTARY_TEAM_ID; do
+            if [ -z "${!name-}" ]; then missing="$missing $name"; else echo "  ok    $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo ""
+            echo "::error::Not set, or misspelled — the name must match exactly:$missing"
+            echo "Add them at Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: The .p12 decodes
+        run: |
+          set -euo pipefail
+          echo "$MAC_SIGN_CERT_P12" | base64 --decode > cert.p12 2>/dev/null || {
+            echo "::error::MAC_SIGN_CERT_P12 is not valid base64."
+            echo "Re-copy it with:  base64 -i cert.p12 | tr -d '\n' | pbcopy"
+            echo "The 'tr' is not optional — a wrapped value will not decode here."
+            exit 1
+          }
+          [ -s cert.p12 ] || { echo "::error::MAC_SIGN_CERT_P12 decoded to nothing."; exit 1; }
+          echo "  ok    decodes ($(wc -c < cert.p12 | tr -d ' ') bytes)"
+
+      # Advisory only. The openssl on a macOS runner is LibreSSL, which is
+      # fussier about newer .p12 encryption than Keychain Access is, so a
+      # failure here does not prove the file is bad — `security import` below
+      # is the authority. This step exists purely to name the two classic
+      # mistakes in plain words when it *can* see them, because the keychain
+      # reports both as the same unhelpful error.
+      - name: Look inside the .p12 (advisory)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          if ! openssl pkcs12 -in cert.p12 -passin env:MAC_SIGN_CERT_PASSWORD \
+                 -nokeys -out certs.pem 2>/dev/null; then
+            echo "  note  openssl could not open it — wrong password, or just LibreSSL"
+            echo "        being fussy. The keychain import below settles it."
+            exit 0
+          fi
+          echo "  ok    MAC_SIGN_CERT_PASSWORD opens it"
+
+          # The classic: right-clicking the private key row in Keychain Access
+          # rather than the certificate row exports a .p12 that cannot sign.
+          if openssl pkcs12 -in cert.p12 -passin env:MAC_SIGN_CERT_PASSWORD -nocerts -noout 2>/dev/null; then
+            echo "  ok    private key present"
+          else
+            echo "::warning::No private key in the .p12. In Keychain Access export the *certificate* row, not the key nested under it."
+          fi
+
+          # A slow fuse — Developer ID certificates last five years — but far
+          # better known now than on release day.
+          echo "  ok    certificate expires $(openssl x509 -in certs.pem -noout -enddate | cut -d= -f2)"
+          openssl x509 -in certs.pem -noout -checkend 2592000 >/dev/null 2>&1 ||
+            echo "::warning::This certificate expires within 30 days."
+
+      - name: The identity imports, matches, and can actually sign
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/check.keychain-db"
+          PASSWORD="$(uuidgen)"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          if ! security import cert.p12 -k "$KEYCHAIN" -P "$MAC_SIGN_CERT_PASSWORD" \
+                 -T /usr/bin/codesign 2>import.err; then
+            echo "::error::The keychain would not import the certificate."
+            echo "Usually MAC_SIGN_CERT_PASSWORD is wrong, or the .p12 was exported without its private key."
+            sed -e 's/^/  /' import.err || true
+            exit 1
+          fi
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -k "$PASSWORD" "$KEYCHAIN" >/dev/null
+          echo "  ok    certificate imports into a keychain"
+
+          # Never print the identity list. It is short, but it is a configured
+          # secret and this log is readable by anyone with repo access.
+          if ! security find-identity -v -p codesigning | grep -qF "$MAC_SIGN_IDENTITY"; then
+            echo "::error::MAC_SIGN_IDENTITY does not match any identity in this certificate."
+            echo "It is the quoted string from 'security find-identity -v -p codesigning' — without the"
+            echo "quotes and without the hex hash, e.g. Developer ID Application: Your Name (AB12CD34EF)"
+            exit 1
+          fi
+          echo "  ok    MAC_SIGN_IDENTITY matches the imported certificate"
+
+          # "Apple Development" and "Mac App Distribution" both import happily
+          # and both leave a downloaded app refused. Only Developer ID
+          # Application clears Gatekeeper.
+          case "$MAC_SIGN_IDENTITY" in
+            "Developer ID Application:"*) echo "  ok    it is a Developer ID Application certificate" ;;
+            *) echo "::error::Not a Developer ID Application certificate — downloaded apps would still be refused."; exit 1 ;;
+          esac
+
+          # Importing is not signing, and the gap between them is where
+          # partition-list trouble lives. Sign something real, the same way
+          # the release does: hardened runtime, timestamped.
+          echo 'int main(void){return 0;}' > probe.c
+          cc -o probe probe.c
+          codesign --force --sign "$MAC_SIGN_IDENTITY" --timestamp --options runtime probe
+          codesign --verify --strict --verbose=2 probe
+          echo "  ok    signed a test binary with a hardened runtime"
+
+      - name: The notary credentials authenticate
+        run: |
+          set -euo pipefail
+          # `history` reads; it submits nothing. An account that has never
+          # notarised returns an empty list and exit 0, which is a pass.
+          if ! xcrun notarytool history \
+              --apple-id "$MAC_NOTARY_APPLE_ID" \
+              --password "$MAC_NOTARY_PASSWORD" \
+              --team-id "$MAC_NOTARY_TEAM_ID" >/dev/null 2>notary.err; then
+            echo "::error::Apple rejected the notary credentials."
+            echo "Most likely MAC_NOTARY_PASSWORD is a real Apple ID password rather than an"
+            echo "app-specific one (appleid.apple.com → Sign-In and Security → App-Specific"
+            echo "Passwords), or MAC_NOTARY_TEAM_ID is not the team this Apple ID belongs to."
+            sed -e 's/^/  /' notary.err || true
+            exit 1
+          fi
+          echo "  ok    Apple accepted the notary credentials"
+
+      # The team ID appears in two of the six. A mismatch notarises under one
+      # team and signs under another: the release goes green and Gatekeeper
+      # still refuses the download, which is the worst of both.
+      - name: Team ID agrees with the signing identity
+        run: |
+          set -euo pipefail
+          case "$MAC_SIGN_IDENTITY" in
+            *"($MAC_NOTARY_TEAM_ID)")
+              echo "  ok    MAC_NOTARY_TEAM_ID matches the team in MAC_SIGN_IDENTITY" ;;
+            *)
+              echo "::error::MAC_NOTARY_TEAM_ID is not the team in parentheses at the end of MAC_SIGN_IDENTITY. One of the two is wrong."
+              exit 1 ;;
+          esac
+
+      - name: What happens next
+        run: |
+          echo ""
+          echo "All six check out. The next release will sign, notarise and staple."
+          echo "Confirm on a Mac that *downloaded* the .dmg — a USB copy carries no"
+          echo "quarantine flag and so proves nothing:"
+          echo "  spctl -a -vv /Applications/Crewbox.app"
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f cert.p12 certs.pem probe probe.c import.err notary.err
+          security delete-keychain "$RUNNER_TEMP/check.keychain-db" 2>/dev/null || true
