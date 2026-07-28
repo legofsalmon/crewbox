@@ -127,10 +127,13 @@ Three nested layers, all of which must be checked before the data is trusted:
 
 Behaviours that are not optional:
 
-- **`preview_data`** (options bit 6) is discarded. It is a console previewing
-  a cue, not the stage.
-- **`stream_terminated`** (bit 5) means that source has gone; drop it
-  immediately rather than waiting for the timeout.
+- **`preview_data`** (options **bit 7**, mask `0x80`) is discarded. It is a
+  console previewing a cue, not the stage.
+- **`stream_terminated`** (**bit 6**, mask `0x40`) means that source has gone;
+  drop it immediately rather than waiting for the timeout. A terminating
+  source sends it three times, so handling must be idempotent.
+- **`force_synchronization`** is bit 5, mask `0x20`. Not used here; noted so
+  nobody re-derives the bit numbering from scratch.
 - **Sequence numbers**: discard a packet whose sequence difference from the
   last one from that CID is between −20 and 0. This is the spec's rule and it
   is what stops a reordered UDP packet from flickering a level backwards.
@@ -142,7 +145,28 @@ Behaviours that are not optional:
 
 A source is identified by CID, not by IP. Two consoles behind one NAT and one
 console that changed IP are both handled correctly by that, and neither is by
-the alternative.
+the alternative. Art-Net has no CID, so its sources are keyed by sender IP and
+named from any `ArtPollReply` seen from that IP.
+
+### The universe numbering trap
+
+Three numbering schemes meet here and two of them disagree:
+
+|                      | Range   | Base  |
+| -------------------- | ------- | ----- |
+| Art-Net Port-Address | 0–32767 | **0** |
+| sACN universe        | 1–63999 | 1     |
+| A crewbox plot       | ≥ 1     | 1     |
+
+Getting this wrong shifts every fixture by 512 channels — precisely the error
+`addressing.ts` already describes as "invisible in a spreadsheet and very
+visible on stage". So it is never inferred silently:
+
+- `CREWBOX_DMX_ARTNET_BASE` (default 1) says which plot universe Art-Net 0 is.
+- sACN maps one to one.
+- Everything that shows a universe shows **both** numbers — "Art-Net 0 → plot
+  universe 1" — so a wrong mapping is visible in the admin panel within
+  seconds rather than being discovered at the line check.
 
 ## Shape
 
@@ -186,16 +210,24 @@ who is sending it, does the patch match — needs no levels at all.
 
 Off unless asked for. A box that has not been told to listen opens no sockets.
 
-| Variable                | Meaning                                      |
-| ----------------------- | -------------------------------------------- |
-| `CREWBOX_DMX`           | `off` (default), `artnet`, `sacn`, or `both` |
-| `CREWBOX_DMX_IFACE`     | IP of the interface to bind and join on      |
-| `CREWBOX_DMX_UNIVERSES` | sACN universes to join, e.g. `1-16,101`      |
+| Variable                  | Meaning                                                     |
+| ------------------------- | ----------------------------------------------------------- |
+| `CREWBOX_DMX`             | `off` (default), `artnet`, `sacn`, or `both`                |
+| `CREWBOX_DMX_IFACE`       | IP of the interface to join multicast groups **on**         |
+| `CREWBOX_DMX_UNIVERSES`   | sACN universes to join, e.g. `1-16,101`                     |
+| `CREWBOX_DMX_ARTNET_BASE` | Plot universe that Art-Net universe 0 maps to (default `1`) |
 
-`CREWBOX_DMX_IFACE` is effectively required on a box with more than one
-interface: bind to `0.0.0.0` and the kernel may join the multicast group on
-the wrong NIC and receive nothing, silently. sACN needs an explicit universe
-list because there are 63999 groups and you cannot join them all.
+`CREWBOX_DMX_IFACE` is the **membership** interface, not a bind address. The
+socket always binds `0.0.0.0`; binding it to a specific unicast address stops
+multicast arriving at all on Linux. On a box with more than one interface the
+membership interface is effectively required, or the kernel picks by routing
+table and may join on the wrong NIC and receive nothing, silently.
+
+sACN needs an explicit universe list because there are 63999 groups. It also
+needs a short one: **Linux allows 20 memberships per socket by default**
+(`net.ipv4.igmp_max_memberships`), so the list is capped at 16 with a clear
+error rather than a socket that half-works. More than that wants a second
+socket, which is a later problem.
 
 ## Admin: "Lighting network"
 
@@ -236,14 +268,113 @@ and the runbook must say so rather than leaving it to be discovered.
   top of this document is the kind that erodes quietly, and a test is the
   only thing that keeps it true a year from now.
 
+## The problem with testing this
+
+A parser written from a reading of the spec, tested against packets built from
+the same reading of the spec, proves only that the author was consistent with
+himself. Every test passes and the parser can still be wrong about the wire.
+
+That is not hypothetical. Writing the first draft of this document, the
+`preview_data` and `stream_terminated` bits were recorded as 6 and 5. They are
+**7 and 6**. A parser built on that would have discarded every live packet as
+a preview and reported a silent rig — and a full green test suite would have
+agreed with it, because the tests would have set bit 6 too.
+
+Checking against the published protocols caught that one. The rest of the
+byte-level detail deserves the same treatment, and the only source that cannot
+be circular is bytes off a real rig.
+
+Hence step 0.
+
 ## Order of work
 
-1. **Parsers and state, no I/O.** Pure, fully tested, useful to nothing yet.
-2. **Listener and the admin panel.** Answers "is anything even reaching us",
-   which is the question that decides whether the rest is worth building.
-3. **Fixture verification in the lighting module**, wired to the existing
-   `todo / rigged / ok / fault` workflow.
-4. **Live levels** on the plan, front and 3D views. Last, and opt-in.
+**0 — A sniffer that ships nothing.** `scripts/dmx-sniff.mjs`: one file, no
+dependencies, runnable on any machine plugged into the lighting network. It
+prints what it sees — protocol, universe, source, priority, packet rate, the
+first few slots — and with `--dump <dir>` writes the raw packets to disk.
 
-Stopping after 2 leaves something worth shipping. That is the point of the
-order.
+Nothing about it touches the box. Its whole job is to turn "matches my reading
+of the spec" into "matches your rig", and to produce real captured bytes to
+use as test fixtures. Half a day, and it de-risks everything after it.
+
+It is also independently useful: point it at a network and it answers "is
+Art-Net even reaching this switch port" before crewbox is involved at all.
+
+**1 — Parsers and state, no I/O.** Pure functions and a plain state object.
+Tests over the captured bytes from step 0 where they exist, and over
+synthesised ones — clearly labelled as such — where they don't.
+
+```
+server/src/dmx/artnet.ts   parseArtNet(buf, fromIp) → DmxFrame | ArtPollReply | null
+server/src/dmx/sacn.ts     parseSacn(buf)           → DmxFrame | null
+server/src/dmx/state.ts    DmxState: apply, sweep, health, levels, verdict
+```
+
+Both parsers produce one protocol-independent `DmxFrame`, so everything
+downstream is written once:
+
+```ts
+interface DmxFrame {
+  protocol: 'artnet' | 'sacn'
+  wireUniverse: number // exactly as it appeared on the wire
+  sourceId: string // sACN CID hex, or Art-Net sender IP
+  sourceName: string
+  priority: number // sACN 0–200; Art-Net has none, so 100
+  sequence: number
+  slots: Uint8Array // index 0 = slot 1
+  preview: boolean
+  terminated: boolean
+}
+```
+
+`DmxState` keeps, per universe, the winning source, the rival sources, the
+current 512 slots, and an `everLit` bitmap — has this address been above zero
+at any point since listening began. That bitmap is the whole `silent` verdict:
+512 bytes per universe, and it is the difference between "the desk isn't
+sending this" and "nobody has brought it up yet".
+
+**2 — Listener and the admin panel.** Sockets, membership, config, lifecycle,
+and a "Lighting network" panel built from `ReadinessCheck`. This is the first
+step that is worth shipping on its own: it answers "is anything even reaching
+us", which is the question that decides whether steps 3 and 4 are worth doing.
+
+**3 — Fixture verification.** `verdict(universe, address, footprint)` against
+the plot, surfaced next to the existing `todo / rigged / ok / fault` workflow.
+This is where the feature earns its place.
+
+**4 — Live levels.** The subscribe protocol, deltas, and colouring the plan,
+front and 3D views. Last, opt-in, and the least important.
+
+Each step leaves something coherent behind. Stopping after 2 is a reasonable
+outcome, not an abandoned half-feature.
+
+## What could go wrong
+
+|     | Risk                                                                      | What we do about it                                                                                             |
+| --- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| R1  | Byte layouts wrong; tests agree because they share the mistake            | Step 0 before any parser lands                                                                                  |
+| R2  | Art-Net 0-based read as plot 1-based, shifting every fixture 512 channels | Explicit `ARTNET_BASE`, both numbers shown everywhere                                                           |
+| R3  | More than 20 sACN universes silently fails to join                        | Cap at 16, error naming `igmp_max_memberships`                                                                  |
+| R4  | Multicast bind differs across Linux/macOS/Windows                         | Bind `0.0.0.0` + explicit membership interface — verified working; still needs a run on macOS and Windows boxes |
+| R5  | Windows Firewall drops inbound UDP                                        | Admin panel distinguishes "not listening" from "listening, nothing arriving"                                    |
+| R6  | IGMP-snooping switch with no querier eats the multicast                   | Same distinction; documented as a network fault, not a crewbox one                                              |
+| R7  | Art-Net controller unicasts only to nodes that answered ArtPoll           | Stated in the panel; accepted cost of never transmitting                                                        |
+| R8  | Box bridges the show network to crew Wi-Fi                                | Off by default; runbook says it plainly                                                                         |
+| R9  | CI can't do loopback multicast                                            | Integration test skips cleanly; parser and state tests need no sockets                                          |
+
+Loopback multicast and the bind/membership pattern have been confirmed
+working on Linux with Node 22 — `bind(5568)` on `0.0.0.0`, then
+`addMembership('239.255.0.1', '127.0.0.1')`, receives. So the integration test
+is real rather than mocked, where the platform allows it.
+
+## Open decisions
+
+- **Which universes does a plot actually use?** The server holds the Yjs docs
+  but shouldn't have to understand them. Simplest is for the client to send
+  the universes its plot references when it opens the lighting view, and for
+  the server to keep nothing per-plot. That also means the box only joins
+  groups somebody is looking at, which sidesteps R3 in the common case.
+- ~~**Protocol version.**~~ Settled: `handleServer` switches on `msg.type`
+  with no `default` and no exhaustiveness check, so a client that meets an
+  unknown message type ignores it. New types are additive in both directions
+  and `PROTOCOL_VERSION` does not need a bump.
