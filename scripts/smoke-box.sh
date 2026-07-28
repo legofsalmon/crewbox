@@ -34,6 +34,15 @@ PID=""
 
 REPORTED=0
 
+# Substring match without a pipe.
+#
+# `printf … | grep -q` is the obvious way to write these checks and it prints
+# "write error: Broken pipe" beside a check that passed: grep -q exits at the
+# first match, and the writer then dies filling a pipe nobody is reading. It
+# only shows up once the haystack outgrows the pipe buffer, so it appeared in
+# a release log long after the line was written, looking like a fault.
+contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+
 pass() { echo "  ok    $1"; }
 fail() {
   REPORTED=1
@@ -107,13 +116,14 @@ done
 pass "starts and listens on $PORT"
 
 health="$(curl -fsS "$BASE/api/health")"
-echo "$health" | grep -q '"ok":true' || fail "health is not ok: $health"
+contains "$health" '"ok":true' || fail "health is not ok: $health"
 pass "health: $(echo "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 
-curl -fsS "$BASE/" | grep -qi '<div id="root"\|<title' || fail "web app not served"
+index="$(curl -fsS "$BASE/")"
+contains "$index" '<div id="root"' || contains "$index" '<title' || fail "web app not served"
 pass "serves the web app"
 
-curl -fsS "$BASE/setup" | grep -q 'name="eventName"' || fail "/setup did not render"
+contains "$(curl -fsS "$BASE/setup")" 'name="eventName"' || fail "/setup did not render"
 pass "first-run setup page"
 
 code="$(curl -fsS -o /dev/null -w '%{http_code}' -X POST "$BASE/setup" \
@@ -123,15 +133,15 @@ code="$(curl -fsS -o /dev/null -w '%{http_code}' -X POST "$BASE/setup" \
 pass "setup saves and redirects"
 
 connect="$(curl -fsS "$BASE/connect")"
-echo "$connect" | grep -qF "$NAME" || fail "/connect does not show the event name"
-echo "$connect" | grep -qF "$PIN" || fail "/connect does not show the event PIN"
+contains "$connect" "$NAME" || fail "/connect does not show the event name"
+contains "$connect" "$PIN" || fail "/connect does not show the event PIN"
 pass "join page shows the event and PIN"
 
 join="$(curl -fsS -X POST "$BASE/api/join" -H 'content-type: application/json' \
   -d "{\"name\":\"Smoke\",\"eventPin\":\"$PIN\",\"personalPin\":\"1234\"}")"
 token="$(echo "$join" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
 [ -n "$token" ] || fail "join failed: $join"
-echo "$join" | grep -q '"role":"admin"' || fail "first joiner is not admin: $join"
+contains "$join" '"role":"admin"' || fail "first joiner is not admin: $join"
 pass "first crew member joins as admin"
 
 ready="$(curl -fsS "$BASE/api/admin/settings" -H "authorization: Bearer $token")"
