@@ -97,7 +97,11 @@ if (hasLivekit) assets[`livekit/${livekitExe}`] = livekitPath
 let hasTray = false
 if (process.platform === 'win32') {
   try {
-    const trayExe = buildTray(join(outDir, 'crewbox-tray.exe'))
+    // build/tray, not build/box. The release uploads build/box/crewbox-* and
+    // that glob swept the helper up, so v0.7.2 shipped a stray 11 KB
+    // crewbox-tray.exe on the download page beside the box — confusing, and
+    // pointless, since it is already inside the .exe.
+    const trayExe = buildTray(join(root, 'build', 'tray', 'crewbox-tray.exe'))
     if (trayExe) {
       assets['helper/crewbox-tray.exe'] = trayExe
       hasTray = true
