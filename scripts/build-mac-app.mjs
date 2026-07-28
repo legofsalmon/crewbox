@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildMenuBar } from './build-menubar.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', ...opts })
@@ -65,15 +66,36 @@ mkdirSync(resourcesDir, { recursive: true })
 // Each slice keeps its own SEA blob, and therefore its own architecture's
 // livekit-server — which is exactly right, since the embedded SFU is a
 // native binary too.
-const exec = join(macosDir, 'Crewbox')
+//
+// It lives in Resources, not MacOS: the bundle's executable is the menu-bar
+// wrapper built below, and this is what that wrapper runs.
+const server = join(resourcesDir, 'crewbox-server')
 if (inputs.length === 1) {
-  cpSync(inputs[0], exec)
+  cpSync(inputs[0], server)
   console.log(`single-architecture build from ${relative(root, inputs[0])}`)
 } else {
-  run('lipo', ['-create', ...inputs, '-output', exec])
-  console.log(`universal binary: ${capture('lipo', ['-archs', exec])}`)
+  run('lipo', ['-create', ...inputs, '-output', server])
+  console.log(`universal binary: ${capture('lipo', ['-archs', server])}`)
 }
+chmodSync(server, 0o755)
+
+// --- 1b. The menu-bar wrapper, which is the app someone actually launches.
+//
+// Without this the bundle's executable is the box itself — a Node SEA, which
+// is a plain console program. Double-clicked it has no terminal to print to,
+// and having never linked AppKit it never checks in with the window server,
+// so macOS drops its Dock icon seconds after launch. That shipped: a box
+// running invisibly, with no way to stop it but Activity Monitor.
+//
+// swiftc ships with the Xcode command line tools, which every macOS runner
+// has and anyone building this locally needs anyway for codesign.
+const exec = join(macosDir, 'Crewbox')
+// Match the architectures actually in the server binary, so the wrapper runs
+// wherever the box does rather than silently narrowing a universal build.
+const archs = capture('lipo', ['-archs', server]).split(/\s+/).filter(Boolean)
+buildMenuBar(exec, archs)
 chmodSync(exec, 0o755)
+console.log(`menu-bar wrapper: ${capture('lipo', ['-archs', exec])}`)
 
 // --- 2. Icon.
 // sips/iconutil are the two that ship with macOS; no extra tooling.
@@ -97,10 +119,13 @@ rmSync(iconset, { recursive: true, force: true })
 //
 // The box opens the browser on /setup (first run) or /connect itself, so a
 // double-click lands the admin exactly where they need to be with no window
-// of our own. LSUIElement is deliberately false: the Dock icon is the only
-// visible sign the box is running, and the only way to stop it. That is safe
-// here — the store is SQLite in WAL mode and the whole product assumes hard
-// power cuts, so being force-quit is a supported way to stop.
+// of our own.
+//
+// LSUIElement is true: a server belongs beside the clock, not in the Dock.
+// This used to be false, with a comment claiming the Dock icon was the way to
+// stop the box. That was wrong — a console binary never gets a persistent Dock
+// icon — and the box shipped with no way to stop it at all. The menu-bar
+// wrapper is the fix; this flag is what keeps it out of the Dock.
 writeFileSync(
   join(app, 'Contents', 'Info.plist'),
   `<?xml version="1.0" encoding="UTF-8"?>
@@ -117,6 +142,7 @@ writeFileSync(
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>LSUIElement</key><true/>
 </dict>
 </plist>
 `
@@ -141,6 +167,13 @@ if (identity) {
 </plist>
 `
   )
+  // Inner first, then the bundle. Signing only the bundle leaves
+  // Resources/crewbox-server sealed by hash but not signed as code, and the
+  // notary service rejects any unsigned Mach-O it finds anywhere inside.
+  //
+  // The entitlements go on the box, not on the wrapper: the JIT and
+  // unsigned-memory exceptions are what a Node SEA needs, and the wrapper is
+  // ordinary Swift that should not be asking for either.
   run('codesign', [
     '--force',
     '--sign',
@@ -150,10 +183,15 @@ if (identity) {
     '--entitlements',
     entitlements,
     '--timestamp',
-    app,
+    server,
   ])
+  run('codesign', ['--force', '--sign', identity, '--options', 'runtime', '--timestamp', app])
   run('codesign', ['--verify', '--strict', '--verbose=2', app])
-  console.log('signed and verified')
+  // --strict on the bundle does not descend into Resources, so ask about the
+  // box explicitly. An unsigned inner binary otherwise surfaces as a notary
+  // rejection minutes later, naming a path and nothing else.
+  run('codesign', ['--verify', '--strict', '--verbose=2', server])
+  console.log('signed and verified (wrapper and box)')
 } else {
   console.log('MAC_SIGN_IDENTITY unset — building an unsigned app')
 }

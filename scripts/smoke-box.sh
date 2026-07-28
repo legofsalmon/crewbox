@@ -202,6 +202,31 @@ case "$voice" in
     ;;
 esac
 
+# The menu-bar item, the tray icon and `--stop` all read this one file, so a
+# box that doesn't publish it is a box nobody can stop from outside the
+# terminal that started it. That shipped once already.
+if [ -f "$DATA/box-status.json" ]; then
+  pass "publishes box-status.json for the menu/tray helpers"
+else
+  fail "no box-status.json — nothing could find or stop this box"
+fi
+
+# And the flag that acts on it. This is the one stop mechanism that works on
+# every platform, including a headless box over SSH.
+# Same DATA_DIR the box was started with, or it looks in ~/.crewbox and finds
+# nothing — which would pass for the wrong reason on a machine with no box.
+DATA_DIR="$DATA_ARG" "$BIN" --status >/dev/null 2>&1 ||
+  fail "--status did not report a running box"
+pass "--status reports the running box"
+
+DATA_DIR="$DATA_ARG" "$BIN" --stop >/dev/null 2>&1 || fail "--stop failed"
+if curl -fsS --max-time 3 "$BASE/api/health" >/dev/null 2>&1; then
+  fail "--stop returned but the box is still serving"
+fi
+pass "--stop actually stops it"
+# Already stopped, so cleanup has nothing to kill.
+PID=""
+
 echo ""
 echo "PASS — this box works, voice included."
 echo ""

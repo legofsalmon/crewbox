@@ -18,6 +18,7 @@ import {
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { buildTray } from './build-tray.mjs'
 
 // fileURLToPath, not URL.pathname — the latter yields /C:/... on Windows,
 // which every fs call then fails to resolve.
@@ -83,6 +84,35 @@ const livekitPath = join(root, 'build', 'livekit', livekitExe)
 const hasLivekit = existsSync(livekitPath)
 if (hasLivekit) assets[`livekit/${livekitExe}`] = livekitPath
 
+// 2c. The Windows tray icon, compiled here and carried inside the binary.
+//
+// Started from Explorer the box shows a console window someone closes, or
+// none at all, leaving a server running with nothing to click. The tray
+// helper is the fix (native/windows/CrewboxTray.cs); embedding it keeps the
+// promise that the download is one file.
+//
+// csc.exe from the .NET Framework, which is on every Windows 10/11 machine —
+// no SDK to install and about 15 KB of output. Optional in exactly the way
+// LiveKit is: a box built without it still works, it just has no tray.
+let hasTray = false
+if (process.platform === 'win32') {
+  try {
+    const trayExe = buildTray(join(outDir, 'crewbox-tray.exe'))
+    if (trayExe) {
+      assets['helper/crewbox-tray.exe'] = trayExe
+      hasTray = true
+    } else {
+      console.warn('no csc.exe found — building without the tray helper')
+    }
+  } catch {
+    // Never fail the box over its tray icon: a box with no tray is the
+    // situation before this existed, a box that won't build is worse. CI
+    // compiles it on every pull request, so a real breakage is caught there
+    // rather than being quietly swallowed here.
+    console.warn('could not compile the tray helper — building without it')
+  }
+}
+
 // 3. Generate the SEA blob.
 const seaConfigPath = join(outDir, 'sea-config.json')
 writeFileSync(
@@ -132,7 +162,8 @@ if (process.platform === 'darwin') {
 const sizeMb = (statSync(binPath).size / 1024 / 1024).toFixed(0)
 console.log(
   `\nbuilt ${relative(root, binPath)} (${sizeMb} MB, v${version}+${commit}, ` +
-    `${manifest.length} web assets, voice ${hasLivekit ? 'embedded' : 'NOT embedded'})`
+    `${manifest.length} web assets, voice ${hasLivekit ? 'embedded' : 'NOT embedded'}` +
+    `${process.platform === 'win32' ? `, tray ${hasTray ? 'embedded' : 'NOT embedded'}` : ''})`
 )
 if (!hasLivekit) {
   console.log('  run `node scripts/fetch-livekit.mjs` first to build a box with voice')

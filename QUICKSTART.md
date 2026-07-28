@@ -41,6 +41,30 @@ xattr -d com.apple.quarantine crewbox-*  # macOS only: clear the download flag
 Without that `xattr` line macOS refuses to open it, with a dialog that offers
 no way forward. Only the `.dmg` is signed; the bare binaries are not.
 
+## Stopping it
+
+The box is a server, so it keeps running after you close whatever started it.
+Where to find it depends on the platform:
+
+- **macOS** — beside the clock. The menu shows the event, the join link and the
+  PIN, and **Stop Crewbox and quit** stops it properly. There is no Dock icon
+  on purpose; a server doesn't belong there.
+- **Windows** — the system tray, same menu.
+- **Linux** — Ctrl-C in the terminal it's running in, or the **Stop Crewbox**
+  action on the launcher entry. Running it as a service instead:
+  `systemctl --user stop crewbox`.
+
+From any terminal, on any platform:
+
+```sh
+crewbox --status   # is it running, on what address, with which PIN
+crewbox --stop     # stop it
+```
+
+`--stop` is the one that always works, including over SSH on a box with no
+screen. It's also what you want before replacing the app with a new version —
+macOS and Windows both refuse to overwrite a running program.
+
 ## What happens next
 
 The first time it runs, the box opens a browser on **four questions**: what

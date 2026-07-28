@@ -46,3 +46,37 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # The menu-bar item and the tray icon are the only native code in the repo,
+  # and until this job existed nothing built them outside a release — so a
+  # typo in either would have surfaced for the first time in the middle of
+  # cutting a version.
+  #
+  # These run the same scripts the release build runs, deliberately. The first
+  # version of this job re-implemented the csc invocation in bash and failed on
+  # something the real build cannot hit: MSYS path conversion rewrote /nologo
+  # into C:/Program Files/Git/nologo. A check that fails for reasons the thing
+  # it checks does not have is worse than no check.
+  #
+  # Compiling is all this proves. Whether a menu appears, and whether Quit
+  # stops the box, needs a real desktop session and a person looking at it.
+  helpers:
+    name: Desktop helpers compile (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS menu bar
+            os: macos-latest
+            run: node scripts/build-menubar.mjs build/check/CrewboxMenuBar
+          - name: Windows tray
+            os: windows-latest
+            run: node scripts/build-tray.mjs build/check/crewbox-tray.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: ${{ matrix.run }}
