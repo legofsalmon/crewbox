@@ -614,16 +614,35 @@ export const useStore = create<AppState>()((set, get) => {
           set({ voice: { ...useStore.getState().voice, ...partial } })
         )
       }
+      // Browsers only hand over a microphone in a secure context, and a box
+      // on a plain http:// LAN address is not one. Said up front because the
+      // alternative is someone holding a talk button that was never going to
+      // work and concluding the product is broken. Not a blocker: listening
+      // needs no microphone, and hearing the others is most of the value.
+      if (!window.isSecureContext) {
+        get().toast(
+          'No microphone on plain http — you can hear others but not talk. ' +
+            'Open the box at localhost on the machine running it, or give it a certificate.',
+          'warning'
+        )
+      }
       try {
         const { url, token } = await api.voiceToken(getToken() ?? '', channelId)
         await voiceManager.join(channelId, token, url)
       } catch (err) {
         set({ voice: { ...initialVoiceState } })
-        get().toast(
+        // Say what actually went wrong. This used to substitute a generic
+        // "is the voice server running?" for every failure, which is the
+        // least useful sentence available: the voice bar unmounts on failure
+        // and takes its own error with it, so this toast was the only thing
+        // left, and it named none of the several things that can break here.
+        const detail =
           err instanceof api.ApiError && err.status === 503
-            ? 'Voice is not set up on this server'
-            : 'Could not join voice — is the voice server running?'
-        )
+            ? 'this box has no voice server'
+            : err instanceof Error
+              ? err.message
+              : String(err)
+        get().toast(`Could not join voice: ${detail}`, 'error')
       }
     },
 
