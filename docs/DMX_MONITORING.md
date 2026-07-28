@@ -5,9 +5,8 @@ universe, DMX address and channel footprint. It has no idea what the rig is
 actually doing. This is the spec for closing that gap by listening to Art-Net
 and sACN on the lighting network.
 
-**Status.** Steps 0 to 2 are built: the sniffer, both parsers, the state
-machine, the listener, the config and the admin panel. Steps 3 (fixture
-verification in the lighting module) and 4 (live levels) are not.
+**Status.** All of it is built — sniffer, parsers, state machine, listener,
+config, admin panel, fixture verification and live levels.
 
 **And nothing here has met a real rig yet.** Every packet the tests use was
 synthesised from the specs below by the same hand that wrote the parsers, so
@@ -63,9 +62,16 @@ classic festival fault (a spare console left patched, a media server on the
 wrong output) that stays invisible until something flickers at the worst
 moment.
 
-**Live levels on the plot.** Once the data is there, colouring fixtures by
-their current level in the plan, front elevation and 3D views is nearly free.
-This is the least important item on the list and should be built last.
+**Live levels on the plot.** Fixtures in the plan, front elevation and 3D
+views dim by what is being sent to them.
+
+Not intensity, and never called it: without a GDTF profile nothing here knows
+which of a moving head's sixteen channels is the dimmer, so a head panning
+hard in the dark would read as full. What it honestly shows is the highest
+value anywhere in a fixture's footprint — enough to watch a rig answer a cue,
+not enough to mistake for a visualiser. It is applied as opacity over the
+fixture's existing status colour rather than replacing it, and never reaches
+zero: a fixture at 0 is still a fixture rigged in that spot.
 
 ## Honesty about what a level means
 
@@ -204,12 +210,19 @@ when something changed: per universe, the winning source's name and priority,
 packet rate, last-seen, and whether there is a conflict. A handful of bytes
 per universe.
 
-**Levels** — opt-in, per view. A client that is looking at a plot sends the
-universes it cares about; the server replies with a full snapshot of those
-universes' non-zero addresses, then sends deltas at 4 Hz: only addresses
-whose level, quantised to 0–100, has changed. A capped number of pairs per
-tick, with the remainder carried into the next one, so a rig doing a strobe
-chase cannot saturate a phone. Closing the view unsubscribes.
+**Levels** — opt-in, per view. A client looking at a plot names the universes
+it cares about; the box replies with a snapshot of those universes' non-zero
+addresses, then sends only what moved, at 4 Hz. At most 96 changes per
+universe per tick, with the remainder carried into the next one, so a rig
+doing a strobe chase cannot saturate a phone and nothing is lost — it just
+arrives a quarter-second late, which for a level readout is indistinguishable
+from on time. Closing the view unsubscribes.
+
+**Verification** needs no levels at all, which is why it is the default. The
+box sends `everLit` as a 64-byte bitmap per universe — one bit per address —
+and the client turns that into a per-fixture verdict, because only the client
+knows where its fixtures are addressed. The bitmap only ever gains bits, so
+it is sent when it grows and never diffed.
 
 Nothing subscribes to levels by default. Most of the value — is it arriving,
 who is sending it, does the patch match — needs no levels at all.
@@ -348,11 +361,11 @@ and a "Lighting network" panel built from `ReadinessCheck`. This is the first
 step that is worth shipping on its own: it answers "is anything even reaching
 us", which is the question that decides whether steps 3 and 4 are worth doing.
 
-**3 — Fixture verification.** Not built. `verdict(universe, address, footprint)` against
+**3 — Fixture verification.** ✅ `verdict(universe, address, footprint)` against
 the plot, surfaced next to the existing `todo / rigged / ok / fault` workflow.
 This is where the feature earns its place.
 
-**4 — Live levels.** Not built. The subscribe protocol, deltas, and colouring the plan,
+**4 — Live levels.** ✅ The subscribe protocol, deltas, and colouring the plan,
 front and 3D views. Last, opt-in, and the least important.
 
 Each step leaves something coherent behind. Stopping after 2 is a reasonable

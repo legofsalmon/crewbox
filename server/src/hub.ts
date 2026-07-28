@@ -5,11 +5,13 @@ import {
   PROTOCOL_VERSION,
   type Channel,
   type ClientMessage,
+  type DmxUniverseWire,
   type Message,
   type PublicConfig,
   type ServerMessage,
   type User,
 } from '@crewbox/shared'
+import type { DmxListener } from './dmx/listener.ts'
 import type { Store } from './store.ts'
 import { APP_VERSION } from './version.ts'
 
@@ -27,11 +29,40 @@ interface Conn {
   remote: boolean
   /** Recent `send` timestamps, for the per-connection flood limit. */
   sends: number[]
+  /** Lighting universes this socket is watching; empty when it isn't. */
+  dmxUniverses: number[]
+  /** Whether it also wants live levels, which are the expensive part. */
+  dmxLevels: boolean
+  /** Last levels sent per universe, so only changes go out. */
+  dmxSent: Map<number, Uint8Array>
+  /** Last `everLit` sent per universe, so it only goes when it grows. */
+  dmxEverLit: Map<number, string>
+  /** Cheap fingerprint of the last state message, to avoid resending it. */
+  dmxSummary?: string
 }
 
 /** Max `send` messages one socket may emit per window before being throttled. */
 const SEND_LIMIT = 30
 const SEND_WINDOW_MS = 10_000
+
+/**
+ * How often watching clients hear about the lighting network.
+ *
+ * A rig runs at 44 Hz and a phone on festival Wi-Fi cannot have that, so the
+ * box samples. Four times a second is faster than anyone can read and slow
+ * enough to be nothing on the wire.
+ */
+const DMX_TICK_MS = 250
+
+/**
+ * Most level changes one universe may send in a tick.
+ *
+ * A strobe chase changes all 512 every frame; without a cap one rig could
+ * saturate a phone. What doesn't fit waits for the next tick, so nothing is
+ * lost — it just arrives a quarter-second late, which for a level readout is
+ * indistinguishable from on time.
+ */
+const DMX_MAX_CHANGES = 96
 
 /** Dotted-quad form of an IPv4-mapped IPv6 address, or the input unchanged. */
 function toV4(ip: string): string {
@@ -85,13 +116,16 @@ export class Hub {
   /** userId → number of open on-site (LAN) sockets, for the office badge. */
   private localSockets = new Map<string, number>()
   private heartbeat: NodeJS.Timeout | null = null
+  private dmxTimer: NodeJS.Timeout | null = null
 
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
     private readonly getPublicConfig: () => PublicConfig,
     private readonly sessionTtlMs?: number,
-    private readonly trustProxy = false
+    private readonly trustProxy = false,
+    /** Lighting network, when this box was asked to listen to one. */
+    private readonly dmx?: DmxListener
   ) {}
 
   attach(wss: WebSocketServer): void {
@@ -107,10 +141,18 @@ export class Hub {
       }
     }, HEARTBEAT_MS)
     this.heartbeat.unref()
+    if (this.dmx) {
+      this.dmxTimer = setInterval(() => {
+        for (const conn of this.conns) if (conn.dmxUniverses.length > 0) this.pushDmx(conn)
+      }, DMX_TICK_MS)
+      this.dmxTimer.unref()
+    }
   }
 
   close(): void {
     if (this.heartbeat) clearInterval(this.heartbeat)
+    if (this.dmxTimer) clearInterval(this.dmxTimer)
+    this.dmxTimer = null
     for (const conn of this.conns) conn.ws.terminate()
   }
 
@@ -127,6 +169,10 @@ export class Hub {
       alive: true,
       remote: isRemoteConnection(req, this.trustProxy),
       sends: [],
+      dmxUniverses: [],
+      dmxLevels: false,
+      dmxSent: new Map(),
+      dmxEverLit: new Map(),
     }
     this.conns.add(conn)
 
@@ -197,6 +243,15 @@ export class Hub {
         break
       case 'openDm':
         this.onOpenDm(conn, conn.user, msg.userId)
+        break
+      case 'dmxWatch':
+        // Bounded by the schema (32 universes) and free of side effects —
+        // this only decides what this socket is told about.
+        conn.dmxUniverses = [...new Set(msg.universes)]
+        conn.dmxLevels = msg.levels
+        conn.dmxSent.clear()
+        conn.dmxEverLit.clear()
+        this.pushDmx(conn)
         break
       case 'ping':
         this.send(conn.ws, { type: 'pong', t: msg.t })
@@ -425,6 +480,84 @@ export class Hub {
   }
 
   // -- transport ------------------------------------------------------------
+
+  /**
+   * Tell one watching socket what its universes are doing.
+   *
+   * Only what changed: `everLit` goes when it grows (it only ever gains
+   * bits), and levels go as [address, level] pairs for addresses whose value
+   * moved. A universe nobody is watching costs nothing, and a rig that is
+   * sitting still costs one small state message a second.
+   */
+  private pushDmx(conn: Conn): void {
+    if (conn.ws.readyState !== conn.ws.OPEN) return
+    if (!this.dmx) {
+      this.send(conn.ws, { type: 'dmxState', listening: false, universes: [] })
+      return
+    }
+
+    const health = new Map(this.dmx.state.health().map((u) => [u.universe, u]))
+    const universes: DmxUniverseWire[] = []
+    let stateChanged = false
+
+    for (const universe of conn.dmxUniverses) {
+      const found = health.get(universe)
+      if (!found) continue
+      const bitmap = this.dmx.state.everLitBitmap(universe)
+      const everLit = bitmap ? Buffer.from(bitmap).toString('base64') : ''
+      if (conn.dmxEverLit.get(universe) !== everLit) {
+        conn.dmxEverLit.set(universe, everLit)
+        stateChanged = true
+      }
+      const winner = found.sources.find((s) => s.id === found.winnerId)
+      universes.push({
+        universe,
+        wireUniverse: found.wireUniverse,
+        protocol: found.protocol,
+        source: winner?.name || winner?.id.slice(0, 8) || '',
+        sources: found.sources.length,
+        conflict: found.conflict,
+        since: found.since,
+        lastSeen: found.lastSeen,
+        everLit,
+      })
+    }
+
+    // Source counts and conflicts change rarely; resending the whole list
+    // every tick would be most of the traffic for none of the information.
+    const summary = universes.map((u) => `${u.universe}:${u.sources}:${u.conflict}`).join(',')
+    if (stateChanged || summary !== conn.dmxSummary) {
+      conn.dmxSummary = summary
+      this.send(conn.ws, { type: 'dmxState', listening: true, universes })
+    }
+
+    if (!conn.dmxLevels) return
+    for (const universe of conn.dmxUniverses) {
+      const slots = this.dmx.state.levels(universe)
+      if (!slots) continue
+      const previous = conn.dmxSent.get(universe)
+      const values: Array<[number, number]> = []
+      if (!previous) {
+        // First look at this universe: everything that is on, so a client
+        // arriving mid-show sees the state rather than only the next change.
+        for (let i = 0; i < slots.length; i++) {
+          if (slots[i] !== 0) values.push([i + 1, slots[i]!])
+        }
+        conn.dmxSent.set(universe, new Uint8Array(slots))
+        this.send(conn.ws, { type: 'dmxLevels', universe, full: true, values })
+        continue
+      }
+      for (let i = 0; i < slots.length && values.length < DMX_MAX_CHANGES; i++) {
+        if (slots[i] !== previous[i]) {
+          values.push([i + 1, slots[i]!])
+          previous[i] = slots[i]!
+        }
+      }
+      if (values.length > 0) {
+        this.send(conn.ws, { type: 'dmxLevels', universe, full: false, values })
+      }
+    }
+  }
 
   private send(ws: WebSocket, msg: ServerMessage): void {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg))

@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import type * as Y from 'yjs'
+import { useStore } from '../../../store.ts'
 import { nextFreeAddress } from '../model/addressing'
+import { fixtureVerdict } from '../model/live'
 import {
   addFixture,
   addressSequentially,
@@ -44,6 +46,11 @@ function PositionGroup({
   onSelect: (id: string) => void
 }) {
   const fixtures = useMemo(() => fixturesOnPosition(snapshot, positionId), [snapshot, positionId])
+  // Read straight from the store rather than threaded through the list: the
+  // map only changes when the lighting network does something new, so this
+  // costs a render a second at most and nothing at all when nobody is
+  // watching a rig.
+  const everLit = useStore((s) => (s.dmx.listening ? s.dmx.everLit : null))
 
   const labelById = useMemo(
     () => new Map(snapshot.fixtures.map((fixture) => [fixture.id, fixtureLabel(fixture)])),
@@ -152,6 +159,7 @@ function PositionGroup({
                   selected={selectedId === fixture.id}
                   onSelect={() => onSelect(fixture.id)}
                   onRemove={() => removeFixture(doc, fixture.id)}
+                  verdict={everLit ? fixtureVerdict(fixture, everLit) : null}
                 />
               ))}
             </tbody>

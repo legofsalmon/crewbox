@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { useStore } from '../../../store.ts'
+import { fixtureDim } from '../model/live'
 import { fixturePoint3, isVertical, positionEnds } from '../model/geometry'
 import { fixturesOnPosition } from '../model/plotDoc'
 import type { Fixture, PlotSnapshot } from '../model/types'
@@ -42,6 +44,7 @@ export default function PlotElevation({
   onSelect: (id: string) => void
 }) {
   const [zoom, setZoom] = useState(1)
+  const levels = useStore((s) => (s.dmx.listening ? s.dmx.levels : null))
 
   /**
    * Everything the elevation has to fit, in metres.
@@ -213,6 +216,7 @@ export default function PlotElevation({
                       <circle
                         cx={px(point.x)}
                         cy={pz(point.z)}
+                        opacity={levels ? fixtureDim(fixture, levels) : undefined}
                         r={r}
                         className={`${styles.fixture} ${statusClass[fixture.status]} ${
                           isSelected ? styles.fixtureSelected : ''

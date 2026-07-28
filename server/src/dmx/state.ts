@@ -262,6 +262,24 @@ export class DmxState {
   }
 
   /**
+   * The `everLit` record as 64 bytes, one bit per address, LSB first.
+   *
+   * Sent to clients so *they* decide each fixture's verdict: the plot is a
+   * Yjs document the server has no business understanding, and 64 bytes
+   * covers a whole universe however many fixtures are on it. It also only
+   * ever gains bits, so it can be sent on change and never diffed.
+   */
+  everLitBitmap(universe: number): Uint8Array | null {
+    const record = this.universes.get(universe)
+    if (!record) return null
+    const bits = new Uint8Array(UNIVERSE_SIZE / 8)
+    for (let i = 0; i < UNIVERSE_SIZE; i++) {
+      if (record.everLit[i]) bits[i >> 3]! |= 1 << (i & 7)
+    }
+    return bits
+  }
+
+  /**
    * What can honestly be said about a fixture.
    *
    * `address` is 1-based, the way everyone says it; the slot array is not.

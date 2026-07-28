@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
+import { useStore } from '../../../store.ts'
 import type * as Y from 'yjs'
+import { fixtureDim } from '../model/live'
 import { fixturePoint3, positionEnds } from '../model/geometry'
 import { fixturesOnPosition, updatePosition } from '../model/plotDoc'
 import type { Fixture, PlotSnapshot, Position } from '../model/types'
@@ -50,6 +52,8 @@ export default function PlotPlan({
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
+  // Levels dim the fixture rather than recolour it, so status stays readable.
+  const levels = useStore((s) => (s.dmx.listening ? s.dmx.levels : null))
   const svgRef = useRef<SVGSVGElement>(null)
   const [zoom, setZoom] = useState(1)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -222,6 +226,7 @@ export default function PlotPlan({
                       <circle
                         cx={px(point.x)}
                         cy={py(point.y)}
+                        opacity={levels ? fixtureDim(fixture, levels) : undefined}
                         r={FIXTURE_R * Math.min(1.6, zoom)}
                         className={`${styles.fixture} ${statusClass[fixture.status]} ${
                           isSelected ? styles.fixtureSelected : ''

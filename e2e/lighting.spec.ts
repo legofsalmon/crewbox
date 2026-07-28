@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { newDevice, uniqueName } from './helpers'
+import { FakeConsole } from './dmxSender'
 
 /**
  * The lighting module through a real box: a plot syncing between two
@@ -280,4 +281,81 @@ test('a position works out the truss its fixtures need', async ({ browser }) => 
 
   // Once the bar matches the estimate there is nothing left to offer.
   await expect(page.getByRole('button', { name: /^Set to/ })).toHaveCount(0)
+})
+
+/**
+ * Watching a real lighting network.
+ *
+ * The box is started with CREWBOX_DMX=sacn on loopback (see
+ * playwright.config.ts) and a synthetic console sends to it. Crewbox itself
+ * never transmits — its sockets have `send` removed — so the sender lives in
+ * the test.
+ */
+test('a plot says which fixtures the desk is actually sending to', async ({ browser }) => {
+  const console_ = new FakeConsole()
+  try {
+    // Universe 1, channel 1 up. Nothing on 100.
+    await console_.start(1, { 1: 255 })
+
+    const page = await newDevice(browser, 'Live Tech')
+    await openLighting(page)
+    await createPlot(page, uniqueName('Live Rig'))
+
+    const group = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Upstage Truss', exact: true }) })
+
+    // One fixture on channel 1 — being sent to. One on 100 — not.
+    for (const [purpose, address] of [
+      ['Getting data', 1],
+      ['Nothing sent', 100],
+    ] as const) {
+      await group.getByRole('button', { name: '+ Fixture' }).click()
+      const row = group.locator('tbody tr').last()
+      await row.getByLabel(/^Purpose/).fill(purpose)
+      await row.getByLabel(/^Purpose/).press('Enter')
+      await row.getByLabel(/^Address/).fill(String(address))
+      await row.getByLabel(/^Address/).press('Enter')
+    }
+
+    // The bar reports the split, and says what window it can speak for.
+    await expect(page.getByText(/1 receiving/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/1 nothing sent/)).toBeVisible()
+    await expect(page.getByText(/^since /)).toBeVisible()
+
+    // Per fixture, beside the status somebody typed.
+    await expect(page.getByLabel('Receiving data')).toHaveCount(1)
+    await expect(
+      page.getByLabel('Nothing sent to these addresses since the box started listening')
+    ).toHaveCount(1)
+
+    // Bring channel 100 up: the second fixture flips, and never flips back —
+    // between cues everything is at zero, and that is not a fault.
+    console_.set(1, { 1: 255, 100: 180 })
+    await expect(page.getByLabel('Receiving data')).toHaveCount(2, { timeout: 15000 })
+    await expect(page.getByText(/2 receiving/)).toBeVisible()
+
+    console_.set(1, { 1: 0, 100: 0 })
+    await page.waitForTimeout(1200)
+    await expect(page.getByLabel('Receiving data')).toHaveCount(2)
+
+    // Levels reach the drawing: the two fixtures are dimmed differently by
+    // what is being sent to them, over their status colour rather than
+    // instead of it.
+    console_.set(1, { 1: 255, 100: 40 })
+    await page.getByRole('button', { name: 'Levels' }).click()
+    await page.getByRole('tab', { name: 'Plan' }).click()
+    await expect
+      .poll(
+        async () => {
+          const dots = await page.locator('svg[role=img] circle[opacity]').all()
+          const values = await Promise.all(dots.map((d) => d.getAttribute('opacity')))
+          return values.map(Number).sort((a, b) => a - b)
+        },
+        { timeout: 15000 }
+      )
+      .toEqual([expect.closeTo(0.37, 1), expect.closeTo(1, 1)])
+  } finally {
+    console_.stop()
+  }
 })

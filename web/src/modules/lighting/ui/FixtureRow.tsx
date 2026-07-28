@@ -1,6 +1,7 @@
 import type * as Y from 'yjs'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { formatAddress } from '../model/addressing'
+import type { FixtureVerdict } from '../model/live'
 import { allFixtureTypes, findFixtureType, footprintFor } from '../model/fixtures'
 import { updateFixture } from '../model/plotDoc'
 import {
@@ -186,6 +187,27 @@ function StatusCell({ doc, fixture }: { doc: Y.Doc; fixture: Fixture }) {
   )
 }
 
+/**
+ * What the network has been seen doing to this fixture, beside the status
+ * somebody typed. Deliberately small and deliberately not a verdict on the
+ * fixture: `silent` says the desk has not sent to these addresses in the
+ * window the box has been listening, which is a different claim from broken.
+ */
+function LiveDot({ verdict }: { verdict: FixtureVerdict }) {
+  const title = {
+    live: 'Receiving data',
+    silent: 'Nothing sent to these addresses since the box started listening',
+    'no-data': 'This universe has not been heard at all',
+  }[verdict]
+  return (
+    <span
+      className={`${styles.live} ${styles[`live-${verdict}`]}`}
+      title={title}
+      aria-label={title}
+    />
+  )
+}
+
 export interface FixtureRowProps {
   doc: Y.Doc
   fixture: Fixture
@@ -196,6 +218,11 @@ export interface FixtureRowProps {
   selected: boolean
   onSelect: () => void
   onRemove: () => void
+  /**
+   * What the lighting network has been seen doing to this fixture, or null
+   * when the box isn't watching one. Never means "broken" — see model/live.ts.
+   */
+  verdict?: FixtureVerdict | null
 }
 
 export default function FixtureRow({
@@ -207,6 +234,7 @@ export default function FixtureRow({
   selected,
   onSelect,
   onRemove,
+  verdict,
 }: FixtureRowProps) {
   const clash = conflictsWith.length > 0
   const problem = clash || overruns
@@ -267,6 +295,7 @@ export default function FixtureRow({
       </td>
       <td className={`${styles.cell} ${styles.colStatus}`}>
         <StatusCell doc={doc} fixture={fixture} />
+        {verdict && <LiveDot verdict={verdict} />}
       </td>
       <td className={`${styles.cell} ${styles.colNotes}`}>
         <TextCell doc={doc} fixture={fixture} field="notes" label="Notes" />

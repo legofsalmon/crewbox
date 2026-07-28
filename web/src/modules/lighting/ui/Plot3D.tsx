@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useStore } from '../../../store.ts'
+import { fixtureDim } from '../model/live'
 import {
   fixturePoint3,
   isVertical,
@@ -81,6 +83,7 @@ export default function Plot3D({
 }) {
   // Three-quarter view from house left, looking slightly down: the angle
   // that shows trim differences and stage depth at the same time.
+  const levels = useStore((s) => (s.dmx.listening ? s.dmx.levels : null))
   const [camera, setCamera] = useState<Camera>(HOME)
   const [zoom, setZoom] = useState(1)
   const [orbit, setOrbit] = useState<Orbit | null>(null)
@@ -304,6 +307,7 @@ export default function Plot3D({
               <circle
                 cx={point.x}
                 cy={point.y}
+                opacity={levels ? fixtureDim(fixture, levels) : undefined}
                 r={r}
                 className={`${styles.fixture} ${statusClass[fixture.status]} ${
                   fixture.id === selectedId ? styles.fixtureSelected : ''
@@ -323,7 +327,7 @@ export default function Plot3D({
       scene: items.sort((a, b) => b.depth - a.depth).map((item) => item.node),
       labels: labelNodes,
     }
-  }, [snapshot, issues, selectedId, camera, pivot, radius, zoom, size, onSelect])
+  }, [snapshot, issues, selectedId, camera, pivot, radius, zoom, size, levels, onSelect])
 
   return (
     <div className={styles.wrap}>

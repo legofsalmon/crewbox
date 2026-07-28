@@ -27,6 +27,7 @@ import {
   useSyncStatus,
 } from '../store/hooks'
 import FixtureList from './FixtureList'
+import LiveBar from './LiveBar'
 import Plot3D from './Plot3D'
 import PlotElevation from './PlotElevation'
 import PlotPlan from './PlotPlan'
@@ -139,6 +140,9 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   const [showShare, setShowShare] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  // Levels are the expensive half and off by default: most of the value is in
+  // "is it arriving and does the patch match", which needs none of them.
+  const [liveLevels, setLiveLevels] = useState(false)
 
   const title = useDraft(snapshot?.meta.title ?? '', (next) => {
     if (doc) setPlotMeta(doc, 'title', next)
@@ -413,6 +417,12 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
           </span>
         )}
       </div>
+
+      <LiveBar
+        snapshot={snapshot}
+        levels={liveLevels}
+        onToggleLevels={() => setLiveLevels((on) => !on)}
+      />
 
       {flash && (
         <p className={styles.flash} role="status">

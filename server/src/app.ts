@@ -268,7 +268,7 @@ export function buildApp({
   const environment = createEnvironmentCache(probes ?? boxProbes(dataDir))
   void environment.refresh()
 
-  const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy)
+  const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
   const docs = new DocsRelay()
   fastify.addHook('onClose', () => docs.close())
   if (sessionTtlMs) {
