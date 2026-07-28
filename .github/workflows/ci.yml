@@ -9,6 +9,11 @@ jobs:
   checks:
     name: Format, lint, build, unit tests
     runs-on: ubuntu-latest
+    # Both jobs finish in about 90 seconds. Without a cap, a hung test or a
+    # wedged runner burns GitHub's six-hour default before anyone notices —
+    # and a red X after ten minutes is far more useful than a spinner all
+    # afternoon.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +29,7 @@ jobs:
   e2e:
     name: End-to-end (two-device sheet sync, chat, undo)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

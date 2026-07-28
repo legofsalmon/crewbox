@@ -21,6 +21,9 @@ jobs:
   check:
     name: Signing secrets
     runs-on: macos-latest
+    # It runs in about ninety seconds; the only slow step is one call to
+    # Apple, which can hang rather than fail.
+    timeout-minutes: 10
     env:
       MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
       MAC_SIGN_CERT_P12: ${{ secrets.MAC_SIGN_CERT_P12 }}
