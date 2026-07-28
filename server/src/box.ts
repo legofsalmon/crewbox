@@ -209,6 +209,40 @@ export function printBoxStatus(dataDir: string): number {
   return 0
 }
 
+/**
+ * Windows only: put an icon in the system tray.
+ *
+ * Extracted from the binary and run as a detached child, the same pattern the
+ * web bundle and the SFU already use — which is what lets the download stay
+ * one file. The helper reads box-status.json for everything it shows and exits
+ * on its own once that stops naming a live process, so it never outlives the
+ * box.
+ *
+ * Best-effort throughout. A box with no tray icon is the situation this is
+ * fixing; a box that won't start because its tray icon wouldn't is worse.
+ */
+export function startTrayHelper(dataDir: string): void {
+  if (process.platform !== 'win32') return
+  const asset = seaAsset('helper/crewbox-tray.exe')
+  if (!asset) return
+  try {
+    const exe = join(dataDir, 'crewbox-tray.exe')
+    // Rewritten every start so an upgraded box never runs the old helper.
+    // Windows refuses to overwrite a running executable, and a helper still
+    // running means a box still running, so leaving it alone is correct.
+    try {
+      writeFileSync(exe, Buffer.from(asset))
+    } catch {
+      /* in use by the helper of a box that is already running */
+    }
+    spawn(exe, [dataDir], { stdio: 'ignore', detached: true, windowsHide: true })
+      .on('error', () => {})
+      .unref()
+  } catch {
+    /* no tray icon; the box is unaffected */
+  }
+}
+
 /** Best-effort browser open (double-click UX); silent when headless. */
 export function openBrowser(url: string): void {
   if (process.env.CREWBOX_NO_OPEN) return

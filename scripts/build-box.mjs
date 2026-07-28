@@ -83,6 +83,55 @@ const livekitPath = join(root, 'build', 'livekit', livekitExe)
 const hasLivekit = existsSync(livekitPath)
 if (hasLivekit) assets[`livekit/${livekitExe}`] = livekitPath
 
+// 2c. The Windows tray icon, compiled here and carried inside the binary.
+//
+// Started from Explorer the box shows a console window someone closes, or
+// none at all, leaving a server running with nothing to click. The tray
+// helper is the fix (native/windows/CrewboxTray.cs); embedding it keeps the
+// promise that the download is one file.
+//
+// csc.exe from the .NET Framework, which is on every Windows 10/11 machine —
+// no SDK to install and about 15 KB of output. Optional in exactly the way
+// LiveKit is: a box built without it still works, it just has no tray.
+let hasTray = false
+if (process.platform === 'win32') {
+  const csc = join(
+    process.env.WINDIR ?? 'C:\\Windows',
+    'Microsoft.NET',
+    'Framework64',
+    'v4.0.30319',
+    'csc.exe'
+  )
+  const trayExe = join(outDir, 'crewbox-tray.exe')
+  if (existsSync(csc)) {
+    try {
+      execFileSync(
+        csc,
+        [
+          '/nologo',
+          '/target:winexe',
+          '/optimize+',
+          `/out:${trayExe}`,
+          '/reference:System.dll',
+          '/reference:System.Drawing.dll',
+          '/reference:System.Windows.Forms.dll',
+          '/reference:System.Runtime.Serialization.dll',
+          join(root, 'native', 'windows', 'CrewboxTray.cs'),
+        ],
+        { stdio: 'inherit' }
+      )
+      assets['helper/crewbox-tray.exe'] = trayExe
+      hasTray = true
+    } catch {
+      // Never fail the box over its tray icon: a box with no tray is the
+      // situation before this existed, a box that won't build is worse.
+      console.warn('could not compile the tray helper — building without it')
+    }
+  } else {
+    console.warn(`no csc.exe at ${csc} — building without the tray helper`)
+  }
+}
+
 // 3. Generate the SEA blob.
 const seaConfigPath = join(outDir, 'sea-config.json')
 writeFileSync(
@@ -132,7 +181,8 @@ if (process.platform === 'darwin') {
 const sizeMb = (statSync(binPath).size / 1024 / 1024).toFixed(0)
 console.log(
   `\nbuilt ${relative(root, binPath)} (${sizeMb} MB, v${version}+${commit}, ` +
-    `${manifest.length} web assets, voice ${hasLivekit ? 'embedded' : 'NOT embedded'})`
+    `${manifest.length} web assets, voice ${hasLivekit ? 'embedded' : 'NOT embedded'}` +
+    `${process.platform === 'win32' ? `, tray ${hasTray ? 'embedded' : 'NOT embedded'}` : ''})`
 )
 if (!hasLivekit) {
   console.log('  run `node scripts/fetch-livekit.mjs` first to build a box with voice')

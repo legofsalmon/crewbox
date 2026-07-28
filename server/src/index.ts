@@ -13,6 +13,7 @@ import {
   openBrowser,
   printBoxBanner,
   printBoxStatus,
+  startTrayHelper,
   stopRunningBox,
   writeBoxStatus,
 } from './box.ts'
@@ -154,6 +155,9 @@ async function main(): Promise<void> {
       eventName,
       version: process.env.DEPLOY_VERSION ?? '',
     })
+
+    // After the status file, which is the only thing it reads.
+    startTrayHelper(dataDir)
 
     openBrowser(`${origin}${firstRun ? '/setup' : '/connect'}`)
   }

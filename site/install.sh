@@ -66,6 +66,60 @@ if [ "$plat" = "darwin" ]; then
   xattr -d com.apple.quarantine "$target" 2>/dev/null || true
 fi
 
+# Linux gets a launcher entry and a systemd user unit rather than a tray icon.
+#
+# There is no tray that works everywhere: the modern route is StatusNotifierItem
+# over D-Bus, and GNOME — a large share of desktop Linux — shows nothing without
+# a third-party extension. An icon that is invisible on GNOME would be worse
+# than none, because you would conclude the box wasn't running.
+#
+# So: the launcher entry opens a terminal, which is idiomatic here and gives you
+# the banner, the QR and Ctrl-C. The systemd unit is for the case that actually
+# describes most Linux boxes — a machine in a shed with nothing plugged into it.
+if [ "$plat" = "linux" ]; then
+  apps="$HOME/.local/share/applications"
+  units="$HOME/.config/systemd/user"
+  mkdir -p "$apps" "$units" 2>/dev/null || true
+
+  cat > "$apps/crewbox.desktop" 2>/dev/null <<EOF || true
+[Desktop Entry]
+Type=Application
+Name=Crewbox
+Comment=Crew comms for this event — chat, voice, patch sheets
+Exec=$target
+Icon=crewbox
+Terminal=true
+Categories=Network;Chat;
+Actions=Stop;
+
+[Desktop Action Stop]
+Name=Stop Crewbox
+Exec=$target --stop
+EOF
+
+  cat > "$units/crewbox.service" 2>/dev/null <<EOF || true
+[Unit]
+Description=Crewbox — crew comms for this event
+After=network-online.target
+
+[Service]
+ExecStart=$target
+# The box opens a browser on first run, which is wrong for a service.
+Environment=CREWBOX_NO_OPEN=1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+  # Best-effort: a headless box has no desktop database to update.
+  command -v update-desktop-database >/dev/null 2>&1 &&
+    update-desktop-database "$apps" 2>/dev/null || true
+  command -v systemctl >/dev/null 2>&1 &&
+    systemctl --user daemon-reload 2>/dev/null || true
+fi
+
 say ""
 say "  Installed to $target"
 say ""
@@ -77,7 +131,14 @@ case ":${PATH}:" in
 esac
 
 say "  Starting the box — it will print a QR for crew to scan."
-say "  Stop it with Ctrl-C; run it again any time with:  $target"
+say ""
+say "  Stop it with Ctrl-C, or from anywhere with:  $target --stop"
+say "  Check on it any time with:                   $target --status"
+if [ "$plat" = "linux" ]; then
+  say ""
+  say "  Added a Crewbox launcher entry. For a box that stays up on its own:"
+  say "    systemctl --user enable --now crewbox"
+fi
 say ""
 
 exec "$target"
