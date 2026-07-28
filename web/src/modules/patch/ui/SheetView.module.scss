@@ -5,8 +5,6 @@
   display: flex;
   flex-direction: column;
   background: $color-surface-alt;
-  // Anchors the collapse chevron below to this pane rather than the window.
-  position: relative;
 }
 
 .loading {
@@ -15,45 +13,13 @@
   color: $color-muted;
 }
 
-/* Absolute, not fixed. Fixed is relative to the window, so on a desktop —
-   where this pane starts after the sidebar — the chevron floated across the
-   sidebar and sat on top of the Crewbox logo. The header reserves 44px on
-   the left for it either way. */
-.headerToggle {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  z-index: 20;
-  border: 1px solid $color-border-soft;
-  background: $color-surface;
-  border-radius: $radius-small;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-  color: $color-ink-soft;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.chevronUp,
-.chevronDown {
-  display: inline-block;
-  transition: transform 0.2s ease;
-  font-size: 0.7rem;
-}
-
-.chevronDown {
-  transform: rotate(180deg);
-}
-
 /* Same shape and metrics as the lighting plot's `.head` — a crew member who
    knows one module should not have to relearn the top of another. */
 .appHeader {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px 10px 44px;
+  padding: 10px 14px;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   color: var(--text);
@@ -202,7 +168,6 @@
     background: transparent;
   }
 
-  .headerToggle,
   .back,
   .statusChip,
   .avatars {

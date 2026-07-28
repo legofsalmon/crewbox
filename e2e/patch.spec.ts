@@ -149,18 +149,3 @@ test('the sheet title shares the nav row rather than taking one of its own', asy
   const grid = await page.locator('table').boundingBox()
   expect(grid!.y).toBeLessThan(130)
 })
-
-test('the collapse chevron stays inside the patch pane, off the sidebar', async ({ browser }) => {
-  const page = await newDevice(browser)
-  await page.setViewportSize({ width: 1280, height: 800 })
-  await openPatch(page)
-  await createSheet(page, uniqueName('Chevron Fest'))
-
-  // It was position:fixed, which is relative to the window — so on a desktop
-  // it floated left across the sidebar and sat on the Crewbox logo.
-  const chevron = await page.getByRole('button', { name: /headers/ }).boundingBox()
-  const sidebar = await page.locator('.sidebar').boundingBox()
-  expect(chevron).not.toBeNull()
-  expect(sidebar).not.toBeNull()
-  expect(chevron!.x).toBeGreaterThanOrEqual(sidebar!.x + sidebar!.width)
-})

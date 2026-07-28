@@ -114,6 +114,34 @@ export const setMetaField = (doc: Y.Doc, field: 'title' | 'stage' | 'date', valu
 
 // --- Channels ---------------------------------------------------------------
 
+/**
+ * Make every plainly-numbered channel's label match its position again.
+ *
+ * A channel number is a desk input number: the fourth row is input 4, and if
+ * a row is inserted above it, it becomes input 5. So the numbers follow the
+ * list rather than the list following the numbers.
+ *
+ * Anything a human typed is left exactly alone — "SUB L", "1A", "Talkback".
+ * Only labels that are purely digits are positional, because only those can
+ * be read as "this is input N" in the first place. That does mean a named
+ * channel occupies a position and the numbers step over it, which is right:
+ * the row below a named row is still the row it physically is.
+ *
+ * Callers must already be inside a transaction, so an insert and the
+ * renumbering it causes undo as one action rather than two.
+ */
+const renumberChannels = (channels: Y.Array<Y.Map<string>>): void => {
+  for (let i = 0; i < channels.length; i++) {
+    const channel = channels.get(i)
+    const label = channel.get('label') ?? ''
+    if (!/^\d+$/.test(label)) continue
+    const positional = String(i + 1)
+    // Only write when it actually changes: every set is a CRDT update that
+    // ships to every other device on the box.
+    if (label !== positional) channel.set('label', positional)
+  }
+}
+
 export const addChannel = (doc: Y.Doc, afterChannelId?: string): string => {
   const { channels } = getSheetRoots(doc)
   const id = newId()
@@ -121,7 +149,10 @@ export const addChannel = (doc: Y.Doc, afterChannelId?: string): string => {
     const index =
       afterChannelId !== undefined ? (findById(channels, afterChannelId)?.index ?? null) : null
     const insertAt = index === null ? channels.length : index + 1
-    channels.insert(insertAt, [mapFrom({ id, label: String(channels.length + 1) })])
+    // A placeholder number; renumbering below gives it the right one, and
+    // gives it to everything under it too.
+    channels.insert(insertAt, [mapFrom({ id, label: String(insertAt + 1) })])
+    renumberChannels(channels)
   })
   return id
 }
@@ -143,6 +174,7 @@ export const removeChannel = (doc: Y.Doc, channelId: string) => {
     for (const key of [...patches.keys()]) {
       if (key.endsWith(`:${channelId}`)) patches.delete(key)
     }
+    renumberChannels(channels)
   })
 }
 
