@@ -99,6 +99,22 @@ Ten alphanumeric characters, at <https://developer.apple.com/account> →
 Membership details. It is also the string in parentheses at the end of
 `MAC_SIGN_IDENTITY` — if those two disagree, one of them is wrong.
 
+## Check them without cutting a release
+
+Once the six are set, run **Actions → Check macOS signing → Run workflow**.
+
+It imports the certificate, signs a throwaway binary with it, and asks Apple
+to accept the notary credentials — about ninety seconds, and it builds and
+publishes nothing. Worth doing before a release rather than after, because
+each of these fails in a way that doesn't name its own cause, and the
+silent one is the worst: a **misspelled secret name** doesn't fail at all.
+The release just skips signing and ships an unsigned `.dmg`.
+
+It also catches the mismatch that survives a green release — a
+`MAC_NOTARY_TEAM_ID` that isn't the team in `MAC_SIGN_IDENTITY` notarises
+under one team and signs under another, and Gatekeeper still refuses the
+download.
+
 ## Check the .p12 before uploading it
 
 Two commands that catch the two mistakes actually worth catching:
