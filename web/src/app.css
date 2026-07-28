@@ -1,17 +1,25 @@
 /* ---------------------------------------------------------------- tokens */
+/*
+ * Dark theme is navy, not brown.
+ *
+ * The surfaces are hue-shifted but their *luminance* is unchanged, step for
+ * step, from the warm palette they replace — so every contrast ratio the
+ * theme spec guards holds, and the depth ladder reads the same. Amber stays:
+ * amber on navy is the instrument-panel pairing, and it is the brand.
+ */
 :root {
   color-scheme: dark;
-  --bg: #12100e;
-  --bg-raised: #1a1714;
-  --bg-hover: #242019;
-  --bg-active: #2e2820;
+  --bg: #0d1117;
+  --bg-raised: #121820;
+  --bg-hover: #19212c;
+  --bg-active: #1f2938;
   --border: rgba(255, 255, 255, 0.08);
-  --text: #f2eee7;
-  --text-muted: #a29a8c;
-  --text-faint: #6f695e;
+  --text: #eaeff7;
+  --text-muted: #9aa7ba;
+  --text-faint: #67748a;
   --accent: #f5b73e;
   --accent-strong: #ffcd66;
-  --accent-contrast: #1c1608;
+  --accent-contrast: #10151d;
   --danger: #ef6a5a;
   --ok: #58c98a;
   --radius: 12px;
@@ -32,12 +40,17 @@
   --text-faint: #8d8574;
   /* Darkened from #c07f00: with --accent-contrast text this only reached
      ~3.2:1, under AA for button labels — and light theme is exactly what
-     crew get outdoors in daylight. Now ~4.8:1, same amber family. */
-  --accent: #9a6600;
+     crew get outdoors in daylight. Same amber family throughout.
+
+     Nudged again from #9a6600, which cleared AA as a button background but
+     only reached 4.40 as *text* on --bg, where it is also used. 4.52 now. */
+  --accent: #986400;
   --accent-strong: #7d5300;
   --accent-contrast: #fffaf0;
   --danger: #c53a2a;
-  --ok: #1e8a54;
+  /* Was #1e8a54 — 3.90 on --bg, under AA. This is the "voice is running"
+     green, read off a phone in daylight, so it has to clear the bar. */
+  --ok: #1b7d4c;
 }
 
 /* ----------------------------------------------------------------- base */
@@ -68,6 +81,18 @@ body {
   inset: 0;
   width: 100%;
   overflow: hidden;
+  /*
+   * No browser zoom on the interface. Pinch-zooming a fixed, full-viewport
+   * app doesn't magnify it, it drags a magnified copy around inside a
+   * viewport that can't scroll — the layout looks broken and there is no
+   * obvious way back.
+   *
+   * `manipulation` also kills double-tap-to-zoom, which fires constantly when
+   * crew tap a channel twice in a hurry. Panning and scrolling are untouched,
+   * and photos keep their pinch: the image viewer implements zoom itself with
+   * pointer events (see .file-zoom), so it never relied on the browser's.
+   */
+  touch-action: manipulation;
 }
 
 button {
@@ -2017,14 +2042,27 @@ ul {
 @media (max-width: 900px) {
   .sidebar {
     position: fixed;
-    inset: 0 auto 0 0;
+    top: 0;
+    left: 0;
+    /*
+     * Height, not `inset: 0`.
+     *
+     * A fixed element resolves against the *layout* viewport, which on iOS
+     * stays the tall URL-bar-hidden size — so `bottom: 0` puts the drawer's
+     * last rows behind Safari's toolbar, and the drawer visibly fails to
+     * reach the bottom of the screen. --app-height is what the user can
+     * actually see, and is what .app itself is sized to.
+     */
+    height: var(--app-height, 100dvh);
     z-index: 50;
     transform: translateX(-100%);
     transition: transform 0.22s ease;
     width: min(var(--sidebar-w), 85vw);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
-    /* Fixed drawer escapes .app's safe-area padding — re-apply it. */
+    /* Fixed drawer escapes .app's safe-area padding — re-apply both ends, or
+       the bottom row sits under the home indicator. */
     padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .sidebar-open .sidebar {
@@ -2033,7 +2071,12 @@ ul {
 
   .backdrop {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* Same reasoning as the drawer: match the visible viewport so the scrim
+       doesn't stop short of, or run past, what is on screen. */
+    height: var(--app-height, 100dvh);
     z-index: 40;
     background: rgba(0, 0, 0, 0.5);
     /* A plain black scrim vanishes on the dark theme — the blur keeps the
