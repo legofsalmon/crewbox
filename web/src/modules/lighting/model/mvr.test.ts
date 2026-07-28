@@ -5,7 +5,7 @@
 // parser to every phone on site.
 import { zipSync, strToU8 } from 'fflate'
 import { describe, expect, it } from 'vitest'
-import { gdtfModeFootprint, parseMvr, parseMvrMatrix } from './mvr'
+import { parseMvr, parseMvrMatrix } from './mvr'
 import { fitPosition, isBar } from './placement'
 
 /**
@@ -110,27 +110,13 @@ describe('MVR matrix', () => {
   })
 })
 
-describe('GDTF footprint', () => {
-  const modeOf = (offsets: string[]) => {
-    const xml = `<DMXMode><DMXChannels>${offsets
-      .map((o) => `<DMXChannel Offset="${o}"/>`)
-      .join('')}</DMXChannels></DMXMode>`
-    return new DOMParser().parseFromString(xml, 'application/xml').documentElement
-  }
-
-  it('is the highest offset used', () => {
-    expect(gdtfModeFootprint(modeOf(['1', '2', '3']))).toBe(3)
-  })
-
-  it('counts both bytes of a 16-bit channel', () => {
-    // "15,16" is one coarse/fine pair occupying two slots.
-    expect(gdtfModeFootprint(modeOf(['1', '15,16']))).toBe(16)
-  })
-
-  it('ignores virtual channels that occupy nothing', () => {
-    expect(gdtfModeFootprint(modeOf(['1', 'None', '4']))).toBe(4)
-  })
-})
+/*
+ * Offsets, 16-bit pairs, virtual channels and geometry references are all
+ * covered directly in gdtf.test.ts. What matters here is that a profile
+ * missing the parts the decoder reads still yields a usable footprint —
+ * the `gdtf()` helper above writes bare `<DMXChannel>` elements with no
+ * logical channel at all, so every MVR test in this file exercises it.
+ */
 
 describe('MVR import', () => {
   it('reads fixtures with footprints from their GDTF profiles', () => {
@@ -356,5 +342,97 @@ describe('position fitting', () => {
     ]
     expect(fitPosition(pair).residual).toBe(0)
     expect(isBar(fitPosition(pair), pair.length)).toBe(false)
+  })
+})
+
+describe('what the GDTF profiles bring with them', () => {
+  /** A profile with real logical channels, models, a beam and two modes. */
+  const profiled = zipSync({
+    'description.xml': strToU8(
+      `<?xml version="1.0" encoding="UTF-8"?><GDTF DataVersion="1.2">` +
+        `<FixtureType Name="Wash 300" Manufacturer="Test">` +
+        `<PhysicalDescriptions><Properties><Weight Value="18.4"/>` +
+        `<PowerConsumption Value="410"/></Properties></PhysicalDescriptions>` +
+        `<Models><Model Name="Body" Length="0.36" Width="0.30" Height="0.48"/></Models>` +
+        `<Geometries><Geometry Name="Base"><Beam Name="Beam" BeamAngle="21"/></Geometry></Geometries>` +
+        `<DMXModes>` +
+        `<DMXMode Name="Basic" Geometry="Base"><DMXChannels>` +
+        `<DMXChannel DMXBreak="1" Offset="1" Geometry="Base">` +
+        `<LogicalChannel Attribute="Dimmer"><ChannelFunction Attribute="Dimmer" DMXFrom="0/1"/>` +
+        `</LogicalChannel></DMXChannel></DMXChannels></DMXMode>` +
+        `<DMXMode Name="Extended" Geometry="Base"><DMXChannels>` +
+        `<DMXChannel DMXBreak="1" Offset="1,2" Geometry="Base">` +
+        `<LogicalChannel Attribute="Pan"><ChannelFunction Attribute="Pan" DMXFrom="0/1" ` +
+        `PhysicalFrom="-270" PhysicalTo="270"/></LogicalChannel></DMXChannel>` +
+        `<DMXChannel DMXBreak="1" Offset="3" Geometry="Base">` +
+        `<LogicalChannel Attribute="Dimmer"><ChannelFunction Attribute="Dimmer" DMXFrom="0/1"/>` +
+        `</LogicalChannel></DMXChannel></DMXChannels></DMXMode>` +
+        `</DMXModes></FixtureType></GDTF>`
+    ),
+  })
+
+  const importedIn = (mode: string) =>
+    parseMvr(
+      buildMvr(
+        [
+          {
+            name: 'FOH',
+            fixtures: [
+              {
+                name: 'Wash 1',
+                spec: 'Test@Wash300.gdtf',
+                mode,
+                address: 1,
+                fixtureId: '1',
+                unit: '1',
+                matrix: `${IDENTITY}{0,0,7000}`,
+              },
+            ],
+          },
+        ],
+        { 'Test@Wash300.gdtf': profiled }
+      )
+    )
+
+  it('brings the channel map through with the type', () => {
+    const type = importedIn('Extended').types[0]!
+    const extended = type.modes.find((m) => m.name === 'Extended')!
+    expect(extended.footprint).toBe(3)
+    expect(extended.channels).toEqual([
+      expect.objectContaining({
+        attribute: 'Pan',
+        offsets: [1, 2],
+        unit: '°',
+        functions: [{ name: 'Pan', from: 0, physicalFrom: -270, physicalTo: 270 }],
+      }),
+      expect.objectContaining({ attribute: 'Dimmer', offsets: [3] }),
+    ])
+  })
+
+  it('leaves the channel maps off modes nobody is patched in', () => {
+    // A profile carries every mode the fixture has; a rig uses one. The
+    // plot document syncs to every phone on site, so the other modes keep
+    // their names and footprints and lose their channel definitions.
+    const type = importedIn('Extended').types[0]!
+    expect(type.modes.find((m) => m.name === 'Basic')!.channels).toBeUndefined()
+    expect(type.modes.find((m) => m.name === 'Basic')!.footprint).toBe(1)
+    expect(type.modes.find((m) => m.name === 'Extended')!.channels).toBeDefined()
+  })
+
+  it('follows which mode is in use', () => {
+    const type = importedIn('Basic').types[0]!
+    expect(type.modes.find((m) => m.name === 'Basic')!.channels).toBeDefined()
+    expect(type.modes.find((m) => m.name === 'Extended')!.channels).toBeUndefined()
+  })
+
+  it('carries weight, power, size and beam angle', () => {
+    expect(importedIn('Basic').types[0]).toMatchObject({
+      name: 'Test Wash 300',
+      weight: 18.4,
+      watts: 410,
+      width: 0.36,
+      height: 0.48,
+      beamAngle: 21,
+    })
   })
 })

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
 import { config, warnOnDefaults } from './config.ts'
 import { attachWs, buildApp } from './app.ts'
+import { DmxListener } from './dmx/listener.ts'
 import {
   boxDataDir,
   clearBoxStatus,
@@ -87,6 +88,19 @@ async function main(): Promise<void> {
   // is a working product minus those two things.
   const { tls, reason: tlsReason } = loadTls(dataDir)
 
+  // Listening to the lighting network, when this box was asked to. Off by
+  // default, and read-only however it is configured: the sockets it opens
+  // have had `send` taken off them (server/src/dmx/listener.ts).
+  const dmx =
+    config.dmx.mode === 'off'
+      ? undefined
+      : new DmxListener({
+          mode: config.dmx.mode,
+          universes: config.dmx.universes,
+          artnetBase: config.dmx.artnetBase,
+          ...(config.dmx.interfaceIp ? { interfaceIp: config.dmx.interfaceIp } : {}),
+        })
+
   const app = buildApp({
     store,
     eventPin: config.eventPin,
@@ -98,6 +112,7 @@ async function main(): Promise<void> {
     trustProxy: config.trustProxy,
     modules: config.modules,
     dataDir,
+    ...(dmx ? { dmx } : {}),
     ...(tls ? { tls } : {}),
   })
   const hub = app.hub
@@ -122,6 +137,13 @@ async function main(): Promise<void> {
 
   await app.listen({ host: config.host, port: config.port })
   attachWs(app)
+
+  // After listen(), so a lighting network that refuses to open never stops
+  // the box serving crew — it becomes a line in the admin panel instead.
+  if (dmx) {
+    dmx.start()
+    app.log.info(`lighting network: listening (${config.dmx.mode})`)
+  }
 
   if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
   app.log.info(

@@ -1,0 +1,167 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  min-height: 0;
+  flex: 1;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoomButton {
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.reset {
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-inline-start: 8px;
+}
+
+// Fills the pane rather than scrolling: orbiting is how you see the rest of
+// the rig here, so a scrollbar would be a second, worse way to do the same
+// thing.
+.canvas {
+  flex: 1;
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  touch-action: none;
+}
+
+svg {
+  cursor: grab;
+  display: block;
+}
+
+.orbiting {
+  cursor: grabbing;
+}
+
+.grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+// The downstage edge of the deck — the line the audience is on the other
+// side of, and the one that tells you which way round you are looking.
+.gridFront {
+  stroke: var(--text-faint);
+  stroke-width: 1.5;
+}
+
+.truss {
+  stroke: var(--text-muted);
+  stroke-linecap: round;
+}
+
+// Hanging lines to the deck. Dashed and faint: they are a reading aid, not
+// a motor, and a solid line here looks like part of the rig.
+.drop {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.label {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fixtureGroup {
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+  }
+}
+
+.fixture {
+  stroke: var(--bg-raised);
+  stroke-width: 1;
+}
+
+.fxTodo {
+  fill: var(--text-faint);
+}
+
+.fxRigged {
+  fill: var(--accent);
+}
+
+.fxOk {
+  fill: var(--ok);
+}
+
+.fxFault {
+  fill: var(--danger);
+}
+
+.fixtureSelected {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+/* See PlotPlan.module.scss — the same halo, so the two drawings agree. */
+.fixtureColour {
+  stroke: none;
+  pointer-events: none;
+}
+
+/* Beams are drawn in the scene, not inside a fixture's group, so they have
+   to stay out of the way of tapping the lamp behind them. */
+.beam {
+  color: var(--accent);
+  stroke: none;
+  pointer-events: none;
+}
+
+.fixtureClash {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
+.zoomLabel {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: center;
+}

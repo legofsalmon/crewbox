@@ -216,6 +216,95 @@ describe('fixture types', () => {
     expect(types).toHaveLength(1)
     expect(types[0]!.modes[0]!.footprint).toBe(12)
   })
+
+  it('round-trips a GDTF channel map through the document', () => {
+    // The channel map is the deepest thing the plot stores, and it is what
+    // the live view reads to say "the dimmer is at 60%" rather than "the
+    // highest of these sixteen channels is 153". If it doesn't survive the
+    // CRDT it degrades silently.
+    const doc = newPlot()
+    upsertFixtureType(doc, {
+      id: 'head.gdtf',
+      name: 'Head',
+      weight: 21.5,
+      beamAngle: 14,
+      modes: [
+        {
+          name: 'Standard',
+          footprint: 3,
+          channels: [
+            {
+              offsets: [1, 2],
+              attribute: 'Pan',
+              geometry: 'Yoke',
+              dmxBreak: 1,
+              unit: '°',
+              functions: [{ name: 'Pan', from: 0, physicalFrom: -270, physicalTo: 270 }],
+            },
+            {
+              offsets: [3],
+              attribute: 'Color1',
+              geometry: 'Head',
+              dmxBreak: 1,
+              unit: '',
+              slots: [{ from: 10, name: 'Red', colour: '#ff0000' }],
+            },
+          ],
+        },
+      ],
+    })
+
+    const type = snapshotPlot(doc).customTypes[0]!
+    expect(type).toMatchObject({ weight: 21.5, beamAngle: 14 })
+    expect(type.modes[0]!.channels).toEqual([
+      {
+        offsets: [1, 2],
+        attribute: 'Pan',
+        geometry: 'Yoke',
+        dmxBreak: 1,
+        unit: '°',
+        functions: [{ name: 'Pan', from: 0, physicalFrom: -270, physicalTo: 270 }],
+      },
+      {
+        offsets: [3],
+        attribute: 'Color1',
+        geometry: 'Head',
+        dmxBreak: 1,
+        unit: '',
+        slots: [{ from: 10, name: 'Red', colour: '#ff0000' }],
+      },
+    ])
+  })
+
+  it('drops a channel it could never read rather than keeping a dead row', () => {
+    // A doc can arrive from a peer on another build. A channel with no
+    // offsets has nowhere on the wire to read from, and one with no
+    // attribute has nothing to say — both would sit in the readout forever
+    // showing nothing.
+    const doc = newPlot()
+    upsertFixtureType(doc, {
+      id: 'odd.gdtf',
+      name: 'Odd',
+      modes: [
+        {
+          name: 'M',
+          footprint: 2,
+          channels: [
+            { offsets: [], attribute: 'Dimmer', geometry: '', dmxBreak: 1, unit: '' },
+            { offsets: [1], attribute: '', geometry: '', dmxBreak: 1, unit: '' },
+            { offsets: [2], attribute: 'Dimmer', geometry: '', dmxBreak: 1, unit: '%' },
+          ],
+        },
+      ],
+    })
+
+    const mode = snapshotPlot(doc).customTypes[0]!.modes[0]!
+    expect(mode.channels).toEqual([
+      { offsets: [2], attribute: 'Dimmer', geometry: '', dmxBreak: 1, unit: '%' },
+    ])
+    // The footprint is stored separately and stays what the profile said.
+    expect(mode.footprint).toBe(2)
+  })
 })
 
 describe('positions', () => {

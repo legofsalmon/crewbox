@@ -137,6 +137,12 @@ function ArtistRow({
   const notes = useDraft(artist.notes, (next) => updateArtist(doc, artist.id, { notes: next }), {
     multiline: true,
   })
+  // Two boxes, not one, because a paper sheet has two and they hold different
+  // things: the spec is what the act brings and needs, and gets read before
+  // the day; the notes are whatever came up, and get read on it.
+  const spec = useDraft(artist.spec, (next) => updateArtist(doc, artist.id, { spec: next }), {
+    multiline: true,
+  })
 
   const handleRemove = () => {
     if (
@@ -190,11 +196,20 @@ function ArtistRow({
         </div>
       </div>
       <div className={styles.notes}>
-        <label htmlFor={`artist-notes-${artist.id}`}>Notes:</label>
+        <label htmlFor={`artist-spec-${artist.id}`}>Spec:</label>
+        <textarea
+          id={`artist-spec-${artist.id}`}
+          rows={2}
+          placeholder="Backline, band size, what they bring…"
+          {...spec.inputProps}
+        />
+      </div>
+      <div className={styles.notes}>
+        <label htmlFor={`artist-notes-${artist.id}`}>Additional info:</label>
         <textarea
           id={`artist-notes-${artist.id}`}
           rows={2}
-          placeholder="Performance notes, requirements, etc."
+          placeholder="Anything that came up on the day"
           {...notes.inputProps}
         />
       </div>

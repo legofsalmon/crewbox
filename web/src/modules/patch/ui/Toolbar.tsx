@@ -29,6 +29,7 @@ export default function Toolbar({
   doc,
   snapshot,
   onOpenSubBoxes,
+  onOpenStagePatch,
   onOpenLineup,
   onOpenVersions,
   onShare,
@@ -38,6 +39,7 @@ export default function Toolbar({
   doc: Y.Doc
   snapshot: SheetSnapshot
   onOpenSubBoxes: () => void
+  onOpenStagePatch: () => void
   onOpenLineup: () => void
   onOpenVersions: () => void
   onShare: () => void
@@ -135,8 +137,15 @@ export default function Toolbar({
             ↷
           </button>
         </span>
-        <button type="button" onClick={onOpenSubBoxes}>
-          Sub-Boxes
+        <button type="button" onClick={onOpenSubBoxes} title="Define the sub-boxes on stage">
+          Boxes
+        </button>
+        <button
+          type="button"
+          onClick={onOpenStagePatch}
+          title="What each sub-box tail carries, derived from the grid"
+        >
+          Stage Patch
         </button>
         <button type="button" onClick={onOpenLineup}>
           Lineup
@@ -147,8 +156,13 @@ export default function Toolbar({
         <button type="button" onClick={onShare} title="Share this sheet into a chat channel">
           Share
         </button>
-        <button type="button" className={styles.export} onClick={handleExport}>
-          Export CSV
+        <button
+          type="button"
+          className={styles.export}
+          onClick={handleExport}
+          title="Export this sheet as CSV"
+        >
+          Export
         </button>
       </div>
     </div>

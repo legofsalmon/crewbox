@@ -1,0 +1,92 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+// Pulses so a glance says "this is now" rather than "this is a saved state".
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.counts strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+// The window the counts speak for. Without it "0 receiving" reads as a fault
+// when it may only mean the box started listening ten seconds ago.
+.since {
+  color: var(--text-faint);
+}
+
+/* "by dimmer" — says which question the counts answered. */
+.basis {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.hint {
+  color: var(--text-faint);
+}
+
+.off {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.conflict {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.toggle {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text);
+  }
+}
+
+.toggleOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}

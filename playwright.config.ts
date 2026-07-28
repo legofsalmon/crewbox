@@ -31,6 +31,11 @@ export default defineConfig({
       DATA_DIR: dataDir,
       WEB_DIST: `${process.cwd()}/web/dist`,
       EVENT_PIN: '4242',
+      // Listen to a lighting network on loopback, so the live-rig features
+      // can be driven by a test sending real sACN to itself.
+      CREWBOX_DMX: 'sacn',
+      CREWBOX_DMX_IFACE: '127.0.0.1',
+      CREWBOX_DMX_UNIVERSES: '1-2',
       // Known, so a spec can unlock the admin panel. Without this the box
       // mints a random one and prints it to a log no test is reading.
       ADMIN_PASSWORD: 'e2e-admin-password',

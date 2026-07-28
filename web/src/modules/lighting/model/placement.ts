@@ -12,6 +12,13 @@ export interface FittedPosition {
   /** Centroid, in metres. */
   x: number
   y: number
+  /**
+   * Trim, in metres: the median height of the group's fixtures, not the mean.
+   * One fixture rigged on the deck under a flown truss is common (a shin
+   * buster, a hazer parked under it), and the mean lets that one drag the
+   * whole bar down a metre.
+   */
+  z: number
   /** Degrees clockwise from horizontal. */
   rotation: number
   length: number
@@ -40,11 +47,15 @@ const DEFAULT_LENGTH = 12
  * bounding box would work for an axis-aligned bar and fall apart on a
  * diagonal one, which is exactly what booms and raked positions are.
  */
-export function fitPosition(points: { x: number; y: number }[]): FittedPosition {
+export function fitPosition(points: { x: number; y: number; z?: number }[]): FittedPosition {
   const order = points.map((_, i) => i)
   if (points.length === 0) {
-    return { x: 0, y: 0, rotation: 0, length: DEFAULT_LENGTH, order, residual: 0 }
+    return { x: 0, y: 0, z: 0, rotation: 0, length: DEFAULT_LENGTH, order, residual: 0 }
   }
+
+  const heights = points.map((p) => p.z ?? 0).sort((a, b) => a - b)
+  const mid = Math.floor(heights.length / 2)
+  const z = heights.length % 2 === 1 ? heights[mid]! : (heights[mid - 1]! + heights[mid]!) / 2
 
   const mx = points.reduce((sum, p) => sum + p.x, 0) / points.length
   const my = points.reduce((sum, p) => sum + p.y, 0) / points.length
@@ -64,7 +75,7 @@ export function fitPosition(points: { x: number; y: number }[]): FittedPosition 
   // bar of the default length is the least surprising thing to draw.
   const spread = Math.sqrt(cxx + cyy)
   if (spread < 1e-6) {
-    return { x: mx, y: my, rotation: 0, length: DEFAULT_LENGTH, order, residual: 0 }
+    return { x: mx, y: my, z, rotation: 0, length: DEFAULT_LENGTH, order, residual: 0 }
   }
 
   const angle = 0.5 * Math.atan2(2 * cxy, cxx - cyy)
@@ -83,6 +94,7 @@ export function fitPosition(points: { x: number; y: number }[]): FittedPosition 
   return {
     x: mx,
     y: my,
+    z,
     rotation: (angle * 180) / Math.PI,
     // A hair of padding so the end fixtures aren't drawn on the very tips.
     length: Math.max(max - min, 0.5) * 1.05,

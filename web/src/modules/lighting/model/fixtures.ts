@@ -1,4 +1,4 @@
-import type { FixtureMode, FixtureType } from './types'
+import type { Fixture, FixtureMode, FixtureType } from './types'
 
 /**
  * Seed fixture library.
@@ -18,11 +18,13 @@ import type { FixtureMode, FixtureType } from './types'
 export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   {
     id: 'conventional',
+    width: 0.3,
     name: 'Conventional / dimmer',
     modes: [{ name: '1 ch', footprint: 1 }],
   },
   {
     id: 'led-par',
+    width: 0.3,
     name: 'LED PAR (generic)',
     modes: [
       { name: 'RGB (3 ch)', footprint: 3 },
@@ -33,6 +35,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'led-batten',
+    width: 1,
     name: 'LED batten / bar (generic)',
     modes: [
       { name: '4 ch', footprint: 4 },
@@ -43,6 +46,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'moving-wash',
+    width: 0.4,
     name: 'Moving wash (generic)',
     modes: [
       { name: '12 ch', footprint: 12 },
@@ -54,6 +58,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'moving-spot',
+    width: 0.4,
     name: 'Moving spot / beam (generic)',
     modes: [
       { name: '16 ch', footprint: 16 },
@@ -65,6 +70,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'strobe',
+    width: 0.4,
     name: 'Strobe (generic)',
     modes: [
       { name: '2 ch', footprint: 2 },
@@ -74,6 +80,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'hazer',
+    width: 0.5,
     name: 'Hazer / fogger (generic)',
     modes: [
       { name: '1 ch', footprint: 1 },
@@ -83,11 +90,13 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'claypaky-sharpy',
+    width: 0.36,
     name: 'Clay Paky Sharpy',
     modes: [{ name: 'Standard', footprint: 16 }],
   },
   {
     id: 'robe-pointe',
+    width: 0.4,
     name: 'Robe Robin Pointe',
     modes: [
       { name: 'Mode 1', footprint: 24 },
@@ -129,6 +138,29 @@ export const footprintFor = (
   // One-mode types don't need the mode spelled out.
   return type.modes.length === 1 ? type.modes[0]!.footprint : null
 }
+
+/** How to refer to a fixture in a sentence — what a crew member would say. */
+export const fixtureLabel = (fixture: Pick<Fixture, 'purpose' | 'channel'>): string =>
+  fixture.purpose || (fixture.channel ? `Ch ${fixture.channel}` : 'fixture')
+
+/**
+ * Power and weight for one fixture: its own figure, or its type's.
+ *
+ * A row someone typed a number into always wins — that is the number they
+ * measured or were told. The type's figure comes from a GDTF profile, which
+ * is the manufacturer's, and covers the whole rig at once: before this, an
+ * MVR import totalled 0 W and 0 kg however many 1 kW heads were on the bar,
+ * because nobody had typed anything into any row.
+ */
+export const fixtureWatts = (
+  fixture: Pick<Fixture, 'typeId' | 'watts'>,
+  customTypes: FixtureType[]
+): number | null => fixture.watts ?? findFixtureType(fixture.typeId, customTypes)?.watts ?? null
+
+export const fixtureWeight = (
+  fixture: Pick<Fixture, 'typeId' | 'weight'>,
+  customTypes: FixtureType[]
+): number | null => fixture.weight ?? findFixtureType(fixture.typeId, customTypes)?.weight ?? null
 
 /** Match a type by name for CSV import — exact first, then case-insensitive. */
 export const matchTypeByName = (

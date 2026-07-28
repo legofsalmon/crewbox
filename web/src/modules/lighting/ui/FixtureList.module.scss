@@ -310,3 +310,30 @@
     order: 3;
   }
 }
+
+// What the lighting network has been seen doing to a fixture, beside the
+// status somebody typed. Small on purpose: it is a hint, not a verdict on
+// the fixture, and it is absent entirely when no rig is being watched.
+.live {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-inline-start: 6px;
+  vertical-align: middle;
+  flex: none;
+}
+
+.live-live {
+  background: var(--ok);
+}
+
+// Amber, not red: nothing is being sent to these addresses, which is a fact
+// about the desk and the listening window, not a fault in the fixture.
+.live-silent {
+  background: var(--accent);
+}
+
+.live-no-data {
+  background: var(--border);
+}

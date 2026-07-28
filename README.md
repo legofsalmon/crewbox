@@ -12,19 +12,21 @@ a QR. One box with everything on; there are no tiers or editions.
 Crewbox unifies [inter](https://github.com/legofsalmon/inter) and
 [Live Patch](https://github.com/legofsalmon/livepatch); both full histories are
 merged into this repo. See [docs/UNIFICATION_PLAN.md](docs/UNIFICATION_PLAN.md)
-for the plan and roadmap, and [docs/MODULES.md](docs/MODULES.md) for how to add
-a module for another department.
+for the plan and roadmap, [docs/MODULES.md](docs/MODULES.md) for how to add
+a module for another department, and
+[docs/DMX_MONITORING.md](docs/DMX_MONITORING.md) for the planned (not yet
+built) read-only Art-Net and sACN listener.
 
 ## Modules
 
 Crewbox is a shell (identity, chat, offline storage, routing) plus department
 modules. A box chooses which to run with `CREWBOX_MODULES`; chat is always on.
 
-| Module           | What it does                                                                                                                    |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Chat**         | Channels, DMs, mentions, files, push-to-talk voice. Always enabled.                                                             |
-| **Patch Sheets** | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                     |
-| **Lighting**     | Fixture patch with DMX collision detection, rigging positions, a schematic plot, and MVR/GDTF + Lightwright/console CSV import. |
+| Module           | What it does                                                                                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**         | Channels, DMs, mentions, files, push-to-talk voice. Always enabled.                                                                                                                             |
+| **Patch Sheets** | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                                                                                     |
+| **Lighting**     | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import. |
 
 ## Why it's built the way it is
 

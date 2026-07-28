@@ -4,6 +4,7 @@ import {
   newId,
   PROTOCOL_VERSION,
   type Channel,
+  type DmxUniverseWire,
   type Message,
   type PublicConfig,
   type ServerMessage,
@@ -117,6 +118,22 @@ export interface AppState {
    * returnToLatest() replaces the block with the real tail.
    */
   historyGapped: Record<string, boolean>
+  /**
+   * What the lighting network is doing, when a view has asked to watch it.
+   *
+   * Ephemeral and never cached: it describes a network this device is not on
+   * and a moment that has already passed. `everLit` and `levels` are decoded
+   * once here rather than in every component that reads them.
+   */
+  dmx: {
+    /** False until the box says otherwise, including when it isn't listening. */
+    listening: boolean
+    universes: DmxUniverseWire[]
+    /** universe → 64-byte bitmap of addresses ever above zero. */
+    everLit: Map<number, Uint8Array>
+    /** universe → 512 current levels. Only populated when levels were asked for. */
+    levels: Map<number, Uint8Array>
+  }
   /** DM the user asked to open; activated when the channel arrives. */
   pendingDmUserId: string | null
   sidebarOpen: boolean
@@ -170,6 +187,13 @@ export interface AppState {
   openDm: (userId: string) => void
   createChannel: (name: string, topic: string) => void
   loadOlder: (channelId: string) => Promise<void>
+  /**
+   * Ask the box about these universes. `[]` stops watching.
+   *
+   * Levels are opt-in because they are the expensive half — most of the value
+   * (is it arriving, does the patch match) needs none.
+   */
+  watchDmx: (universes: number[], levels?: boolean) => void
   markChannelRead: (channelId: string) => void
   setSidebarOpen: (open: boolean) => void
   setSearchOpen: (open: boolean) => void
@@ -440,6 +464,34 @@ export const useStore = create<AppState>()((set, get) => {
       case 'welcome':
         void handleWelcome(msg)
         break
+      case 'dmxState': {
+        const everLit = new Map<number, Uint8Array>()
+        for (const universe of msg.universes) {
+          if (!universe.everLit) continue
+          const binary = atob(universe.everLit)
+          const bytes = new Uint8Array(binary.length)
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+          everLit.set(universe.universe, bytes)
+        }
+        set((state) => ({
+          dmx: { ...state.dmx, listening: msg.listening, universes: msg.universes, everLit },
+        }))
+        break
+      }
+      case 'dmxLevels': {
+        set((state) => {
+          const levels = new Map(state.dmx.levels)
+          // A full message is a snapshot; anything else is a change list, so
+          // the previous values have to survive it.
+          const slots = msg.full
+            ? new Uint8Array(512)
+            : new Uint8Array(levels.get(msg.universe) ?? new Uint8Array(512))
+          for (const [address, level] of msg.values) slots[address - 1] = level
+          levels.set(msg.universe, slots)
+          return { dmx: { ...state.dmx, levels } }
+        })
+        break
+      }
       case 'msg': {
         ingestMessages([msg.message])
         const { activeChannelId, typing, me, users, channels } = get()
@@ -591,6 +643,7 @@ export const useStore = create<AppState>()((set, get) => {
     activeModuleSubpath: '',
     jumpTarget: null,
     historyGapped: {},
+    dmx: { listening: false, universes: [], everLit: new Map(), levels: new Map() },
     pendingDmUserId: null,
     sidebarOpen: false,
     searchOpen: false,
@@ -614,16 +667,35 @@ export const useStore = create<AppState>()((set, get) => {
           set({ voice: { ...useStore.getState().voice, ...partial } })
         )
       }
+      // Browsers only hand over a microphone in a secure context, and a box
+      // on a plain http:// LAN address is not one. Said up front because the
+      // alternative is someone holding a talk button that was never going to
+      // work and concluding the product is broken. Not a blocker: listening
+      // needs no microphone, and hearing the others is most of the value.
+      if (!window.isSecureContext) {
+        get().toast(
+          'No microphone on plain http — you can hear others but not talk. ' +
+            'Open the box at localhost on the machine running it, or give it a certificate.',
+          'warning'
+        )
+      }
       try {
         const { url, token } = await api.voiceToken(getToken() ?? '', channelId)
         await voiceManager.join(channelId, token, url)
       } catch (err) {
         set({ voice: { ...initialVoiceState } })
-        get().toast(
+        // Say what actually went wrong. This used to substitute a generic
+        // "is the voice server running?" for every failure, which is the
+        // least useful sentence available: the voice bar unmounts on failure
+        // and takes its own error with it, so this toast was the only thing
+        // left, and it named none of the several things that can break here.
+        const detail =
           err instanceof api.ApiError && err.status === 503
-            ? 'Voice is not set up on this server'
-            : 'Could not join voice — is the voice server running?'
-        )
+            ? 'this box has no voice server'
+            : err instanceof Error
+              ? err.message
+              : String(err)
+        get().toast(`Could not join voice: ${detail}`, 'error')
       }
     },
 
@@ -937,6 +1009,13 @@ export const useStore = create<AppState>()((set, get) => {
 
     setSidebarOpen(open) {
       set({ sidebarOpen: open })
+    },
+
+    watchDmx(universes, levels = false) {
+      ws?.send({ type: 'dmxWatch', universes, levels })
+      if (universes.length === 0) {
+        set({ dmx: { listening: false, universes: [], everLit: new Map(), levels: new Map() } })
+      }
     },
 
     setSearchOpen(open) {

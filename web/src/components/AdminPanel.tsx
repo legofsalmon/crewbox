@@ -392,6 +392,12 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
   return (
     <>
       {data && <Readiness checks={data.readiness} />}
+      {data?.lighting && data.lighting.length > 0 && (
+        <>
+          <h3 className="admin-subhead">Lighting network</h3>
+          <Readiness checks={data.lighting} />
+        </>
+      )}
       <SettingField
         id="admin-event-name"
         label="Event name (shown to crew instead of “Crewbox”)"

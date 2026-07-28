@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate'
+import { parseGdtfProfile } from './gdtf'
 import { DMX_UNIVERSE_SIZE, type FixtureMode, type FixtureType } from './types'
 
 /**
@@ -36,6 +37,8 @@ export interface MvrFixture {
   /** Plan coordinates in metres (MVR works in millimetres). */
   x: number
   y: number
+  /** Height above the deck in metres — the trim, straight from the file. */
+  z: number
 }
 
 export interface MvrResult {
@@ -82,58 +85,39 @@ export const parseMvrMatrix = (text: string): { x: number; y: number; z: number 
 }
 
 /**
- * DMX footprint of a GDTF mode: the highest channel offset it uses.
+ * Build a crewbox fixture type from an embedded .gdtf archive.
  *
- * Offsets are 1-based and comma-separated for multi-byte channels ("1,2" is
- * a 16-bit channel occupying 1 and 2). Channels with no Offset are virtual
- * and occupy nothing.
- *
- * Multi-break fixtures (separate address blocks) are collapsed to their
- * widest break, which overstates a rare case rather than understating it —
- * for collision detection, claiming too much is the safe direction.
+ * The channel maps come back attached to every mode; `parseMvr` strips them
+ * from the modes nobody in this rig is patched in, because a type with ten
+ * modes would otherwise put nine modes' worth of channel definitions into a
+ * document that syncs to every phone on site.
  */
-export const gdtfModeFootprint = (mode: Element): number => {
-  let max = 0
-  const channels = mode.getElementsByTagName('DMXChannel')
-  for (let i = 0; i < channels.length; i++) {
-    const offset = channels[i]!.getAttribute('Offset')
-    if (!offset || offset.toLowerCase() === 'none') continue
-    for (const part of offset.split(',')) {
-      const value = Number(part.trim())
-      if (Number.isFinite(value) && value > max) max = value
-    }
-  }
-  return max
-}
-
-/** Build a crewbox fixture type from an embedded .gdtf archive. */
 const typeFromGdtf = (id: string, gdtfBytes: Uint8Array): FixtureType | null => {
   const inner = unzipSync(gdtfBytes)
   const descriptionBytes = findEntry(inner, (name) => name.endsWith('description.xml'))
   if (!descriptionBytes) return null
 
-  const doc = parseXml(decode(descriptionBytes), 'GDTF description')
-  const fixtureType = doc.getElementsByTagName('FixtureType')[0]
-  if (!fixtureType) return null
+  const profile = parseGdtfProfile(parseXml(decode(descriptionBytes), 'GDTF description'))
+  if (!profile || profile.modes.length === 0) return null
 
-  const manufacturer = fixtureType.getAttribute('Manufacturer')?.trim() ?? ''
-  const name = fixtureType.getAttribute('Name')?.trim() ?? id
-  const modeElements = doc.getElementsByTagName('DMXMode')
+  const { manufacturer } = profile
+  const name = profile.name || id
 
-  const modes: FixtureMode[] = []
-  for (let i = 0; i < modeElements.length; i++) {
-    const element = modeElements[i]!
-    const footprint = gdtfModeFootprint(element)
-    if (footprint > 0) {
-      modes.push({ name: element.getAttribute('Name')?.trim() || `Mode ${i + 1}`, footprint })
-    }
-  }
-  if (modes.length === 0) return null
+  const modes: FixtureMode[] = profile.modes.map((mode) => ({
+    name: mode.name,
+    footprint: mode.footprint,
+    ...(mode.channels.length > 0 ? { channels: mode.channels } : {}),
+  }))
 
   return {
     id,
     name: manufacturer && !name.startsWith(manufacturer) ? `${manufacturer} ${name}` : name,
     modes,
+    ...(profile.physical.watts !== undefined ? { watts: profile.physical.watts } : {}),
+    ...(profile.physical.weight !== undefined ? { weight: profile.physical.weight } : {}),
+    ...(profile.physical.width !== undefined ? { width: profile.physical.width } : {}),
+    ...(profile.physical.height !== undefined ? { height: profile.physical.height } : {}),
+    ...(profile.physical.beamAngle !== undefined ? { beamAngle: profile.physical.beamAngle } : {}),
   }
 }
 
@@ -263,6 +247,7 @@ export function parseMvr(data: Uint8Array): MvrResult {
       unit: unsetZero(textOf(element, 'UnitNumber')),
       x: point.x,
       y: point.y,
+      z: point.z,
     })
   }
 
@@ -276,5 +261,28 @@ export function parseMvr(data: Uint8Array): MvrResult {
     warnings.push(`${unaddressed} fixture${unaddressed === 1 ? '' : 's'} had no DMX address`)
   }
 
-  return { fixtures, types: [...types.values()], warnings }
+  /*
+   * Channel maps go into the plot document, which syncs to every phone on
+   * site, so only the modes this rig is actually patched in keep theirs. A
+   * moving head's profile carries eight modes and nobody is in seven of
+   * them; the names and footprints stay so the mode picker still works.
+   */
+  const modesInUse = new Map<string, Set<string>>()
+  for (const fixture of fixtures) {
+    if (!fixture.typeId) continue
+    const names = modesInUse.get(fixture.typeId) ?? new Set<string>()
+    names.add(fixture.mode)
+    modesInUse.set(fixture.typeId, names)
+  }
+
+  const trimmed = [...types.values()].map((type) => ({
+    ...type,
+    modes: type.modes.map((mode) =>
+      modesInUse.get(type.id)?.has(mode.name)
+        ? mode
+        : { name: mode.name, footprint: mode.footprint }
+    ),
+  }))
+
+  return { fixtures, types: trimmed, warnings }
 }

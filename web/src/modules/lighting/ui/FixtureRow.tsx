@@ -1,6 +1,7 @@
 import type * as Y from 'yjs'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { formatAddress } from '../model/addressing'
+import type { FixtureVerdict } from '../model/live'
 import { allFixtureTypes, findFixtureType, footprintFor } from '../model/fixtures'
 import { updateFixture } from '../model/plotDoc'
 import {
@@ -49,12 +50,21 @@ function NumberCell({
   field,
   label,
   min,
+  placeholder,
 }: {
   doc: Y.Doc
   fixture: Fixture
   field: 'universe' | 'address' | 'footprint' | 'watts' | 'weight'
   label: string
   min: number
+  /**
+   * What the fixture's type says, when the row itself is blank. Shown as a
+   * placeholder rather than a value: it is the manufacturer's figure from a
+   * GDTF profile and it is what the position totals use, so an empty cell
+   * beside a non-zero total would look like a bug. Typing over it stores a
+   * real number and that one wins from then on.
+   */
+  placeholder?: number | null
 }) {
   const current = fixture[field]
   const nullable = field === 'watts' || field === 'weight'
@@ -77,6 +87,9 @@ function NumberCell({
       className={`${styles.cellInput} ${styles.numeric}`}
       aria-label={`${label}, ${fixture.purpose || fixture.channel || 'fixture'}`}
       inputMode="numeric"
+      placeholder={
+        placeholder === null || placeholder === undefined ? undefined : String(placeholder)
+      }
       {...draft.inputProps}
     />
   )
@@ -186,6 +199,27 @@ function StatusCell({ doc, fixture }: { doc: Y.Doc; fixture: Fixture }) {
   )
 }
 
+/**
+ * What the network has been seen doing to this fixture, beside the status
+ * somebody typed. Deliberately small and deliberately not a verdict on the
+ * fixture: `silent` says the desk has not sent to these addresses in the
+ * window the box has been listening, which is a different claim from broken.
+ */
+function LiveDot({ verdict }: { verdict: FixtureVerdict }) {
+  const title = {
+    live: 'Receiving data',
+    silent: 'Nothing sent to these addresses since the box started listening',
+    'no-data': 'This universe has not been heard at all',
+  }[verdict]
+  return (
+    <span
+      className={`${styles.live} ${styles[`live-${verdict}`]}`}
+      title={title}
+      aria-label={title}
+    />
+  )
+}
+
 export interface FixtureRowProps {
   doc: Y.Doc
   fixture: Fixture
@@ -196,6 +230,11 @@ export interface FixtureRowProps {
   selected: boolean
   onSelect: () => void
   onRemove: () => void
+  /**
+   * What the lighting network has been seen doing to this fixture, or null
+   * when the box isn't watching one. Never means "broken" — see model/live.ts.
+   */
+  verdict?: FixtureVerdict | null
 }
 
 export default function FixtureRow({
@@ -207,6 +246,7 @@ export default function FixtureRow({
   selected,
   onSelect,
   onRemove,
+  verdict,
 }: FixtureRowProps) {
   const clash = conflictsWith.length > 0
   const problem = clash || overruns
@@ -260,13 +300,28 @@ export default function FixtureRow({
         <TextCell doc={doc} fixture={fixture} field="circuit" label="Circuit" />
       </td>
       <td className={`${styles.cell} ${styles.colWatts}`}>
-        <NumberCell doc={doc} fixture={fixture} field="watts" label="Watts" min={0} />
+        <NumberCell
+          doc={doc}
+          fixture={fixture}
+          field="watts"
+          label="Watts"
+          min={0}
+          placeholder={findFixtureType(fixture.typeId, customTypes)?.watts}
+        />
       </td>
       <td className={`${styles.cell} ${styles.colWeight}`}>
-        <NumberCell doc={doc} fixture={fixture} field="weight" label="Weight" min={0} />
+        <NumberCell
+          doc={doc}
+          fixture={fixture}
+          field="weight"
+          label="Weight"
+          min={0}
+          placeholder={findFixtureType(fixture.typeId, customTypes)?.weight}
+        />
       </td>
       <td className={`${styles.cell} ${styles.colStatus}`}>
         <StatusCell doc={doc} fixture={fixture} />
+        {verdict && <LiveDot verdict={verdict} />}
       </td>
       <td className={`${styles.cell} ${styles.colNotes}`}>
         <TextCell doc={doc} fixture={fixture} field="notes" label="Notes" />

@@ -90,6 +90,30 @@
   cursor: grabbing;
 }
 
+// A bar you can't drag — the elevation and the 3D view place positions from
+// the plan, so offering a grab handle there would promise an edit that
+// doesn't happen.
+.positionStatic {
+  stroke: var(--text-muted);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+// Height rules in the elevation. Fainter than the deck line, which is the
+// one that has to read as the floor.
+.gridLine {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+// Like .axisLabel but without the uppercasing, which turns "10 m" into
+// "10 M" — and a capital M is a different unit.
+.rulerLabel {
+  fill: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
 .positionLabel {
   fill: var(--text-muted);
   font-size: 11px;
@@ -132,6 +156,14 @@
 
 // A clashing fixture gets a ring, so a DMX problem is visible on the plan
 // and not only in the list.
+/* The colour the desk is asking a fixture for, behind its status dot.
+   A halo rather than a fill: status is paperwork and has to stay readable
+   while the rig moves. It never takes a click — the dot underneath does. */
+.fixtureColour {
+  stroke: none;
+  pointer-events: none;
+}
+
 .fixtureClash {
   fill: none;
   stroke: var(--danger);

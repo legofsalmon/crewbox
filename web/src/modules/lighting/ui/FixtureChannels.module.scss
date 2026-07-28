@@ -1,0 +1,96 @@
+/* What one fixture's channels are doing. Sits under whichever drawing or
+   list is open, so picking a lamp anywhere answers the same question. */
+.panel {
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+  padding: 10px 12px 12px;
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  padding: 0 8px 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.table td {
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--border-faint, var(--border));
+  vertical-align: baseline;
+}
+
+.address,
+.raw,
+.value {
+  font-variant-numeric: tabular-nums;
+}
+
+.address {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The DMX value behind the decoded one. Present because a named state has
+   no number of its own, and because someone comparing against a desk wants
+   the number the desk is showing. */
+.raw {
+  text-align: right;
+  color: var(--text-faint);
+  width: 4em;
+}
+
+.value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* The name of the range a value falls in — "Open", "Congo", "Strobe". */
+.state {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Which cell of a multi-cell fixture a channel drives. */
+.geometry {
+  margin-left: 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  flex: none;
+}
+
+.idle {
+  color: var(--text-faint);
+  font-weight: 400;
+  font-style: italic;
+}

@@ -5,6 +5,8 @@ import {
   addArtistFile,
   addChannel,
   addSubBox,
+  createSheetUndoManager,
+  getSheetRoots,
   removeArtistFile,
   copyPatchesFromArtist,
   initSheet,
@@ -277,5 +279,64 @@ describe('concurrent editing (the scenarios v1 loses data on)', () => {
     const valueB = snapshotSheet(b).patches[patchKey(artist, ch)].input
     expect(valueA).toBe(valueB)
     expect(['From A', 'From B']).toContain(valueA)
+  })
+})
+
+/**
+ * A channel number is a desk input number. The row below channel 3 is
+ * channel 4, and it stays channel 4 when something is inserted above it —
+ * which is the whole reason the "Insert channel below" button exists.
+ *
+ * It did not do that. `addChannel` labelled the new row by the channel
+ * *count* rather than its position, so inserting below 3 of 10 produced
+ * 1,2,3,11,4,5… and deleting a middle row then appending produced two rows
+ * both called 10.
+ */
+describe('channel numbers follow position', () => {
+  const tenChannels = () => {
+    const doc = newSheet()
+    const { channels } = getSheetRoots(doc)
+    while (channels.length < 10) addChannel(doc)
+    return doc
+  }
+  const labels = (doc: Y.Doc) => snapshotSheet(doc).channels.map((c) => c.label)
+
+  it('renumbers everything below an insert', () => {
+    const doc = tenChannels()
+    addChannel(doc, snapshotSheet(doc).channels[2].id)
+    expect(labels(doc)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'])
+  })
+
+  it('closes the gap when a channel is removed', () => {
+    const doc = tenChannels()
+    removeChannel(doc, snapshotSheet(doc).channels[4].id)
+    expect(labels(doc)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
+  })
+
+  it('never leaves two channels with the same number', () => {
+    const doc = tenChannels()
+    removeChannel(doc, snapshotSheet(doc).channels[4].id)
+    addChannel(doc)
+    const all = labels(doc)
+    expect(new Set(all).size).toBe(all.length)
+    expect(all[all.length - 1]).toBe('10')
+  })
+
+  it('leaves hand-typed names alone, and numbers step over them', () => {
+    const doc = tenChannels()
+    const before = snapshotSheet(doc).channels
+    renameChannel(doc, before[2].id, 'SUB L')
+    // Insert at the very top: everything numeric shifts, "SUB L" does not.
+    addChannel(doc, before[0].id)
+    expect(labels(doc)).toEqual(['1', '2', '3', 'SUB L', '5', '6', '7', '8', '9', '10', '11'])
+  })
+
+  it('an insert and its renumbering undo as one step', () => {
+    const doc = tenChannels()
+    const undo = createSheetUndoManager(doc)
+    addChannel(doc, snapshotSheet(doc).channels[2].id)
+    expect(labels(doc)).toHaveLength(11)
+    undo.undo()
+    expect(labels(doc)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
   })
 })

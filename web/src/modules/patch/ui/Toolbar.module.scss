@@ -4,7 +4,10 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  // 8px, not 10: with the stage-patch button the row was six pixels over at
+  // 1280 and wrapped, which costs a whole row of chrome — and chrome is the
+  // thing this toolbar was rebuilt to stop spending.
+  gap: 8px;
   padding: 10px 16px;
   background: $color-surface;
   border-bottom: 1px solid $color-border-soft;
@@ -17,7 +20,9 @@
   align-items: center;
   gap: 8px;
   flex: 1;
-  min-width: 140px;
+  // The floor only bites at the narrowest desktop width; it still grows to
+  // fill whatever the fields and buttons leave.
+  min-width: 120px;
 
   input {
     flex: 1;

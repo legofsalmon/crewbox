@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import type * as Y from 'yjs'
+import { useLiveLook } from '../store/useLiveLook.ts'
+import { fixturePoint3, positionEnds } from '../model/geometry'
 import { fixturesOnPosition, updatePosition } from '../model/plotDoc'
 import type { Fixture, PlotSnapshot, Position } from '../model/types'
 import type { PlotIssues } from '../store/hooks'
@@ -36,32 +38,6 @@ const statusClass: Record<Fixture['status'], string> = {
   fault: styles.fxFault!,
 }
 
-/**
- * Where to draw a fixture.
- *
- * A fixture that came from something authoritative (MVR) knows where it
- * actually is, and that always wins — a real export groups by role as often
- * as by bar, so spreading those evenly along one line would invent a rig
- * that doesn't exist. Everything else is spaced along its position.
- */
-const fixturePoint = (
-  fixture: Fixture,
-  position: Position,
-  index: number,
-  count: number
-): { x: number; y: number } => {
-  if (fixture.x !== null && fixture.y !== null) return { x: fixture.x, y: fixture.y }
-  const angle = (position.rotation * Math.PI) / 180
-  // Spread across the bar with half-gaps at each end, so a single fixture
-  // lands in the middle rather than on the corner.
-  const t = count <= 1 ? 0.5 : (index + 0.5) / count
-  const along = (t - 0.5) * position.length
-  return {
-    x: position.x + Math.cos(angle) * along,
-    y: position.y + Math.sin(angle) * along,
-  }
-}
-
 export default function PlotPlan({
   doc,
   snapshot,
@@ -75,6 +51,10 @@ export default function PlotPlan({
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
+  // Live state dims the fixture and haloes it in the colour it's being asked
+  // for; the dot itself keeps its status colour, because a plot is paperwork
+  // first and a monitor second.
+  const look = useLiveLook(snapshot)
   const svgRef = useRef<SVGSVGElement>(null)
   const [zoom, setZoom] = useState(1)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -197,12 +177,7 @@ export default function PlotPlan({
           </text>
 
           {snapshot.positions.map((position) => {
-            const half = position.length / 2
-            const angle = (position.rotation * Math.PI) / 180
-            const x1 = position.x - Math.cos(angle) * half
-            const y1 = position.y - Math.sin(angle) * half
-            const x2 = position.x + Math.cos(angle) * half
-            const y2 = position.y + Math.sin(angle) * half
+            const [start, end] = positionEnds(position)
             const fixtures = fixturesOnPosition(snapshot, position.id)
 
             const hasBar = position.length > 0
@@ -211,10 +186,10 @@ export default function PlotPlan({
               <g key={position.id}>
                 {hasBar && (
                   <line
-                    x1={px(x1)}
-                    y1={py(y1)}
-                    x2={px(x2)}
-                    y2={py(y2)}
+                    x1={px(start.x)}
+                    y1={py(start.y)}
+                    x2={px(end.x)}
+                    y2={py(end.y)}
                     className={`${styles.position} ${drag?.positionId === position.id ? styles.positionDragging : ''}`}
                     onPointerDown={(e) => startDrag(e, position)}
                   />
@@ -224,14 +199,16 @@ export default function PlotPlan({
                     four names on one spot and says nothing true about where
                     anything is. */}
                 {hasBar && (
-                  <text x={px(x1)} y={py(y1) - 10} className={styles.positionLabel}>
+                  <text x={px(start.x)} y={py(start.y) - 10} className={styles.positionLabel}>
                     {position.name}
                   </text>
                 )}
 
                 {fixtures.map((fixture, index) => {
-                  const point = fixturePoint(fixture, position, index, fixtures.length)
+                  const point = fixturePoint3(fixture, position, index, fixtures.length)
                   const isSelected = fixture.id === selectedId
+                  const live = look?.get(fixture.id)
+                  const r = FIXTURE_R * Math.min(1.6, zoom)
                   return (
                     <g
                       key={fixture.id}
@@ -249,10 +226,21 @@ export default function PlotPlan({
                         fixture.unit ? `, unit ${fixture.unit}` : ''
                       } on ${position.name}`}
                     >
+                      {live?.colour && (
+                        <circle
+                          cx={px(point.x)}
+                          cy={py(point.y)}
+                          r={r + 3}
+                          fill={live.colour}
+                          opacity={live.dim * 0.7}
+                          className={styles.fixtureColour}
+                        />
+                      )}
                       <circle
                         cx={px(point.x)}
                         cy={py(point.y)}
-                        r={FIXTURE_R * Math.min(1.6, zoom)}
+                        opacity={live?.dim}
+                        r={r}
                         className={`${styles.fixture} ${statusClass[fixture.status]} ${
                           isSelected ? styles.fixtureSelected : ''
                         }`}
@@ -261,7 +249,7 @@ export default function PlotPlan({
                         <circle
                           cx={px(point.x)}
                           cy={py(point.y)}
-                          r={FIXTURE_R * Math.min(1.6, zoom) + 3}
+                          r={r + 3}
                           className={styles.fixtureClash}
                         />
                       )}

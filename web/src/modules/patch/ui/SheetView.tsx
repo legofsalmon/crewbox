@@ -13,6 +13,7 @@ import { PATCH_FIELDS, patchKey, type SheetSnapshot } from '../model/types'
 import Toolbar from './Toolbar'
 import PatchGrid from './PatchGrid'
 import SubBoxManager from './SubBoxManager'
+import StagePatch from './StagePatch'
 import LineupManager from './LineupManager'
 import VersionManager from './VersionManager'
 import styles from './SheetView.module.scss'
@@ -155,8 +156,8 @@ function ShareMenu({
 export default function SheetView({ sheetId, onClose }: { sheetId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = useSheet(sheetId)
   const { canUndo, canRedo, undo, redo } = useUndoRedo(undoManager)
-  const [showHeaders, setShowHeaders] = useState(true)
   const [showSubBoxes, setShowSubBoxes] = useState(false)
+  const [showStagePatch, setShowStagePatch] = useState(false)
   const [showLineup, setShowLineup] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showShare, setShowShare] = useState(false)
@@ -185,7 +186,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
 
   // Cmd/Ctrl+Z undoes the last committed edit; Shift adds redo (Ctrl+Y too).
   // A field with an in-progress draft (data-dirty) keeps native text undo.
-  // Cmd/Ctrl+F opens the find box (revealing the header if collapsed).
+  // Cmd/Ctrl+F focuses the find box.
   // Registered through the shell registry, active only while this view is
   // mounted (i.e. on patch routes) — chat keeps its own shortcuts elsewhere.
   useEffect(() => {
@@ -200,11 +201,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
       registerShortcut({
         key: 'f',
         mod: true,
-        handler: () => {
-          setShowHeaders(true)
-          // The input may mount with the header on the next frame.
-          requestAnimationFrame(() => searchRef.current?.select())
-        },
+        handler: () => searchRef.current?.select(),
       }),
       registerShortcut({ key: 'z', mod: true, when: undoableTarget, handler: () => undo() }),
       registerShortcut({
@@ -225,64 +222,53 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
 
   return (
     <div className={styles.app}>
-      <button
-        type="button"
-        className={styles.headerToggle}
-        onClick={() => setShowHeaders((v) => !v)}
-        aria-expanded={showHeaders}
-        title={showHeaders ? 'Hide headers to save space' : 'Show headers'}
-      >
-        <span className={showHeaders ? styles.chevronUp : styles.chevronDown} aria-hidden="true">
-          ▲
-        </span>
-      </button>
-
       {/*
         Nav row, then tool row — the same two-row shape as a lighting plot,
         and for the same reason. This used to spend the whole second row on
         the title alone, which cost a phone about 15% of its screen before
         any patch data appeared. The title now sits inline here, and the row
         below holds everything you can *do* to the sheet.
-      */}
-      {showHeaders && (
-        <header className={styles.appHeader}>
-          <DrawerButton />
-          <button
-            type="button"
-            className={styles.back}
-            onClick={onClose}
-            aria-label="All sheets"
-            title="All sheets"
-          >
-            ‹
-          </button>
-          <SheetTitle doc={doc} snapshot={snapshot} />
-          <SyncStatusChip sheetId={sheetId} />
-          <PresenceAvatars sheetId={sheetId} />
-        </header>
-      )}
 
-      {showHeaders && (
-        <Toolbar
-          doc={doc}
-          snapshot={snapshot}
-          onOpenSubBoxes={() => setShowSubBoxes(true)}
-          onOpenLineup={() => setShowLineup(true)}
-          onOpenVersions={() => setShowVersions(true)}
-          onShare={() => setShowShare(true)}
-          history={{ canUndo, canRedo, undo, redo }}
-          search={{
-            ref: searchRef,
-            query: searchQuery,
-            matchCount: matches?.order.length ?? 0,
-            onChange: (next) => {
-              setSearchQuery(next)
-              matchCursor.current = 0
-            },
-            onEnter: jumpToNextMatch,
-          }}
-        />
-      )}
+        There used to be a chevron here that collapsed both rows. It was a
+        workaround for those rows being tall, and once they weren't it was
+        just a control that hid the sheet's own name.
+      */}
+      <header className={styles.appHeader}>
+        <DrawerButton />
+        <button
+          type="button"
+          className={styles.back}
+          onClick={onClose}
+          aria-label="All sheets"
+          title="All sheets"
+        >
+          ‹
+        </button>
+        <SheetTitle doc={doc} snapshot={snapshot} />
+        <SyncStatusChip sheetId={sheetId} />
+        <PresenceAvatars sheetId={sheetId} />
+      </header>
+
+      <Toolbar
+        doc={doc}
+        snapshot={snapshot}
+        onOpenSubBoxes={() => setShowSubBoxes(true)}
+        onOpenStagePatch={() => setShowStagePatch(true)}
+        onOpenLineup={() => setShowLineup(true)}
+        onOpenVersions={() => setShowVersions(true)}
+        onShare={() => setShowShare(true)}
+        history={{ canUndo, canRedo, undo, redo }}
+        search={{
+          ref: searchRef,
+          query: searchQuery,
+          matchCount: matches?.order.length ?? 0,
+          onChange: (next) => {
+            setSearchQuery(next)
+            matchCursor.current = 0
+          },
+          onEnter: jumpToNextMatch,
+        }}
+      />
 
       <div className={styles.gridArea}>
         <PatchGrid
@@ -296,6 +282,9 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
 
       {showSubBoxes && (
         <SubBoxManager doc={doc} snapshot={snapshot} onClose={() => setShowSubBoxes(false)} />
+      )}
+      {showStagePatch && (
+        <StagePatch snapshot={snapshot} onClose={() => setShowStagePatch(false)} />
       )}
       {showLineup && (
         <LineupManager doc={doc} snapshot={snapshot} onClose={() => setShowLineup(false)} />

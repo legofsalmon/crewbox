@@ -1,3 +1,4 @@
+@use '../../_shared/ui/controls' as c;
 @use '../styles/tokens' as *;
 
 /*
@@ -77,67 +78,45 @@
 }
 
 .createButton {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  border: none;
-  border-radius: $radius;
-  padding: 12px 22px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: $shadow-card;
-
-  &:hover {
-    transform: translateY(-1px);
-  }
+  @include c.primary-button;
 }
 
 .importButton {
-  background: var(--bg-hover);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: $radius;
-  padding: 12px 22px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-left: 10px;
-
-  &:hover {
-    background: var(--bg-active);
-  }
+  @include c.secondary-button;
 }
 
 .hiddenFile {
   display: none;
 }
 
+/* A card with a labelled field, the same shape a lighting plot uses. This
+   was an inline row whose Create button was green — a colour used nowhere
+   else in the product, sitting a few pixels under patch's own amber
+   "+ New Sheet". */
 .createForm {
-  display: flex;
-  gap: 8px;
-  width: min(520px, 100%);
+  @include c.form-panel;
+
+  label:not(.visuallyHidden) {
+    @include c.field-label;
+  }
 
   input {
-    flex: 1;
-    padding: 10px 12px;
-    border: none;
-    border-radius: $radius-small;
-    font-size: 0.95rem;
+    @include c.field-input;
   }
+}
 
-  button {
-    border: none;
-    border-radius: $radius-small;
-    padding: 10px 16px;
-    font-weight: 600;
-    cursor: pointer;
-    background: $color-accent-green;
-    color: var(--text);
-  }
+.formActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
 
-  .secondary {
-    background: var(--bg-active);
-  }
+.formActions button {
+  @include c.primary-button;
+}
+
+.formActions .secondary {
+  @include c.secondary-button;
 }
 
 /* Rows, not a card grid. Sheets are scanned by name and date — a gallery of

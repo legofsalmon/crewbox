@@ -68,6 +68,23 @@ export const pingSchema = z.object({
   t: z.number(),
 })
 
+/**
+ * Watch what the lighting network is doing.
+ *
+ * Universes are named by the client because only the client knows which ones
+ * its plot uses — the plot is a Yjs document, and the server has no business
+ * parsing one. Naming them also means the box only reports on what somebody
+ * is actually looking at.
+ *
+ * `levels` is opt-in: most of the value (is it arriving, does the patch match)
+ * needs no levels at all, and levels are the expensive part.
+ */
+export const dmxWatchSchema = z.object({
+  type: z.literal('dmxWatch'),
+  universes: z.array(z.number().int().min(0).max(63999)).max(32),
+  levels: z.boolean().default(false),
+})
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   helloSchema,
   sendSchema,
@@ -76,6 +93,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   createChannelSchema,
   openDmSchema,
   pingSchema,
+  dmxWatchSchema,
 ])
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -203,8 +221,49 @@ export interface ErrorMessage {
   message: string
 }
 
+/** One universe as a watching client sees it. */
+export interface DmxUniverseWire {
+  /** Plot-space universe. */
+  universe: number
+  /** What was on the wire — Art-Net counts from 0, so these can differ. */
+  wireUniverse: number
+  protocol: 'artnet' | 'sacn'
+  /** The source being believed, '' when nothing is arriving. */
+  source: string
+  sources: number
+  /** Two or more sources at the top priority; nobody can say who wins. */
+  conflict: boolean
+  /** When this universe was first heard — the window the verdicts speak for. */
+  since: number
+  lastSeen: number
+  /**
+   * 64 bytes, base64: one bit per address, set once that address has been
+   * above zero. The client turns this into a per-fixture verdict, because
+   * only the client knows where its fixtures are addressed.
+   */
+  everLit: string
+}
+
+export interface DmxStateMessage {
+  type: 'dmxState'
+  /** False when this box was never asked to listen to a lighting network. */
+  listening: boolean
+  universes: DmxUniverseWire[]
+}
+
+export interface DmxLevelsMessage {
+  type: 'dmxLevels'
+  universe: number
+  /** True when this is a whole-universe snapshot rather than a change. */
+  full: boolean
+  /** [address, level] pairs. Addresses are 1-based, levels 0–255. */
+  values: Array<[number, number]>
+}
+
 export type ServerMessage =
   | WelcomeMessage
+  | DmxStateMessage
+  | DmxLevelsMessage
   | MsgMessage
   | AckMessage
   | RejectedMessage

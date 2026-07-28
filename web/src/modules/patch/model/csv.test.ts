@@ -5,6 +5,7 @@ import {
   addSubBox,
   initSheet,
   renameChannel,
+  setChannelInput,
   setMetaField,
   setPatchField,
   setPatchSubBox,
@@ -43,6 +44,7 @@ describe('sheetToCsv', () => {
     const artist = snap.artists[0].id
     updateArtist(doc, artist, { name: 'The Band, Live' })
     renameChannel(doc, snap.channels[0].id, 'Kick')
+    setChannelInput(doc, snap.channels[0].id, 'Kick In')
     setPatchField(doc, artist, snap.channels[0].id, 'input', 'Drums')
     setPatchField(doc, artist, snap.channels[0].id, 'micDi', 'Beta 91A')
 
@@ -50,10 +52,12 @@ describe('sheetToCsv', () => {
     expect(csv.startsWith('\uFEFF')).toBe(true)
 
     const lines = csv.slice(1).split('\r\n')
-    expect(lines[0]).toBe(',"The Band, Live",,,,')
-    expect(lines[1]).toBe('Channel,Sub-box,Input,Description,Mic/DI,Stand')
-    expect(lines[2]).toBe('Kick,,Drums,,Beta 91A,')
-    expect(lines[3]).toBe('2,,,,,')
+    // Channel and its house input lead; each artist's spec rides in the
+    // spare cell beside their name, where the field parser never looks.
+    expect(lines[0]).toBe(',,"The Band, Live",,,,')
+    expect(lines[1]).toBe('Channel,Input,Sub-box,Input,Description,Mic/DI,Stand')
+    expect(lines[2]).toBe('Kick,Kick In,,Drums,,Beta 91A,')
+    expect(lines[3]).toBe('2,,,,,,')
     expect(lines[4]).toBe('')
   })
 
@@ -65,7 +69,7 @@ describe('sheetToCsv', () => {
     setPatchSubBox(doc, artist, snap.channels[0].id, 'Box 1')
 
     const csv = sheetToCsv(snapshotSheet(doc))
-    expect(csv).toContain('1,Box 1 (MSC),,,,')
+    expect(csv).toContain('1,,Box 1 (MSC),,,,')
   })
 })
 
