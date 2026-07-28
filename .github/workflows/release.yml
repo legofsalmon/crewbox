@@ -206,8 +206,20 @@ jobs:
       - name: The menu-bar wrapper is universal and signed
         run: |
           set -euo pipefail
-          lipo -archs build/mac/Crewbox.app/Contents/MacOS/Crewbox
-          codesign --verify --strict --verbose=2 build/mac/Crewbox.app/Contents/MacOS/Crewbox
+          WRAPPER=build/mac/Crewbox.app/Contents/MacOS/Crewbox
+          ARCHS="$(lipo -archs "$WRAPPER")"
+          echo "wrapper archs: $ARCHS"
+          # Assert, don't print. An earlier version of this step echoed the
+          # architectures and passed regardless, so an x86_64-only wrapper —
+          # an app that will not launch on an Apple Silicon Mac without
+          # Rosetta — read as a green tick.
+          for arch in arm64 x86_64; do
+            case " $ARCHS " in
+              *" $arch "*) ;;
+              *) echo "::error::the menu-bar wrapper has no $arch slice (got: $ARCHS)"; exit 1 ;;
+            esac
+          done
+          codesign --verify --strict --verbose=2 "$WRAPPER"
       - uses: actions/upload-artifact@v4
         with:
           name: macapp

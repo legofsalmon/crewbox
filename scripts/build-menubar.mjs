@@ -10,30 +10,62 @@
 // swiftc ships with the Xcode command line tools, which anyone building the
 // .app already needs for codesign.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-/** Compile the wrapper for `archs` to `out`. Returns the path. */
+/**
+ * Compile the wrapper for `archs` to `out`. Returns the path.
+ *
+ * One swiftc run per architecture, then lipo. This is not the obvious way to
+ * write it and the obvious way is wrong: `-target` takes a single triple, and
+ * passing it twice does not produce a universal binary — the last one silently
+ * wins. That shipped an x86_64-only wrapper past a green CI job, which on a
+ * clean Apple Silicon Mac is an app that will not launch at all.
+ */
 export function buildMenuBar(out, archs = ['arm64', 'x86_64']) {
   mkdirSync(dirname(out), { recursive: true })
-  execFileSync(
-    'swiftc',
-    [
-      ...archs.flatMap((arch) => ['-target', `${arch}-apple-macos11.0`]),
-      '-O',
-      // The bundle is signed as a whole later; an ad-hoc signature here would
-      // only be replaced.
-      '-Xlinker',
-      '-no_adhoc_codesign',
-      '-o',
-      out,
-      join(root, 'native', 'macos', 'CrewboxMenuBar.swift'),
-    ],
-    { stdio: 'inherit' }
-  )
+  const source = join(root, 'native', 'macos', 'CrewboxMenuBar.swift')
+  const slices = archs.map((arch) => {
+    const slice = `${out}.${arch}`
+    execFileSync(
+      'swiftc',
+      [
+        '-target',
+        `${arch}-apple-macos11.0`,
+        '-O',
+        // The bundle is signed as a whole later; an ad-hoc signature here
+        // would only be replaced.
+        '-Xlinker',
+        '-no_adhoc_codesign',
+        '-o',
+        slice,
+        source,
+      ],
+      { stdio: 'inherit' }
+    )
+    return slice
+  })
+
+  if (slices.length === 1) {
+    renameSync(slices[0], out)
+  } else {
+    execFileSync('lipo', ['-create', ...slices, '-output', out], { stdio: 'inherit' })
+    for (const slice of slices) rmSync(slice, { force: true })
+  }
+
+  // Assert rather than announce. The previous version printed the architecture
+  // it had produced and carried on regardless, so a single-slice build read as
+  // a pass — the check has to fail, not report.
+  const built = execFileSync('lipo', ['-archs', out], { encoding: 'utf8' }).trim().split(/\s+/)
+  const missing = archs.filter((arch) => !built.includes(arch))
+  if (missing.length > 0) {
+    throw new Error(
+      `menu-bar wrapper is missing ${missing.join(', ')} — built only ${built.join(', ')}`
+    )
+  }
   return out
 }
 
