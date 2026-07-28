@@ -22,10 +22,14 @@ export default function PatchSidebar() {
     <>
       <div className="section-head">
         <span>Patch Sheets</span>
+        {/* Not "All sheets": the row below the list already carries that
+            name, and a screen reader announcing two different controls
+            identically gives someone no way to tell them apart. The glyph is
+            a +, so say what pressing it gets you. */}
         <button
           className="icon-btn"
-          aria-label="All sheets"
-          title="All sheets"
+          aria-label="Open patch sheets"
+          title="Open patch sheets"
           onClick={() => setActiveModule('patch')}
         >
           +

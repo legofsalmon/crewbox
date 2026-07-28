@@ -3,7 +3,6 @@
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
   padding: 10px 16px;
@@ -11,37 +10,41 @@
   border-bottom: 1px solid $color-border-soft;
 }
 
-.titleSection {
-  flex: 1;
-  min-width: 220px;
-}
-
-.titleInput {
-  width: 100%;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: $color-ink;
-  border: 1px solid transparent;
-  border-radius: $radius-small;
-  padding: 4px 8px;
-  background: transparent;
-
-  &:hover {
-    border-color: $color-border-soft;
-  }
-
-  &:focus {
-    outline: none;
-    border-color: $color-primary;
-    background: $color-surface;
-  }
-}
-
-.metaSection {
+/* Grows to fill whatever the fields and buttons leave, which keeps the
+   actions hard right at every width instead of drifting with the content. */
+.searchBox {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
+  flex: 1;
+  min-width: 140px;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    max-width: 260px;
+    border: 1px solid var(--border);
+    background: var(--bg-hover);
+    color: var(--text);
+    border-radius: $radius-small;
+    padding: 5px 10px;
+    font-size: 0.85rem;
+
+    &::placeholder {
+      color: var(--text-faint);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+  }
+}
+
+.matchCount {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* Stage and date read as part of the sheet, not as a form to fill in: no
@@ -89,6 +92,7 @@
  */
 .buttons {
   display: flex;
+  align-items: center;
   gap: 6px;
 
   button {
@@ -102,45 +106,89 @@
     cursor: pointer;
     white-space: nowrap;
 
-    &:hover {
+    &:hover:not(:disabled) {
       background: var(--bg-hover);
+    }
+  }
+
+  /* Nested so this beats `.buttons button` above on specificity rather than
+     on !important. */
+  .iconButton {
+    width: 30px;
+    padding: 5px 0;
+    font-size: 1rem;
+    line-height: 1;
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
     }
   }
 }
 
-.visuallyHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+/* Undo and redo sit tight against each other — one control, two halves —
+   with a little air before the named buttons. */
+.undoGroup {
+  display: inline-flex;
+  gap: 2px;
+  margin-right: 4px;
 }
 
+/* A printed patch sheet wants the stage and date and nothing else — the
+   buttons and the find box are screen furniture. */
 @media print {
   .toolbar {
     border-bottom: 2px solid #000;
   }
 
-  .buttons {
+  .buttons,
+  .searchBox {
     display: none;
   }
 
-  .titleInput,
   .field input {
     border: none;
   }
 }
 
-// On a phone the grid is the point — keep the chrome above it compact and
-// stop button labels wrapping mid-word.
+// On a phone the grid is the point, so the whole tool row becomes one line
+// you swipe rather than a block that wraps. Wrapping put find on its own
+// line and the buttons on another, three deep before any patch showed.
+//
+// Find leads because it is the one thing someone does to a patch sheet on a
+// phone; stage and date are laptop work and can sit off to the right.
 @media (max-width: 640px) {
   .toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
     padding: 8px 10px;
-    gap: 6px;
+    gap: 8px;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
   }
 
-  .titleInput {
-    font-size: 1.05rem;
+  .searchBox {
+    order: -1;
+    flex: 0 0 auto;
+
+    input {
+      width: 150px;
+      max-width: none;
+    }
+  }
+
+  /* Nothing may shrink, or flex would squeeze the labels instead of
+     letting the row scroll. */
+  .field,
+  .buttons {
+    flex: 0 0 auto;
+  }
+
+  .field input {
+    width: 92px;
   }
 }
