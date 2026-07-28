@@ -26,7 +26,7 @@ import {
   VOICE_PROXY_PATH,
 } from './voiceProxy.ts'
 import { APP_VERSION } from './version.ts'
-import { hashPin, newToken, RateLimiter, verifyPin } from './auth.ts'
+import { AdminTokens, hashPin, newAdminPassword, newToken, RateLimiter, verifyPin } from './auth.ts'
 import { Hub } from './hub.ts'
 import type { Store } from './store.ts'
 
@@ -84,6 +84,16 @@ const settingsPatchSchema = z.object({
   wifiSsid: z.string().trim().max(64).optional(),
   // Changeable mid-event from the admin panel — no SSH, no service restart.
   eventPin: z.string().trim().min(4).max(64).optional(),
+  /**
+   * Not the event PIN. That one is printed on posters; this one is what
+   * stands between a crew member and the admin panel, so it has a longer
+   * floor and is never shown to anyone who hasn't already unlocked.
+   */
+  adminPassword: z.string().min(8).max(128).optional(),
+})
+
+const unlockBodySchema = z.object({
+  password: z.string().min(1).max(128),
 })
 
 /**
@@ -128,6 +138,12 @@ export interface AppDeps {
    * moment the box has two interfaces, which on site it usually does.
    */
   livekit?: { url: string; key: string; secret: string; embedded?: boolean; port?: number }
+  /**
+   * Admin panel password from the environment. Overrides whatever is stored,
+   * so it doubles as the way back in when the password is lost. Omit and the
+   * box uses the stored one, minting and printing it on first start.
+   */
+  adminPassword?: string
   /** Sessions idle past this stop working; omit for non-expiring (tests). */
   sessionTtlMs?: number
   /** Trust X-Forwarded-For (behind cloudflared/Caddy) for client IPs. */
@@ -158,6 +174,7 @@ export function buildApp({
   store,
   eventPin,
   wifiSsid = '',
+  adminPassword,
   filesDir,
   livekit,
   sessionTtlMs,
@@ -189,6 +206,48 @@ export function buildApp({
   // Admin-set PIN (settings table) wins over the deploy-time env default.
   const effectiveEventPin = (): string => store.getSetting('eventPin') ?? eventPin
 
+  /**
+   * The admin password, minted on first start if nobody has set one.
+   *
+   * It has to exist unconditionally, because the alternative is a box with no
+   * way in. The rule this replaces — first person to join becomes admin —
+   * had exactly that failure: the admin deletes their own account and the
+   * panel is gone for good, with no recovery short of editing SQLite.
+   *
+   * A generated one is printed once, to the box's own console. Whoever can
+   * see that screen is standing at the box, which is the same trust the QR
+   * code it already prints depends on.
+   */
+  // ADMIN_PASSWORD wins over the stored one, and is the way back in when the
+  // password is lost: put it in the service file, restart, you are an admin
+  // again. That inversion is deliberate — for the event PIN the stored value
+  // wins, because that one is changed mid-event from the panel and an env
+  // default must not silently undo it. This one is the recovery hatch.
+  const envAdminHash = adminPassword ? hashPin(adminPassword) : undefined
+  // Held only for this process, only when we minted it: the setup page shows
+  // it so an admin leaves that page knowing the password, rather than having
+  // to go and find the box's console. A password inherited from an earlier
+  // run is a hash and nothing else, and stays that way.
+  let mintedAdminPassword: string | undefined
+
+  const adminPasswordHash = (): string => {
+    if (envAdminHash) return envAdminHash
+    const stored = store.getSetting('adminPasswordHash')
+    if (stored) return stored
+    const generated = newAdminPassword()
+    const hash = hashPin(generated)
+    store.setSetting('adminPasswordHash', hash)
+    mintedAdminPassword = generated
+    fastify.log.warn(
+      `\n\n  Admin password for this box: ${generated}\n` +
+        `  Written down nowhere else. Change it in Admin → This box.\n`
+    )
+    return hash
+  }
+  // Minted at startup rather than on first use, so it reaches the console
+  // while someone is still looking at it.
+  adminPasswordHash()
+
   const publicConfig = (): PublicConfig => ({
     eventName: store.getSetting('eventName') ?? '',
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
@@ -218,9 +277,18 @@ export function buildApp({
   const pinLimiter = new RateLimiter(10, 10 * 60_000)
   // Evict elapsed keys so the limiter maps can't grow unbounded under an
   // IP-rotating brute force. unref so it never holds the process open.
+  // Unlocking the admin panel: 10 tries per IP per 10 minutes. The password
+  // is long and random by default, so this only has to make an online guess
+  // hopeless, not survive an offline crack.
+  const adminLimiter = new RateLimiter(10, 10 * 60_000)
+  // Twelve hours: long enough that nobody retypes it during a shift, short
+  // enough that a phone left on a flightcase overnight is locked by morning.
+  const adminTokens = new AdminTokens(12 * 60 * 60_000)
   const limiterSweep = setInterval(() => {
     joinLimiter.sweep()
     pinLimiter.sweep()
+    adminLimiter.sweep()
+    adminTokens.sweep()
   }, 5 * 60_000)
   limiterSweep.unref()
   fastify.addHook('onClose', () => clearInterval(limiterSweep))
@@ -348,6 +416,8 @@ export function buildApp({
     eventName: store.getSetting('eventName') ?? '',
     wifiSsid: publicConfig().wifiSsid,
     eventPin: effectiveEventPin(),
+    // undefined hides the field entirely — see SetupValues.
+    ...(envAdminHash ? {} : { adminPassword: mintedAdminPassword ?? '' }),
   })
 
   const sendHtml = (reply: FastifyReply, html: string) =>
@@ -379,10 +449,14 @@ export function buildApp({
   fastify.post('/setup', (req, reply) => {
     if (!setupOpen()) return reply.redirect('/connect')
     const body = (req.body ?? {}) as Record<string, unknown>
+    // Blank means "leave the admin password alone", so it is dropped before
+    // validation rather than failing the 8-character floor.
+    const typedAdminPassword = String(body.adminPassword ?? '')
     const parsed = settingsPatchSchema.safeParse({
       eventName: String(body.eventName ?? ''),
       wifiSsid: String(body.wifiSsid ?? ''),
       eventPin: String(body.eventPin ?? ''),
+      ...(typedAdminPassword ? { adminPassword: typedAdminPassword } : {}),
     })
     if (!parsed.success) {
       // Re-render with what they typed rather than throwing away the form.
@@ -393,15 +467,25 @@ export function buildApp({
             eventName: String(body.eventName ?? ''),
             wifiSsid: String(body.wifiSsid ?? ''),
             eventPin: String(body.eventPin ?? ''),
+            ...(envAdminHash ? {} : { adminPassword: typedAdminPassword }),
           },
           base: crewUrl(req),
-          error: 'Event PIN needs at least 4 characters — everything else is optional.',
+          error: parsed.error.issues.some((i) => i.path[0] === 'adminPassword')
+            ? 'The admin password needs at least 8 characters.'
+            : 'Event PIN needs at least 4 characters — everything else is optional.',
         })
       )
     }
     store.setSetting('eventName', parsed.data.eventName ?? '')
     store.setSetting('wifiSsid', parsed.data.wifiSsid ?? '')
     if (parsed.data.eventPin) store.setSetting('eventPin', parsed.data.eventPin)
+    // Ignored when ADMIN_PASSWORD is set: the form hides the field in that
+    // case, so anything arriving here was hand-crafted.
+    if (parsed.data.adminPassword && !envAdminHash) {
+      store.setSetting('adminPasswordHash', hashPin(parsed.data.adminPassword))
+      mintedAdminPassword = undefined
+      adminTokens.revokeAll()
+    }
     hub.announceConfig()
     return reply.redirect('/connect')
   })
@@ -475,8 +559,11 @@ export function buildApp({
     if (suppliedEventPin !== effectiveEventPin()) {
       return reply.code(401).send({ error: 'Wrong event PIN — check the join poster' })
     }
-    const role = store.countUsers() === 0 ? 'admin' : 'member'
-    const user = store.createUser(name, hashPin(personalPin), role)
+    // Everyone joins as a member. Admin is not something you are, it is
+    // something you unlock with the password — because the old rule handed
+    // the box permanently to whoever happened to scan the poster first, and
+    // took it away for good if they ever deleted their account.
+    const user = store.createUser(name, hashPin(personalPin), 'member')
     const token = newToken()
     store.createSession(token, user.id)
 
@@ -640,7 +727,8 @@ export function buildApp({
   })
 
   // Remove a shared file: the message, its blob (dedup-safe) and a system
-  // note. Author or admin only — mistakes and wrong maps must be fixable.
+  // note. The author, or anyone with the panel unlocked — mistakes and wrong
+  // maps must be fixable.
   fastify.delete('/api/messages/:id', (req, reply) => {
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
@@ -650,7 +738,7 @@ export function buildApp({
     if (message.kind !== 'file') {
       return reply.code(400).send({ error: 'only shared files can be deleted' })
     }
-    if (message.authorId !== user.id && user.role !== 'admin') {
+    if (message.authorId !== user.id && !unlocked(req)) {
       return reply.code(403).send({ error: 'you can only delete your own files' })
     }
     store.deleteMessage(id)
@@ -732,18 +820,62 @@ export function buildApp({
 
   // -- admin ----------------------------------------------------------------
 
+  const adminTokenOf = (req: FastifyRequest): string | undefined => {
+    const header = req.headers['x-admin-token']
+    return typeof header === 'string' ? header : undefined
+  }
+
+  /** True when this request carries a live unlock. Used for moderation too. */
+  const unlocked = (req: FastifyRequest): boolean => adminTokens.valid(adminTokenOf(req))
+
   const authAdmin = (req: FastifyRequest, reply: FastifyReply): User | undefined => {
     const user = authUser(req)
     if (!user) {
       void reply.code(401).send({ error: 'unauthenticated' })
       return undefined
     }
-    if (user.role !== 'admin') {
-      void reply.code(403).send({ error: 'admin only' })
+    // 403 rather than 401: the session is fine, it is the unlock that is
+    // missing or stale. The client tells them apart — 403 re-prompts for the
+    // password, 401 sends them back to the join screen.
+    if (!unlocked(req)) {
+      void reply.code(403).send({ error: 'admin panel is locked' })
       return undefined
     }
     return user
   }
+
+  /**
+   * Unlock the admin panel by password.
+   *
+   * Requires a signed-in crew member as well as the password, so an unlock
+   * always belongs to somebody — and so this route is not reachable at all
+   * from an unauthenticated internet client when the box is behind a tunnel.
+   */
+  fastify.post('/api/admin/unlock', (req, reply) => {
+    const user = authUser(req)
+    if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+    if (!adminLimiter.allow(req.ip)) {
+      return reply
+        .code(429)
+        .send({ error: 'Too many attempts — wait a few minutes and try again.' })
+    }
+    const parsed = unlockBodySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Enter the admin password.' })
+    }
+    if (!verifyPin(parsed.data.password, adminPasswordHash())) {
+      return reply.code(401).send({ error: "That's not the admin password." })
+    }
+    adminLimiter.clear(req.ip)
+    fastify.log.info(`admin panel unlocked by ${user.name}`)
+    return { adminToken: adminTokens.issue() }
+  })
+
+  /** Give the unlock back early — the panel's Lock button. */
+  fastify.post('/api/admin/lock', (req, reply) => {
+    adminTokens.revoke(adminTokenOf(req))
+    return reply.send({ ok: true })
+  })
 
   // Reset a crew member's forgotten personal PIN. Their sessions stay valid —
   // this is recovery, not a ban.
@@ -857,6 +989,10 @@ export function buildApp({
         voiceEnabled: voiceAvailable,
         // Shown so admins can put the current PIN on posters; editable below.
         eventPin: effectiveEventPin(),
+        // The admin password is never sent back — unlike the event PIN, there
+        // is no reason for anyone to read it off a screen. This only says
+        // whether the panel is allowed to change it.
+        adminPasswordFromEnv: envAdminHash !== undefined,
       },
       readiness,
       readinessState: worstState(readiness),
@@ -878,6 +1014,25 @@ export function buildApp({
     if (parsed.data.eventPin !== undefined) {
       store.setSetting('eventPin', parsed.data.eventPin)
     }
+    let reissued: string | undefined
+    if (parsed.data.adminPassword !== undefined) {
+      // Saying nothing here would be worse than refusing: the panel would
+      // report success and the old password would keep working, which is
+      // exactly the sort of thing you discover at the wrong moment.
+      if (envAdminHash) {
+        return reply.code(409).send({
+          error:
+            'This box takes its admin password from ADMIN_PASSWORD in its service file. Change it there and restart, or unset it to manage the password here.',
+        })
+      }
+      store.setSetting('adminPasswordHash', hashPin(parsed.data.adminPassword))
+      // Every device unlocked with the old password loses it. Changing a
+      // password you believe is compromised has to actually end the access it
+      // granted, or it is theatre. The admin doing the changing gets a fresh
+      // token back so they alone stay in.
+      adminTokens.revokeAll()
+      reissued = adminTokens.issue()
+    }
     hub.announceConfig()
     const config = publicConfig()
     return {
@@ -886,6 +1041,7 @@ export function buildApp({
         wifiSsid: config.wifiSsid,
         eventPin: effectiveEventPin(),
       },
+      ...(reissued ? { adminToken: reissued } : {}),
     }
   })
 

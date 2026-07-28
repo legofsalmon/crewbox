@@ -32,7 +32,12 @@ The one document to print and keep in the production office.
    then restart the service. The server serves whatever `web/dist` holds at request
    time — an old dist next to a new server binary quietly ships stale UI (clients
    will nag "New version available" forever), so treat build + restart as one step.
-3. **Set `EVENT_PIN`** in `/etc/systemd/system/crewbox.service` (changeable
+3. **Write down the admin password.** The box mints one on first start and
+   prints it to its own console; it opens the cog in the sidebar and is not
+   the event PIN. Change it in **Admin → This box**. If it is ever lost, set
+   `ADMIN_PASSWORD` in the service file and restart — that overrides the
+   stored one and is the way back in.
+4. **Set `EVENT_PIN`** in `/etc/systemd/system/crewbox.service` (changeable
    later from the admin panel — no restart), then `sudo systemctl daemon-reload`.
    Voice needs no keys: the box generates its own and keeps them, so tokens
    minted before a restart still work after one. `LIVEKIT_*` are only for
@@ -40,10 +45,11 @@ The one document to print and keep in the production office.
    Then open `/setup` once from any browser to name the event and set the
    Wi-Fi hint. It only answers until the first person joins, so do it before
    the rehearsal join in step 5 — after that it's **Admin → This box**.
-4. **Print posters** with the final PIN and domain.
-5. **Full rehearsal**: power everything off, power on cold, phone joins via QR
+5. **Print posters** with the final PIN and domain. The event PIN goes on
+   them; the admin password never does.
+6. **Full rehearsal**: power everything off, power on cold, phone joins via QR
    with the internet unplugged. If this works at home it works in a field.
-6. **Rehearse the swap too** — an untested backup is not a backup:
+7. **Rehearse the swap too** — an untested backup is not a backup:
    `deploy/backup.sh`, then on the spare `deploy/restore.sh`, start it, and
    check **Admin → This box**. You should get the event name, the PIN, the
    crew list and HTTPS back, and anyone already signed in stays signed in.
@@ -116,6 +122,7 @@ not in a field.
 | App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                                                                                |
 | Voice drops but chat works | `systemctl restart crewbox` — the SFU is inside the box, so it restarts with it. Check UDP **7882** and TCP **7881** aren't firewalled: the SFU pins one UDP port rather than a range, so there is exactly one hole to open.                                                           |
 | Server box dies            | Swap in the spare, `deploy/restore.sh` (takes the newest backup by default), same static IP. Crew phones reconnect on their own and stay signed in — sessions are in the database. Patch sheets and plots are unaffected either way: every device holds its own copy and they re-sync. |
+| Locked out of Admin        | Set `ADMIN_PASSWORD=…` in `/etc/systemd/system/crewbox.service`, `systemctl daemon-reload && systemctl restart crewbox`. It overrides the stored password. Nobody loses their session; only the panel re-locks.                                                                        |
 | Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                                                                         |
 
 ## Teardown

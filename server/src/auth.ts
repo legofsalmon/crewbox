@@ -18,6 +18,75 @@ export function newToken(): string {
   return randomBytes(32).toString('base64url')
 }
 
+// 32 characters exactly, so a byte mod 32 is unbiased. No 'i' or 'l' — with
+// no 0 or 1 in the set the usual o/0 and i/1 confusions can't arise, but i
+// and l look alike in most terminal fonts and this gets read off a screen and
+// typed into a phone, often in the dark.
+const PASSWORD_ALPHABET = 'abcdefghjkmnopqrstuvwxyz23456789'
+
+/**
+ * A random admin password, in the shape Apple uses for app passwords:
+ * `k7fm-q2xr-9dvn`. The hyphens are part of the string, not decoration — it
+ * is compared exactly, because normalising input would quietly break any
+ * password an admin chose that legitimately contains a hyphen.
+ *
+ * 60 bits. Overkill against the rate limiter on the unlock route, which is
+ * the point: this is the one credential that is not on a poster.
+ */
+export function newAdminPassword(): string {
+  const bytes = randomBytes(12)
+  const chars = Array.from(bytes, (b) => PASSWORD_ALPHABET[b % 32])
+  return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8, 12)]
+    .map((group) => group.join(''))
+    .join('-')
+}
+
+/**
+ * Short-lived tokens proving someone typed the admin password.
+ *
+ * Deliberately not a column on the session: an admin unlock has to end when
+ * the app closes, while a session is what keeps crew signed in for weeks. The
+ * client holds this in memory and never writes it to storage, so closing the
+ * app forgets it; the TTL here bounds the damage if it leaks anyway, and the
+ * whole map dying with the process means a box restart re-locks every panel.
+ */
+export class AdminTokens {
+  private issued = new Map<string, number>()
+
+  constructor(private readonly ttlMs: number) {}
+
+  issue(): string {
+    const token = newToken()
+    this.issued.set(token, Date.now() + this.ttlMs)
+    return token
+  }
+
+  valid(token: string | undefined): boolean {
+    if (!token) return false
+    const expires = this.issued.get(token)
+    if (expires === undefined) return false
+    if (expires <= Date.now()) {
+      this.issued.delete(token)
+      return false
+    }
+    return true
+  }
+
+  revoke(token: string | undefined): void {
+    if (token) this.issued.delete(token)
+  }
+
+  /** Drop every token — used when the password changes. */
+  revokeAll(): void {
+    this.issued.clear()
+  }
+
+  sweep(): void {
+    const now = Date.now()
+    for (const [token, expires] of this.issued) if (expires <= now) this.issued.delete(token)
+  }
+}
+
 /** Sliding-window limiter for PIN attempts, keyed by IP. */
 export class RateLimiter {
   private hits = new Map<string, number[]>()

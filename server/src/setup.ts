@@ -21,6 +21,18 @@ export interface SetupValues {
   eventName: string
   wifiSsid: string
   eventPin: string
+  /**
+   * The admin password field, which has three states worth telling apart:
+   *
+   * - a string: the password this box minted at startup, pre-filled so the
+   *   admin leaves knowing it rather than hunting for the console;
+   * - `''`: a password exists from an earlier run and only its hash is kept,
+   *   so the field starts blank and blank means "leave it alone";
+   * - `undefined`: ADMIN_PASSWORD is set in the environment and the box is
+   *   not allowed to change it, so the field is hidden rather than offering
+   *   an edit that would silently do nothing.
+   */
+  adminPassword?: string
 }
 
 export interface SetupPageOptions {
@@ -82,6 +94,19 @@ export function setupPage({ values, base, error, warnings = [] }: SetupPageOptio
     ${field('eventName', 'Event name', values.eventName, 'Shown to crew when they join. Change it any time.', 'maxlength="64" placeholder="e.g. Ashton Court 2026" autofocus')}
     ${field('wifiSsid', 'Wi-Fi network', values.wifiSsid, "The network crew join to reach this box. Leave blank if you don't know it yet.", 'maxlength="64" placeholder="e.g. CrewNet" autocomplete="off" autocapitalize="none" spellcheck="false"')}
     ${field('eventPin', 'Event PIN', values.eventPin, 'Crew type this once to join. Already filled in with a random one — change it if you like.', 'minlength="4" maxlength="64" inputmode="numeric" autocomplete="off" required')}
+    ${
+      values.adminPassword === undefined
+        ? ''
+        : field(
+            'adminPassword',
+            'Admin password',
+            values.adminPassword,
+            values.adminPassword
+              ? 'Yours, not the crew’s — it opens the admin panel from the cog. Write it down now; it is never shown again.'
+              : 'Opens the admin panel from the cog. Leave blank to keep the password this box already has.',
+            'minlength="8" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false"'
+          )
+    }
     <button type="submit">Save and show the QR</button>
   </form>
   <p class="meta">Crew will use <strong>${escapeHtml(base.replace(/^https?:\/\//, ''))}</strong></p>

@@ -41,20 +41,33 @@ no way forward.
 
 ## What happens next
 
-The first time it runs, the box opens a browser on **three questions**: what
-the event is called, which Wi-Fi crew join, and the event PIN (already filled
-in with a random one — change it or keep it). Save, and you land on the QR
-page.
+The first time it runs, the box opens a browser on **four questions**: what
+the event is called, which Wi-Fi crew join, the event PIN (already filled in
+with a random one — change it or keep it), and the admin password. Save, and
+you land on the QR page.
 
 That page is `/connect`, and it's the one to leave on a spare screen or print:
 a QR of the join link with the PIN already in it, the PIN in print, and the
 Android app when you've put it on the box. Crew scan it, pick a name, and
 they're in. Every run after the first goes straight here.
 
-The first person to join is the admin. Everything from the setup screen — plus
-channels and crew — is editable afterwards in the app under **Admin**, so
-nothing you type on the first run is permanent. The setup screen itself closes
-once someone has joined.
+**The admin password is not the event PIN.** The event PIN goes on the poster
+and every crew member types it; the admin password opens the cog in the
+sidebar, and only you should have it. The box mints one on first start and
+prints it to its own terminal, so write it down — it is never shown again.
+
+Anyone can _see_ the cog; the password decides whether it opens, and it stays
+unlocked until the app is closed. That's deliberate. Admin used to belong to
+whoever joined first, which meant a box could lose its admin panel for good if
+that person deleted their account.
+
+Everything from the setup screen — plus channels and crew — is editable
+afterwards under **Admin**, so nothing you type on the first run is permanent.
+The setup screen itself closes once someone has joined.
+
+**Lost the admin password?** Set `ADMIN_PASSWORD` in the box's environment (or
+its service file) and restart. That overrides the stored one, and is the
+supported way back in.
 
 No screen on the box (a headless machine, or SSH)? The terminal prints the
 setup address too, and any device on the same network can open it.

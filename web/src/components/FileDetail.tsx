@@ -14,6 +14,7 @@ export default function FileDetail() {
   const closeFileDetail = useStore((s) => s.closeFileDetail)
   const users = useStore((s) => s.users)
   const me = useStore((s) => s.me)
+  const adminToken = useStore((s) => s.adminToken)
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -34,7 +35,9 @@ export default function FileDetail() {
     minute: '2-digit',
   })
   const canShare = typeof navigator.share === 'function'
-  const canDelete = me !== null && (message.authorId === me.id || me.role === 'admin')
+  // Authors always; anyone else only while the admin panel is unlocked, which
+  // is the same rule the server enforces on the delete route.
+  const canDelete = me !== null && (message.authorId === me.id || adminToken !== null)
 
   async function copyLink() {
     const flag = () => {
@@ -70,7 +73,11 @@ export default function FileDetail() {
     setDeleting(true)
     setError(null)
     try {
-      await api.deleteMessage(localStorage.getItem('crewbox:token') ?? '', message!.id)
+      await api.deleteMessage(
+        localStorage.getItem('crewbox:token') ?? '',
+        message!.id,
+        adminToken ?? undefined
+      )
       // The 'deleted' broadcast also closes us, but don't wait on it.
       closeFileDetail()
     } catch (err) {

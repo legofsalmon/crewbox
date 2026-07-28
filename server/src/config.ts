@@ -15,6 +15,13 @@ export const config = {
   eventPin: process.env.EVENT_PIN ?? '1234',
   /** Initial Wi-Fi SSID shown as join guidance; admins can override at runtime. */
   wifiSsid: process.env.WIFI_SSID ?? '',
+  /**
+   * Admin panel password. Unlike EVENT_PIN this is *not* on a poster, and
+   * unlike EVENT_PIN setting it here overrides whatever the box has stored —
+   * which makes it the documented way back in when the password is lost.
+   * Leave unset and the box mints one on first start and prints it once.
+   */
+  adminPassword: process.env.ADMIN_PASSWORD,
   /** Built web app to serve in production (ignored if missing, e.g. in dev). */
   webDist: resolve(process.env.WEB_DIST ?? '../web/dist'),
   /**

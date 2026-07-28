@@ -64,6 +64,7 @@ async function main(): Promise<void> {
     store,
     eventPin: config.eventPin,
     wifiSsid: config.wifiSsid,
+    ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
     filesDir: join(dataDir, 'files'),
     livekit,
     sessionTtlMs: config.sessionTtlMs,

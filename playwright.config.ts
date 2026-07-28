@@ -31,6 +31,9 @@ export default defineConfig({
       DATA_DIR: dataDir,
       WEB_DIST: `${process.cwd()}/web/dist`,
       EVENT_PIN: '4242',
+      // Known, so a spec can unlock the admin panel. Without this the box
+      // mints a random one and prints it to a log no test is reading.
+      ADMIN_PASSWORD: 'e2e-admin-password',
       // Every simulated device joins from localhost, so the per-IP join
       // limiter (10/min, right for real crew on separate phones) throttles
       // the suite itself once it grows. The limiter has its own coverage in

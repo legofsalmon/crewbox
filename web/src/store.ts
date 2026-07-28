@@ -122,6 +122,15 @@ export interface AppState {
   sidebarOpen: boolean
   searchOpen: boolean
   adminOpen: boolean
+  /**
+   * Proof that someone typed the admin password, for this run of the app.
+   *
+   * Deliberately never written to localStorage or the IndexedDB snapshot. The
+   * session token is persisted so crew stay signed in for weeks; this one has
+   * to die when the app closes, which is exactly what keeping it in memory
+   * gets us for free.
+   */
+  adminToken: string | null
   audioSettingsOpen: boolean
   /** File message whose detail modal is open; null when closed. */
   fileDetail: Message | null
@@ -165,6 +174,16 @@ export interface AppState {
   setSidebarOpen: (open: boolean) => void
   setSearchOpen: (open: boolean) => void
   setAdminOpen: (open: boolean) => void
+  /** Trade the admin password for a token; throws with the server's message. */
+  unlockAdmin: (password: string) => Promise<void>
+  /** Give the unlock back — the panel's Lock button, and any 403 it meets. */
+  lockAdmin: () => void
+  /**
+   * Replace the unlock token. Changing the admin password revokes every
+   * token including this device's, and the server hands back a replacement
+   * so the admin who made the change isn't thrown out by their own edit.
+   */
+  setAdminToken: (adminToken: string) => void
   setAudioSettingsOpen: (open: boolean) => void
   openFileDetail: (message: Message) => void
   closeFileDetail: () => void
@@ -576,6 +595,7 @@ export const useStore = create<AppState>()((set, get) => {
     sidebarOpen: false,
     searchOpen: false,
     adminOpen: false,
+    adminToken: null,
     audioSettingsOpen: false,
     latencyMs: null,
     updateReady: false,
@@ -925,6 +945,23 @@ export const useStore = create<AppState>()((set, get) => {
 
     setAdminOpen(open) {
       set({ adminOpen: open })
+    },
+
+    async unlockAdmin(password) {
+      const { adminToken } = await api.adminUnlock(getToken() ?? '', password)
+      set({ adminToken })
+    },
+
+    lockAdmin() {
+      const adminToken = get().adminToken
+      set({ adminToken: null, adminOpen: false })
+      // Best effort: the token is already gone from this device, and the
+      // server expires it anyway. A failed call must not keep the panel open.
+      if (adminToken) void api.adminLock({ token: getToken() ?? '', adminToken }).catch(() => {})
+    },
+
+    setAdminToken(adminToken) {
+      set({ adminToken })
     },
 
     setAudioSettingsOpen(open) {

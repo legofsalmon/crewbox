@@ -5,12 +5,22 @@ import * as api from '../lib/api.ts'
 
 const PIN_RE = /^\d{4,8}$/
 
-function token(): string {
-  return localStorage.getItem('crewbox:token') ?? ''
+/**
+ * Session plus unlock. Read from the store rather than passed down, because
+ * every row in this panel needs it and threading it through would be noise.
+ * The admin token is only ever non-null while this component is mounted —
+ * App.tsx renders the unlock screen instead when it isn't.
+ */
+function auth(): api.AdminAuth {
+  return {
+    token: localStorage.getItem('crewbox:token') ?? '',
+    adminToken: useStore.getState().adminToken ?? '',
+  }
 }
 
 export default function AdminPanel() {
   const setAdminOpen = useStore((s) => s.setAdminOpen)
+  const lockAdmin = useStore((s) => s.lockAdmin)
   const users = useStore((s) => s.users)
   const online = useStore((s) => s.online)
   const channels = useStore((s) => s.channels)
@@ -39,7 +49,7 @@ export default function AdminPanel() {
   async function downloadExport() {
     setExporting(true)
     try {
-      const blob = await api.adminExport(token())
+      const blob = await api.adminExport(auth())
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -65,6 +75,12 @@ export default function AdminPanel() {
       <div className="admin-panel" role="dialog" aria-label="Admin panel">
         <header className="admin-head">
           <h2>Admin</h2>
+          {/* Closing the panel leaves it unlocked for the rest of the session,
+              which is what makes it usable during a shift. Lock is the way to
+              end that deliberately — before handing the phone to someone. */}
+          <button className="admin-btn" onClick={lockAdmin}>
+            Lock
+          </button>
           <button
             className="icon-btn"
             aria-label="Close admin panel"
@@ -213,7 +229,7 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
   const load = (refresh: boolean) => {
     setBusy(true)
     api
-      .adminGetEnvironment(token(), refresh)
+      .adminGetEnvironment(auth(), refresh)
       .then(setReport)
       .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Could not check'))
       .finally(() => setBusy(false))
@@ -222,7 +238,7 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
   useEffect(() => {
     let live = true
     api
-      .adminGetEnvironment(token())
+      .adminGetEnvironment(auth())
       .then((r) => live && setReport(r))
       .catch(() => {})
     return () => {
@@ -232,7 +248,7 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
 
   async function downloadDns() {
     try {
-      const blob = await api.adminDnsConfig(token())
+      const blob = await api.adminDnsConfig(auth())
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -328,7 +344,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
   useEffect(() => {
     let live = true
     api
-      .adminGetSettings(token())
+      .adminGetSettings(auth())
       .then((d) => {
         if (!live) return
         setData(d)
@@ -351,7 +367,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
       e.preventDefault()
       setSaving(true)
       void api
-        .adminUpdateSettings(token(), patch)
+        .adminUpdateSettings(auth(), patch)
         .then(({ settings }) => {
           setEventName(settings.eventName)
           setSsid(settings.wifiSsid)
@@ -410,6 +426,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         onChange={setSsid}
         onSave={save({ wifiSsid: ssid.trim() }, 'Wi-Fi network saved')}
       />
+      {info && <AdminPasswordField fromEnv={info.adminPasswordFromEnv} onNote={onNote} />}
       {info && (
         <dl className="admin-info">
           <div>
@@ -442,6 +459,81 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
   )
 }
 
+/**
+ * Changing the admin password.
+ *
+ * Not a SettingField, because that one compares against the value the server
+ * holds to decide whether Save does anything — and the whole point here is
+ * that the server never sends this one back. Blank field, save when it's long
+ * enough, blank again afterwards.
+ */
+function AdminPasswordField({
+  fromEnv,
+  onNote,
+}: {
+  fromEnv: boolean
+  onNote: (note: string) => void
+}) {
+  const setAdminToken = useStore((s) => s.setAdminToken)
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  if (fromEnv) {
+    return (
+      <div className="admin-setting">
+        <label>Admin password</label>
+        <p className="admin-muted">
+          Set by <code>ADMIN_PASSWORD</code> in this box&rsquo;s service file, so it can&rsquo;t be
+          changed from here. Change it there and restart.
+        </p>
+      </div>
+    )
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    void api
+      .adminUpdateSettings(auth(), { adminPassword: value })
+      .then(({ adminToken }) => {
+        // Every other unlocked device just lost its token; this one gets a
+        // replacement so the person who made the change stays in.
+        if (adminToken) setAdminToken(adminToken)
+        setValue('')
+        onNote('Admin password changed — any other device with the panel open is now locked')
+      })
+      .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Save failed'))
+      .finally(() => setSaving(false))
+  }
+
+  return (
+    <form className="admin-setting" onSubmit={submit}>
+      <label htmlFor="admin-new-password">Admin password (opens this panel)</label>
+      <div className="admin-setting-row">
+        <input
+          id="admin-new-password"
+          type="password"
+          value={value}
+          disabled={saving}
+          minLength={8}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="at least 8 characters"
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button className="admin-btn" type="submit" disabled={saving || value.trim().length < 8}>
+          {saving ? 'Saving…' : 'Change'}
+        </button>
+      </div>
+      <p className="admin-muted">
+        Not the event PIN — this one is never shown to crew. Changing it locks every other device
+        that had the panel open.
+      </p>
+    </form>
+  )
+}
+
 function UserRow({
   user,
   online,
@@ -462,7 +554,7 @@ function UserRow({
     if (!PIN_RE.test(pin)) return
     setBusy(true)
     try {
-      await api.adminResetPin(token(), user.id, pin)
+      await api.adminResetPin(auth(), user.id, pin)
       onNote(`PIN reset for ${user.name}`)
       setEditing(false)
       setPin('')
@@ -533,7 +625,7 @@ function ChannelRow({ channel, onNote }: { channel: Channel; onNote: (note: stri
     }
     setBusy(true)
     try {
-      await api.adminUpdateChannel(token(), channel.id, patch)
+      await api.adminUpdateChannel(auth(), channel.id, patch)
       onNote(`#${patch.name ?? channel.name} updated`)
       setEditing(false)
     } catch (err) {
@@ -550,7 +642,7 @@ function ChannelRow({ channel, onNote }: { channel: Channel; onNote: (note: stri
     }
     setBusy(true)
     try {
-      await api.adminUpdateChannel(token(), channel.id, { retired: true })
+      await api.adminUpdateChannel(auth(), channel.id, { retired: true })
       onNote(`#${channel.name} retired`)
     } catch (err) {
       onNote(err instanceof api.ApiError ? err.message : 'Retire failed')

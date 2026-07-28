@@ -12,6 +12,7 @@ import type { IncomingMessage } from 'node:http'
 import { attachWs, buildApp, type App } from '../src/app.ts'
 
 const EVENT_PIN = '9999'
+const ADMIN_PASSWORD = 'smoke-admin-pass'
 let filesDir: string
 
 let app: App
@@ -100,6 +101,28 @@ async function join(name: string): Promise<string> {
   return (res.json() as { token: string }).token
 }
 
+/**
+ * Join, then unlock the admin panel.
+ *
+ * Admin is no longer something the first arrival *is*, so a test that wants
+ * it has to ask — which is the point of the change: the box can't end up
+ * with nobody able to get in.
+ */
+async function joinAdmin(
+  name: string
+): Promise<{ token: string; headers: Record<string, string> }> {
+  const token = await join(name)
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/admin/unlock',
+    headers: { authorization: `Bearer ${token}` },
+    payload: { password: ADMIN_PASSWORD },
+  })
+  expect(res.statusCode).toBe(200)
+  const { adminToken } = res.json() as { adminToken: string }
+  return { token, headers: { authorization: `Bearer ${token}`, 'x-admin-token': adminToken } }
+}
+
 async function connect(
   token: string,
   cursors: Record<string, number> = {},
@@ -121,6 +144,7 @@ beforeEach(async () => {
   app = buildApp({
     store,
     eventPin: EVENT_PIN,
+    adminPassword: ADMIN_PASSWORD,
     filesDir,
     dataDir: filesDir,
     livekit: { url: 'ws://localhost:7880', key: 'devkey', secret: 'secret' },
@@ -149,7 +173,10 @@ describe('join and welcome', () => {
     const token = await join('Alex')
     const { welcome } = await connect(token)
     expect(welcome.me.name).toBe('Alex')
-    expect(welcome.me.role).toBe('admin') // first user becomes admin
+    // Everyone joins as a member now, including the first arrival. Admin is
+    // the password, not a prize for scanning the poster first — the old rule
+    // handed the box to one person and lost it entirely if they left.
+    expect(welcome.me.role).toBe('member')
     expect(welcome.serverVersion).toMatch(/\d+\.\d+\.\d+/) // for client update prompts
     expect(welcome.protocolVersion).toBe(1)
     expect(welcome.config.modules).toEqual(['chat'])
@@ -541,7 +568,7 @@ describe('files and search', () => {
   })
 
   it('deletes a shared file: permissions, broadcast, welcome reconcile, dedup-safe blob', async () => {
-    const adminToken = await join('Alex') // first user is admin
+    const { token: adminToken, headers: adminHeaders } = await joinAdmin('Alex')
     const authorToken = await join('Sam')
     const bystanderToken = await join('Kit')
     const author = await connect(authorToken)
@@ -575,14 +602,19 @@ describe('files and search', () => {
     const sharedPath = store.getFileRow(fileA.id)!.path
     expect(store.getFileRow(fileB.id)!.path).toBe(sharedPath)
 
-    const del = (token: string, id: string) =>
+    const del = (token: string, id: string, unlocked?: Record<string, string>) =>
       fetch(`${baseUrl}/api/messages/${id}`, {
         method: 'DELETE',
-        headers: { authorization: `Bearer ${token}` },
+        headers: unlocked ?? { authorization: `Bearer ${token}` },
       })
 
     // A bystander cannot delete someone else's file.
     expect((await del(bystanderToken, msgA.id)).status).toBe(403)
+
+    // Neither can someone who *could* unlock the panel but hasn't: moderation
+    // follows the unlock, not the person, so a signed-in admin browsing chat
+    // has no more power over other people's files than anyone else.
+    expect((await del(adminToken, msgA.id)).status).toBe(403)
 
     // The author can. A second connected client sees the broadcast + note.
     const watcher = await connect(bystanderToken)
@@ -608,8 +640,9 @@ describe('files and search', () => {
       messageId: msgA.id,
     })
 
-    // Admin deletes the second copy — now the blob is truly orphaned.
-    expect((await del(adminToken, msgB.id)).status).toBe(200)
+    // With the panel unlocked, the same person can — and now the deduped blob
+    // is truly orphaned.
+    expect((await del(adminToken, msgB.id, adminHeaders)).status).toBe(200)
     expect(existsSync(sharedPath)).toBe(false)
 
     // Text messages are out of scope for deletion.
@@ -871,14 +904,14 @@ describe('admin', () => {
   })
 
   it('resets a personal PIN so the old one stops working', async () => {
-    const adminToken = await join('Alex')
+    const { headers: adminHeaders } = await joinAdmin('Alex')
     await join('Sam')
     const sam = store.getUserByName('Sam')!
 
     const badPin = await app.inject({
       method: 'POST',
       url: `/api/admin/users/${sam.id}/pin`,
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { pin: '12' },
     })
     expect(badPin.statusCode).toBe(400)
@@ -886,7 +919,7 @@ describe('admin', () => {
     const reset = await app.inject({
       method: 'POST',
       url: `/api/admin/users/${sam.id}/pin`,
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { pin: '4321' },
     })
     expect(reset.statusCode).toBe(200)
@@ -908,14 +941,14 @@ describe('admin', () => {
   })
 
   it('renames a channel, edits its topic, and broadcasts the change', async () => {
-    const adminToken = await join('Alex')
+    const { token: adminToken, headers: adminHeaders } = await joinAdmin('Alex')
     const { client } = await connect(adminToken)
     const stage = store.createChannel('stage', 'public', 'old topic')
 
     const collision = await app.inject({
       method: 'PATCH',
       url: `/api/admin/channels/${stage.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { name: 'general' },
     })
     expect(collision.statusCode).toBe(409)
@@ -923,7 +956,7 @@ describe('admin', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: `/api/admin/channels/${stage.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { name: 'stage-2', topic: 'headliners only' },
     })
     expect(res.statusCode).toBe(200)
@@ -945,14 +978,14 @@ describe('admin', () => {
   })
 
   it('retires a channel: hidden from welcome, rejects sends, keeps #general', async () => {
-    const adminToken = await join('Alex')
+    const { token: adminToken, headers: adminHeaders } = await joinAdmin('Alex')
     const stage = store.createChannel('stage', 'public')
     const general = store.getChannelByName('general')!
 
     const keepGeneral = await app.inject({
       method: 'PATCH',
       url: `/api/admin/channels/${general.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { retired: true },
     })
     expect(keepGeneral.statusCode).toBe(400)
@@ -960,7 +993,7 @@ describe('admin', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: `/api/admin/channels/${stage.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { retired: true },
     })
     expect(res.statusCode).toBe(200)
@@ -979,7 +1012,7 @@ describe('admin', () => {
   })
 
   it('exports users, channels (including retired and DMs) and all messages', async () => {
-    const adminToken = await join('Alex')
+    const { token: adminToken, headers: adminHeaders } = await joinAdmin('Alex')
     const memberToken = await join('Sam')
     const a = await connect(adminToken)
     const b = await connect(memberToken)
@@ -1012,7 +1045,7 @@ describe('admin', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/admin/export',
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
     })
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-disposition']).toContain('attachment')
@@ -1036,7 +1069,7 @@ describe('admin', () => {
 
 describe('settings & config', () => {
   it('serves public config and reflects an admin Wi-Fi SSID change everywhere', async () => {
-    const adminToken = await join('Alex') // first user is admin
+    const { token: adminToken, headers: adminHeaders } = await joinAdmin('Alex')
     const memberToken = await join('Sam')
 
     // Public config: default empty SSID, voice enabled (livekit set in setup).
@@ -1062,7 +1095,7 @@ describe('settings & config', () => {
     const ok = await app.inject({
       method: 'PATCH',
       url: '/api/admin/settings',
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { wifiSsid: 'CrewNet' },
     })
     expect(ok.statusCode).toBe(200)
@@ -1080,7 +1113,7 @@ describe('settings & config', () => {
   })
 
   it('exposes read-only server info (incl. event PIN) to admins only', async () => {
-    const adminToken = await join('Alex')
+    const { headers: adminHeaders } = await joinAdmin('Alex')
     const memberToken = await join('Sam')
 
     const asMember = await app.inject({
@@ -1093,7 +1126,7 @@ describe('settings & config', () => {
     const asAdmin = await app.inject({
       method: 'GET',
       url: '/api/admin/settings',
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
     })
     expect(asAdmin.statusCode).toBe(200)
     const body = asAdmin.json() as {
@@ -1137,11 +1170,11 @@ describe('read state', () => {
 
 describe('onboarding & runtime settings', () => {
   it('lets an admin change the event PIN at runtime, gating new joins', async () => {
-    const adminToken = await join('Alex')
+    const { headers: adminHeaders } = await joinAdmin('Alex')
     const patch = await app.inject({
       method: 'PATCH',
       url: '/api/admin/settings',
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { eventPin: '7777' },
     })
     expect(patch.statusCode).toBe(200)
@@ -1164,7 +1197,7 @@ describe('onboarding & runtime settings', () => {
     // The admin panel shows the effective PIN.
     const settings = await app.inject({
       url: '/api/admin/settings',
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
     })
     expect((settings.json() as { serverInfo: { eventPin: string } }).serverInfo.eventPin).toBe(
       '7777'
@@ -1182,11 +1215,11 @@ describe('onboarding & runtime settings', () => {
   })
 
   it('reflects a runtime PIN change on /connect immediately', async () => {
-    const adminToken = await join('Alex')
+    const { headers: adminHeaders } = await joinAdmin('Alex')
     await app.inject({
       method: 'PATCH',
       url: '/api/admin/settings',
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: adminHeaders,
       payload: { eventPin: '2468' },
     })
     const html = await (await fetch(`${baseUrl}/connect`)).text()
