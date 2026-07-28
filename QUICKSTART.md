@@ -10,9 +10,10 @@ Crewbox to Applications, and launch it. One file works on every Mac, Intel or
 Apple Silicon. It keeps the machine awake while it runs, so a laptop with the
 lid shut is still a working box.
 
-Until the app is signed (see [docs/MACOS_SIGNING.md](docs/MACOS_SIGNING.md)),
-macOS refuses it on first launch: **right-click → Open** clears that once, or
-use the one-line installer below, which handles it for you.
+Nothing to click past: the `.dmg` is signed, notarised and stapled, so it
+opens like any other app — including on a box with no internet, which is the
+whole point of stapling. The bare `crewbox-darwin-*` binaries below are _not_
+signed and still need the dance.
 
 **macOS / Linux, one line**
 
@@ -21,7 +22,8 @@ curl -fsSL https://crewbox.letissier.ie/install.sh | sh
 ```
 
 Downloads the box for your machine, clears the macOS quarantine flag, and
-starts it. This is the path with the least friction on an unsigned build.
+starts it. This installs the bare binary rather than the app, so it is the
+Linux path and the macOS fallback; on a Mac the `.dmg` is now the easier one.
 
 **Windows** — download `crewbox-win32-x64.exe` from the download page and
 double-click it. SmartScreen will warn about an unsigned app: **More info →
@@ -37,7 +39,7 @@ xattr -d com.apple.quarantine crewbox-*  # macOS only: clear the download flag
 ```
 
 Without that `xattr` line macOS refuses to open it, with a dialog that offers
-no way forward.
+no way forward. Only the `.dmg` is signed; the bare binaries are not.
 
 ## What happens next
 

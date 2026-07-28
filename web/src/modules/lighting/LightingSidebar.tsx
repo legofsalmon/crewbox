@@ -22,10 +22,12 @@ export default function LightingSidebar() {
     <>
       <div className="section-head">
         <span>Lighting</span>
+        {/* See PatchSidebar: distinct from the "All plots…" row below, which
+            goes to the same place but is a different control. */}
         <button
           className="icon-btn"
-          aria-label="All plots"
-          title="All plots"
+          aria-label="Open lighting plots"
+          title="Open lighting plots"
           onClick={() => setActiveModule('lighting')}
         >
           +

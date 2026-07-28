@@ -170,17 +170,17 @@ xcrun stapler validate /Applications/Crewbox.app   # is the ticket *in* it?
 stapled ticket, because it can ask Apple over the internet — which is exactly
 the thing a crew box cannot do. `stapler validate` is the only check that
 proves the ticket travelled inside the file, and that is what makes the app
-open in a shed with no uplink. A v0.7.0 build passed `spctl` and failed
-`stapler validate`: the release had stapled the disk image but never the app
-dragged out of it.
+open in a shed with no uplink. v0.6.1 — the first signed release — passed
+`spctl` and failed `stapler validate`: it had stapled the disk image but never
+the app dragged out of it. Fixed in v0.7.0, which staples both.
 
-## Until then
+## Without the secrets
 
-Everything works without any of this. The `.dmg` still builds and still
-contains a universal app; it just needs the same right-click → Open dance as
-the bare binary, so the one-line installer remains the better path. The
+Everything still works. The `.dmg` builds and still contains a universal app;
+it just needs the same right-click → Open dance as the bare binary. The
 workflow skips signing and notarisation cleanly when the secrets are absent
-rather than failing the release.
+rather than failing the release — which is what keeps a fork, or a release cut
+before the certificate is renewed, from going red.
 
 ## Windows
 

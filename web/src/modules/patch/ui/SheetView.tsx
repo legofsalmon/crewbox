@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type * as Y from 'yjs'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
@@ -6,7 +7,8 @@ import { useToasts } from './toastContext.ts'
 import { useSheet } from '../store/hooks'
 import { useSheetPeers, useSheetRemotePeers, useSyncStatus } from '../store/useSync'
 import { useUndoRedo } from '../store/useUndo'
-import { patchSubBoxDisplay } from '../model/sheetDoc'
+import { useDraft } from '../../_shared/ui/useDraft'
+import { patchSubBoxDisplay, setMetaField } from '../model/sheetDoc'
 import { PATCH_FIELDS, patchKey, type SheetSnapshot } from '../model/types'
 import Toolbar from './Toolbar'
 import PatchGrid from './PatchGrid'
@@ -61,6 +63,27 @@ function PresenceAvatars({ sheetId }: { sheetId: string }) {
       ))}
       {peers.length > 5 && <span className={styles.avatarOverflow}>+{peers.length - 5}</span>}
     </span>
+  )
+}
+
+/**
+ * The sheet title, inline in the nav row.
+ *
+ * Its own component only because `useDraft` is a hook and SheetView returns
+ * early while the doc loads — the same reason the lighting plot has one.
+ */
+function SheetTitle({ doc, snapshot }: { doc: Y.Doc; snapshot: SheetSnapshot }) {
+  const title = useDraft(snapshot.meta.title, (next) =>
+    setMetaField(doc, 'title', next.trim() || 'Untitled Sheet')
+  )
+  return (
+    <input
+      className={styles.title}
+      aria-label="Sheet title"
+      placeholder="Untitled Sheet"
+      maxLength={100}
+      {...title.inputProps}
+    />
   )
 }
 
@@ -214,74 +237,28 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
         </span>
       </button>
 
+      {/*
+        Nav row, then tool row — the same two-row shape as a lighting plot,
+        and for the same reason. This used to spend the whole second row on
+        the title alone, which cost a phone about 15% of its screen before
+        any patch data appeared. The title now sits inline here, and the row
+        below holds everything you can *do* to the sheet.
+      */}
       {showHeaders && (
         <header className={styles.appHeader}>
-          <div className={styles.headerLeft}>
-            <DrawerButton />
-            <button type="button" className={styles.loadButton} onClick={onClose}>
-              ← Sheets
-            </button>
-            <span className={styles.undoGroup}>
-              <button
-                type="button"
-                className={styles.undoButton}
-                onClick={undo}
-                disabled={!canUndo}
-                title="Undo (Ctrl/Cmd+Z)"
-                aria-label="Undo"
-              >
-                ↶
-              </button>
-              <button
-                type="button"
-                className={styles.undoButton}
-                onClick={redo}
-                disabled={!canRedo}
-                title="Redo (Ctrl/Cmd+Shift+Z)"
-                aria-label="Redo"
-              >
-                ↷
-              </button>
-            </span>
-          </div>
-          <div className={styles.searchBox}>
-            <input
-              ref={searchRef}
-              type="text"
-              placeholder="Find…  (Ctrl+F)"
-              aria-label="Find in sheet"
-              data-search="true"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                matchCursor.current = 0
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') jumpToNextMatch()
-                else if (e.key === 'Escape') {
-                  setSearchQuery('')
-                  ;(e.target as HTMLElement).blur()
-                }
-              }}
-            />
-            {searchQuery.trim() && (
-              <span className={styles.matchCount}>
-                {matches?.order.length ?? 0} match{(matches?.order.length ?? 0) === 1 ? '' : 'es'}
-              </span>
-            )}
-          </div>
-          <div className={styles.headerRight}>
-            <PresenceAvatars sheetId={sheetId} />
-            <button
-              type="button"
-              className={styles.loadButton}
-              onClick={() => setShowShare(true)}
-              title="Share this sheet into a chat channel"
-            >
-              Share
-            </button>
-            <SyncStatusChip sheetId={sheetId} />
-          </div>
+          <DrawerButton />
+          <button
+            type="button"
+            className={styles.back}
+            onClick={onClose}
+            aria-label="All sheets"
+            title="All sheets"
+          >
+            ‹
+          </button>
+          <SheetTitle doc={doc} snapshot={snapshot} />
+          <SyncStatusChip sheetId={sheetId} />
+          <PresenceAvatars sheetId={sheetId} />
         </header>
       )}
 
@@ -292,6 +269,18 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
           onOpenSubBoxes={() => setShowSubBoxes(true)}
           onOpenLineup={() => setShowLineup(true)}
           onOpenVersions={() => setShowVersions(true)}
+          onShare={() => setShowShare(true)}
+          history={{ canUndo, canRedo, undo, redo }}
+          search={{
+            ref: searchRef,
+            query: searchQuery,
+            matchCount: matches?.order.length ?? 0,
+            onChange: (next) => {
+              setSearchQuery(next)
+              matchCursor.current = 0
+            },
+            onEnter: jumpToNextMatch,
+          }}
         />
       )}
 

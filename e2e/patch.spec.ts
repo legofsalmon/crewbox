@@ -124,3 +124,43 @@ test('sharing a sheet posts a chat link that opens the sheet on another device',
   await expect(deviceB).toHaveURL(/\/m\/patch\/sheet\//)
   await expect(cell(deviceB, 'Artist 1', '1', 'Input')).toHaveValue('Kick')
 })
+
+test('the sheet title shares the nav row rather than taking one of its own', async ({
+  browser,
+}) => {
+  const page = await newDevice(browser)
+  await openPatch(page)
+  await createSheet(page, uniqueName('Header Fest'))
+
+  // A patch sheet used to spend a whole row on its title, so a phone gave up
+  // about 15% of the screen to chrome before any patch showed. The title now
+  // sits inline beside the back button, the same shape a lighting plot uses.
+  const header = page.locator('header').filter({ has: page.getByLabel('Sheet title') })
+  const back = await header.getByRole('button', { name: 'All sheets' }).boundingBox()
+  const title = await header.getByLabel('Sheet title').boundingBox()
+  expect(back).not.toBeNull()
+  expect(title).not.toBeNull()
+  // Same row: their vertical centres line up to within a few pixels.
+  const centre = (b: { y: number; height: number }) => b.y + b.height / 2
+  expect(Math.abs(centre(back!) - centre(title!))).toBeLessThan(6)
+
+  // And the whole of the chrome — nav row plus tool row — stays under the
+  // height two stacked rows of inputs used to reach.
+  const grid = await page.locator('table').boundingBox()
+  expect(grid!.y).toBeLessThan(130)
+})
+
+test('the collapse chevron stays inside the patch pane, off the sidebar', async ({ browser }) => {
+  const page = await newDevice(browser)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await openPatch(page)
+  await createSheet(page, uniqueName('Chevron Fest'))
+
+  // It was position:fixed, which is relative to the window — so on a desktop
+  // it floated left across the sidebar and sat on the Crewbox logo.
+  const chevron = await page.getByRole('button', { name: /headers/ }).boundingBox()
+  const sidebar = await page.locator('.sidebar').boundingBox()
+  expect(chevron).not.toBeNull()
+  expect(sidebar).not.toBeNull()
+  expect(chevron!.x).toBeGreaterThanOrEqual(sidebar!.x + sidebar!.width)
+})
