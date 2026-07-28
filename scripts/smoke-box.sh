@@ -58,8 +58,24 @@ fail() {
 
 cleanup() {
   status=$?
-  [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
-  rm -rf "$DATA"
+  if [ -n "$PID" ]; then
+    kill "$PID" 2>/dev/null || true
+    # Wait for it to actually go before touching its files.
+    #
+    # `kill` returns as soon as the signal is delivered, not when the process
+    # has died. Unix does not care — you can unlink a file another process
+    # still has open — but Windows refuses, so `rm -rf` hit "Device or
+    # resource busy" on crewbox.db and failed a run whose every check had
+    # passed. The same lesson as reaping an orphaned SFU: wait for it to go.
+    i=0
+    while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 10 ]; do
+      i=$((i + 1))
+      sleep 1
+    done
+  fi
+  # Never let tidying up fail a run that passed. A leftover temp directory on
+  # a CI runner that is about to be destroyed is not worth a red build.
+  rm -rf "$DATA" 2>/dev/null || true
   # A non-zero exit with no FAIL line above it means the script died rather
   # than the box failing a check — almost always a command tripping `set -e`.
   # Say which, because a silent exit 1 reads as "this box is broken" and
