@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
+import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import { registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { parseCsv } from '../../_shared/csv'
@@ -77,6 +78,36 @@ function SyncChip({ plotId }: { plotId: string }) {
     <span className={`${styles.chip} ${styles[`chip-${status}`]}`} title="Sync status">
       {label}
     </span>
+  )
+}
+
+/**
+ * The whole plot view accepts a dropped CSV or MVR.
+ *
+ * A component rather than hooks inside PlotView, because PlotView returns
+ * early while a plot is still opening — hooks after that early return would
+ * run in a different order between renders.
+ */
+function PlotDropZone({
+  importing,
+  onFiles,
+  onReject,
+  children,
+}: {
+  importing: boolean
+  onFiles: (files: File[]) => void
+  onReject: (files: File[]) => void
+  children: ReactNode
+}) {
+  const accept = useCallback((file: File) => /\.(csv|mvr)$/i.test(file.name), [])
+  // Disabled mid-import so a second drop can't interleave with a parse
+  // already chewing through a 40 MB venue file.
+  const drop = useFileDrop(onFiles, { disabled: importing, accept, onReject })
+  return (
+    <div className={`${styles.view} ${drop.over ? styles.dropping : ''}`} {...drop.handlers}>
+      {drop.over && <div className={styles.dropVeil}>Drop a CSV or MVR to import fixtures</div>}
+      {children}
+    </div>
   )
 }
 
@@ -274,7 +305,17 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   }
 
   return (
-    <div className={styles.view}>
+    <PlotDropZone
+      importing={importing}
+      onFiles={(files) => {
+        // Sequential, not parallel: an MVR parse blocks the main thread for
+        // seconds, and two at once would freeze the tab showing nothing.
+        void (async () => {
+          for (const file of files) await importFile(file)
+        })()
+      }}
+      onReject={(files) => setFlash(`${files[0].name} isn’t a CSV or MVR`)}
+    >
       <header className={styles.head}>
         <DrawerButton />
         <button type="button" className={styles.back} onClick={onClose} aria-label="All plots">
@@ -396,7 +437,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
           onClose={() => setShowShare(false)}
         />
       )}
-    </div>
+    </PlotDropZone>
   )
 }
 

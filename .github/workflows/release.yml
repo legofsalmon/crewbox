@@ -26,6 +26,7 @@ jobs:
   validate:
     name: Validate version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.resolve.outputs.version }}
     steps:
@@ -70,6 +71,10 @@ jobs:
         # cross-built on the Apple Silicon runner instead — see the step below.
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # Generous, because the macOS leg compiles LiveKit from source and then
+    # cross-builds the Intel box on top of that. Still far short of the
+    # six-hour default a wedged runner would otherwise burn.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -102,13 +107,13 @@ jobs:
         if: runner.os != 'Windows'
         run: ./scripts/smoke-box.sh build/box/crewbox-*
       # Windows has no sh of its own, but its runner ships Git Bash, so the
-      # same script runs there. Non-blocking until it has passed once: it has
-      # never been exercised on Windows, and a release should not start
-      # failing on an unproven check. Promote it to a hard gate — drop the
-      # continue-on-error — as soon as a run shows it green.
-      - name: Smoke-test the box (Windows, provisional)
+      # same script runs there. This was non-blocking until it had passed
+      # once; it has now run green on v0.6.0 and v0.6.1, so it gates the
+      # release like every other platform. A Windows box that cannot start,
+      # serve or reach its own voice server should stop a release, not be
+      # published with a green tick beside it.
+      - name: Smoke-test the box (Windows)
         if: runner.os == 'Windows'
-        continue-on-error: true
         shell: bash
         run: ./scripts/smoke-box.sh build/box/crewbox-win32-x64.exe
       # The Intel Mac box, built here rather than on an Intel runner. A SEA
@@ -141,6 +146,9 @@ jobs:
     name: macOS app (.dmg)
     needs: [validate, box]
     runs-on: macos-latest
+    # Includes notarisation, which is a round trip to Apple and the slowest
+    # step in a release — the first submission on a new account especially.
+    timeout-minutes: 45
     # Only the trust step needs Apple credentials; the packaging runs either
     # way so the path is exercised on every release rather than first tried
     # on the day the certificate arrives.
@@ -197,6 +205,7 @@ jobs:
     name: Android APK
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -221,6 +230,7 @@ jobs:
     name: Publish release
     needs: [validate, box, macapp, apk]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # Job-level so the skip condition below can see it: a step's own env
       # block is not in scope for that step's `if:`.

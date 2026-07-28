@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useStore } from './store.ts'
+import { guardStrayFileDrops } from './lib/useFileDrop.ts'
 import Join from './components/Join.tsx'
 import Sidebar from './components/Sidebar.tsx'
 import ChannelView from './components/ChannelView.tsx'
@@ -24,6 +25,11 @@ export default function App() {
     void boot()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A file dropped anywhere without a listener makes the browser *open* it,
+  // throwing away the running app — mid-shift, with unsent messages still in
+  // the outbox. Missing a drop target should do nothing at all.
+  useEffect(() => guardStrayFileDrops(), [])
 
   if (phase === 'boot') return <div className="boot-screen" />
   if (phase === 'join') return <Join />

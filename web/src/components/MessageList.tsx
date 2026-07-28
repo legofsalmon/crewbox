@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import { fileUrl, thumbUrl, type FileMeta, type Message } from '@crewbox/shared'
+import { useFileDrop } from '../lib/useFileDrop.ts'
 import { useStore, type Pending } from '../store.ts'
 import { parseRoute } from '../shell/router.ts'
 import { formatBytes } from '../lib/files.ts'
@@ -203,8 +204,21 @@ export default function MessageList({ channelId }: { channelId: string }) {
   const prevLastSeqRef = useRef(0)
   const prevPendingIdRef = useRef<string | undefined>(undefined)
   const [newBelow, setNewBelow] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
   const [flashSeq, setFlashSeq] = useState<number | null>(null)
+
+  // Every dropped file, in order — dropping four photos and watching one
+  // arrive is worse than being told there's a limit. They upload one at a
+  // time so a stack of photos can't saturate a field Wi-Fi link.
+  const onDropFiles = useCallback(
+    (files: File[]) => {
+      void (async () => {
+        for (const file of files) await sendFile(channelId, file)
+      })()
+    },
+    [channelId, sendFile]
+  )
+  const drop = useFileDrop(onDropFiles)
+  const dropHint = drop.over ? 'Drop to share' : ''
 
   const list = messages ?? []
   const pendingList = pending ?? []
@@ -439,20 +453,10 @@ export default function MessageList({ channelId }: { channelId: string }) {
 
   return (
     <div
-      className={`message-scroll ${dragOver ? 'drag-over' : ''}`}
+      className={`message-scroll ${drop.over ? 'drag-over' : ''}`}
       ref={scrollRef}
       onScroll={onScroll}
-      onDragOver={(e) => {
-        e.preventDefault()
-        setDragOver(true)
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragOver(false)
-        const file = e.dataTransfer.files[0]
-        if (file) void sendFile(channelId, file)
-      }}
+      {...drop.handlers}
     >
       <div className="message-inner">
         {list.length === 0 && pendingList.length === 0 && (
@@ -460,7 +464,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
         )}
         {rows}
       </div>
-      {dragOver && <div className="drop-hint">Drop to share</div>}
+      {drop.over && <div className="drop-hint">{dropHint}</div>}
       {gapped ? (
         <button className="jump-pill" onClick={() => void returnToLatest(channelId)}>
           Jump to latest ↓

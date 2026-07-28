@@ -32,3 +32,21 @@ window.addEventListener('orientationchange', () => {
   // The new dimensions settle a beat after the rotation event.
   setTimeout(applyViewportHeight, 100)
 })
+
+/**
+ * Stop Safari zooming the interface.
+ *
+ * `user-scalable=no` in the viewport meta has been ignored by iOS Safari
+ * since iOS 10, and `touch-action: manipulation` (see body in app.css) does
+ * not cover Safari's own pinch gesture either. These three non-standard
+ * events are the only thing that does.
+ *
+ * This is not a general "no zoom" policy: the image viewer implements pinch
+ * itself with pointer events, so photos and plans still zoom. What it stops
+ * is zooming the *chrome*, which on a position:fixed app that cannot scroll
+ * leaves crew looking at a magnified corner with no way back.
+ */
+const blockBrowserZoom = (event: Event): void => event.preventDefault()
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, blockBrowserZoom, { passive: false })
+}

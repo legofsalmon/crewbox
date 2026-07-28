@@ -29,6 +29,9 @@ $artist-row-height: 38px;
   height: $artist-row-height;
 }
 
+/* Reads as the header of a group rather than another row of the table: the
+   accent rule above it is the only thing separating one artist's block of
+   channels from the next. */
 .artistHeader {
   @extend %gridCell;
   position: sticky;
@@ -39,6 +42,7 @@ $artist-row-height: 38px;
   color: var(--text);
   padding: 0 10px;
   text-align: left;
+  border-top: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .artistHeaderInner {
@@ -83,7 +87,11 @@ $artist-row-height: 38px;
   color: $color-ink-soft;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  min-width: 110px;
+  /* Was 110px for every column, so MIC/DI and STAND took as much room as
+     DESCRIPTION. Narrower floor lets the table give the width to the columns
+     whose content needs it. */
+  min-width: 88px;
+  white-space: nowrap;
 }
 
 .channelHeader {
@@ -173,13 +181,20 @@ $artist-row-height: 38px;
   background: $color-surface;
 }
 
+/*
+ * Zebra rows, at a strength you can actually see.
+ *
+ * This was 4%, which is invisible on the dark theme — and following one
+ * channel across eight columns without losing the row is the entire job of a
+ * patch sheet. 7.5% reads as a band without turning the grid into stripes.
+ */
 tbody tr:nth-child(even) {
   .cell {
-    background: color-mix(in srgb, var(--text) 4%, var(--bg-raised));
+    background: color-mix(in srgb, var(--text) 7.5%, var(--bg-raised));
   }
 
   .channelHeader {
-    background: color-mix(in srgb, var(--text) 9%, var(--bg-hover));
+    background: color-mix(in srgb, var(--text) 11%, var(--bg-hover));
   }
 }
 
@@ -206,6 +221,10 @@ tbody tr:nth-child(even) {
 
 .gridActions {
   margin: 10px 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 
   button {
     border: 1px dashed $color-border;
@@ -220,6 +239,19 @@ tbody tr:nth-child(even) {
       border-color: $color-primary;
       color: $color-primary;
     }
+  }
+}
+
+/* Shown only while a sheet is still blank — it says what to do with ten
+   empty rows, then gets out of the way for good. */
+.startHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+
+  strong {
+    color: var(--text);
+    font-weight: 600;
   }
 }
 

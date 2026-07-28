@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { createSheet, createSheetFromImport, deleteSheet } from '../store/docManager'
 import { useSheetIndex } from '../store/hooks'
@@ -6,6 +6,7 @@ import { isoToDisplay } from '../model/date'
 import { parseCsv } from '../model/csv'
 import { sheetFromCsv } from '../model/importCsv'
 import { useToasts } from './toastContext'
+import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import styles from './SheetSelector.module.scss'
 
 const formatLastEdited = (iso: string): string | null => {
@@ -28,6 +29,32 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const importRef = useRef<HTMLInputElement>(null)
+
+  // Dropping a CSV anywhere on this page imports it, which is how someone
+  // arrives here: with an export from Sheets or Excel already in a folder.
+  const isCsv = useCallback(
+    (file: File) => /\.csv$/i.test(file.name) || file.type === 'text/csv',
+    []
+  )
+  const onDropFiles = useCallback(
+    (files: File[]) => {
+      // One sheet per drop. Importing five at once would leave someone
+      // guessing which of five new sheets to open.
+      void handleImportFile(files[0])
+      if (files.length > 1) {
+        addToast('Imported the first file', `${files.length - 1} more ignored`, 'warning')
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [addToast]
+  )
+  const onReject = useCallback(
+    (files: File[]) => {
+      addToast('Not a CSV', `${files[0].name} isn’t something this can import`, 'error')
+    },
+    [addToast]
+  )
+  const drop = useFileDrop(onDropFiles, { accept: isCsv, onReject })
 
   const handleImportFile = async (file: File | undefined) => {
     if (!file) return
@@ -67,13 +94,16 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
   }
 
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} ${drop.over ? styles.dropping : ''}`} {...drop.handlers}>
+      {drop.over && <div className={styles.dropVeil}>Drop a CSV to import it as a new sheet</div>}
       <header className={styles.hero}>
         <div className={styles.heroTop}>
           <DrawerButton />
           <h1>Patch Sheets</h1>
         </div>
-        <p>Patch sheets that work with no internet and sync across crew devices</p>
+        <p>
+          Input patch per artist, sub-boxes and a lineup — shared live with everyone on the box.
+        </p>
       </header>
 
       <div className={styles.actions}>
@@ -140,10 +170,9 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
         {!loaded && entries.length === 0 ? (
           <p className={styles.empty}>Loading…</p>
         ) : entries.length === 0 ? (
-          <div className={styles.empty}>
-            <h2>No sheets yet</h2>
-            <p>Create your first patch sheet to get started</p>
-          </div>
+          <p className={styles.empty}>
+            No sheets yet. Create one, or drop a CSV anywhere on this page.
+          </p>
         ) : (
           entries.map((entry) => (
             <div key={entry.sheetId} className={styles.card}>

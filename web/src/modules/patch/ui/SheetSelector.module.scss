@@ -1,24 +1,57 @@
 @use '../styles/tokens' as *;
 
+/*
+ * Laid out like the lighting module, which is the house style: a working
+ * list someone opens twenty times a shift, not a landing page. The old
+ * treatment — full-bleed gradient, centred 2.2rem title, marketing tagline —
+ * came over from Live Patch and spent the top third of the screen before
+ * showing a single sheet.
+ */
 .container {
-  min-height: 100vh;
-  background: $gradient-hero;
-  padding: 32px 16px 64px;
+  padding: 24px;
+  max-width: 820px;
+  margin: 0 auto;
+  height: 100%;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* Drop target for a CSV dragged in from Sheets or Excel, which is how most
+   sheets start life. */
+.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -10px;
+}
+
+.dropVeil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  /* The veil must never eat the drag events belonging to the page under it,
+     or the drop lands on nothing and the highlight sticks. */
+  pointer-events: none;
 }
 
 .hero {
-  text-align: center;
   color: var(--text);
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 
   h1 {
-    font-size: 2.2rem;
-    letter-spacing: 0.5px;
+    font-size: 24px;
+    margin: 0;
   }
 
   p {
     margin-top: 6px;
     color: var(--text-muted);
+    font-size: 14px;
+    max-width: 56ch;
   }
 }
 
@@ -107,39 +140,46 @@
   }
 }
 
+/* Rows, not a card grid. Sheets are scanned by name and date — a gallery of
+   equal-sized tiles makes that harder, and wastes the width on a phone. */
 .list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px;
-  max-width: 900px;
-  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .empty {
-  grid-column: 1 / -1;
-  text-align: center;
   color: var(--text-muted);
+  font-size: 14px;
 
   h2 {
-    margin-bottom: 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
   }
 }
 
 .card {
   position: relative;
   background: $color-surface;
+  border: 1px solid var(--border);
   border-radius: $radius;
-  box-shadow: $shadow-card;
   display: flex;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  }
 }
 
 .cardOpen {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 16px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 11px 14px;
+  padding-right: 40px;
   border: none;
   background: none;
   cursor: pointer;
@@ -154,7 +194,9 @@
 .cardTitle {
   font-weight: 600;
   color: $color-ink;
-  font-size: 1.05rem;
+  font-size: 15px;
+  /* Takes the row; the meta trails it and wraps under on a narrow phone. */
+  margin-right: auto;
 }
 
 .cardMeta {
@@ -165,14 +207,15 @@
 }
 
 .cardEdited {
-  color: $color-muted;
-  font-size: 0.75rem;
+  color: var(--text-faint);
+  font-size: 12px;
 }
 
 .cardDelete {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 6px;
   border: none;
   background: none;
   color: $color-muted;
