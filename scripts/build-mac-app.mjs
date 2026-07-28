@@ -158,6 +158,54 @@ if (identity) {
   console.log('MAC_SIGN_IDENTITY unset — building an unsigned app')
 }
 
+const { MAC_NOTARY_APPLE_ID, MAC_NOTARY_PASSWORD, MAC_NOTARY_TEAM_ID } = process.env
+const canNotarise = Boolean(MAC_NOTARY_APPLE_ID && MAC_NOTARY_PASSWORD && MAC_NOTARY_TEAM_ID)
+
+/** Submit one file to Apple and block until it comes back. */
+const notarise = (target) =>
+  run('xcrun', [
+    'notarytool',
+    'submit',
+    target,
+    '--apple-id',
+    MAC_NOTARY_APPLE_ID,
+    '--password',
+    MAC_NOTARY_PASSWORD,
+    '--team-id',
+    MAC_NOTARY_TEAM_ID,
+    '--wait',
+  ])
+
+// --- 4b. Notarise and staple THE APP, before it goes into the disk image.
+//
+// This is the step that was missing, and the bug it caused was invisible from
+// the build log: we notarised the .dmg and stapled the .dmg, which is true and
+// says "notarised and stapled" — but the app dragged out of that image carried
+// no ticket of its own. `stapler validate Crewbox.app` on an installed copy
+// said so plainly.
+//
+// It matters here more than for most software. An un-stapled app makes
+// Gatekeeper ask Apple on first launch, and a crew box is routinely set up on
+// a network that cannot reach Apple at all. Stapling the disk image does not
+// help once the app has been copied to /Applications, which is the only thing
+// anyone actually does with it.
+//
+// So: notarise the app itself first, staple it, and only then build the image
+// around the stapled copy. Two round trips to Apple rather than one — a few
+// minutes of release time to make the product work in a field.
+if (identity && canNotarise) {
+  // notarytool takes an archive, not a bundle; ditto is what preserves the
+  // symlinks and extended attributes a signed .app depends on.
+  const zip = join(outDir, 'Crewbox-notarize.zip')
+  run('ditto', ['-c', '-k', '--keepParent', app, zip])
+  console.log('submitting the app for notarisation (this takes a few minutes)…')
+  notarise(zip)
+  run('xcrun', ['stapler', 'staple', app])
+  run('xcrun', ['stapler', 'validate', app])
+  rmSync(zip, { force: true })
+  console.log('app notarised and stapled')
+}
+
 // --- 5. Disk image.
 // A plain read-only image with a symlink to /Applications, which is the
 // drag-here convention every Mac user already knows.
@@ -185,30 +233,23 @@ rmSync(stage, { recursive: true, force: true })
 
 if (identity) run('codesign', ['--force', '--sign', identity, '--timestamp', dmg])
 
-// --- 6. Notarise and staple.
+// --- 6. Notarise and staple the disk image too.
 //
-// Stapling is the part that matters offline: it writes the notarisation
-// ticket into the .dmg so Gatekeeper clears it without asking Apple. A crew
-// box is often set up on a network that can't reach Apple at all, which is
-// exactly when an un-stapled app gets refused.
-const { MAC_NOTARY_APPLE_ID, MAC_NOTARY_PASSWORD, MAC_NOTARY_TEAM_ID } = process.env
-if (MAC_NOTARY_APPLE_ID && MAC_NOTARY_PASSWORD && MAC_NOTARY_TEAM_ID) {
-  console.log('submitting for notarisation (this takes a few minutes)…')
-  run('xcrun', [
-    'notarytool',
-    'submit',
-    dmg,
-    '--apple-id',
-    MAC_NOTARY_APPLE_ID,
-    '--password',
-    MAC_NOTARY_PASSWORD,
-    '--team-id',
-    MAC_NOTARY_TEAM_ID,
-    '--wait',
-  ])
+// The app inside is already stapled by this point, so this is about the
+// download itself: an un-stapled .dmg makes Gatekeeper phone Apple just to
+// open the image, which fails on the same networks that make an un-stapled
+// app fail.
+if (canNotarise) {
+  console.log('submitting the disk image for notarisation…')
+  notarise(dmg)
   run('xcrun', ['stapler', 'staple', dmg])
   run('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '-vv', dmg])
-  console.log('notarised and stapled')
+
+  // Prove it rather than announce it. The previous version printed
+  // "notarised and stapled" while the app inside had no ticket — a build log
+  // that reads correct is not evidence, so check the artefact.
+  run('xcrun', ['stapler', 'validate', dmg])
+  console.log('disk image notarised and stapled')
 } else {
   console.log('notary credentials unset — the .dmg is not notarised')
 }
