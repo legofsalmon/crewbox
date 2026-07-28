@@ -7,6 +7,7 @@ import {
   patchSubBoxDisplay,
   removeChannel,
   renameChannel,
+  setChannelInput,
   subBoxDisplayName,
   type PasteColumn,
 } from '../model/sheetDoc'
@@ -48,6 +49,7 @@ function ChannelHeader({
   isMatch?: boolean
 }) {
   const draft = useDraft(channel.label, (next) => renameChannel(doc, channel.id, next.trim()))
+  const input = useDraft(channel.input, (next) => setChannelInput(doc, channel.id, next.trim()))
 
   const handleRemove = () => {
     if (
@@ -67,6 +69,17 @@ function ChannelHeader({
           className={`${styles.channelInput} ${isMatch ? styles.matchCell : ''}`}
           aria-label={`Channel ${channel.label} name`}
           {...draft.inputProps}
+        />
+        {/* The house input: what is on this channel all day, whoever is
+            playing. Lives on the channel rather than in every artist's
+            column, because on a festival stage only the sub-box and the mic
+            change between acts. */}
+        <input
+          type="text"
+          className={styles.houseInput}
+          placeholder="input"
+          aria-label={`Input on channel ${channel.label}`}
+          {...input.inputProps}
         />
         <span className={styles.channelActions}>
           <button
@@ -202,7 +215,7 @@ export default function PatchGrid({
           </tr>
           <tr>
             <th scope="col" className={`${styles.fieldHeader} ${styles.stickyCorner}`}>
-              Ch
+              Ch · Input
             </th>
             {artists.map((artist) => (
               <Fragment key={artist.id}>

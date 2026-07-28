@@ -13,6 +13,7 @@ import { PATCH_FIELDS, patchKey, type SheetSnapshot } from '../model/types'
 import Toolbar from './Toolbar'
 import PatchGrid from './PatchGrid'
 import SubBoxManager from './SubBoxManager'
+import StagePatch from './StagePatch'
 import LineupManager from './LineupManager'
 import VersionManager from './VersionManager'
 import styles from './SheetView.module.scss'
@@ -156,6 +157,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   const { doc, snapshot, loaded, undoManager } = useSheet(sheetId)
   const { canUndo, canRedo, undo, redo } = useUndoRedo(undoManager)
   const [showSubBoxes, setShowSubBoxes] = useState(false)
+  const [showStagePatch, setShowStagePatch] = useState(false)
   const [showLineup, setShowLineup] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showShare, setShowShare] = useState(false)
@@ -251,6 +253,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
         doc={doc}
         snapshot={snapshot}
         onOpenSubBoxes={() => setShowSubBoxes(true)}
+        onOpenStagePatch={() => setShowStagePatch(true)}
         onOpenLineup={() => setShowLineup(true)}
         onOpenVersions={() => setShowVersions(true)}
         onShare={() => setShowShare(true)}
@@ -279,6 +282,9 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
 
       {showSubBoxes && (
         <SubBoxManager doc={doc} snapshot={snapshot} onClose={() => setShowSubBoxes(false)} />
+      )}
+      {showStagePatch && (
+        <StagePatch snapshot={snapshot} onClose={() => setShowStagePatch(false)} />
       )}
       {showLineup && (
         <LineupManager doc={doc} snapshot={snapshot} onClose={() => setShowLineup(false)} />

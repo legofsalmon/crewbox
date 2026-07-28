@@ -101,7 +101,9 @@ $artist-row-height: 38px;
   z-index: 2;
   background: $grid-header-bg;
   padding: 0;
-  min-width: 72px;
+  // Wider than it was: the channel number now carries the house input beside
+  // it, which is the sheet's spine and has to be readable without scrolling.
+  min-width: 168px;
 }
 
 // The corner cells pin in both axes and sit above everything else.
@@ -127,7 +129,8 @@ $artist-row-height: 38px;
 }
 
 .channelInput {
-  width: 52px;
+  width: 40px;
+  flex: none;
   border: none;
   background: transparent;
   font-weight: 600;
@@ -140,6 +143,31 @@ $artist-row-height: 38px;
     outline-offset: -2px;
     border-radius: $radius-small;
     background: $color-surface;
+  }
+}
+
+// The input that is the same all day. Lighter than the channel number so
+// the number still reads first when you are counting down the column.
+.houseInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  color: $color-ink-soft;
+  padding: 6px 4px;
+
+  &::placeholder {
+    color: $color-ink-soft;
+    opacity: 0.5;
+  }
+
+  &:focus {
+    outline: 2px solid $color-primary;
+    outline-offset: -2px;
+    border-radius: $radius-small;
+    background: $color-surface;
+    color: $color-ink;
   }
 }
 

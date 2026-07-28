@@ -1,4 +1,5 @@
 import { PATCH_FIELDS, PATCH_FIELD_LABELS, type PatchField } from './types'
+import { festivalSheetFromCsv } from './importFestival'
 import type { ImportedSheetData } from './sheetDoc'
 
 export interface ImportResult {
@@ -28,30 +29,45 @@ const matchField = (header: string): PatchField | 'channel' | null => {
 
 const isBlankRow = (row: string[]) => row.every((cell) => cell.trim() === '')
 
-/** Detect a Live Patch CSV export: field labels repeating in groups of five. */
-const isOwnExport = (rows: string[][]): boolean => {
+/**
+ * Detect crewbox's own export: field labels repeating in groups of five.
+ *
+ * Two widths are accepted. Current exports lead with Channel and Input;
+ * exports from before the house input list existed lead with Channel alone,
+ * and a crew with last season's CSV on a USB stick should not be told their
+ * own file is foreign. Returns how many leading columns to skip, or null.
+ */
+const ownExportLead = (rows: string[][]): number | null => {
   const header = rows[1]
-  if (!header || header[0] !== 'Channel' || (header.length - 1) % FIELD_LABELS.length !== 0) {
-    return false
+  if (!header || header[0] !== 'Channel') return null
+  const lead = header[1] === 'Input' ? 2 : 1
+  if ((header.length - lead) % FIELD_LABELS.length !== 0) return null
+  for (let i = lead; i < header.length; i++) {
+    if (header[i] !== FIELD_LABELS[(i - lead) % FIELD_LABELS.length]) return null
   }
-  for (let i = 1; i < header.length; i++) {
-    if (header[i] !== FIELD_LABELS[(i - 1) % FIELD_LABELS.length]) return false
-  }
-  return true
+  return lead
 }
 
-const fromOwnExport = (rows: string[][]): ImportResult => {
-  const artistCount = (rows[1].length - 1) / FIELD_LABELS.length
-  const artists = Array.from({ length: artistCount }, (_, i) => ({
-    name: rows[0]?.[1 + i * FIELD_LABELS.length]?.trim() || `Artist ${i + 1}`,
-  }))
+const fromOwnExport = (rows: string[][], lead: number): ImportResult => {
+  const artistCount = (rows[1].length - lead) / FIELD_LABELS.length
+  const artists = Array.from({ length: artistCount }, (_, i) => {
+    const at = lead + i * FIELD_LABELS.length
+    return {
+      name: rows[0]?.[at]?.trim() || `Artist ${i + 1}`,
+      // Written into the spare cell beside the name; blank on older exports.
+      spec: rows[0]?.[at + 1]?.trim() ?? '',
+    }
+  })
   const dataRows = rows.slice(2).filter((row) => !isBlankRow(row))
-  const channels = dataRows.map((row, i) => ({ label: row[0]?.trim() || String(i + 1) }))
+  const channels = dataRows.map((row, i) => ({
+    label: row[0]?.trim() || String(i + 1),
+    input: lead === 2 ? (row[1]?.trim() ?? '') : '',
+  }))
   const patches: ImportedSheetData['patches'] = artists.map((_, artistIndex) =>
     dataRows.map((row) => {
       const entry: Partial<Record<PatchField, string>> = {}
       PATCH_FIELDS.forEach((field, fieldIndex) => {
-        const value = row[1 + artistIndex * FIELD_LABELS.length + fieldIndex]
+        const value = row[lead + artistIndex * FIELD_LABELS.length + fieldIndex]
         if (value?.trim()) entry[field] = value.trim()
       })
       return Object.keys(entry).length > 0 ? entry : undefined
@@ -86,13 +102,24 @@ const fromGenericSheet = (rows: string[][]): ImportResult => {
 }
 
 /**
- * Turn parsed CSV rows into an importable sheet. Recognises Live Patch's own
- * export format (multi-artist round trip); anything else is treated as a
- * generic single-artist patch sheet with fuzzy header matching.
+ * Turn parsed CSV rows into an importable sheet.
+ *
+ * Three shapes, in order of how confidently they can be recognised: crewbox's
+ * own export (a round trip), the festival master-patch layout crews keep in
+ * Google Sheets (see importFestival.ts), and failing both, a generic
+ * single-artist sheet with fuzzy header matching.
+ *
+ * The festival parser is given the rows *before* blanks are stripped, because
+ * its layout is positional — the act names sit a fixed distance above the
+ * header — and dropping a spacer row would move them.
  */
 export const sheetFromCsv = (rows: string[][]): ImportResult => {
   const nonEmpty = rows.filter((row) => !isBlankRow(row))
   if (nonEmpty.length === 0)
     return { data: { channels: [], artists: [], patches: [] }, skippedColumns: [] }
-  return isOwnExport(nonEmpty) ? fromOwnExport(nonEmpty) : fromGenericSheet(nonEmpty)
+  const lead = ownExportLead(nonEmpty)
+  if (lead !== null) return fromOwnExport(nonEmpty, lead)
+  const festival = festivalSheetFromCsv(rows)
+  if (festival.matched) return { data: festival.data, skippedColumns: [] }
+  return fromGenericSheet(nonEmpty)
 }

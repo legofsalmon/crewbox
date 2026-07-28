@@ -8,20 +8,25 @@ export { escapeCsvField, parseCsv, parseDelimited, parseTsv } from '../../_share
  * Render a sheet as CSV. Two header rows: the artist names (each spanning
  * their five field columns) and the field labels; then one row per channel.
  * CRLF line endings and a UTF-8 BOM keep Excel happy.
+ *
+ * The first two columns are the channel and its house input — the spine the
+ * whole sheet hangs off, and the pair a festival sheet puts down its left
+ * edge. Each artist's spec rides in the spare cell beside their name in the
+ * top row, where the field parser never looks, so a round trip keeps it.
  */
 export const sheetToCsv = (sheet: SheetSnapshot): string => {
   const rows: string[][] = []
 
-  const artistRow = ['']
-  const fieldRow = ['Channel']
+  const artistRow = ['', '']
+  const fieldRow = ['Channel', 'Input']
   for (const artist of sheet.artists) {
-    artistRow.push(artist.name, '', '', '', '')
+    artistRow.push(artist.name, artist.spec, '', '', '')
     for (const field of PATCH_FIELDS) fieldRow.push(PATCH_FIELD_LABELS[field])
   }
   rows.push(artistRow, fieldRow)
 
   for (const channel of sheet.channels) {
-    const row = [channel.label]
+    const row = [channel.label, channel.input]
     for (const artist of sheet.artists) {
       const entry = sheet.patches[patchKey(artist.id, channel.id)]
       if (!entry) {

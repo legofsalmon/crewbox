@@ -90,7 +90,7 @@ export const initSheet = (doc: Y.Doc, options: InitSheetOptions): void => {
     meta.set('created', now)
     const count = options.channelCount ?? DEFAULT_CHANNEL_COUNT
     for (let i = 0; i < count; i++) {
-      channels.push([mapFrom({ id: newId(), label: String(i + 1) })])
+      channels.push([mapFrom({ id: newId(), label: String(i + 1), input: '' })])
     }
     artists.push([
       mapFrom({
@@ -98,6 +98,7 @@ export const initSheet = (doc: Y.Doc, options: InitSheetOptions): void => {
         name: 'Artist 1',
         startTime: '19:00',
         endTime: '20:00',
+        spec: '',
         notes: '',
         files: new Y.Array<ArtistFile>(),
       }),
@@ -151,7 +152,7 @@ export const addChannel = (doc: Y.Doc, afterChannelId?: string): string => {
     const insertAt = index === null ? channels.length : index + 1
     // A placeholder number; renumbering below gives it the right one, and
     // gives it to everything under it too.
-    channels.insert(insertAt, [mapFrom({ id, label: String(insertAt + 1) })])
+    channels.insert(insertAt, [mapFrom({ id, label: String(insertAt + 1), input: '' })])
     renumberChannels(channels)
   })
   return id
@@ -161,6 +162,21 @@ export const renameChannel = (doc: Y.Doc, channelId: string, label: string) => {
   const { channels } = getSheetRoots(doc)
   transact(doc, () => {
     findById(channels, channelId)?.item.set('label', label)
+  })
+}
+
+/**
+ * Set the house input on a channel — the name that is the same all day.
+ *
+ * This is the sheet's spine: a festival stage patches KICK IN on 1 whoever is
+ * playing, and only the sub-box and the mic change between acts. Keeping it
+ * here rather than in every artist's column is the difference between typing
+ * it once and typing it once per act.
+ */
+export const setChannelInput = (doc: Y.Doc, channelId: string, input: string) => {
+  const { channels } = getSheetRoots(doc)
+  transact(doc, () => {
+    findById(channels, channelId)?.item.set('input', input)
   })
 }
 
@@ -190,6 +206,7 @@ export const addArtist = (doc: Y.Doc): string => {
         name: `Artist ${artists.length + 1}`,
         startTime: '19:00',
         endTime: '20:00',
+        spec: '',
         notes: '',
         files: new Y.Array<ArtistFile>(),
       }),
@@ -313,6 +330,21 @@ export const removeSubBox = (doc: Y.Doc, subBoxId: string) => {
 export const subBoxDisplayName = (subBox: Pick<SubBox, 'name' | 'stagePosition'>): string =>
   subBox.stagePosition ? `${subBox.name} (${subBox.stagePosition})` : subBox.name
 
+/**
+ * Split "BSNAKE 7" into the box and the tail on it.
+ *
+ * A trailing number is the tail. A box whose whole name is a number isn't
+ * split, because "12" on its own names nothing — it would turn a cell reading
+ * "12" into tail 12 of a box with no name.
+ */
+export const splitSubBoxRef = (raw: string): { base: string; tail: number | null } => {
+  const trimmed = raw.trim()
+  const match = /^(.*?)[\s-]*(\d+)$/.exec(trimmed)
+  const base = match?.[1]?.trim() ?? ''
+  if (!match || !base) return { base: trimmed, tail: null }
+  return { base, tail: Number(match[2]) }
+}
+
 // --- Patches ----------------------------------------------------------------
 
 const getOrCreateEntry = (patches: Y.Map<YEntity>, key: string): YEntity => {
@@ -348,9 +380,21 @@ const writeFieldValue = (
 ) => {
   const entry = getOrCreateEntry(roots.patches, patchKey(artistId, channelId))
   if (field === 'subBox') {
-    const match = resolveSubBoxRef(roots.subBoxes, value)
+    // The whole string is tried first, so a box someone genuinely named
+    // "SB 1" still resolves and sheets written before tails existed keep
+    // meaning what they meant. Only then is a trailing number read as a tail.
+    const whole = resolveSubBoxRef(roots.subBoxes, value)
+    if (whole) {
+      entry.set('subBoxId', whole.id)
+      entry.set('subBoxText', '')
+      entry.set('subBoxTail', null)
+      return
+    }
+    const { base, tail } = splitSubBoxRef(value)
+    const match = resolveSubBoxRef(roots.subBoxes, base)
     entry.set('subBoxId', match ? match.id : null)
-    entry.set('subBoxText', match ? '' : value)
+    entry.set('subBoxText', match ? '' : base)
+    entry.set('subBoxTail', tail)
   } else {
     entry.set(field, value)
   }
@@ -432,8 +476,11 @@ export const setPatchSubBox = (doc: Y.Doc, artistId: string, channelId: string, 
 // --- CSV import -------------------------------------------------------------
 
 export interface ImportedSheetData {
-  channels: { label: string }[]
-  artists: { name: string }[]
+  /** `input` is the house input on that channel, shared by every artist. */
+  channels: { label: string; input?: string }[]
+  artists: { name: string; startTime?: string; endTime?: string; spec?: string }[]
+  /** Sub-boxes the file declared, so cells resolve to them rather than to text. */
+  subBoxes?: Array<Omit<SubBox, 'id'>>
   /** patches[artistIndex][channelIndex] — sparse. */
   patches: Array<Array<Partial<Record<PatchField, string>> | undefined>>
 }
@@ -456,9 +503,18 @@ export const buildImportedSheet = (
     meta.set('date', todayIso())
     meta.set('created', now)
 
+    // Sub-boxes go in before any patch cell is written: `writeFieldValue`
+    // resolves a cell's text against the defined boxes, so a box that arrives
+    // afterwards leaves every cell that named it stranded as free text.
+    for (const subBox of data.subBoxes ?? []) {
+      roots.subBoxes.push([mapFrom({ id: newId(), ...subBox })])
+    }
+
     const channelIds = data.channels.map((channel, i) => {
       const id = newId()
-      channels.push([mapFrom({ id, label: channel.label.trim() || String(i + 1) })])
+      channels.push([
+        mapFrom({ id, label: channel.label.trim() || String(i + 1), input: channel.input ?? '' }),
+      ])
       return id
     })
 
@@ -468,8 +524,9 @@ export const buildImportedSheet = (
         mapFrom({
           id: artistId,
           name: artist.name.trim() || `Artist ${artistIndex + 1}`,
-          startTime: '19:00',
-          endTime: '20:00',
+          startTime: artist.startTime ?? '19:00',
+          endTime: artist.endTime ?? '20:00',
+          spec: artist.spec ?? '',
           notes: '',
           files: new Y.Array<ArtistFile>(),
         }),
@@ -524,10 +581,16 @@ export const snapshotSheet = (doc: Y.Doc): SheetSnapshot => {
       date: (meta.get('date') as string) ?? '',
       created: (meta.get('created') as string) ?? '',
     } satisfies SheetMeta,
-    channels: channels.toArray().map((m) => m.toJSON() as Channel),
+    // Defaults first, so a sheet written before a field existed reads back
+    // with an empty one rather than `undefined` reaching the grid. The casts
+    // are to Partial deliberately: the stored maps genuinely lack these keys,
+    // and claiming otherwise is what would let `undefined` through.
+    channels: channels
+      .toArray()
+      .map((m) => ({ input: '', ...(m.toJSON() as Partial<Channel>) }) as Channel),
     artists: artists
       .toArray()
-      .map((m) => ({ files: [], ...(m.toJSON() as Omit<Artist, 'files'>) })),
+      .map((m) => ({ files: [], spec: '', ...(m.toJSON() as Partial<Artist>) }) as Artist),
     subBoxes: subBoxes.toArray().map((m) => m.toJSON() as SubBox),
     patches: patchesJson,
   }
@@ -564,11 +627,18 @@ export const applySnapshot = (doc: Y.Doc, snapshot: SheetSnapshot): void => {
   })
 }
 
-/** The text a patch cell's sub-box column should display. */
+/**
+ * The text a patch cell's sub-box column should display.
+ *
+ * The cell is an editable input: whatever this returns is what gets committed
+ * back through `setPatchSubBox` when someone tabs out of it, so it has to be
+ * something that parses back to the same thing. That is why a tailed cell
+ * drops the "(POS)" suffix — "PINK 7 (USC)" would not re-resolve, and a cell
+ * that quietly loses its sub-box reference on a stray keystroke is worse than
+ * one that doesn't repeat the stage position it already shows in the manager.
+ */
 export const patchSubBoxDisplay = (entry: PatchEntry, subBoxes: SubBox[]): string => {
-  if (entry.subBoxId) {
-    const sb = subBoxes.find((s) => s.id === entry.subBoxId)
-    if (sb) return subBoxDisplayName(sb)
-  }
-  return entry.subBoxText
+  const box = entry.subBoxId ? subBoxes.find((s) => s.id === entry.subBoxId) : undefined
+  if (entry.subBoxTail === null) return box ? subBoxDisplayName(box) : entry.subBoxText
+  return `${box ? box.name : entry.subBoxText} ${entry.subBoxTail}`.trim()
 }

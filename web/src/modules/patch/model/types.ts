@@ -10,10 +10,20 @@ export const PATCH_FIELD_LABELS: Record<PatchField, string> = {
   stand: 'Stand',
 }
 
-/** A shared row of the sheet ("Channel 1", "Kick", ...). */
+/**
+ * A shared row of the sheet.
+ *
+ * `label` is the desk input number ("1", "12") or a name someone typed for a
+ * row that isn't numbered ("SUB L", "Talkback"). `input` is the house input
+ * on that channel — "KICK IN", "FRONT VOX 1" — and belongs to the sheet
+ * rather than to any one artist, because a festival stage patches the same
+ * inputs all day and only the sub-box and the mic change between acts. An
+ * artist's own `input` overrides it for that act alone.
+ */
 export interface Channel {
   id: string
   label: string
+  input: string
 }
 
 /** Metadata for a file stored on the relay; the bytes live there, not in the doc. */
@@ -29,6 +39,9 @@ export interface Artist {
   name: string
   startTime: string
   endTime: string
+  /** What the act brings and needs — the "SPEC:" line on a paper sheet. */
+  spec: string
+  /** Anything else. The "Additional info" box. */
   notes: string
   files: ArtistFile[]
 }
@@ -44,10 +57,16 @@ export interface SubBox {
 /**
  * One artist's patch for one channel. The sub-box column either references a
  * defined sub-box (subBoxId) or holds free text (subBoxText) — never both.
+ *
+ * `subBoxTail` is which numbered tail on that box — the 7 in "BSNAKE 7". It
+ * is what turns the sheet round: with it, "which channel is P7" can be
+ * answered by reading the cells instead of by keeping a second table by hand.
+ * Null when nobody said, which is normal for a box referred to by name only.
  */
 export interface PatchEntry {
   subBoxId: string | null
   subBoxText: string
+  subBoxTail: number | null
   input: string
   description: string
   micDi: string
@@ -85,6 +104,7 @@ export const patchKey = (artistId: string, channelId: string) => `${artistId}:${
 export const emptyPatchEntry = (): PatchEntry => ({
   subBoxId: null,
   subBoxText: '',
+  subBoxTail: null,
   input: '',
   description: '',
   micDi: '',
@@ -95,6 +115,6 @@ export const emptyPatchEntry = (): PatchEntry => ({
 export const patchEntryHasContent = (entry: PatchEntry | undefined): boolean => {
   if (!entry) return false
   return Object.entries(entry).some(([k, v]) =>
-    k === 'subBoxId' ? v !== null : typeof v === 'string' && v !== ''
+    k === 'subBoxId' || k === 'subBoxTail' ? v !== null : typeof v === 'string' && v !== ''
   )
 }
