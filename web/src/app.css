@@ -1767,6 +1767,59 @@ ul {
 
 .admin-head h2 {
   font-size: 17px;
+  /* Pushes Lock and the close button together on the right, now that the
+     header holds three things rather than two. */
+  margin-right: auto;
+}
+
+.admin-head .admin-btn {
+  margin-right: 8px;
+}
+
+/* The password gate in front of the panel — narrower than the panel proper,
+   because it is one field and a sentence. */
+.admin-unlock {
+  max-width: 400px;
+}
+
+.admin-unlock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px 20px;
+}
+
+.admin-unlock-form label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.admin-unlock-form input {
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.admin-error {
+  font-size: 13.5px;
+  color: var(--danger);
+}
+
+.admin-btn-primary {
+  height: 42px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.admin-btn-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
 }
 
 .admin-note {

@@ -13,6 +13,22 @@ export interface ReadinessCheck {
   fix?: string
 }
 
+/**
+ * What an admin request needs: the crew session, plus proof that someone
+ * typed the admin password. Passed as one object so a new admin call can't
+ * quietly forget the second half — the panel is locked by default and every
+ * route behind it checks both.
+ */
+export interface AdminAuth {
+  token: string
+  adminToken: string
+}
+
+const adminHeaders = (auth: AdminAuth): Record<string, string> => ({
+  authorization: `Bearer ${auth.token}`,
+  'x-admin-token': auth.adminToken,
+})
+
 export interface AdminSettings {
   settings: { eventName: string; wifiSsid: string }
   serverInfo: {
@@ -22,6 +38,8 @@ export interface AdminSettings {
     onlineUsers: number
     voiceEnabled: boolean
     eventPin: string
+    /** True when ADMIN_PASSWORD is set, so the panel can't change it here. */
+    adminPasswordFromEnv: boolean
   }
   /** What this box can actually do right now — see server/src/readiness.ts. */
   readiness: ReadinessCheck[]
@@ -133,22 +151,36 @@ export function fetchHistory(
   })
 }
 
-export function adminResetPin(token: string, userId: string, pin: string): Promise<{ ok: true }> {
-  return request(`/api/admin/users/${userId}/pin`, {
+/** Trade the admin password for a token. Held in memory only — see the store. */
+export function adminUnlock(token: string, password: string): Promise<{ adminToken: string }> {
+  return request('/api/admin/unlock', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+}
+
+/** Hand the unlock back rather than waiting for it to expire. */
+export function adminLock(auth: AdminAuth): Promise<{ ok: true }> {
+  return request('/api/admin/lock', { method: 'POST', headers: adminHeaders(auth) })
+}
+
+export function adminResetPin(auth: AdminAuth, userId: string, pin: string): Promise<{ ok: true }> {
+  return request(`/api/admin/users/${userId}/pin`, {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
     body: JSON.stringify({ pin }),
   })
 }
 
 export function adminUpdateChannel(
-  token: string,
+  auth: AdminAuth,
   channelId: string,
   patch: { name?: string; topic?: string; retired?: boolean }
 ): Promise<{ channel: Channel }> {
   return request(`/api/admin/channels/${channelId}`, {
     method: 'PATCH',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
     body: JSON.stringify(patch),
   })
 }
@@ -157,10 +189,21 @@ export function getConfig(): Promise<PublicConfig> {
   return request('/api/config')
 }
 
-export function deleteMessage(token: string, messageId: string): Promise<{ ok: true }> {
+/**
+ * Delete a shared file. The author needs no admin token; anyone else does,
+ * which is why it's optional here rather than an AdminAuth.
+ */
+export function deleteMessage(
+  token: string,
+  messageId: string,
+  adminToken?: string
+): Promise<{ ok: true }> {
   return request(`/api/messages/${messageId}`, {
     method: 'DELETE',
-    headers: { authorization: `Bearer ${token}` },
+    headers: {
+      authorization: `Bearer ${token}`,
+      ...(adminToken ? { 'x-admin-token': adminToken } : {}),
+    },
   })
 }
 
@@ -172,17 +215,15 @@ export function deleteAccount(token: string): Promise<{ ok: true }> {
   })
 }
 
-export function adminGetEnvironment(token: string, refresh = false): Promise<EnvironmentReport> {
+export function adminGetEnvironment(auth: AdminAuth, refresh = false): Promise<EnvironmentReport> {
   return request(`/api/admin/environment${refresh ? '?refresh=1' : ''}`, {
-    headers: { authorization: `Bearer ${token}` },
+    headers: adminHeaders(auth),
   })
 }
 
 /** The local DNS config for this box, as a file to put on the venue router. */
-export async function adminDnsConfig(token: string): Promise<Blob> {
-  const res = await fetch(apiUrl('/api/admin/dns-config'), {
-    headers: { authorization: `Bearer ${token}` },
-  })
+export async function adminDnsConfig(auth: AdminAuth): Promise<Blob> {
+  const res = await fetch(apiUrl('/api/admin/dns-config'), { headers: adminHeaders(auth) })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string }
     throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)
@@ -190,26 +231,32 @@ export async function adminDnsConfig(token: string): Promise<Blob> {
   return res.blob()
 }
 
-export function adminGetSettings(token: string): Promise<AdminSettings> {
-  return request('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } })
+export function adminGetSettings(auth: AdminAuth): Promise<AdminSettings> {
+  return request('/api/admin/settings', { headers: adminHeaders(auth) })
 }
 
 export function adminUpdateSettings(
-  token: string,
-  patch: { eventName?: string; wifiSsid?: string; eventPin?: string }
-): Promise<{ settings: { eventName: string; wifiSsid: string; eventPin: string } }> {
+  auth: AdminAuth,
+  patch: { eventName?: string; wifiSsid?: string; eventPin?: string; adminPassword?: string }
+): Promise<{
+  settings: { eventName: string; wifiSsid: string; eventPin: string }
+  /**
+   * Present only when the admin password changed. Changing it revokes every
+   * unlock including this one, so the caller must swap in this replacement or
+   * its very next request is locked out.
+   */
+  adminToken?: string
+}> {
   return request('/api/admin/settings', {
     method: 'PATCH',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
     body: JSON.stringify(patch),
   })
 }
 
 /** The export is downloaded as a blob so the UI can save it as a file. */
-export async function adminExport(token: string): Promise<Blob> {
-  const res = await fetch(apiUrl('/api/admin/export'), {
-    headers: { authorization: `Bearer ${token}` },
-  })
+export async function adminExport(auth: AdminAuth): Promise<Blob> {
+  const res = await fetch(apiUrl('/api/admin/export'), { headers: adminHeaders(auth) })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string }
     throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)

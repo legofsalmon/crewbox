@@ -98,16 +98,17 @@ export default function Sidebar() {
                   : 'Offline'}
             </span>
           </div>
-          {me.role === 'admin' && (
-            <button
-              className="icon-btn"
-              title="Admin panel"
-              aria-label="Admin panel"
-              onClick={() => setAdminOpen(true)}
-            >
-              <Icon d={ICON_GEAR} circle />
-            </button>
-          )}
+          {/* Always shown. The panel asks for the admin password when it
+              opens, so hiding the cog would only mean nobody could find
+              their way in — which is how a box ends up with no admin. */}
+          <button
+            className="icon-btn"
+            title="Admin panel"
+            aria-label="Admin panel"
+            onClick={() => setAdminOpen(true)}
+          >
+            <Icon d={ICON_GEAR} circle />
+          </button>
           <button
             className="icon-btn"
             title={sounds ? 'Mute alert sounds' : 'Unmute alert sounds'}

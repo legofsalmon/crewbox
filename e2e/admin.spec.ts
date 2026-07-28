@@ -41,3 +41,42 @@ test('setup names the event, then closes behind the first joiner', async ({ page
 
   await crew.context().close()
 })
+
+/**
+ * The lockout this whole design replaces.
+ *
+ * Admin used to belong to whoever joined first. On a real box that admin
+ * deleted their own account, and the panel became unreachable — no cog, no
+ * route, nothing short of editing SQLite. So the two things worth proving
+ * from a browser are that the cog is there for an ordinary crew member, and
+ * that the password is what decides whether it opens.
+ */
+test('the admin panel is behind a password, and everyone can reach the door', async ({
+  browser,
+}) => {
+  const crew = await newDevice(browser, 'Ordinary Crew')
+
+  // Visible to a plain member — hiding it is how a box loses its admin.
+  const cog = crew.getByRole('button', { name: 'Admin panel' })
+  await expect(cog).toBeVisible()
+  await cog.click()
+
+  const password = crew.getByLabel('Admin password')
+  await expect(password).toBeVisible()
+
+  // The event PIN is on the poster, so it is the first thing anyone tries.
+  await password.fill('4242')
+  await crew.getByRole('button', { name: 'Unlock' }).click()
+  await expect(crew.getByRole('alert')).toContainText(/not the admin password/i)
+
+  await password.fill('e2e-admin-password')
+  await crew.getByRole('button', { name: 'Unlock' }).click()
+  await expect(crew.getByRole('heading', { name: 'Crew' })).toBeVisible()
+
+  // Lock puts it back, so handing the phone over doesn't hand over the box.
+  await crew.getByRole('button', { name: 'Lock' }).click()
+  await cog.click()
+  await expect(crew.getByLabel('Admin password')).toBeVisible()
+
+  await crew.context().close()
+})

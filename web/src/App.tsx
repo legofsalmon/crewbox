@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar.tsx'
 import ChannelView from './components/ChannelView.tsx'
 import SearchOverlay from './components/SearchOverlay.tsx'
 import AdminPanel from './components/AdminPanel.tsx'
+import AdminUnlock from './components/AdminUnlock.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
 import FileDetail from './components/FileDetail.tsx'
@@ -51,6 +52,7 @@ function Shell() {
   const searchOpen = useStore((s) => s.searchOpen)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
   const adminOpen = useStore((s) => s.adminOpen)
+  const adminToken = useStore((s) => s.adminToken)
   const audioSettingsOpen = useStore((s) => s.audioSettingsOpen)
   const fileDetail = useStore((s) => s.fileDetail)
   const connection = useStore((s) => s.connection)
@@ -109,7 +111,9 @@ function Shell() {
         </main>
       </div>
       {searchOpen && <SearchOverlay />}
-      {adminOpen && <AdminPanel />}
+      {/* The cog is visible to everyone; the password is what gates the
+          panel, so the gate lives here rather than around the button. */}
+      {adminOpen && (adminToken ? <AdminPanel /> : <AdminUnlock />)}
       {audioSettingsOpen && <AudioSettings />}
       {fileDetail && <FileDetail />}
       <IosInstallTip />
