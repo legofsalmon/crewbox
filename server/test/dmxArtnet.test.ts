@@ -7,8 +7,8 @@ import { artDmx, artPollReply } from './dmxPackets.ts'
 
 const dmx = (buf: Buffer) => {
   const packet = parseArtNet(buf, '2.0.0.10')
-  expect(packet?.kind).toBe('dmx')
-  return packet!.kind === 'dmx' ? packet.frame : null!
+  if (packet?.kind !== 'dmx') throw new Error('expected an ArtDmx packet')
+  return packet.frame
 }
 
 describe('Art-Net: what it accepts', () => {

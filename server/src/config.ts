@@ -1,4 +1,10 @@
 import { resolve } from 'node:path'
+import { parseUniverseList, type DmxMode } from './dmx/listener.ts'
+
+/** `CREWBOX_DMX`, defaulting to off — a box never listens unless asked. */
+function dmxMode(value: string | undefined): DmxMode {
+  return value === 'artnet' || value === 'sacn' || value === 'both' ? value : 'off'
+}
 
 /** Parse a positive-integer day count, falling back to `fallback` on junk/≤0. */
 function positiveDays(value: string | undefined, fallback: number): number {
@@ -54,6 +60,30 @@ export const config = {
         .filter(Boolean)
     ),
   ],
+  /**
+   * Listening to a lighting network. Off unless asked for: a box that has not
+   * been told to listen opens no sockets, and crewbox never transmits on one
+   * either way (see server/src/dmx/listener.ts).
+   */
+  dmx: {
+    mode: dmxMode(process.env.CREWBOX_DMX),
+    /**
+     * Interface to join sACN multicast groups on — **not** a bind address.
+     * The socket always binds 0.0.0.0; binding it to a specific unicast
+     * address stops multicast arriving at all on Linux. On a box with more
+     * than one card this is effectively required, or the kernel picks by
+     * routing table and may join on the wrong one and hear nothing.
+     */
+    interfaceIp: process.env.CREWBOX_DMX_IFACE || undefined,
+    universes: parseUniverseList(process.env.CREWBOX_DMX_UNIVERSES ?? '1-16'),
+    /**
+     * Plot universe that Art-Net universe 0 corresponds to. Art-Net counts
+     * from 0 and a plot counts from 1, and getting this wrong checks every
+     * fixture against the wrong universe — 512 channels out, invisible on
+     * paper and very visible on stage.
+     */
+    artnetBase: Number(process.env.CREWBOX_DMX_ARTNET_BASE ?? 1) || 0,
+  },
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
     /**

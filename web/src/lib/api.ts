@@ -44,6 +44,12 @@ export interface AdminSettings {
   /** What this box can actually do right now — see server/src/readiness.ts. */
   readiness: ReadinessCheck[]
   readinessState: ReadinessState
+  /**
+   * The lighting network, if this box was asked to listen to one. Its own
+   * list rather than folded into `readiness`: a rig can be fine while the box
+   * is not, and the other way round. Optional so an older box still parses.
+   */
+  lighting?: ReadinessCheck[]
 }
 
 export interface EnvCheck {

@@ -2226,6 +2226,18 @@ ul {
   gap: 2px;
 }
 
+/* Separates the lighting-network rows from the box's own. They are the same
+   idea at a different scope, so they look the same and are only labelled
+   apart. */
+.admin-subhead {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .readiness-row {
   display: flex;
   gap: 10px;

@@ -17,6 +17,8 @@ import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT } from './livekit.ts'
 import { boxReadiness, worstState } from './readiness.ts'
+import type { DmxListener } from './dmx/listener.ts'
+import { dmxReadiness } from './dmx/readiness.ts'
 import { setupPage } from './setup.ts'
 import {
   isVoiceUpgrade,
@@ -156,6 +158,11 @@ export interface AppDeps {
   tls?: { cert: Buffer; key: Buffer; ca?: Buffer }
   /** Environment probes; injected in tests so nothing touches a network. */
   probes?: Probes
+  /**
+   * A running lighting-network listener, when this box was asked to listen.
+   * Omit and the admin panel says so rather than reporting a silent rig.
+   */
+  dmx?: DmxListener
   logger?: boolean
 }
 
@@ -183,6 +190,7 @@ export function buildApp({
   dataDir,
   tls,
   probes,
+  dmx,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -996,6 +1004,23 @@ export function buildApp({
       },
       readiness,
       readinessState: worstState(readiness),
+      // Its own panel rather than folded into the box checks: a lighting
+      // network is a separate thing that can be fine while the box is not,
+      // and the other way round.
+      lighting: dmx
+        ? dmxReadiness(dmx.snapshot(), dmx.state.health(), Date.now())
+        : dmxReadiness(
+            {
+              mode: 'off',
+              artnet: { listening: false, error: null },
+              sacn: { listening: false, error: null, joined: [], failed: [] },
+              interfaceIp: null,
+              packets: 0,
+              ignored: 0,
+            },
+            [],
+            Date.now()
+          ),
     }
   })
 

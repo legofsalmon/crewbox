@@ -5,7 +5,15 @@ universe, DMX address and channel footprint. It has no idea what the rig is
 actually doing. This is the spec for closing that gap by listening to Art-Net
 and sACN on the lighting network.
 
-This is a plan, not a description. Nothing here is built yet.
+**Status.** Steps 0 to 2 are built: the sniffer, both parsers, the state
+machine, the listener, the config and the admin panel. Steps 3 (fixture
+verification in the lighting module) and 4 (live levels) are not.
+
+**And nothing here has met a real rig yet.** Every packet the tests use was
+synthesised from the specs below by the same hand that wrote the parsers, so
+the suite proves internal consistency and not correctness on the wire. That is
+what `scripts/dmx-sniff.mjs --dump` is for. Until a capture lands, treat the
+byte-level detail as careful but unconfirmed.
 
 ## The one rule
 
@@ -264,9 +272,11 @@ and the runbook must say so rather than leaving it to be discovered.
 - A loopback integration test that sends synthetic packets to `127.0.0.1` and
   asserts the resulting state. Sending inside a test is fine; it is the
   shipped product that must not send.
-- **An explicit test that the listener never calls `send`.** The rule at the
-  top of this document is the kind that erodes quietly, and a test is the
-  only thing that keeps it true a year from now.
+- **Read-only is enforced, not just tested.** Every socket has `send` replaced
+  with a thrower the instant it is created, so a future change that tries to
+  answer an ArtPoll fails in development rather than putting traffic on a show
+  network. A test asserts the throw, and another asserts that `mode: off`
+  opens no socket at all.
 
 ## The problem with testing this
 
@@ -288,7 +298,7 @@ Hence step 0.
 
 ## Order of work
 
-**0 — A sniffer that ships nothing.** `scripts/dmx-sniff.mjs`: one file, no
+**0 — A sniffer that ships nothing.** ✅ `scripts/dmx-sniff.mjs`: one file, no
 dependencies, runnable on any machine plugged into the lighting network. It
 prints what it sees — protocol, universe, source, priority, packet rate, the
 first few slots — and with `--dump <dir>` writes the raw packets to disk.
@@ -300,7 +310,7 @@ use as test fixtures. Half a day, and it de-risks everything after it.
 It is also independently useful: point it at a network and it answers "is
 Art-Net even reaching this switch port" before crewbox is involved at all.
 
-**1 — Parsers and state, no I/O.** Pure functions and a plain state object.
+**1 — Parsers and state, no I/O.** ✅ Pure functions and a plain state object.
 Tests over the captured bytes from step 0 where they exist, and over
 synthesised ones — clearly labelled as such — where they don't.
 
@@ -333,16 +343,16 @@ at any point since listening began. That bitmap is the whole `silent` verdict:
 512 bytes per universe, and it is the difference between "the desk isn't
 sending this" and "nobody has brought it up yet".
 
-**2 — Listener and the admin panel.** Sockets, membership, config, lifecycle,
+**2 — Listener and the admin panel.** ✅ Sockets, membership, config, lifecycle,
 and a "Lighting network" panel built from `ReadinessCheck`. This is the first
 step that is worth shipping on its own: it answers "is anything even reaching
 us", which is the question that decides whether steps 3 and 4 are worth doing.
 
-**3 — Fixture verification.** `verdict(universe, address, footprint)` against
+**3 — Fixture verification.** Not built. `verdict(universe, address, footprint)` against
 the plot, surfaced next to the existing `todo / rigged / ok / fault` workflow.
 This is where the feature earns its place.
 
-**4 — Live levels.** The subscribe protocol, deltas, and colouring the plan,
+**4 — Live levels.** Not built. The subscribe protocol, deltas, and colouring the plan,
 front and 3D views. Last, opt-in, and the least important.
 
 Each step leaves something coherent behind. Stopping after 2 is a reasonable
