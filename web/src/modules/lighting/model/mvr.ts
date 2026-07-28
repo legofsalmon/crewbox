@@ -36,6 +36,8 @@ export interface MvrFixture {
   /** Plan coordinates in metres (MVR works in millimetres). */
   x: number
   y: number
+  /** Height above the deck in metres — the trim, straight from the file. */
+  z: number
 }
 
 export interface MvrResult {
@@ -263,6 +265,7 @@ export function parseMvr(data: Uint8Array): MvrResult {
       unit: unsetZero(textOf(element, 'UnitNumber')),
       x: point.x,
       y: point.y,
+      z: point.z,
     })
   }
 

@@ -135,7 +135,16 @@ describe('CSV export', () => {
     const plot: PlotSnapshot = {
       meta: { title: 'Main Stage', venue: 'Worthy Farm', date: '2026-06-24', notes: '' },
       positions: [
-        { id: 'p1', name: 'Upstage Truss', kind: 'truss', x: 0, y: 6, length: 12, rotation: 0 },
+        {
+          id: 'p1',
+          name: 'Upstage Truss',
+          kind: 'truss',
+          x: 0,
+          y: 6,
+          z: 6,
+          length: 12,
+          rotation: 0,
+        },
       ],
       fixtures: [
         {

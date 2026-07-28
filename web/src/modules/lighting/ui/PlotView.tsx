@@ -27,9 +27,28 @@ import {
   useSyncStatus,
 } from '../store/hooks'
 import FixtureList from './FixtureList'
+import Plot3D from './Plot3D'
+import PlotElevation from './PlotElevation'
 import PlotPlan from './PlotPlan'
 import PositionManager from './PositionManager'
 import styles from './PlotView.module.scss'
+
+/**
+ * The four ways to look at a plot.
+ *
+ * Fixtures is the paperwork and stays the landing tab — it is what someone
+ * opens a plot to read. The three drawings answer different questions: the
+ * plan is "which one is that", the front is "how high is it", and the 3D is
+ * "does that read as a rig at all".
+ */
+type PlotTab = 'fixtures' | 'plan' | 'front' | '3d'
+
+const TABS: Array<{ id: PlotTab; label: string }> = [
+  { id: 'fixtures', label: 'Fixtures' },
+  { id: 'plan', label: 'Plan' },
+  { id: 'front', label: 'Front' },
+  { id: '3d', label: '3D' },
+]
 
 const download = (filename: string, text: string) => {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
@@ -114,7 +133,7 @@ function PlotDropZone({
 export default function PlotView({ plotId, onClose }: { plotId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = usePlot(plotId)
   const issues = usePlotIssues(snapshot)
-  const [tab, setTab] = useState<'fixtures' | 'plan'>('fixtures')
+  const [tab, setTab] = useState<PlotTab>('fixtures')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showPositions, setShowPositions] = useState(false)
   const [showShare, setShowShare] = useState(false)
@@ -269,6 +288,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
             unit: fixture.unit || String(along + 1),
             x: fixture.x,
             y: fixture.y,
+            z: fixture.z,
           }
         })
       )
@@ -284,6 +304,11 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
         byLayer.size === 1 ? '' : 's'
       }` + (result.warnings.length > 0 ? ` · ${result.warnings.join(' · ')}` : '')
     )
+  }
+
+  const showInList = (id: string) => {
+    setSelectedId(id)
+    setTab('fixtures')
   }
 
   const importFile = async (file: File) => {
@@ -328,24 +353,18 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
 
       <div className={styles.toolbar}>
         <div className={styles.tabs} role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'fixtures'}
-            className={`${styles.tab} ${tab === 'fixtures' ? styles.tabActive : ''}`}
-            onClick={() => setTab('fixtures')}
-          >
-            Fixtures
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'plan'}
-            className={`${styles.tab} ${tab === 'plan' ? styles.tabActive : ''}`}
-            onClick={() => setTab('plan')}
-          >
-            Plot
-          </button>
+          {TABS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === entry.id}
+              className={`${styles.tab} ${tab === entry.id ? styles.tabActive : ''}`}
+              onClick={() => setTab(entry.id)}
+            >
+              {entry.label}
+            </button>
+          ))}
         </div>
 
         <div className={styles.actions}>
@@ -401,7 +420,9 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
         </p>
       )}
 
-      {tab === 'fixtures' ? (
+      {/* Picking a fixture in any drawing takes you to its row: the drawing
+          says which one, the list says what it is patched to. */}
+      {tab === 'fixtures' && (
         <FixtureList
           doc={doc}
           snapshot={snapshot}
@@ -409,17 +430,26 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
           selectedId={selectedId}
           onSelect={setSelectedId}
         />
-      ) : (
+      )}
+      {tab === 'plan' && (
         <PlotPlan
           doc={doc}
           snapshot={snapshot}
           issues={issues}
           selectedId={selectedId}
-          onSelect={(id) => {
-            setSelectedId(id)
-            setTab('fixtures')
-          }}
+          onSelect={showInList}
         />
+      )}
+      {tab === 'front' && (
+        <PlotElevation
+          snapshot={snapshot}
+          issues={issues}
+          selectedId={selectedId}
+          onSelect={showInList}
+        />
+      )}
+      {tab === '3d' && (
+        <Plot3D snapshot={snapshot} issues={issues} selectedId={selectedId} onSelect={showInList} />
       )}
 
       {showPositions && (

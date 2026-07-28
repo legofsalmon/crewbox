@@ -171,3 +171,76 @@ test('a plot survives reload and deep-links back to itself', async ({ browser })
   await page.reload()
   await expect(page.getByLabel(/^Purpose/).first()).toHaveValue('Key light')
 })
+
+/**
+ * The two new drawings, and the height that makes them mean anything.
+ *
+ * The plan can't answer "how high is it", which is the question that decides
+ * whether a truss clears the video wall. Both views read the same trim off
+ * the position, so this sets one and checks it reaches both.
+ */
+test('the front elevation and 3D view draw the rig at its trim heights', async ({ browser }) => {
+  const page = await newDevice(browser, 'Elevation Tech')
+
+  await openLighting(page)
+  await createPlot(page, uniqueName('Trim Rig'))
+
+  await page.getByRole('button', { name: 'Positions' }).click()
+  const truss = page.locator('[role=dialog] li').first()
+  await truss.getByLabel('Position name').fill('DS Truss')
+  await truss.getByLabel('Position name').press('Enter')
+  await truss.getByLabel(/Trim height/).fill('8.5')
+  await truss.getByLabel(/Trim height/).press('Enter')
+
+  // A boom stands up off the deck rather than flying, so its height field
+  // is named for what it is.
+  await page.locator('#new-position-name').fill('SL Boom')
+  await page.getByRole('button', { name: 'Add position' }).click()
+  const boom = page.locator('[role=dialog] li').last()
+  await boom.getByLabel(/^Kind of/).selectOption({ label: 'Boom' })
+  await expect(boom.getByText('Height m')).toBeVisible()
+  await page.getByRole('button', { name: 'Close' }).click()
+
+  // Onto the truss, not the toolbar's unassigned "+ Fixture" — a fixture
+  // with no position has nowhere to be drawn, in any of the three views.
+  const group = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'DS Truss', exact: true }) })
+  await group.getByRole('button', { name: '+ Fixture' }).click()
+  const row = group.locator('tbody tr').last()
+  await row.getByLabel(/^Purpose/).fill('Key light')
+  await row.getByLabel(/^Purpose/).press('Enter')
+
+  await page.getByRole('tab', { name: 'Front' }).click()
+  // The trim is on the drawing, not just in the Positions dialog.
+  await expect(page.getByText('DS Truss · 8.5 m')).toBeVisible()
+  await expect(page.getByRole('img', { name: /Front elevation of/ })).toBeVisible()
+
+  await page.getByRole('tab', { name: '3D' }).click()
+  await expect(page.getByRole('img', { name: /3D view of/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Reset view' })).toBeVisible()
+
+  // Picking a fixture in a drawing takes you to its row in the paperwork.
+  await page
+    .getByRole('button', { name: /Key light/ })
+    .first()
+    .click()
+  await expect(page.getByLabel(/^Purpose/).first()).toHaveValue('Key light')
+})
+
+/** A plot written before trim heights existed still opens, and hangs. */
+test('a truss with no stored trim height still draws above the deck', async ({ browser }) => {
+  const page = await newDevice(browser, 'Legacy Tech')
+  await openLighting(page)
+  await createPlot(page, uniqueName('Legacy Rig'))
+
+  await page.getByRole('button', { name: 'Positions' }).click()
+  // A fresh truss gets the kind's default rather than sitting on the floor.
+  await expect(
+    page
+      .locator('[role=dialog] li')
+      .first()
+      .getByLabel(/Trim height/)
+  ).toHaveValue('6')
+  await page.getByRole('button', { name: 'Close' }).click()
+})

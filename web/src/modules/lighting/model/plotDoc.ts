@@ -1,5 +1,6 @@
 import { newId } from '@crewbox/shared'
 import * as Y from 'yjs'
+import { DEFAULT_TRIM } from './geometry'
 import {
   emptyFixture,
   type Fixture,
@@ -120,6 +121,7 @@ export const addPosition = (doc: Y.Doc, name: string, kind: PositionKind = 'trus
         // Stack new positions upstage of each other so they don't land on top
         // of one another in the plot before anyone has placed them.
         y: 2 + positions.length * 2,
+        z: DEFAULT_TRIM[kind],
         length: 12,
         rotation: 0,
       }),
@@ -299,16 +301,21 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
     },
     positions: positions.map((item): Position => {
       const json = item.toJSON() as Record<string, unknown>
+      const kind = (['truss', 'bar', 'boom', 'floor', 'other'] as const).includes(
+        json.kind as PositionKind
+      )
+        ? (json.kind as PositionKind)
+        : 'other'
       return {
         id: str(json.id),
         name: str(json.name),
-        kind: (['truss', 'bar', 'boom', 'floor', 'other'] as const).includes(
-          json.kind as PositionKind
-        )
-          ? (json.kind as PositionKind)
-          : 'other',
+        kind,
         x: num(json.x, 0),
         y: num(json.y, 0),
+        // Plots built before trim heights existed have no z at all. Falling
+        // back to the kind's default gives them a sensible elevation the
+        // first time someone opens one, rather than a rig lying on the deck.
+        z: num(json.z, DEFAULT_TRIM[kind]),
         length: num(json.length, 12),
         rotation: num(json.rotation, 0),
       }
@@ -332,6 +339,7 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
         weight: nullableNum(json.weight),
         x: nullableNum(json.x),
         y: nullableNum(json.y),
+        z: nullableNum(json.z),
         notes: str(json.notes),
         status: (['todo', 'rigged', 'ok', 'fault'] as const).includes(status as FixtureStatus)
           ? (status as FixtureStatus)

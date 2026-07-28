@@ -44,6 +44,13 @@ export interface Position {
   /** Plan coordinates in metres. x runs stage-left→right, y runs upstage. */
   x: number
   y: number
+  /**
+   * Trim height in metres above the deck — where the bar hangs, and the
+   * only thing that makes a front elevation say anything. A boom reads it
+   * as its own height rather than a hanging height, since a boom stands up
+   * off the floor instead of flying.
+   */
+  z: number
   /** Length in metres. */
   length: number
   /** Degrees clockwise from horizontal (0 = across the stage). */
@@ -90,6 +97,8 @@ export interface Fixture {
    */
   x: number | null
   y: number | null
+  /** Real height above the deck, same story. Null means "my position's trim". */
+  z: number | null
   // --- Ops
   notes: string
   status: FixtureStatus
@@ -144,6 +153,7 @@ export const emptyFixture = (): Omit<Fixture, 'id'> => ({
   weight: null,
   x: null,
   y: null,
+  z: null,
   notes: '',
   status: 'todo',
 })

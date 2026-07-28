@@ -31,6 +31,12 @@ function PositionRow({
     const value = Number(next)
     if (Number.isFinite(value)) updatePosition(doc, position.id, { rotation: value })
   })
+  // Trim can legitimately be 0 — a floor package sits on the deck — so this
+  // one accepts zero where length doesn't. Negative would be below the stage.
+  const trim = useDraft(String(position.z), (next) => {
+    const value = Number(next)
+    if (Number.isFinite(value) && value >= 0) updatePosition(doc, position.id, { z: value })
+  })
 
   return (
     <li className={styles.row}>
@@ -63,6 +69,15 @@ function PositionRow({
           inputMode="numeric"
           aria-label={`Rotation of ${position.name} in degrees`}
           {...rotation.inputProps}
+        />
+      </label>
+      <label className={styles.field}>
+        <span>{position.kind === 'boom' ? 'Height m' : 'Trim m'}</span>
+        <input
+          className={styles.number}
+          inputMode="numeric"
+          aria-label={`Trim height of ${position.name} in metres`}
+          {...trim.inputProps}
         />
       </label>
       <span className={styles.count}>
