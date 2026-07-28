@@ -352,7 +352,18 @@ ul {
 
 .toast-stack {
   position: fixed;
-  top: 16px;
+  /*
+   * Bottom, not top.
+   *
+   * Centred at the top, a toast landed squarely on whatever header was
+   * underneath — in a patch sheet it covered the title and the find box, so
+   * "Created — … is ready" hid the two things you'd look at next. Taps passed
+   * through, which was never the problem; reading was.
+   *
+   * Down here it clears every module header, and in chat it sits just above
+   * the composer, near where the action came from.
+   */
+  bottom: calc(84px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 60;
@@ -360,8 +371,7 @@ ul {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  /* Transient and centred over the header — never let one eat a tap on the
-     controls underneath it. */
+  /* Still transient: never let one eat a tap on the controls underneath. */
   pointer-events: none;
   max-width: min(92vw, 420px);
 }

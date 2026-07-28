@@ -101,7 +101,9 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
           <DrawerButton />
           <h1>Patch Sheets</h1>
         </div>
-        <p>Patch sheets that work with no internet and sync across crew devices</p>
+        <p>
+          Input patch per artist, sub-boxes and a lineup — shared live with everyone on the box.
+        </p>
       </header>
 
       <div className={styles.actions}>
@@ -168,10 +170,9 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
         {!loaded && entries.length === 0 ? (
           <p className={styles.empty}>Loading…</p>
         ) : entries.length === 0 ? (
-          <div className={styles.empty}>
-            <h2>No sheets yet</h2>
-            <p>Create your first patch sheet to get started</p>
-          </div>
+          <p className={styles.empty}>
+            No sheets yet. Create one, or drop a CSV anywhere on this page.
+          </p>
         ) : (
           entries.map((entry) => (
             <div key={entry.sheetId} className={styles.card}>
