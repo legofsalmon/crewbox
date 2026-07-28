@@ -60,11 +60,27 @@ export interface TrussEstimate {
    */
   basis: 'coordinates' | 'fixtures'
   fixtureCount: number
+  /**
+   * How many of the fixtures' widths came from a real profile rather than
+   * `DEFAULT_FIXTURE_WIDTH`. An estimate built on the default is a guess
+   * with arithmetic done to it, and should read as one.
+   */
+  measured: number
 }
 
-/** Physical width of one fixture, in metres. */
+/**
+ * Physical width of one fixture, in metres, and whether anything said so.
+ *
+ * A built-in type carries a rounded figure; an MVR-imported one carries the
+ * dimensions out of its own GDTF models, which is the manufacturer's.
+ */
 export function fixtureWidth(fixture: Fixture, customTypes: FixtureType[]): number {
   return findFixtureType(fixture.typeId, customTypes)?.width ?? DEFAULT_FIXTURE_WIDTH
+}
+
+/** Whether that width was stated rather than assumed. */
+export function widthIsKnown(fixture: Fixture, customTypes: FixtureType[]): boolean {
+  return findFixtureType(fixture.typeId, customTypes)?.width !== undefined
 }
 
 /**
@@ -147,6 +163,7 @@ export function estimateTruss(
     built: sticks.reduce((sum, stick) => sum + stick, 0),
     basis,
     fixtureCount: fixtures.length,
+    measured: fixtures.filter((fixture) => widthIsKnown(fixture, customTypes)).length,
   }
 }
 

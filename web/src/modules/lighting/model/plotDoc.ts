@@ -311,12 +311,16 @@ const readChannels = (value: unknown): GdtfChannel[] | undefined => {
     const functions = Array.isArray(entry.functions)
       ? entry.functions
           .filter((fn): fn is Record<string, unknown> => !!fn && typeof fn === 'object')
-          .map((fn) => ({
-            name: str(fn.name),
-            from: num(fn.from, 0),
-            physicalFrom: num(fn.physicalFrom, 0),
-            physicalTo: num(fn.physicalTo, 1),
-          }))
+          .map((fn) => {
+            const unit = str(fn.unit)
+            return {
+              name: str(fn.name),
+              from: num(fn.from, 0),
+              physicalFrom: num(fn.physicalFrom, 0),
+              physicalTo: num(fn.physicalTo, 1),
+              ...(unit ? { unit } : {}),
+            }
+          })
       : []
     const slots = Array.isArray(entry.slots)
       ? entry.slots

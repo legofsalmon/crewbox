@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
-import { useStore } from '../../../store.ts'
 import type * as Y from 'yjs'
-import { fixtureDim } from '../model/live'
+import { useLiveLook } from '../store/useLiveLook.ts'
 import { fixturePoint3, positionEnds } from '../model/geometry'
 import { fixturesOnPosition, updatePosition } from '../model/plotDoc'
 import type { Fixture, PlotSnapshot, Position } from '../model/types'
@@ -52,8 +51,10 @@ export default function PlotPlan({
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
-  // Levels dim the fixture rather than recolour it, so status stays readable.
-  const levels = useStore((s) => (s.dmx.listening ? s.dmx.levels : null))
+  // Live state dims the fixture and haloes it in the colour it's being asked
+  // for; the dot itself keeps its status colour, because a plot is paperwork
+  // first and a monitor second.
+  const look = useLiveLook(snapshot)
   const svgRef = useRef<SVGSVGElement>(null)
   const [zoom, setZoom] = useState(1)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -206,6 +207,8 @@ export default function PlotPlan({
                 {fixtures.map((fixture, index) => {
                   const point = fixturePoint3(fixture, position, index, fixtures.length)
                   const isSelected = fixture.id === selectedId
+                  const live = look?.get(fixture.id)
+                  const r = FIXTURE_R * Math.min(1.6, zoom)
                   return (
                     <g
                       key={fixture.id}
@@ -223,11 +226,21 @@ export default function PlotPlan({
                         fixture.unit ? `, unit ${fixture.unit}` : ''
                       } on ${position.name}`}
                     >
+                      {live?.colour && (
+                        <circle
+                          cx={px(point.x)}
+                          cy={py(point.y)}
+                          r={r + 3}
+                          fill={live.colour}
+                          opacity={live.dim * 0.7}
+                          className={styles.fixtureColour}
+                        />
+                      )}
                       <circle
                         cx={px(point.x)}
                         cy={py(point.y)}
-                        opacity={levels ? fixtureDim(fixture, levels) : undefined}
-                        r={FIXTURE_R * Math.min(1.6, zoom)}
+                        opacity={live?.dim}
+                        r={r}
                         className={`${styles.fixture} ${statusClass[fixture.status]} ${
                           isSelected ? styles.fixtureSelected : ''
                         }`}
@@ -236,7 +249,7 @@ export default function PlotPlan({
                         <circle
                           cx={px(point.x)}
                           cy={py(point.y)}
-                          r={FIXTURE_R * Math.min(1.6, zoom) + 3}
+                          r={r + 3}
                           className={styles.fixtureClash}
                         />
                       )}

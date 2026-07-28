@@ -401,3 +401,42 @@ is real rather than mocked, where the platform allows it.
   with no `default` and no exhaustiveness check, so a client that meets an
   unknown message type ignores it. New types are additive in both directions
   and `PROTOCOL_VERSION` does not need a bump.
+
+## What the fixture profiles added
+
+Everything above is what the wire says. What it _means_ comes from the
+fixture's own GDTF profile, which an MVR already carries for every type in
+the rig — crewbox unzipped those files for the mode footprint and threw the
+rest away.
+
+`web/src/modules/lighting/model/gdtf.ts` reads the rest, against the
+published GDTF 1.2 specification rather than from memory (same reasoning as
+step 0 above: a parser and its tests written from one person's reading of a
+spec prove only that the two agree). `gdtfLive.ts` joins it to the levels.
+
+| Before                                            | With a profile                                  |
+| ------------------------------------------------- | ----------------------------------------------- |
+| "the highest value in these 16 channels"          | "the dimmer is at 60%"                          |
+| a fixture is _live_ if any of its channels moved  | _live_ if its **dimmer** has been up            |
+| no colour                                         | emitters, CMY flags and colour-wheel slots      |
+| no orientation                                    | pan and tilt in the profile's own degrees       |
+| a level bar                                       | every channel, named, with its decoded value    |
+| 400 mm assumed per fixture for the truss estimate | the fixture's own dimensions, and it says which |
+| 0 W and 0 kg for an imported rig                  | the manufacturer's figures                      |
+
+Two things that look like details and are not:
+
+- **`DMXValue` is `Uint/n` and converts between byte counts by mirroring,**
+  not shifting. `255/1` in a 16-bit channel is 65535, not 65280. Getting it
+  backwards puts every range boundary of every 16-bit channel slightly out,
+  which never looks like an error.
+- **A multi-cell fixture defines one cell and references its geometry N
+  times.** Reading the channel list naively reports a 12-cell bar as
+  occupying three channels — and the address collision check would then
+  happily patch something on top of cells 2 to 12.
+
+Where a profile can't answer, the answer degrades and says so: no dimmer
+channel falls back to peak-in-footprint and the live bar reports how many
+fixtures were judged which way; a fixture patched across several DMX breaks
+has channels this can't place, and the readout shows them with no address
+rather than reading the wrong slots.

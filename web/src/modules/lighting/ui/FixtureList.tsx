@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import type * as Y from 'yjs'
 import { useStore } from '../../../store.ts'
 import { nextFreeAddress } from '../model/addressing'
+import { fixtureLabel, fixtureWatts, fixtureWeight } from '../model/fixtures'
+import { intensityAddresses } from '../model/gdtfLive'
 import { fixtureVerdict } from '../model/live'
 import {
   addFixture,
@@ -9,7 +11,7 @@ import {
   fixturesOnPosition,
   removeFixture,
 } from '../model/plotDoc'
-import { POSITION_KIND_LABELS, type Fixture, type PlotSnapshot } from '../model/types'
+import { POSITION_KIND_LABELS, type PlotSnapshot } from '../model/types'
 import type { PlotIssues } from '../store/hooks'
 import FixtureRow from './FixtureRow'
 import styles from './FixtureList.module.scss'
@@ -22,9 +24,6 @@ import styles from './FixtureList.module.scss'
  * hundred. Fixtures with no position collect in a final group rather than
  * disappearing.
  */
-
-const fixtureLabel = (fixture: Fixture): string =>
-  fixture.purpose || (fixture.channel ? `Ch ${fixture.channel}` : 'fixture')
 
 function PositionGroup({
   doc,
@@ -57,8 +56,17 @@ function PositionGroup({
     [snapshot.fixtures]
   )
 
-  const totalWatts = fixtures.reduce((sum, fixture) => sum + (fixture.watts ?? 0), 0)
-  const totalWeight = fixtures.reduce((sum, fixture) => sum + (fixture.weight ?? 0), 0)
+  // A fixture's own figure wins; failing that its type's, which an MVR
+  // import fills in from the GDTF profile. Before that, a rig imported from
+  // MVR totalled 0 W and 0 kg however many 1 kW heads were on the truss.
+  const totalWatts = fixtures.reduce(
+    (sum, fixture) => sum + (fixtureWatts(fixture, snapshot.customTypes) ?? 0),
+    0
+  )
+  const totalWeight = fixtures.reduce(
+    (sum, fixture) => sum + (fixtureWeight(fixture, snapshot.customTypes) ?? 0),
+    0
+  )
 
   /** Pack this position's fixtures nose to tail from the first free address. */
   const addressRun = () => {
@@ -159,7 +167,15 @@ function PositionGroup({
                   selected={selectedId === fixture.id}
                   onSelect={() => onSelect(fixture.id)}
                   onRemove={() => removeFixture(doc, fixture.id)}
-                  verdict={everLit ? fixtureVerdict(fixture, everLit) : null}
+                  verdict={
+                    everLit
+                      ? fixtureVerdict(
+                          fixture,
+                          everLit,
+                          intensityAddresses(fixture, snapshot.customTypes)
+                        )
+                      : null
+                  }
                 />
               ))}
             </tbody>

@@ -50,12 +50,21 @@ function NumberCell({
   field,
   label,
   min,
+  placeholder,
 }: {
   doc: Y.Doc
   fixture: Fixture
   field: 'universe' | 'address' | 'footprint' | 'watts' | 'weight'
   label: string
   min: number
+  /**
+   * What the fixture's type says, when the row itself is blank. Shown as a
+   * placeholder rather than a value: it is the manufacturer's figure from a
+   * GDTF profile and it is what the position totals use, so an empty cell
+   * beside a non-zero total would look like a bug. Typing over it stores a
+   * real number and that one wins from then on.
+   */
+  placeholder?: number | null
 }) {
   const current = fixture[field]
   const nullable = field === 'watts' || field === 'weight'
@@ -78,6 +87,9 @@ function NumberCell({
       className={`${styles.cellInput} ${styles.numeric}`}
       aria-label={`${label}, ${fixture.purpose || fixture.channel || 'fixture'}`}
       inputMode="numeric"
+      placeholder={
+        placeholder === null || placeholder === undefined ? undefined : String(placeholder)
+      }
       {...draft.inputProps}
     />
   )
@@ -288,10 +300,24 @@ export default function FixtureRow({
         <TextCell doc={doc} fixture={fixture} field="circuit" label="Circuit" />
       </td>
       <td className={`${styles.cell} ${styles.colWatts}`}>
-        <NumberCell doc={doc} fixture={fixture} field="watts" label="Watts" min={0} />
+        <NumberCell
+          doc={doc}
+          fixture={fixture}
+          field="watts"
+          label="Watts"
+          min={0}
+          placeholder={findFixtureType(fixture.typeId, customTypes)?.watts}
+        />
       </td>
       <td className={`${styles.cell} ${styles.colWeight}`}>
-        <NumberCell doc={doc} fixture={fixture} field="weight" label="Weight" min={0} />
+        <NumberCell
+          doc={doc}
+          fixture={fixture}
+          field="weight"
+          label="Weight"
+          min={0}
+          placeholder={findFixtureType(fixture.typeId, customTypes)?.weight}
+        />
       </td>
       <td className={`${styles.cell} ${styles.colStatus}`}>
         <StatusCell doc={doc} fixture={fixture} />

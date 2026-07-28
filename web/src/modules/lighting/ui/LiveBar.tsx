@@ -41,8 +41,8 @@ export default function LiveBar({
   }, [key, levels, watchDmx])
 
   const summary = useMemo(
-    () => liveSummary(snapshot.fixtures, dmx.everLit, dmx.universes),
-    [snapshot.fixtures, dmx.everLit, dmx.universes]
+    () => liveSummary(snapshot.fixtures, dmx.everLit, dmx.universes, snapshot.customTypes),
+    [snapshot.fixtures, snapshot.customTypes, dmx.everLit, dmx.universes]
   )
 
   if (universes.length === 0) return null
@@ -91,6 +91,17 @@ export default function LiveBar({
             )}
           </span>
           {since && <span className={styles.since}>since {since}</span>}
+          {/* Which question was actually answered. Judging a whole footprint
+              calls a parked moving head "receiving" the moment the desk
+              boots; judging its dimmer alone does not, and the two counts
+              are different enough to be worth saying which one this is. */}
+          {summary.profiled > 0 && (
+            <span className={styles.basis}>
+              {summary.profiled === snapshot.fixtures.length
+                ? 'by dimmer'
+                : `${summary.profiled} by dimmer`}
+            </span>
+          )}
         </>
       )}
       {summary.conflicts.length > 0 && (
@@ -103,7 +114,7 @@ export default function LiveBar({
         className={`${styles.toggle} ${levels ? styles.toggleOn : ''}`}
         onClick={onToggleLevels}
         aria-pressed={levels}
-        title="Colour the drawings by the highest value in each fixture's footprint"
+        title="Dim and colour the drawings by what the desk is sending each fixture"
       >
         Levels
       </button>

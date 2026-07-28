@@ -131,6 +131,18 @@ function TrussEstimate({
       <span>
         Needs {estimate.needed.toFixed(1)} m{estimate.basis === 'coordinates' ? ' (measured)' : ''}{' '}
         · {describeSticks(estimate.sticks)}
+        {/* Say where the widths came from. Added up from a 400 mm default,
+            this is a guess with arithmetic done to it; added up from GDTF
+            profiles, it is the fixtures' own dimensions. */}
+        {estimate.basis === 'fixtures' && (
+          <span className={styles.estimateBasis}>
+            {estimate.measured === estimate.fixtureCount
+              ? ' · widths from profiles'
+              : estimate.measured === 0
+                ? ' · widths assumed'
+                : ` · ${estimate.measured} of ${estimate.fixtureCount} widths from profiles`}
+          </span>
+        )}
       </span>
       {!matches && (
         <button

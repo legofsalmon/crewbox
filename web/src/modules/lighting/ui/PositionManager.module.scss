@@ -133,6 +133,11 @@
 // The estimate takes the whole width below its row's controls — it is a
 // sentence, not another field, and squeezing it in beside the number boxes
 // pushes them onto a second line on a phone.
+/* Where the fixture widths behind an estimate came from. */
+.estimateBasis {
+  color: var(--text-faint);
+}
+
 .estimate {
   flex-basis: 100%;
   display: flex;

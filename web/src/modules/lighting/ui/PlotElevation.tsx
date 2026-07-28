@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useStore } from '../../../store.ts'
-import { fixtureDim } from '../model/live'
+import { useLiveLook } from '../store/useLiveLook.ts'
 import { fixturePoint3, isVertical, positionEnds } from '../model/geometry'
 import { fixturesOnPosition } from '../model/plotDoc'
 import type { Fixture, PlotSnapshot } from '../model/types'
@@ -44,7 +43,7 @@ export default function PlotElevation({
   onSelect: (id: string) => void
 }) {
   const [zoom, setZoom] = useState(1)
-  const levels = useStore((s) => (s.dmx.listening ? s.dmx.levels : null))
+  const look = useLiveLook(snapshot)
 
   /**
    * Everything the elevation has to fit, in metres.
@@ -195,6 +194,7 @@ export default function PlotElevation({
                 {fixtures.map((fixture, index) => {
                   const point = fixturePoint3(fixture, position, index, fixtures.length)
                   const isSelected = fixture.id === selectedId
+                  const live = look?.get(fixture.id)
                   const r = FIXTURE_R * Math.min(1.6, zoom) * (0.75 + 0.25 * fade)
                   return (
                     <g
@@ -213,10 +213,20 @@ export default function PlotElevation({
                         fixture.unit ? `, unit ${fixture.unit}` : ''
                       } on ${position.name}, ${point.z.toFixed(1)} m`}
                     >
+                      {live?.colour && (
+                        <circle
+                          cx={px(point.x)}
+                          cy={pz(point.z)}
+                          r={r + 3}
+                          fill={live.colour}
+                          opacity={live.dim * 0.7}
+                          className={styles.fixtureColour}
+                        />
+                      )}
                       <circle
                         cx={px(point.x)}
                         cy={pz(point.z)}
-                        opacity={levels ? fixtureDim(fixture, levels) : undefined}
+                        opacity={live?.dim}
                         r={r}
                         className={`${styles.fixture} ${statusClass[fixture.status]} ${
                           isSelected ? styles.fixtureSelected : ''

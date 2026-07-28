@@ -1,4 +1,4 @@
-import type { FixtureMode, FixtureType } from './types'
+import type { Fixture, FixtureMode, FixtureType } from './types'
 
 /**
  * Seed fixture library.
@@ -138,6 +138,29 @@ export const footprintFor = (
   // One-mode types don't need the mode spelled out.
   return type.modes.length === 1 ? type.modes[0]!.footprint : null
 }
+
+/** How to refer to a fixture in a sentence — what a crew member would say. */
+export const fixtureLabel = (fixture: Pick<Fixture, 'purpose' | 'channel'>): string =>
+  fixture.purpose || (fixture.channel ? `Ch ${fixture.channel}` : 'fixture')
+
+/**
+ * Power and weight for one fixture: its own figure, or its type's.
+ *
+ * A row someone typed a number into always wins — that is the number they
+ * measured or were told. The type's figure comes from a GDTF profile, which
+ * is the manufacturer's, and covers the whole rig at once: before this, an
+ * MVR import totalled 0 W and 0 kg however many 1 kW heads were on the bar,
+ * because nobody had typed anything into any row.
+ */
+export const fixtureWatts = (
+  fixture: Pick<Fixture, 'typeId' | 'watts'>,
+  customTypes: FixtureType[]
+): number | null => fixture.watts ?? findFixtureType(fixture.typeId, customTypes)?.watts ?? null
+
+export const fixtureWeight = (
+  fixture: Pick<Fixture, 'typeId' | 'weight'>,
+  customTypes: FixtureType[]
+): number | null => fixture.weight ?? findFixtureType(fixture.typeId, customTypes)?.weight ?? null
 
 /** Match a type by name for CSV import — exact first, then case-insensitive. */
 export const matchTypeByName = (

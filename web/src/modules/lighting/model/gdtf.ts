@@ -30,6 +30,14 @@ export interface GdtfFunction {
   physicalFrom: number
   /** Physical value at the last DMX value of the range. */
   physicalTo: number
+  /**
+   * Unit symbol, when this range's own attribute differs from the channel's.
+   *
+   * A shutter channel is `Shutter1` and unitless, but its strobe range is
+   * `Shutter1Strobe` and measured in hertz. Without this the readout says
+   * "Strobe 18.1" and leaves the reader to guess what of.
+   */
+  unit?: string
 }
 
 /** A colour-wheel position, flattened to "at this DMX value, this colour". */
@@ -389,24 +397,29 @@ const functionsAreInformative = (functions: GdtfFunction[]): boolean => {
   if (functions.length > 1) return true
   const only = functions[0]
   if (!only) return false
-  return only.physicalFrom !== 0 || only.physicalTo !== 1
+  return only.physicalFrom !== 0 || only.physicalTo !== 1 || only.unit !== undefined
 }
 
 const readFunctions = (
   logical: Element,
   bytes: number,
-  wheels: Map<string, { name: string; colour: string }[]>
+  wheels: Map<string, { name: string; colour: string }[]>,
+  units: Map<string, string>,
+  channelUnit: string
 ): { functions: GdtfFunction[]; slots: GdtfSlot[] } => {
   const functions: GdtfFunction[] = []
   const slots: GdtfSlot[] = []
   for (const fn of Array.from(logical.children)) {
     if (fn.tagName !== 'ChannelFunction') continue
     const from = parseDmxValue(fn.getAttribute('DMXFrom'), bytes) ?? 0
+    const attribute = leaf(attr(fn, 'Attribute'))
+    const unit = units.get(attribute) ?? FALLBACK_UNITS[attribute] ?? ''
     functions.push({
-      name: attr(fn, 'Name') || leaf(attr(fn, 'Attribute')),
+      name: attr(fn, 'Name') || attribute,
       from,
       physicalFrom: numberAttr(fn, 'PhysicalFrom') ?? 0,
       physicalTo: numberAttr(fn, 'PhysicalTo') ?? 1,
+      ...(unit && unit !== channelUnit ? { unit } : {}),
     })
 
     const wheel = wheels.get(attr(fn, 'Wheel'))
@@ -499,14 +512,15 @@ const readChannels = (
     )
     if (!attribute || attribute === 'NoFeature') continue
 
+    const unit = units.get(attribute) ?? FALLBACK_UNITS[attribute] ?? ''
     const { functions, slots } = logical
-      ? readFunctions(logical, offsets.length, wheels)
+      ? readFunctions(logical, offsets.length, wheels, units, unit)
       : { functions: [], slots: [] }
 
     const base = {
       attribute,
       geometry,
-      unit: units.get(attribute) ?? FALLBACK_UNITS[attribute] ?? '',
+      unit,
       ...(functionsAreInformative(functions) ? { functions } : {}),
       ...(slots.length > 0 ? { slots } : {}),
     }

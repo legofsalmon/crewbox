@@ -156,6 +156,14 @@
 
 // A clashing fixture gets a ring, so a DMX problem is visible on the plan
 // and not only in the list.
+/* The colour the desk is asking a fixture for, behind its status dot.
+   A halo rather than a fill: status is paperwork and has to stay readable
+   while the rig moves. It never takes a click — the dot underneath does. */
+.fixtureColour {
+  stroke: none;
+  pointer-events: none;
+}
+
 .fixtureClash {
   fill: none;
   stroke: var(--danger);

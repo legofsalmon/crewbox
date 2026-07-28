@@ -28,6 +28,7 @@ import {
 } from '../store/hooks'
 import FixtureList from './FixtureList'
 import LiveBar from './LiveBar'
+import FixtureChannels from './FixtureChannels'
 import Plot3D from './Plot3D'
 import PlotElevation from './PlotElevation'
 import PlotPlan from './PlotPlan'
@@ -136,6 +137,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   const issues = usePlotIssues(snapshot)
   const [tab, setTab] = useState<PlotTab>('fixtures')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selected = snapshot?.fixtures.find((fixture) => fixture.id === selectedId) ?? null
   const [showPositions, setShowPositions] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
@@ -461,6 +463,11 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
       {tab === '3d' && (
         <Plot3D snapshot={snapshot} issues={issues} selectedId={selectedId} onSelect={showInList} />
       )}
+
+      {/* Whatever is selected, in whichever view — the drawing says which
+          lamp, the list says what it is patched to, and this says what the
+          desk is sending it. Nothing to show without a GDTF profile. */}
+      {selected && <FixtureChannels fixture={selected} customTypes={snapshot.customTypes} />}
 
       {showPositions && (
         <PositionManager doc={doc} snapshot={snapshot} onClose={() => setShowPositions(false)} />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useStore } from '../../../store.ts'
-import { fixtureDim } from '../model/live'
+import { findFixtureType } from '../model/fixtures'
+import { useLiveLook, type LiveLook } from '../store/useLiveLook.ts'
 import {
   fixturePoint3,
   isVertical,
@@ -12,7 +12,7 @@ import {
   type Point3,
 } from '../model/geometry'
 import { fixturesOnPosition } from '../model/plotDoc'
-import type { Fixture, PlotSnapshot } from '../model/types'
+import type { Fixture, FixtureType, PlotSnapshot } from '../model/types'
 import type { PlotIssues } from '../store/hooks'
 import styles from './Plot3D.module.scss'
 
@@ -26,11 +26,41 @@ import styles from './Plot3D.module.scss'
  * and on a laptop with no usable GPU, which is what a FOH tent has.
  *
  * What it is for: seeing at a glance that the two trusses are at different
- * trims and the booms are downstage of both. What it is not for: focus,
- * beams, or anything you would open a visualiser to answer.
+ * trims and the booms are downstage of both. What it is not for: rendering,
+ * or anything you would open a visualiser to answer.
+ *
+ * Beams are the one exception, and only when the wire is being read. A GDTF
+ * profile gives real pan and tilt in degrees, so "those six heads are all
+ * pointed at the drum riser" stops being a guess — and that is a rigging
+ * question, not a design one. They are drawn faintly and vanish the moment
+ * levels stop arriving.
  */
 
 const FIXTURE_R = 5
+
+/** Beam angle in degrees for a fixture whose profile doesn't state one. */
+const DEFAULT_BEAM_ANGLE = 15
+
+/** Metres. A beam that misses the deck has to stop somewhere. */
+const MAX_THROW = 15
+
+/**
+ * Where a head is pointing, as a unit vector in stage coordinates.
+ *
+ * Tilt 0 is straight down, which is where a hanging fixture sits at the
+ * middle of its range and the only convention that makes an unfocused rig
+ * draw sensibly. Positive tilt swings towards the audience; pan turns that
+ * about the vertical.
+ */
+const beamDirection = (pan: number, tilt: number): Point3 => {
+  const p = (pan * Math.PI) / 180
+  const t = (tilt * Math.PI) / 180
+  return {
+    x: Math.sin(t) * Math.sin(p),
+    y: -Math.sin(t) * Math.cos(p),
+    z: -Math.cos(t),
+  }
+}
 
 /** How much of the shorter canvas edge the rig should fill at zoom 1. */
 const FIT = 0.78
@@ -54,6 +84,34 @@ const statusClass: Record<Fixture['status'], string> = {
   rigged: styles.fxRigged!,
   ok: styles.fxOk!,
   fault: styles.fxFault!,
+}
+
+/**
+ * Where a fixture's beam lands and how wide it is when it gets there.
+ *
+ * It stops at the deck, or at `MAX_THROW` for anything pointed level or up —
+ * a head aimed at the back wall would otherwise draw a stripe across the
+ * whole view. Only fixtures whose profile gives real degrees get one.
+ */
+const beamFor = (
+  fixture: Fixture,
+  origin: Point3,
+  live: LiveLook,
+  customTypes: FixtureType[]
+): { end: Point3; radius: number } | null => {
+  if (live.pan === null && live.tilt === null) return null
+  const direction = beamDirection(live.pan ?? 0, live.tilt ?? 0)
+  const toDeck = direction.z < -0.05 ? origin.z / -direction.z : MAX_THROW
+  const throwLength = Math.min(MAX_THROW, Math.max(0.5, toDeck))
+  const angle = findFixtureType(fixture.typeId, customTypes)?.beamAngle ?? DEFAULT_BEAM_ANGLE
+  return {
+    end: {
+      x: origin.x + direction.x * throwLength,
+      y: origin.y + direction.y * throwLength,
+      z: origin.z + direction.z * throwLength,
+    },
+    radius: throwLength * Math.tan((Math.min(120, angle) / 2) * (Math.PI / 180)),
+  }
 }
 
 interface Orbit {
@@ -83,7 +141,7 @@ export default function Plot3D({
 }) {
   // Three-quarter view from house left, looking slightly down: the angle
   // that shows trim differences and stage depth at the same time.
-  const levels = useStore((s) => (s.dmx.listening ? s.dmx.levels : null))
+  const look = useLiveLook(snapshot)
   const [camera, setCamera] = useState<Camera>(HOME)
   const [zoom, setZoom] = useState(1)
   const [orbit, setOrbit] = useState<Orbit | null>(null)
@@ -279,12 +337,44 @@ export default function Plot3D({
 
       const fixtures = fixturesOnPosition(snapshot, position.id)
       fixtures.forEach((fixture, index) => {
-        const point = to(fixturePoint3(fixture, position, index, fixtures.length))
+        const world = fixturePoint3(fixture, position, index, fixtures.length)
+        const point = to(world)
         // Same idea as the truss: a moving head is roughly 400 mm across,
         // and drawing it at that size is what makes the far end of the stage
         // read as further away rather than as smaller lamps. Anything less
         // and the fixtures are specks beside the bar they hang on.
         const r = Math.max(3, FIXTURE_R * point.scale, 0.2 * pixels * point.scale)
+
+        const live = look?.get(fixture.id)
+        const beam = live ? beamFor(fixture, world, live, snapshot.customTypes) : null
+        if (live && beam) {
+          const end = to(beam.end)
+          // The cone is closed in screen space: a triangle from the lens to
+          // the spread at the far end, perpendicular to the beam as drawn.
+          // A projected ellipse would be more correct and no more legible at
+          // the size these are on a phone.
+          const dx = end.x - point.x
+          const dy = end.y - point.y
+          const length = Math.hypot(dx, dy) || 1
+          const spread = beam.radius * pixels * end.scale
+          const nx = (-dy / length) * spread
+          const ny = (dx / length) * spread
+          items.push({
+            // Just behind the fixture, so a lamp is never hidden by its own
+            // beam and a beam from upstage still passes behind one downstage.
+            depth: point.depth + 0.001,
+            node: (
+              <polygon
+                key={`beam-${fixture.id}`}
+                points={`${point.x},${point.y} ${end.x + nx},${end.y + ny} ${end.x - nx},${end.y - ny}`}
+                fill={live.colour ?? 'currentColor'}
+                opacity={0.06 + 0.3 * live.dim}
+                className={styles.beam}
+              />
+            ),
+          })
+        }
+
         items.push({
           depth: point.depth,
           node: (
@@ -304,10 +394,20 @@ export default function Plot3D({
                 fixture.unit ? `, unit ${fixture.unit}` : ''
               } on ${position.name}`}
             >
+              {live?.colour && (
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={r + 3}
+                  fill={live.colour}
+                  opacity={live.dim * 0.7}
+                  className={styles.fixtureColour}
+                />
+              )}
               <circle
                 cx={point.x}
                 cy={point.y}
-                opacity={levels ? fixtureDim(fixture, levels) : undefined}
+                opacity={live?.dim}
                 r={r}
                 className={`${styles.fixture} ${statusClass[fixture.status]} ${
                   fixture.id === selectedId ? styles.fixtureSelected : ''
@@ -327,7 +427,7 @@ export default function Plot3D({
       scene: items.sort((a, b) => b.depth - a.depth).map((item) => item.node),
       labels: labelNodes,
     }
-  }, [snapshot, issues, selectedId, camera, pivot, radius, zoom, size, levels, onSelect])
+  }, [snapshot, issues, selectedId, camera, pivot, radius, zoom, size, look, onSelect])
 
   return (
     <div className={styles.wrap}>

@@ -8,7 +8,7 @@ import {
   liveSummary,
   universesInPlot,
 } from './live'
-import { emptyFixture, type Fixture } from './types'
+import { emptyFixture, type Fixture, type FixtureType } from './types'
 
 const fixture = (over: Partial<Fixture> = {}): Fixture => ({
   ...emptyFixture(),
@@ -69,6 +69,22 @@ describe('what can be said about a fixture', () => {
     // address 0 means "not addressed yet" in the plot, not "channel zero".
     expect(fixtureVerdict(fixture({ address: 0 }), new Map([[1, lit(1)]]))).toBe('no-data')
   })
+
+  it('judges a profiled fixture on its dimmer, not on any channel moving', () => {
+    // A head parked at a position holds a non-zero pan value from the
+    // moment the desk boots. Its dimmer at 17 has never been up, so this
+    // head has never been lit — and calling it live is the difference
+    // between a useful check and a wall of green.
+    const everLit = new Map([[1, lit(19)]])
+    const parked = fixture({ address: 17, footprint: 16 })
+    expect(fixtureVerdict(parked, everLit)).toBe('live')
+    expect(fixtureVerdict(parked, everLit, [17])).toBe('silent')
+    expect(fixtureVerdict(parked, everLit, [19])).toBe('live')
+  })
+
+  it('ignores dimmer addresses that fall outside a universe', () => {
+    expect(fixtureVerdict(fixture(), new Map([[1, lit(1)]]), [600])).toBe('silent')
+  })
 })
 
 describe('how much is being asked of a fixture', () => {
@@ -90,6 +106,31 @@ describe('how much is being asked of a fixture', () => {
     expect(fixtureDim(fixture(), dark)).toBeCloseTo(0.25)
     expect(fixtureDim(fixture(), full)).toBeCloseTo(1)
     expect(fixtureDim(fixture({ universe: 9 }), dark)).toBe(1)
+  })
+
+  it('follows the dimmer once the type has a profile', () => {
+    // Pan hard over, dimmer out. Peak says full; the profile says dark, and
+    // the profile is right.
+    const types: FixtureType[] = [
+      {
+        id: 'head.gdtf',
+        name: 'Head',
+        modes: [
+          {
+            name: 'Standard',
+            footprint: 3,
+            channels: [
+              { offsets: [1], attribute: 'Dimmer', geometry: 'Head', dmxBreak: 1, unit: '%' },
+              { offsets: [2, 3], attribute: 'Pan', geometry: 'Yoke', dmxBreak: 1, unit: '°' },
+            ],
+          },
+        ],
+      },
+    ]
+    const slewing = new Map([[1, slots({ 1: 0, 2: 255, 3: 255 })]])
+    const patched = fixture({ typeId: 'head.gdtf', mode: 'Standard', footprint: 3 })
+    expect(fixtureDim(patched, slewing)).toBeCloseTo(1)
+    expect(fixtureDim(patched, slewing, types)).toBeCloseTo(0.25)
   })
 })
 

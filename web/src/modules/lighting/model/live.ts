@@ -1,5 +1,6 @@
 import type { DmxUniverseWire } from '@crewbox/shared'
-import type { Fixture } from './types'
+import { fixtureIntensity, intensityAddresses } from './gdtfLive'
+import type { Fixture, FixtureType } from './types'
 
 /**
  * What the lighting network is doing, mapped onto the plot.
@@ -29,21 +30,37 @@ const bitSet = (bits: Uint8Array, index: number): boolean =>
  * Three answers, and none of them is "broken":
  *
  * - `no-data` — its universe hasn't been heard at all.
- * - `silent` — the universe is live, but every address in this fixture's
- *   footprint has been zero for as long as the box has been listening.
+ * - `silent` — the universe is live, but the addresses that would light this
+ *   fixture have been zero for as long as the box has been listening.
  * - `live` — one of them has been above zero at some point.
  *
  * A fixture sitting at zero right now is indistinguishable from a fixture
  * nobody is addressing, which is why `silent` is about the whole window and
  * why `live` never reverts. Between cues, everything is at zero.
+ *
+ * `intensity` narrows the question to the fixture's dimmer channels, which
+ * is a far sharper test — a moving head parked at a position carries a
+ * non-zero pan value from the moment the desk boots, so judging the whole
+ * footprint calls every head in the rig live before anyone has put a light
+ * on stage. Pass null (the case without a GDTF profile) to fall back to the
+ * footprint.
  */
 export function fixtureVerdict(
   fixture: Pick<Fixture, 'universe' | 'address' | 'footprint'>,
-  everLit: Map<number, Uint8Array>
+  everLit: Map<number, Uint8Array>,
+  intensity?: number[] | null
 ): FixtureVerdict {
   const bits = everLit.get(fixture.universe)
   if (!bits) return 'no-data'
   if (fixture.address < 1 || fixture.address > 512) return 'no-data'
+
+  if (intensity && intensity.length > 0) {
+    for (const address of intensity) {
+      if (address >= 1 && address <= 512 && bitSet(bits, address - 1)) return 'live'
+    }
+    return 'silent'
+  }
+
   const from = fixture.address - 1
   const to = Math.min(from + Math.max(1, fixture.footprint), 512)
   for (let i = from; i < to; i++) {
@@ -86,17 +103,29 @@ export interface LiveSummary {
   since: number | null
   /** Universes with two sources at the top priority. */
   conflicts: number[]
+  /** How many of the counted fixtures were judged on their dimmer alone. */
+  profiled: number
 }
 
 /** One line for the plot header: how much of this rig is being sent to. */
 export function liveSummary(
   fixtures: Fixture[],
   everLit: Map<number, Uint8Array>,
-  universes: DmxUniverseWire[]
+  universes: DmxUniverseWire[],
+  customTypes: FixtureType[] = []
 ): LiveSummary {
-  const summary: LiveSummary = { live: 0, silent: 0, missing: 0, since: null, conflicts: [] }
+  const summary: LiveSummary = {
+    live: 0,
+    silent: 0,
+    missing: 0,
+    since: null,
+    conflicts: [],
+    profiled: 0,
+  }
   for (const fixture of fixtures) {
-    const verdict = fixtureVerdict(fixture, everLit)
+    const intensity = intensityAddresses(fixture, customTypes)
+    if (intensity) summary.profiled++
+    const verdict = fixtureVerdict(fixture, everLit, intensity)
     if (verdict === 'live') summary.live++
     else if (verdict === 'silent') summary.silent++
     else summary.missing++
@@ -121,12 +150,17 @@ export function universesInPlot(fixtures: Fixture[]): number[] {
  * replacing it, so a rig stays readable as paperwork while it moves. Never
  * reaches zero: a fixture at 0 is still a fixture that is rigged there, and
  * disappearing it would be a worse drawing.
+ *
+ * With a GDTF profile this is the dimmer; without one it is the peak in the
+ * footprint, and a head slewing in the dark draws bright. `fixtureIntensity`
+ * says which of the two it was.
  */
 export function fixtureDim(
-  fixture: Pick<Fixture, 'universe' | 'address' | 'footprint'>,
-  levels: Map<number, Uint8Array>
+  fixture: Pick<Fixture, 'typeId' | 'mode' | 'universe' | 'address' | 'footprint'>,
+  levels: Map<number, Uint8Array>,
+  customTypes: FixtureType[] = []
 ): number {
-  const peak = fixturePeak(fixture, levels)
-  if (peak === null) return 1
-  return 0.25 + 0.75 * (peak / 255)
+  const intensity = fixtureIntensity(fixture, customTypes, levels)
+  if (!intensity) return 1
+  return 0.25 + 0.75 * intensity.level
 }

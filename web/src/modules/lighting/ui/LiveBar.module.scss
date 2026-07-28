@@ -48,6 +48,12 @@
   color: var(--text-faint);
 }
 
+/* "by dimmer" — says which question the counts answered. */
+.basis {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
 .hint {
   color: var(--text-faint);
 }
