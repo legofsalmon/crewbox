@@ -12,8 +12,10 @@ a QR. One box with everything on; there are no tiers or editions.
 Crewbox unifies [inter](https://github.com/legofsalmon/inter) and
 [Live Patch](https://github.com/legofsalmon/livepatch); both full histories are
 merged into this repo. See [docs/UNIFICATION_PLAN.md](docs/UNIFICATION_PLAN.md)
-for the plan and roadmap, and [docs/MODULES.md](docs/MODULES.md) for how to add
-a module for another department.
+for the plan and roadmap, [docs/MODULES.md](docs/MODULES.md) for how to add
+a module for another department, and
+[docs/DMX_MONITORING.md](docs/DMX_MONITORING.md) for the planned (not yet
+built) read-only Art-Net and sACN listener.
 
 ## Modules
 
