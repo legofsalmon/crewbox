@@ -14,6 +14,14 @@ import { useFileDrop } from '../lib/useFileDrop.ts'
 import { useStore, type Pending } from '../store.ts'
 import { parseRoute } from '../shell/router.ts'
 import { formatBytes } from '../lib/files.ts'
+import {
+  hrefFor,
+  isFiltering,
+  matchesFilter,
+  NO_FILTER,
+  splitLinks,
+  type MessageFilter,
+} from '../lib/messageFilter.ts'
 import { apiUrl } from '../lib/server.ts'
 import Avatar from './Avatar.tsx'
 
@@ -71,6 +79,34 @@ function renderBody(body: string, names: string[], myName: string | undefined): 
   return nodes
 }
 
+/**
+ * Turn addresses in a run of plain text into links.
+ *
+ * `target="_blank"` with `rel="noopener noreferrer"`: the crew app is the
+ * thing someone is on shift with, and a tapped link must not navigate it away
+ * or hand the destination a handle on this window. The scheme can only ever be
+ * http or https — see `hrefFor` — so a pasted `javascript:` is never a link.
+ */
+function renderLinks(text: string, keyBase: string): ReactNode {
+  const parts = splitLinks(text)
+  if (parts.length === 1 && !parts[0].url) return text
+  return parts.map((part, i) =>
+    part.url ? (
+      <a
+        key={`${keyBase}-${i}`}
+        className="msg-link"
+        href={hrefFor(part.url)}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {part.text}
+      </a>
+    ) : (
+      part.text
+    )
+  )
+}
+
 /** Highlight @mentions of known names (plus @all/@everyone/@channel). */
 function renderMentions(body: string, names: string[], myName: string | undefined): ReactNode {
   const candidates = [...names, 'all', 'everyone', 'channel'].sort((a, b) => b.length - a.length)
@@ -89,7 +125,7 @@ function renderMentions(body: string, names: string[], myName: string | undefine
       return after === undefined || !/[a-z0-9]/.test(after)
     })
     if (!hit) continue
-    if (i > cursor) nodes.push(body.slice(cursor, i))
+    if (i > cursor) nodes.push(renderLinks(body.slice(cursor, i), `pre${key}`))
     const text = body.slice(i, i + hit.length + 1)
     const isMe = myName !== undefined && hit.toLowerCase() === myName.toLowerCase()
     const isBroadcast = ['all', 'everyone', 'channel'].includes(hit.toLowerCase())
@@ -101,8 +137,9 @@ function renderMentions(body: string, names: string[], myName: string | undefine
     cursor = i + hit.length + 1
     i = cursor - 1
   }
-  if (nodes.length === 0) return body
-  if (cursor < body.length) nodes.push(body.slice(cursor))
+  // No mentions: the whole body is one plain run, so linkify it directly.
+  if (nodes.length === 0) return renderLinks(body, 'only')
+  if (cursor < body.length) nodes.push(renderLinks(body.slice(cursor), `post${key}`))
   return nodes
 }
 
@@ -181,7 +218,13 @@ function FileAttachment({
   )
 }
 
-export default function MessageList({ channelId }: { channelId: string }) {
+export default function MessageList({
+  channelId,
+  filter = NO_FILTER,
+}: {
+  channelId: string
+  filter?: MessageFilter
+}) {
   const messages = useStore((s) => s.messages[channelId])
   const pending = useStore((s) => s.pending[channelId])
   const users = useStore((s) => s.users)
@@ -220,8 +263,18 @@ export default function MessageList({ channelId }: { channelId: string }) {
   const drop = useFileDrop(onDropFiles)
   const dropHint = drop.over ? 'Drop to share' : ''
 
-  const list = messages ?? []
-  const pendingList = pending ?? []
+  const list = useMemo(() => messages ?? [], [messages])
+  const filtering = isFiltering(filter)
+  // The rows come from `visible`; everything about scrolling and paging still
+  // reads `list`. A filter narrows what you're looking at, it doesn't change
+  // where the channel's history actually starts and ends.
+  const visible = useMemo(
+    () => (filtering ? list.filter((m) => matchesFilter(m, filter, me?.name)) : list),
+    [filtering, list, filter, me?.name]
+  )
+  // Your own unsent message would vanish under someone else's filter, which
+  // reads as a send that failed. Hide the lot while filtering instead.
+  const pendingList = filtering ? [] : (pending ?? [])
   const lastSeq = list.at(-1)?.seq ?? 0
   const lastPendingId = pendingList.at(-1)?.clientMsgId
 
@@ -339,14 +392,29 @@ export default function MessageList({ channelId }: { channelId: string }) {
     prevGappedRef.current = gapped
   }, [gapped])
 
+  // Changing the filter re-cuts the transcript under you. The newest matches
+  // are what you're after, so land on them rather than wherever the old
+  // scroll offset happens to point in the new, shorter list.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    nearBottomRef.current = true
+    setNewBelow(false)
+  }, [filter])
+
+  // The bottom of a gapped history view isn't the real latest message, and
+  // neither is the bottom of a filtered one — marking read from either would
+  // clear a badge for messages nobody has seen.
+  const canMarkRead = !gapped && !filtering
+
   useEffect(() => {
     const onFocus = () => {
-      // The bottom of a gapped history view is not the real latest message.
-      if (nearBottomRef.current && !gapped) markChannelRead(channelId)
+      if (nearBottomRef.current && canMarkRead) markChannelRead(channelId)
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [channelId, markChannelRead, gapped])
+  }, [channelId, markChannelRead, canMarkRead])
 
   function onScroll() {
     const el = scrollRef.current
@@ -355,7 +423,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
     nearBottomRef.current = fromBottom < NEAR_BOTTOM_PX
     if (nearBottomRef.current) {
       setNewBelow(false)
-      if (!gapped) markChannelRead(channelId)
+      if (canMarkRead) markChannelRead(channelId)
     }
     // Page in older history when scrolled to the top of actually-scrollable
     // content. Gated on settlingRef (not nearBottom) so the post-open glue
@@ -385,7 +453,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
     if (el) el.scrollTop = el.scrollHeight
     nearBottomRef.current = true
     setNewBelow(false)
-    markChannelRead(channelId)
+    if (canMarkRead) markChannelRead(channelId)
   }
 
   // Legacy images (uploaded before dimensions were captured) still shift the
@@ -398,7 +466,7 @@ export default function MessageList({ channelId }: { channelId: string }) {
 
   const rows: JSX.Element[] = []
   let prevMsg: Message | null = null
-  for (const msg of list) {
+  for (const msg of visible) {
     if (!prevMsg || dayKey(prevMsg.createdAt) !== dayKey(msg.createdAt)) {
       rows.push(
         <div className="day-divider" key={`day-${msg.id}`}>
@@ -416,7 +484,12 @@ export default function MessageList({ channelId }: { channelId: string }) {
       prevMsg = msg
       continue
     }
+    // No grouping in a filtered view: the messages either side of a match are
+    // hidden, so collapsing two of them into one block would claim they were
+    // said back to back when they weren't. Every match keeps its own name and
+    // time stamp.
     const grouped =
+      !filtering &&
       prevMsg !== null &&
       prevMsg.kind !== 'system' &&
       prevMsg.authorId === msg.authorId &&
@@ -459,9 +532,16 @@ export default function MessageList({ channelId }: { channelId: string }) {
       {...drop.handlers}
     >
       <div className="message-inner">
-        {list.length === 0 && pendingList.length === 0 && (
-          <div className="empty-state">No messages yet — say hello 👋</div>
-        )}
+        {visible.length === 0 &&
+          pendingList.length === 0 &&
+          (filtering ? (
+            <div className="empty-state">
+              Nothing here matches. Only the messages loaded on this device are searched — load
+              older, or use search for the whole channel.
+            </div>
+          ) : (
+            <div className="empty-state">No messages yet — say hello 👋</div>
+          ))}
         {rows}
       </div>
       {drop.over && <div className="drop-hint">{dropHint}</div>}

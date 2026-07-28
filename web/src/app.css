@@ -400,6 +400,19 @@ ul {
   background: var(--accent-strong);
 }
 
+/* Underlined as well as coloured: colour alone isn't a link to someone who
+   can't tell it from the body text, and outdoors in daylight nobody can. */
+.msg-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.msg-link:hover {
+  color: var(--accent-strong);
+}
+
 .flash-info {
   background: var(--bg-raised) !important;
   color: var(--text) !important;
@@ -822,6 +835,94 @@ ul {
 
 .channel-topic {
   font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------- filter bar */
+.filter-btn.filter-on {
+  color: var(--accent);
+}
+
+.filter-bar {
+  flex-shrink: 0;
+  padding: 8px 18px 9px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-author {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  max-width: 50%;
+}
+
+/* Scrolls sideways rather than wrapping: the full set fits a 390px phone,
+   and anything narrower should lose the tail of the row, not gain a third. */
+.filter-kinds {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filter-kinds::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-chip {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  /* Fingers in gloves. */
+  min-height: 32px;
+}
+
+.filter-chip:hover {
+  color: var(--text);
+}
+
+.filter-chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.filter-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 12px;
+  /* Muted, not faint: this line is how you know the filter only covered part
+     of the channel, and --text-faint doesn't clear AA in daylight. */
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.filter-more,
+.filter-clear {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.filter-more:disabled {
   color: var(--text-faint);
 }
 

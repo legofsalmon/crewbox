@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { channelLabel, useStore } from '../store.ts'
 import { classifyLatency, LATENCY_LABELS } from '../lib/quality.ts'
+import { isFiltering, NO_FILTER, type MessageFilter } from '../lib/messageFilter.ts'
 import MessageList from './MessageList.tsx'
+import MessageFilterBar from './MessageFilterBar.tsx'
 import Composer from './Composer.tsx'
 import SignalBars from './SignalBars.tsx'
 import DrawerButton from '../shell/DrawerButton.tsx'
@@ -18,6 +20,17 @@ export default function ChannelView({ channelId }: { channelId: string }) {
   const leaveVoice = useStore((s) => s.leaveVoice)
   const latencyMs = useStore((s) => s.latencyMs)
   const connection = useStore((s) => s.connection)
+
+  // The bar is off by default — it costs a row of a phone screen, and most of
+  // the time you want the transcript, not a control panel. Switching channels
+  // puts it away again: a filter left on from another channel reads as an
+  // empty channel, which is exactly the wrong thing to think during a show.
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filter, setFilter] = useState<MessageFilter>(NO_FILTER)
+  useEffect(() => {
+    setFilterOpen(false)
+    setFilter(NO_FILTER)
+  }, [channelId])
 
   if (!channel) return <div className="empty-state">Channel not found</div>
 
@@ -79,6 +92,28 @@ export default function ChannelView({ channelId }: { channelId: string }) {
           </button>
         )}
         <button
+          className={`icon-btn filter-btn ${isFiltering(filter) ? 'filter-on' : ''}`}
+          aria-label={filterOpen ? 'Hide message filter' : 'Filter messages'}
+          aria-pressed={filterOpen}
+          title="Filter messages"
+          onClick={() => {
+            // Putting the bar away clears the filter with it. A hidden filter
+            // still hiding messages looks like a channel that lost its history.
+            if (filterOpen) setFilter(NO_FILTER)
+            setFilterOpen(!filterOpen)
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+            <path
+              d="M4 5h16l-6.2 7.2V18l-3.6 2v-7.8z"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <button
           className="icon-btn search-btn"
           aria-label="Search messages"
           title="Search (⌘K)"
@@ -90,7 +125,10 @@ export default function ChannelView({ channelId }: { channelId: string }) {
           </svg>
         </button>
       </header>
-      <MessageList channelId={channelId} />
+      {filterOpen && (
+        <MessageFilterBar channelId={channelId} filter={filter} onChange={setFilter} />
+      )}
+      <MessageList channelId={channelId} filter={filter} />
       <TypingLine channelId={channelId} />
       <Composer
         channelId={channelId}
