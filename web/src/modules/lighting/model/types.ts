@@ -119,6 +119,12 @@ export interface FixtureType {
   modes: FixtureMode[]
   watts?: number
   weight?: number
+  /**
+   * Space it takes along a bar, in metres — used to work out how much truss
+   * a run of fixtures needs. Optional: an MVR-imported type has no width in
+   * the file, and `truss.ts` falls back to a sensible default.
+   */
+  width?: number
 }
 
 export interface PlotMeta {

@@ -1,0 +1,161 @@
+import { findFixtureType } from './fixtures'
+import { fitPosition } from './placement'
+import type { Fixture, FixtureType, Position } from './types'
+
+/**
+ * How long a truss has to be to carry what's hanging on it.
+ *
+ * The plot knows the fixtures before anyone knows the truss — the design
+ * arrives as a list, and the question on the production call is "how much
+ * truss do I need to order". Working it out by hand is counting fixtures,
+ * guessing at their width, and adding a bit; this does the same arithmetic
+ * without the guessing, and says what it assumed.
+ *
+ * It is an estimate and reads like one. It doesn't know about motor points,
+ * corner blocks, or the metre of truss at each end nobody hangs anything on.
+ */
+
+/**
+ * Space a fixture takes along a bar, in metres, when its type doesn't say.
+ *
+ * A moving head is the common case and sits around 400 mm across its base.
+ * Erring high is the safe direction: a truss that turns out longer than it
+ * needed to be is an annoyance, one that turns out too short is a redesign
+ * on the day.
+ */
+export const DEFAULT_FIXTURE_WIDTH = 0.4
+
+/**
+ * Air between two neighbours, in metres.
+ *
+ * Moving heads need room to pan without hitting each other, and even static
+ * fixtures need room for a hand and a clamp. 250 mm is the number crews
+ * actually leave.
+ */
+export const DEFAULT_GAP = 0.25
+
+/**
+ * Truss sold by the stick, in metres.
+ *
+ * The lengths every rental house stocks in 12-inch box truss. Anything can
+ * be made from these because 0.5 m is in the list, which is what makes the
+ * packing below always have an answer.
+ */
+export const STICK_LENGTHS = [0.5, 1, 1.5, 2, 2.5, 3, 4]
+
+/** Everything is a whole number of these, which keeps the packing exact. */
+const UNIT = 0.5
+
+export interface TrussEstimate {
+  /** Metres of bar the fixtures need, end to end. */
+  needed: number
+  /** Sticks to build it from, longest first. */
+  sticks: number[]
+  /** What those sticks add up to. Never less than `needed`. */
+  built: number
+  /**
+   * How it was worked out. `coordinates` means the fixtures carry real
+   * positions (an MVR import) and the span is measured rather than assumed;
+   * `fixtures` means it was added up from widths and gaps.
+   */
+  basis: 'coordinates' | 'fixtures'
+  fixtureCount: number
+}
+
+/** Physical width of one fixture, in metres. */
+export function fixtureWidth(fixture: Fixture, customTypes: FixtureType[]): number {
+  return findFixtureType(fixture.typeId, customTypes)?.width ?? DEFAULT_FIXTURE_WIDTH
+}
+
+/**
+ * Sticks that reach at least `metres`, shortest total first and then fewest
+ * sticks — so a 7.5 m run comes back as 4 + 3 + 0.5 rather than 4 + 4.
+ * Truss is hired by the metre and stages have edges; a spare half-metre of
+ * bar is a worse answer than one more coupler.
+ *
+ * Coin change on half-metre units. Because half a metre is itself a stock
+ * length the exact target is always reachable, which is what makes "shortest
+ * total" simply the target and leaves only the stick count to minimise.
+ */
+export function packSticks(metres: number): number[] {
+  const target = Math.max(1, Math.ceil(metres / UNIT - 1e-9))
+  // Longest first, so where two combinations tie on total and count the one
+  // built from bigger sticks wins. Ties are common (3 + 0.5 and 2.5 + 1 are
+  // both two sticks of 3.5 m) and a suggestion that flips between them
+  // between renders is a suggestion nobody trusts.
+  const coins = [...STICK_LENGTHS].sort((a, b) => b - a).map((length) => Math.round(length / UNIT))
+  // best[t] = fewest sticks summing to exactly t; from[t] = one of them.
+  const best = new Array<number>(target + 1).fill(Infinity)
+  const from = new Array<number>(target + 1).fill(0)
+  best[0] = 0
+  for (let t = 1; t <= target; t++) {
+    for (const coin of coins) {
+      if (coin > t) continue
+      const candidate = best[t - coin]! + 1
+      if (candidate < best[t]!) {
+        best[t] = candidate
+        from[t] = coin
+      }
+    }
+  }
+  const sticks: number[] = []
+  for (let t = target; t > 0; t -= from[t]!) sticks.push(from[t]! * UNIT)
+  return sticks.sort((a, b) => b - a)
+}
+
+/**
+ * What truss this position's fixtures need.
+ *
+ * Null when there is nothing useful to say: no fixtures, or a boom, whose
+ * length is a stand height rather than a run of truss.
+ */
+export function estimateTruss(
+  position: Position,
+  fixtures: Fixture[],
+  customTypes: FixtureType[]
+): TrussEstimate | null {
+  if (fixtures.length === 0 || position.kind === 'boom') return null
+
+  const placed = fixtures.filter(
+    (fixture): fixture is Fixture & { x: number; y: number } =>
+      fixture.x !== null && fixture.y !== null
+  )
+
+  const widths = fixtures.map((fixture) => fixtureWidth(fixture, customTypes))
+  let needed: number
+  let basis: TrussEstimate['basis']
+
+  if (placed.length >= 2) {
+    // Real coordinates beat any assumption about spacing: this is the rig
+    // someone actually drew, so measure it. `fitPosition` already finds the
+    // span along the fixtures' own axis, which is the truss.
+    const span = fitPosition(placed.map(({ x, y }) => ({ x, y }))).length
+    // The span runs centre to centre, so half a fixture hangs off each end.
+    const ends = (widths[0]! + widths[widths.length - 1]!) / 2
+    needed = span + ends
+    basis = 'coordinates'
+  } else {
+    const total = widths.reduce((sum, width) => sum + width, 0)
+    needed = total + DEFAULT_GAP * (fixtures.length - 1)
+    basis = 'fixtures'
+  }
+
+  const sticks = packSticks(needed)
+  return {
+    needed,
+    sticks,
+    built: sticks.reduce((sum, stick) => sum + stick, 0),
+    basis,
+    fixtureCount: fixtures.length,
+  }
+}
+
+/** "2 × 4 m + 1 × 2 m" — how you'd write it on the truss order. */
+export function describeSticks(sticks: number[]): string {
+  const counts = new Map<number, number>()
+  for (const stick of sticks) counts.set(stick, (counts.get(stick) ?? 0) + 1)
+  return [...counts]
+    .sort((a, b) => b[0] - a[0])
+    .map(([length, count]) => `${count} × ${length} m`)
+    .join(' + ')
+}

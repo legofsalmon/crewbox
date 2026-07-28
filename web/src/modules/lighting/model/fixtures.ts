@@ -18,11 +18,13 @@ import type { FixtureMode, FixtureType } from './types'
 export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   {
     id: 'conventional',
+    width: 0.3,
     name: 'Conventional / dimmer',
     modes: [{ name: '1 ch', footprint: 1 }],
   },
   {
     id: 'led-par',
+    width: 0.3,
     name: 'LED PAR (generic)',
     modes: [
       { name: 'RGB (3 ch)', footprint: 3 },
@@ -33,6 +35,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'led-batten',
+    width: 1,
     name: 'LED batten / bar (generic)',
     modes: [
       { name: '4 ch', footprint: 4 },
@@ -43,6 +46,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'moving-wash',
+    width: 0.4,
     name: 'Moving wash (generic)',
     modes: [
       { name: '12 ch', footprint: 12 },
@@ -54,6 +58,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'moving-spot',
+    width: 0.4,
     name: 'Moving spot / beam (generic)',
     modes: [
       { name: '16 ch', footprint: 16 },
@@ -65,6 +70,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'strobe',
+    width: 0.4,
     name: 'Strobe (generic)',
     modes: [
       { name: '2 ch', footprint: 2 },
@@ -74,6 +80,7 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'hazer',
+    width: 0.5,
     name: 'Hazer / fogger (generic)',
     modes: [
       { name: '1 ch', footprint: 1 },
@@ -83,11 +90,13 @@ export const BUILTIN_FIXTURE_TYPES: FixtureType[] = [
   },
   {
     id: 'claypaky-sharpy',
+    width: 0.36,
     name: 'Clay Paky Sharpy',
     modes: [{ name: 'Standard', footprint: 16 }],
   },
   {
     id: 'robe-pointe',
+    width: 0.4,
     name: 'Robe Robin Pointe',
     modes: [
       { name: 'Mode 1', footprint: 24 },

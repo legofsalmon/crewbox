@@ -244,3 +244,40 @@ test('a truss with no stored trim height still draws above the deck', async ({ b
   ).toHaveValue('6')
   await page.getByRole('button', { name: 'Close' }).click()
 })
+
+/**
+ * How much truss to order.
+ *
+ * The plot knows the fixtures long before anyone knows the truss, so this
+ * does the arithmetic a production call would otherwise do by hand: widths,
+ * the gap between neighbours, and what stock lengths add up to it.
+ */
+test('a position works out the truss its fixtures need', async ({ browser }) => {
+  const page = await newDevice(browser, 'Truss Tech')
+
+  await openLighting(page)
+  await createPlot(page, uniqueName('Order Rig'))
+
+  // Six Sharpys: 6 × 360 mm of fixture, 5 × 250 mm of air between them.
+  const group = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Upstage Truss', exact: true }) })
+  for (let i = 1; i <= 6; i++) {
+    await group.getByRole('button', { name: '+ Fixture' }).click()
+    const row = group.locator('tbody tr').last()
+    await row.getByLabel(/^Type/).selectOption({ label: 'Clay Paky Sharpy' })
+  }
+
+  await page.getByRole('button', { name: 'Positions' }).click()
+  await expect(page.getByText('Needs 3.4 m · 1 × 3 m + 1 × 0.5 m')).toBeVisible()
+
+  // It offers, it doesn't act: an estimate that quietly rewrote the drawing
+  // would be worse than no estimate.
+  const truss = page.locator('[role=dialog] li').first()
+  await expect(truss.getByLabel(/Length of/)).toHaveValue('12')
+  await page.getByRole('button', { name: 'Set to 3.5 m' }).click()
+  await expect(truss.getByLabel(/Length of/)).toHaveValue('3.5')
+
+  // Once the bar matches the estimate there is nothing left to offer.
+  await expect(page.getByRole('button', { name: /^Set to/ })).toHaveCount(0)
+})

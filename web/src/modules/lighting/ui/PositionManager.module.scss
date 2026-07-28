@@ -130,6 +130,36 @@
   }
 }
 
+// The estimate takes the whole width below its row's controls — it is a
+// sentence, not another field, and squeezing it in beside the number boxes
+// pushes them onto a second line on a phone.
+.estimate {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.apply {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
 .addRow {
   display: flex;
   gap: 8px;

@@ -91,6 +91,7 @@ export const initPlot = (doc: Y.Doc, options: InitPlotOptions): void => {
           kind: 'truss' satisfies PositionKind,
           x: 0,
           y: 6,
+          z: DEFAULT_TRIM.truss,
           length: 12,
           rotation: 0,
         }),
@@ -357,6 +358,7 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
           .map((mode) => ({ name: str(mode.name), footprint: num(mode.footprint, 1) })),
         watts: nullableNum(json.watts) ?? undefined,
         weight: nullableNum(json.weight) ?? undefined,
+        width: nullableNum(json.width) ?? undefined,
       }
     }),
   }

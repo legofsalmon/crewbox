@@ -20,11 +20,11 @@ a module for another department.
 Crewbox is a shell (identity, chat, offline storage, routing) plus department
 modules. A box chooses which to run with `CREWBOX_MODULES`; chat is always on.
 
-| Module           | What it does                                                                                                                    |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Chat**         | Channels, DMs, mentions, files, push-to-talk voice. Always enabled.                                                             |
-| **Patch Sheets** | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                     |
-| **Lighting**     | Fixture patch with DMX collision detection, rigging positions, a schematic plot, and MVR/GDTF + Lightwright/console CSV import. |
+| Module           | What it does                                                                                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**         | Channels, DMs, mentions, files, push-to-talk voice. Always enabled.                                                                                                                             |
+| **Patch Sheets** | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                                                                                     |
+| **Lighting**     | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import. |
 
 ## Why it's built the way it is
 
