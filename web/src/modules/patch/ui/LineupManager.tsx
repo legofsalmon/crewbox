@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type * as Y from 'yjs'
+import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import {
   addArtist,
   addArtistFile,
@@ -27,11 +28,11 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
   const [uploading, setUploading] = useState(false)
   const enabled = canUseAttachments()
 
-  const handleUpload = async (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0) return
+  const handleUpload = async (incoming: File[] | null) => {
+    if (!incoming || incoming.length === 0) return
     setUploading(true)
     try {
-      for (const file of Array.from(fileList)) {
+      for (const file of incoming) {
         if (!ACCEPTED_TYPE(file.type)) {
           addToast('Skipped file', `"${file.name}" is not an image or PDF`, 'warning')
           continue
@@ -54,6 +55,15 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
     }
   }
 
+  // Dropping straight onto an artist's row: a stage plot or rider usually
+  // arrives as an email attachment already sitting in a folder.
+  const onDropFiles = useCallback(
+    (files: File[]) => void handleUpload(files),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
+  const drop = useFileDrop(onDropFiles, { disabled: !enabled || uploading })
+
   const handleRemove = (fileId: string) => {
     removeArtistFile(doc, artist.id, fileId)
     // The blob stays on the box (content-addressed, shared); only the
@@ -61,8 +71,10 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
   }
 
   return (
-    <div className={styles.notes}>
-      <label htmlFor={`artist-files-${artist.id}`}>Files (images & PDFs):</label>
+    <div className={`${styles.notes} ${drop.over ? styles.dropping : ''}`} {...drop.handlers}>
+      <label htmlFor={`artist-files-${artist.id}`}>
+        Files (images &amp; PDFs){drop.over ? ' — drop to attach' : ':'}
+      </label>
       <input
         id={`artist-files-${artist.id}`}
         type="file"
@@ -70,7 +82,7 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
         multiple
         disabled={!enabled || uploading}
         onChange={(e) => {
-          void handleUpload(e.target.files)
+          void handleUpload(e.target.files ? Array.from(e.target.files) : null)
           e.target.value = ''
         }}
       />

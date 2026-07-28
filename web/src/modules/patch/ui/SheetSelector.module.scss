@@ -4,6 +4,29 @@
   min-height: 100vh;
   background: $gradient-hero;
   padding: 32px 16px 64px;
+  position: relative;
+}
+
+/* Drop target for a CSV dragged in from Sheets or Excel, which is how most
+   sheets start life. */
+.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -10px;
+}
+
+.dropVeil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  /* The veil must never eat the drag events belonging to the page under it,
+     or the drop lands on nothing and the highlight sticks. */
+  pointer-events: none;
 }
 
 .hero {

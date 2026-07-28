@@ -156,6 +156,15 @@
 .notes {
   margin-top: 10px;
 
+  /* Dragging a rider or stage plot straight onto an artist's row. Outline
+     rather than a veil: this block is small and already inside a card, so a
+     full overlay would hide the very label that says what happens next. */
+  &.dropping {
+    outline: 2px dashed var(--accent);
+    outline-offset: 4px;
+    border-radius: 6px;
+  }
+
   label {
     display: block;
     font-size: 0.82rem;
