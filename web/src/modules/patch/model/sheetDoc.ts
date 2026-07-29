@@ -478,7 +478,7 @@ export const setPatchSubBox = (doc: Y.Doc, artistId: string, channelId: string, 
 export interface ImportedSheetData {
   /** `input` is the house input on that channel, shared by every artist. */
   channels: { label: string; input?: string }[]
-  artists: { name: string; startTime?: string; endTime?: string; spec?: string }[]
+  artists: { name: string; startTime?: string; endTime?: string; spec?: string; notes?: string }[]
   /** Sub-boxes the file declared, so cells resolve to them rather than to text. */
   subBoxes?: Array<Omit<SubBox, 'id'>>
   /** patches[artistIndex][channelIndex] — sparse. */
@@ -527,7 +527,7 @@ export const buildImportedSheet = (
           startTime: artist.startTime ?? '19:00',
           endTime: artist.endTime ?? '20:00',
           spec: artist.spec ?? '',
-          notes: '',
+          notes: artist.notes ?? '',
           files: new Y.Array<ArtistFile>(),
         }),
       ])

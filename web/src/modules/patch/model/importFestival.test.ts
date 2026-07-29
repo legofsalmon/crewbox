@@ -129,3 +129,116 @@ describe('the whole way through', () => {
     }
   })
 })
+
+/**
+ * A second real sheet, from a different stage.
+ *
+ * The parser was shaped against one file, which is one file's worth of
+ * evidence about a layout crews build by hand. This is another export of the
+ * same shape and it carries three things the first one does not: a five-way
+ * sub-snake legend, per-act "Additional info" boxes with real text in them,
+ * and a NO./ITEM table of kit an act wants from the house.
+ *
+ * Act names and the event are invented; the structure is untouched.
+ */
+const DAY_SHEET = readFileSync(
+  fileURLToPath(new URL('./__fixtures__/festival-day-sheet.csv', import.meta.url)),
+  'utf8'
+)
+
+const dayRows = () => parseCsv(DAY_SHEET)
+
+describe('a second sheet, from a different stage', () => {
+  it('reads it without being told anything new', () => {
+    const { data, matched } = festivalSheetFromCsv(dayRows())
+    expect(matched).toBe(true)
+    expect(data.channels).toHaveLength(56)
+    expect(data.channels[0]).toEqual({ label: '1', input: 'KICK IN' })
+    expect(data.channels[47]).toEqual({ label: '48', input: 'HH4' })
+  })
+
+  it('separates the acts somebody booked from the empty template slots', () => {
+    const { data } = festivalSheetFromCsv(dayRows())
+    expect(data.artists).toHaveLength(16)
+    expect(data.artists.slice(0, 4).map((a) => a.name)).toEqual([
+      'Copper Wren',
+      'Tin Chapel',
+      'The Ledger',
+      'Salt Harbour',
+    ])
+    // The rest are the sheet's own placeholders, kept so the columns line up
+    // with the paper everyone is holding.
+    expect(data.artists[4]!.name).toBe('ACT 5')
+    expect(data.artists[4]!.startTime).toBeUndefined()
+  })
+
+  it('takes the set times off the acts that have them', () => {
+    const { data } = festivalSheetFromCsv(dayRows())
+    expect(data.artists[0]).toMatchObject({ startTime: '17:00', endTime: '18:00' })
+    // A set running past midnight is a set, not a parse failure.
+    expect(data.artists[3]).toMatchObject({ startTime: '22:45', endTime: '00:15' })
+  })
+
+  it('reads all five sub-snakes, with their colour and where they live', () => {
+    const { data } = festivalSheetFromCsv(dayRows())
+    expect(data.subBoxes).toEqual([
+      { name: 'PINK', inputs: 12, color: '#e91e8c', stagePosition: 'USC' },
+      { name: 'BLUE', inputs: 12, color: '#3b7dd8', stagePosition: 'FLOAT' },
+      { name: 'GREEN', inputs: 12, color: '#3f9e4d', stagePosition: 'MSL' },
+      { name: 'ORANGE', inputs: 12, color: '#e8770a', stagePosition: 'MSR' },
+      { name: 'YELLOW', inputs: 12, color: '#d6b400', stagePosition: 'DSC' },
+    ])
+  })
+
+  it('keeps the Additional info box, which used to be thrown away', () => {
+    // This sits *below* the channel grid, so the header reader never saw it
+    // and the channel reader stopped at it. It is where a crew writes the
+    // things that decide the changeover.
+    const { data } = festivalSheetFromCsv(dayRows())
+    expect(data.artists[0]!.notes).toBe('Pray for the end of the set')
+    expect(data.artists[1]!.notes).toBe('DL32 / ALL ON HOUSE BAR FOH')
+    expect(data.artists[2]!.notes).toContain('Require 3 57s from House')
+  })
+
+  it('picks up the kit an act wants from the house', () => {
+    const { data } = festivalSheetFromCsv(dayRows())
+    expect(data.artists[2]!.notes).toContain('Kit from house: 5 × Tall Stands, 12 × Small Stands')
+  })
+
+  it('does not copy the template prompt onto every unbooked act', () => {
+    // Every empty act's box repeats "Touring Desks / Multis / Power / Other
+    // info to speed up changeover from their specs". That is instructions to
+    // whoever fills the sheet in, and putting it on twelve acts would bury
+    // the three notes that mean something.
+    const { data } = festivalSheetFromCsv(dayRows())
+    for (const artist of data.artists.slice(4)) {
+      expect(artist.notes ?? '').toBe('')
+    }
+    expect(data.artists[3]!.notes ?? '').toBe('')
+  })
+
+  it('carries the sub-box letters the grid actually uses', () => {
+    // This stage writes a bare "H" on the handheld channels rather than the
+    // "SB1-1" style of the other sheet. Both are just text to the parser,
+    // which is the point — nothing here knows one festival's convention.
+    const { data } = festivalSheetFromCsv(dayRows())
+    const first = data.patches[0]!
+    expect(first[44]).toEqual({ subBox: 'H' })
+    expect(first[46]).toEqual({ subBox: 'H', micDi: 'LEAD 1' })
+    expect(first[0]).toEqual({ micDi: 'VIOLIN-1-1 4099' })
+  })
+})
+
+describe('what actually lands in the document', () => {
+  it('carries the Additional info all the way into the sheet', () => {
+    // The parse producing notes is only half of it: `buildImportedSheet` used
+    // to write an empty string over them, so a crew importing this sheet got
+    // a blank Additional info box on every act and no sign anything was lost.
+    const doc = new Y.Doc()
+    buildImportedSheet(doc, festivalSheetFromCsv(dayRows()).data, { title: 'Day 1' })
+    const snapshot = snapshotSheet(doc)
+    expect(snapshot.artists[0]!.notes).toBe('Pray for the end of the set')
+    expect(snapshot.artists[2]!.notes).toContain('Kit from house:')
+    expect(snapshot.artists[4]!.notes).toBe('')
+  })
+})

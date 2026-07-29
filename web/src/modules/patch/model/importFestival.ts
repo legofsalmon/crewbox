@@ -75,7 +75,7 @@ const looksLikeSpec = (cell: string): boolean => norm(cell).startsWith('spec')
 function readActHeaders(
   rows: string[][],
   layout: Layout
-): Array<{ name: string; startTime?: string; endTime?: string; spec?: string }> {
+): Array<{ name: string; startTime?: string; endTime?: string; spec?: string; notes?: string }> {
   let nameRow: string[] | null = null
   let timesRow: string[] | null = null
   let specRow: string[] | null = null
@@ -168,6 +168,73 @@ function readSubBoxLegend(
   return found.length >= 2 ? found : []
 }
 
+/**
+ * Everything an act carries that lives *below* the channel grid.
+ *
+ * `readActHeaders` walks up from the header row and so can only ever see the
+ * name, the set time and the SPEC line. The rest of what a crew writes about
+ * an act is underneath the channels: a free-text "Additional info" box, and a
+ * NO./ITEM table of kit they want from the house.
+ *
+ * Both are real production information — "require 3 57s from house", "5 tall
+ * stands" — and both were being read as "not a channel row" and dropped. The
+ * artist already has a `notes` field with a textarea bound to it; this fills
+ * it.
+ */
+function readActFooters(rows: string[][], layout: Layout, firstRowBelowData: number): string[] {
+  const info = layout.groups.map(() => '')
+  const items = layout.groups.map<string[]>(() => [])
+
+  for (let r = firstRowBelowData; r < rows.length; r++) {
+    const row = rows[r]!
+    layout.groups.forEach((c, i) => {
+      // The free-text box: a label cell reading "Additional info:" and the
+      // text under it. The label repeats per act, so match on the label
+      // rather than on a fixed row.
+      const label = norm(row[c + 1])
+      if (label.startsWith('additionalinfo')) {
+        const text = (rows[r + 1]?.[c + 1] ?? '').trim()
+        // The template repeats a prompt in every unfilled act's box. It is
+        // instructions to whoever fills the sheet in, not information about
+        // the act, and copying it onto sixteen acts would be noise.
+        if (text && !info[i] && !isTemplatePrompt(text)) info[i] = text
+      }
+
+      // The kit table: "NO." / "ITEM" headers, then count/name pairs.
+      if (norm(row[c + 1]) === 'no' && norm(row[c + 2]) === 'item') {
+        for (let k = r + 1; k < rows.length; k++) {
+          const count = (rows[k]?.[c + 1] ?? '').trim()
+          const item = (rows[k]?.[c + 2] ?? '').trim()
+          if (!count && !item) {
+            // One blank row inside the table is a gap; two is the end of it.
+            const next = rows[k + 1]
+            if (!next || (!(next[c + 1] ?? '').trim() && !(next[c + 2] ?? '').trim())) break
+            continue
+          }
+          if (item) items[i]!.push(count ? `${count} × ${item}` : item)
+        }
+      }
+    })
+  }
+
+  return layout.groups.map((_, i) =>
+    [info[i], items[i]!.length > 0 ? `Kit from house: ${items[i]!.join(', ')}` : '']
+      .filter(Boolean)
+      .join('\n\n')
+  )
+}
+
+/**
+ * A prompt the template puts in every act's box, rather than a note about
+ * one act.
+ *
+ * The real sheet repeats "Touring Desks / Multis / Power / Other info to
+ * speed up changeover from their specs" across every act nobody has filled
+ * in yet. Importing that would put the same paragraph on twelve acts.
+ */
+const isTemplatePrompt = (text: string): boolean =>
+  /other info|their specs|speed up changeover/i.test(text)
+
 export interface FestivalImport {
   data: ImportedSheetData
   /** Set when the file isn't in this layout at all. */
@@ -191,12 +258,21 @@ export function festivalSheetFromCsv(rows: string[][]): FestivalImport {
   // info" boxes and the per-act tail tables, which are not channels.
   const channels: Array<{ label: string; input: string }> = []
   const dataRows: string[][] = []
+  let belowData = rows.length
   for (let r = layout.headerRow + 1; r < rows.length; r++) {
     const row = rows[r]!
     const label = (row[0] ?? '').trim()
-    if (!/^\d+$/.test(label)) break
+    if (!/^\d+$/.test(label)) {
+      belowData = r
+      break
+    }
     channels.push({ label, input: (row[1] ?? '').trim() })
     dataRows.push(row)
+  }
+
+  const footers = readActFooters(rows, layout, belowData)
+  for (const [i, artist] of artists.entries()) {
+    if (footers[i]) artist.notes = footers[i]!
   }
 
   const patches: ImportedSheetData['patches'] = layout.groups.map((c) =>
