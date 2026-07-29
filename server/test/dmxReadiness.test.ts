@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { dmxReadiness } from '../src/dmx/readiness.ts'
 import type { DmxListenerStatus } from '../src/dmx/listener.ts'
-import type { UniverseHealth } from '../src/dmx/state.ts'
+import type { DiscoveredSource, UniverseHealth } from '../src/dmx/state.ts'
 
 const NOW = 1_000_000
 
 const status = (over: Partial<DmxListenerStatus> = {}): DmxListenerStatus => ({
   mode: 'both',
   artnet: { listening: true, error: null },
-  sacn: { listening: true, error: null, joined: [1, 2], failed: [] },
+  sacn: { listening: true, error: null, joined: [1, 2], failed: [], discovery: true },
   interfaceIp: '2.0.0.5',
   packets: 0,
   ignored: 0,
@@ -96,6 +96,7 @@ describe('faults worth shouting about', () => {
           error: null,
           joined: [1],
           failed: [{ universe: 2, reason: 'over the 16 limit' }],
+          discovery: true,
         },
       }),
       [universe()],
@@ -254,5 +255,78 @@ describe('more sources than a node will merge', () => {
       'dmx-conflict'
     )
     expect(check?.fix).not.toContain('discarded')
+  })
+})
+
+describe('what the desks say they are sending', () => {
+  const source = (over: Partial<DiscoveredSource> = {}): DiscoveredSource => ({
+    id: 'desk-a',
+    name: 'grandMA3',
+    universes: [1, 2],
+    complete: true,
+    pagesSeen: 1,
+    pages: 1,
+    lastSeen: NOW,
+    ...over,
+  })
+
+  it('says nothing when nothing has advertised itself', () => {
+    // Legacy sources need not implement discovery at all (§12), so silence
+    // here is not a fault and must not read like one.
+    expect(find(dmxReadiness(status(), [universe()], NOW, []), 'dmx-discovery')).toBeUndefined()
+  })
+
+  it('lists what each source claims', () => {
+    const check = find(dmxReadiness(status(), [universe()], NOW, [source()]), 'dmx-discovery')
+    expect(check?.state).toBe('ok')
+    expect(check?.detail).toContain('grandMA3')
+    expect(check?.detail).toContain('1-2')
+  })
+
+  it('names the universes to add when a desk is sending more than we joined', () => {
+    // The whole point. Listening to 1-2 while the desk sends 1-8 looks, from
+    // every other check in this panel, like a network fault. It is a typo in
+    // one environment variable.
+    const check = find(
+      dmxReadiness(status(), [universe()], NOW, [source({ universes: [1, 2, 3, 4, 5, 6, 7, 8] })]),
+      'dmx-discovery'
+    )
+    expect(check?.state).toBe('limited')
+    expect(check?.fix).toContain('3-8')
+    expect(check?.fix).toContain('CREWBOX_DMX_UNIVERSES')
+  })
+
+  it('appears even when no data is arriving, which is when it matters most', () => {
+    const checks = dmxReadiness(status(), [], NOW, [source({ universes: [1, 2, 3] })])
+    expect(find(checks, 'dmx-discovery')).toBeDefined()
+    // ...alongside, not instead of, the "nothing arriving" report.
+    expect(find(checks, 'dmx-traffic')?.state).toBe('limited')
+  })
+
+  it('admits when a list is only the pages that arrived', () => {
+    const check = find(
+      dmxReadiness(status(), [universe()], NOW, [
+        source({ complete: false, pagesSeen: 2, pages: 3 }),
+      ]),
+      'dmx-discovery'
+    )
+    expect(check?.detail).toContain('2 of 3 pages')
+    expect(check?.detail).toContain('not necessarily everything')
+  })
+
+  it('collapses a long run rather than printing 32 numbers at someone', () => {
+    const many = Array.from({ length: 32 }, (_, i) => i + 1)
+    const check = find(
+      dmxReadiness(
+        status({
+          sacn: { listening: true, error: null, joined: many, failed: [], discovery: true },
+        }),
+        [universe()],
+        NOW,
+        [source({ universes: many })]
+      ),
+      'dmx-discovery'
+    )
+    expect(check?.detail).toContain('1-32')
   })
 })

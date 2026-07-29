@@ -52,6 +52,28 @@ const VECTOR_DMP_SET_PROPERTY = 0x02
  */
 const VECTOR_ROOT_EXTENDED = 0x00000008
 const VECTOR_EXTENDED_SYNCHRONIZATION = 0x00000001
+const VECTOR_EXTENDED_DISCOVERY = 0x00000002
+const VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST = 0x00000001
+
+/**
+ * The universe sources advertise themselves on (E1.31 Appendix A).
+ *
+ * 64214 is outside the 1–63999 range a data packet may use, so joining its
+ * group cannot collide with a real universe.
+ */
+export const DISCOVERY_UNIVERSE = 64214
+
+/**
+ * How long a source's advertised universe list is believed.
+ *
+ * `E131_UNIVERSE_DISCOVERY_INTERVAL` is 10 s. Two of them, for the same
+ * reason every other timeout here allows two missed transmissions — and
+ * because §12.2 lets a source that has stopped transmitting wait until "no
+ * later than the second E131_UNIVERSE_DISCOVERY_INTERVAL" before saying so,
+ * which means a shorter window would call a conforming source stale while it
+ * is behaving exactly as specified.
+ */
+export const DISCOVERY_TIMEOUT_MS = 20_000
 
 /**
  * The DMP layer's addressing, which E1.31 fixes to exactly one shape.
@@ -203,5 +225,81 @@ export function parseSacnSync(buf: Buffer): SacnSync | null {
     syncAddress,
     sourceId: buf.subarray(22, 38).toString('hex'),
     sequence: buf[44]!,
+  }
+}
+
+/** One page of a source's "here is what I am transmitting on" advertisement. */
+export interface SacnDiscovery {
+  sourceId: string
+  sourceName: string
+  /** 0-based (§8.3). */
+  page: number
+  /** The final page number, also 0-based (§8.4). */
+  lastPage: number
+  /** Sorted 16-bit universes. May legitimately be empty (§8.5). */
+  universes: number[]
+}
+
+/**
+ * Parse an E1.31 Universe Discovery Packet, or null if it isn't one.
+ *
+ * ```
+ *   0..37   Root layer, vector 0x00000008
+ *  38..39   Framing flags & length
+ *  40..43   Framing vector          0x00000002
+ *  44..107  Source name             64 bytes, UTF-8
+ * 108..111  Reserved                (§6.4.3)
+ * 112..113  Discovery flags & length
+ * 114..117  Discovery vector        0x00000001
+ * 118       Page                    0-based
+ * 119       Last page               0-based
+ * 120..     Universes, 16-bit, sorted, up to 512
+ * ```
+ *
+ * The vector values are a trap worth naming once: the framing vector here is
+ * 0x02, the same number a *data* packet uses, and the discovery vector is
+ * 0x01, the same number a *synchronization* packet's framing vector uses.
+ * They are only unambiguous in combination with the layer they appear in and
+ * with the root vector, which is why this checks all three in order.
+ */
+export function parseSacnDiscovery(buf: Buffer): SacnDiscovery | null {
+  // 120 is a legal packet: a source that has stopped transmitting may
+  // advertise an empty list rather than going quiet (§8.4, §12.1).
+  if (buf.length < 120) return null
+  if (buf.readUInt16BE(0) !== 0x0010) return null
+  if (buf.readUInt16BE(2) !== 0x0000) return null
+  if (!buf.subarray(4, 16).equals(ACN_PID)) return null
+  if (buf.readUInt32BE(18) !== VECTOR_ROOT_EXTENDED) return null
+  if (buf.readUInt32BE(40) !== VECTOR_EXTENDED_DISCOVERY) return null
+  // "Receivers shall discard the packet if the received value is not
+  // VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST" (§8.2).
+  if (buf.readUInt32BE(114) !== VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST) return null
+
+  const page = buf[118]!
+  const lastPage = buf[119]!
+  if (page > lastPage) return null
+
+  // Take what is actually present rather than what any length field claims,
+  // and stop at 512 — the same rule the data parser uses, for the same
+  // reason: a truncated datagram is commoner than a short one.
+  const available = Math.floor((buf.length - 120) / 2)
+  const universes: number[] = []
+  for (let i = 0; i < Math.min(available, 512); i++) {
+    const universe = buf.readUInt16BE(120 + i * 2)
+    // The list is meant to be sorted and non-zero. A padded packet reads as
+    // a run of zeroes, which is worth dropping rather than reporting as
+    // "this desk is transmitting universe 0".
+    if (universe > 0) universes.push(universe)
+  }
+
+  const nameRaw = buf.subarray(44, 108)
+  const nameEnd = nameRaw.indexOf(0)
+
+  return {
+    sourceId: buf.subarray(22, 38).toString('hex'),
+    sourceName: nameRaw.toString('utf8', 0, nameEnd === -1 ? nameRaw.length : nameEnd).trim(),
+    page,
+    lastPage,
+    universes,
   }
 }

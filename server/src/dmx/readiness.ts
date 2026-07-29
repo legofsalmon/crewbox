@@ -1,6 +1,6 @@
 import type { ReadinessCheck } from '../readiness.ts'
 import type { DmxListenerStatus } from './listener.ts'
-import type { UniverseHealth } from './state.ts'
+import type { DiscoveredSource, UniverseHealth } from './state.ts'
 import { ARTNET_MERGE_SOURCES } from './types.ts'
 
 /**
@@ -15,6 +15,23 @@ import { ARTNET_MERGE_SOURCES } from './types.ts'
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
+/**
+ * "1-8, 101" rather than "1, 2, 3, 4, 5, 6, 7, 8, 101".
+ *
+ * A desk on 32 universes is a normal desk, and the list is being read off a
+ * phone by someone standing under a truss.
+ */
+const summarise = (universes: number[]): string => {
+  const runs: string[] = []
+  for (let i = 0; i < universes.length;) {
+    let end = i
+    while (end + 1 < universes.length && universes[end + 1] === universes[end]! + 1) end++
+    runs.push(end > i ? `${universes[i]}-${universes[end]}` : String(universes[i]))
+    i = end + 1
+  }
+  return runs.join(', ')
+}
+
 const ago = (now: number, then: number): string => {
   const secs = Math.round((now - then) / 1000)
   if (secs < 2) return 'just now'
@@ -25,7 +42,8 @@ const ago = (now: number, then: number): string => {
 export function dmxReadiness(
   status: DmxListenerStatus,
   universes: UniverseHealth[],
-  now: number
+  now: number,
+  discovered: DiscoveredSource[] = []
 ): ReadinessCheck[] {
   if (status.mode === 'off') {
     return [
@@ -95,6 +113,46 @@ export function dmxReadiness(
           : 'On a box with more than one network card, set CREWBOX_DMX_IFACE or the groups may be joined on the wrong one.',
       })
     }
+  }
+
+  // --- What the desks say they are sending, whether we joined it or not ----
+  //
+  // Deliberately before the "nothing arriving" check below, because that is
+  // exactly when it is worth most: a box listening to 1–2 while the desk
+  // advertises 1–8 looks, from every other check here, like a network fault.
+  // It is a typo in one environment variable, and this is the only thing that
+  // can say so.
+  if (discovered.length > 0) {
+    const advertised = [...new Set(discovered.flatMap((s) => s.universes))].sort((a, b) => a - b)
+    const missing = advertised.filter((u) => !status.sacn.joined.includes(u))
+    const partial = discovered.filter((s) => !s.complete)
+    checks.push({
+      id: 'dmx-discovery',
+      label: 'Sources advertising',
+      state: missing.length > 0 ? 'limited' : 'ok',
+      detail:
+        discovered
+          .slice(0, 4)
+          .map(
+            (source) =>
+              `${source.name || source.id.slice(0, 8)}: ${
+                source.universes.length > 0 ? summarise(source.universes) : 'nothing'
+              }` +
+              // §6.7.1.1 lets pages be dropped or reordered. Reporting the
+              // union of what arrived is the useful answer; pretending it is
+              // the whole list is not.
+              (source.complete ? '' : ` (${source.pagesSeen} of ${source.pages} pages seen)`)
+          )
+          .join('; ') +
+        (discovered.length > 4 ? `; and ${discovered.length - 4} more` : '') +
+        (partial.length > 0
+          ? ' — a partial list is the union of the pages that arrived, not necessarily everything.'
+          : ''),
+      fix:
+        missing.length > 0
+          ? `Not listening to ${summarise(missing)}. Add to CREWBOX_DMX_UNIVERSES and restart to check those fixtures too.`
+          : undefined,
+    })
   }
 
   // --- Is anything actually arriving --------------------------------------

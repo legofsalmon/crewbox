@@ -1,4 +1,4 @@
-import { SEQUENCE_DISCARD_WINDOW } from './sacn.ts'
+import { DISCOVERY_TIMEOUT_MS, SEQUENCE_DISCARD_WINDOW, type SacnDiscovery } from './sacn.ts'
 import {
   ARTSYNC_TIMEOUT_MS,
   DATA_LOSS_MS,
@@ -94,6 +94,47 @@ export interface UniverseHealth {
   since: number
 }
 
+/**
+ * What a source says it is transmitting on, without anyone having to join a
+ * single one of those groups to find out.
+ *
+ * This is E1.31's own answer to the problem crewbox has: §12 says universe
+ * discovery is "specifically intended to reduce the imposed load on a network
+ * that would otherwise be created by a monitoring system joining every single
+ * E1.31 multicast group in order to probe its traffic to report this same
+ * information". That monitoring system is this one.
+ */
+export interface DiscoveredSource {
+  id: string
+  name: string
+  /** Every universe advertised across the pages seen, sorted. */
+  universes: number[]
+  /**
+   * Whether every page of the list has actually arrived.
+   *
+   * §6.7.1.1 warns that pages "may be dropped or arrive out of order,
+   * potentially even mixed in between different runs of pages", and leaves
+   * the response to receivers. Waiting for a complete set would report
+   * nothing at all when one page keeps getting lost; reporting the union
+   * without saying so would present a partial list as the whole truth. So:
+   * report the union, and say which it is.
+   */
+  complete: boolean
+  /** Pages seen out of `lastPage + 1`. Only interesting when incomplete. */
+  pagesSeen: number
+  pages: number
+  lastSeen: number
+}
+
+interface DiscoveryRecord {
+  id: string
+  name: string
+  /** page number → { universes, when } so a stale page can be aged out alone. */
+  pages: Map<number, { universes: number[]; at: number }>
+  lastPage: number
+  lastSeen: number
+}
+
 interface SourceRecord extends DmxSource {
   /** Packets in the second currently being counted. */
   packets: number
@@ -157,6 +198,8 @@ export class DmxState {
    * timeout fix was about.
    */
   private joinedUniverses = new Set<number>()
+  /** CID → what that source last advertised it is transmitting on. */
+  private readonly discovery = new Map<string, DiscoveryRecord>()
 
   constructor(options: DmxStateOptions = {}) {
     this.artnetBase = options.artnetBase ?? 1
@@ -204,6 +247,61 @@ export class DmxState {
    */
   noteArtSync(now: number): void {
     this.artSyncAt = now
+  }
+
+  /**
+   * Fold in one page of a source's universe advertisement.
+   *
+   * Pages are stored individually rather than merged into a running set, so
+   * that a source dropping a universe is eventually reflected: each page
+   * carries its own timestamp and ages out on its own. Merging into one set
+   * would mean a universe advertised once was advertised forever.
+   *
+   * `lastPage` shrinking is taken as a new, shorter run and the pages past it
+   * are dropped immediately — a desk that has been unpatched from half its
+   * universes should say so within one interval, not two.
+   */
+  noteDiscovery(packet: SacnDiscovery, now: number): void {
+    let record = this.discovery.get(packet.sourceId)
+    if (!record) {
+      record = {
+        id: packet.sourceId,
+        name: packet.sourceName,
+        pages: new Map(),
+        lastPage: packet.lastPage,
+        lastSeen: now,
+      }
+      this.discovery.set(packet.sourceId, record)
+    }
+    if (packet.sourceName) record.name = packet.sourceName
+    record.lastPage = packet.lastPage
+    record.lastSeen = now
+    record.pages.set(packet.page, { universes: packet.universes, at: now })
+    for (const page of record.pages.keys()) {
+      if (page > packet.lastPage) record.pages.delete(page)
+    }
+  }
+
+  /** Every source that has advertised itself, and what it claims. */
+  discovered(): DiscoveredSource[] {
+    return [...this.discovery.values()]
+      .map((record) => {
+        const universes = new Set<number>()
+        for (const page of record.pages.values()) {
+          for (const universe of page.universes) universes.add(universe)
+        }
+        const pages = record.lastPage + 1
+        return {
+          id: record.id,
+          name: record.name,
+          universes: [...universes].sort((a, b) => a - b),
+          complete: record.pages.size === pages,
+          pagesSeen: record.pages.size,
+          pages,
+          lastSeen: record.lastSeen,
+        }
+      })
+      .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id))
   }
 
   /** Fold one frame in. `now` is passed rather than read so tests own the clock. */
@@ -346,6 +444,16 @@ export class DmxState {
     if (this.artSyncAt !== null && now - this.artSyncAt > ARTSYNC_TIMEOUT_MS) {
       this.artSyncAt = null
     }
+
+    // Advertisements age page by page, so a source that dropped a universe
+    // stops claiming it once that page goes stale, rather than only when the
+    // whole source does.
+    for (const [id, record] of this.discovery) {
+      for (const [page, seen] of record.pages) {
+        if (now - seen.at > DISCOVERY_TIMEOUT_MS) record.pages.delete(page)
+      }
+      if (record.pages.size === 0) this.discovery.delete(id)
+    }
   }
 
   /**
@@ -473,6 +581,7 @@ export class DmxState {
     this.nodeNames.clear()
     this.sacnSync.clear()
     this.joinedUniverses.clear()
+    this.discovery.clear()
     this.artSyncAt = null
   }
 }

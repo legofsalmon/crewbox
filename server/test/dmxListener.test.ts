@@ -9,7 +9,7 @@ import {
   ARTNET_PORT,
   MAX_SACN_UNIVERSES,
 } from '../src/dmx/listener.ts'
-import { artDmx, artSync, sacnData, sacnSync } from './dmxPackets.ts'
+import { artDmx, artSync, sacnData, sacnDiscovery, sacnSync } from './dmxPackets.ts'
 
 const listeners: DmxListener[] = []
 const senders: dgram.Socket[] = []
@@ -259,5 +259,28 @@ describe('reading a real socket', () => {
     if (!counted) ctx.skip()
 
     expect(listener.snapshot().ignored).toBe(0)
+  })
+
+  it('hears a desk advertise itself on the discovery universe', async (ctx) => {
+    // The box joins 64214 whether or not anybody listed it, because E1.31 §12
+    // says discovery exists so a monitor does not have to join every group to
+    // find out what is out there — and this box is that monitor.
+    const listener = start({ mode: 'sacn', universes: [1] })
+    await until(() => listener.snapshot().sacn.listening)
+    if (!listener.snapshot().sacn.discovery) ctx.skip()
+
+    const tx = await sender()
+    const packet = sacnDiscovery({ universes: [1, 2, 3, 8], sourceName: 'Main Stage MA3' })
+    const timer = setInterval(() => tx.send(packet, SACN_PORT, sacnGroup(64214), () => {}), 50)
+    const arrived = await until(() => listener.state.discovered().length > 0)
+    clearInterval(timer)
+    if (!arrived) ctx.skip()
+
+    const [found] = listener.state.discovered()
+    expect(found.name).toBe('Main Stage MA3')
+    expect(found.universes).toEqual([1, 2, 3, 8])
+    expect(found.complete).toBe(true)
+    // And it did not have to be listening to 2, 3 or 8 to learn any of that.
+    expect(listener.snapshot().sacn.joined).toEqual([1])
   })
 })

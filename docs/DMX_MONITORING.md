@@ -35,7 +35,9 @@ Everything above that layer is silent.
 ## Scope
 
 **In:** which universes are live, who is sending them, at what rate, whether
-two sources are fighting, and what levels are on which addresses.
+two sources are fighting, whether the levels on the wire have actually reached
+the stage, what each source says it is transmitting on, and what levels are on
+which addresses.
 
 **Out:** transmitting anything. Being a visualiser — beams, focus, gobos,
 fixture geometry, rendering. Being a console, a backup console, or a
@@ -324,6 +326,11 @@ multicast arriving at all on Linux. On a box with more than one interface the
 membership interface is effectively required, or the kernel picks by routing
 table and may join on the wrong NIC and receive nothing, silently.
 
+Universe **64214** is joined on top of whatever is listed, always, so sources
+can advertise what they are transmitting on without the box having to guess —
+see universe discovery below. It is not counted in the panel's "joined N
+universes", which means the ones you asked for.
+
 sACN needs an explicit universe list because there are 63999 groups. It also
 needs a short one: **Linux allows 20 memberships per socket by default**
 (`net.ipv4.igmp_max_memberships`), so the list is capped at 16 with a clear
@@ -611,7 +618,7 @@ Two questions closed with no code:
 to describe a fault crewbox could not see and could not have guessed at: a rig
 frozen on its last look because its synchronization stream died, while the desk
 carries on sending and every other check in the panel reads green. Reading
-§6.2.4.1, §6.3, §6.2.6 and §11.1.2 together is what makes the four-way verdict
+§6.2.4.1, §6.3, §6.2.6 and §11.1.2 together is what makes the five-way verdict
 above possible — in particular that a sync _address_ is an intent and only the
 sync _packet_ makes it a fact, which a from-memory implementation would have
 got wrong in the direction of false alarms.
@@ -622,20 +629,44 @@ Art-Net's ArtSync got the same treatment from its own specification: opcode
 **Deterministic arbitration.** ✅ §6.2.3.3 asked for it directly and crewbox
 was not doing it. See the table above.
 
-### Now specified, and worth building
+**Universe discovery.** ✅ E1.31 has a discovery packet that lists the
+universes a source is transmitting, sent to universe 64214 every 10 seconds.
+§12 says why it exists, and it describes crewbox exactly:
 
-**Universe discovery.** E1.31 has a discovery packet that lists the universes
-a source is transmitting, sent to its own universe every 10 seconds — so the
-box could report "this desk is sending universes 1–8" _before_ anyone patches
-a plot, instead of only reporting on universes a plot happens to ask about.
-The constants are `E131_DISCOVERY_UNIVERSE` 64214,
-`VECTOR_ROOT_E131_EXTENDED` 0x00000008, `VECTOR_E131_EXTENDED_DISCOVERY`
-0x00000002, `VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST` 0x00000001, interval 10 s
-(§4.3, §8, App. A). The list is paged, and §6.7.1.1 warns pages can arrive out
-of order or interleaved between runs — so a receiver has to tolerate that
-rather than assume a clean sequence.
+> Universe Discovery is specifically intended to reduce the imposed load on a
+> network that would otherwise be created by a monitoring system joining every
+> single E1.31 multicast group in order to probe its traffic to report this
+> same information.
 
-Not built yet. It is the most useful thing left in the protocol layer.
+So the box joins 64214 whenever sACN is on, regardless of what anyone listed —
+one membership, ahead of any universe somebody guessed at. 16 universes plus
+this is 17, still inside the kernel's 20. It is kept out of the `joined` count
+in the admin panel, which means "universes you asked to watch".
+
+What it buys is the check that could not exist before: **a box listening to
+1–2 while the desk advertises 1–8 looks, from every other check in the panel,
+like a network fault.** It is a typo in one environment variable, and the
+panel now names the universes to add.
+
+Two details from the standard that shape the implementation:
+
+- **Pages are unreliable by design.** §6.7.1.1: pages "may be dropped or
+  arrive out of order, potentially even mixed in between different runs of
+  pages", and how a receiver copes is explicitly out of scope. Waiting for a
+  complete set reports nothing at all when one page keeps getting lost;
+  reporting the union silently presents half a desk as all of it. So crewbox
+  reports the union **and says whether it is complete** — "2 of 3 pages seen".
+  Pages are stored and aged individually, so a source that drops a universe
+  stops advertising it rather than claiming it forever.
+- **Sources may be slow to admit a change.** §12.2 lets a source that has
+  stopped transmitting wait until "no later than the second
+  `E131_UNIVERSE_DISCOVERY_INTERVAL`" before updating its list, so the staleness
+  window is 20 s. Anything shorter would call a conforming desk stale while it
+  behaves exactly as specified.
+
+A source that implements none of this is not a fault and is not reported as
+one — §12 notes that "some legacy sources may not support it, meaning that a
+list of universes cannot ever be guaranteed to be complete".
 
 ### Still outstanding
 

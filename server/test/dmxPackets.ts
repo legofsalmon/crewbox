@@ -164,3 +164,47 @@ export function slotsWithLevels(lit: Record<number, number>): number[] {
   for (const [address, level] of Object.entries(lit)) slots[Number(address) - 1] = level
   return slots
 }
+
+export interface SacnDiscoveryOptions {
+  universes?: number[]
+  page?: number
+  lastPage?: number
+  sourceName?: string
+  cid?: string
+  rootVector?: number
+  framingVector?: number
+  discoveryVector?: number
+  acnId?: string
+  /** Pad the list with trailing zeroes, which some senders do. */
+  padTo?: number
+}
+
+/**
+ * An E1.31 Universe Discovery Packet (Table 4-3). No DMP layer; a Universe
+ * Discovery layer starting at octet 112 instead.
+ *
+ * Note that this shares its *framing* vector value (0x02) with a data packet
+ * and its *discovery* vector value (0x01) with a synchronization packet's
+ * framing vector. Only the combination with the root vector separates them.
+ */
+export function sacnDiscovery(options: SacnDiscoveryOptions = {}): Buffer {
+  const universes = options.universes ?? [1, 2, 3]
+  const count = Math.max(universes.length, options.padTo ?? 0)
+  const buf = Buffer.alloc(120 + count * 2)
+  buf.writeUInt16BE(0x0010, 0)
+  buf.writeUInt16BE(0x0000, 2)
+  Buffer.from(options.acnId ?? 'ASC-E1.17\0\0\0', 'latin1').copy(buf, 4)
+  buf.writeUInt16BE(0x7000 | (buf.length - 16), 16)
+  buf.writeUInt32BE(options.rootVector ?? 0x00000008, 18)
+  Buffer.from((options.cid ?? '0123456789abcdef').padEnd(16, '\0'), 'latin1').copy(buf, 22)
+  buf.writeUInt16BE(0x7000 | (buf.length - 38), 38)
+  buf.writeUInt32BE(options.framingVector ?? 0x00000002, 40)
+  Buffer.from(options.sourceName ?? 'Test Console', 'utf8').copy(buf, 44)
+  // 108-111 reserved, transmitted as 0 (§6.4.3).
+  buf.writeUInt16BE(0x7000 | (buf.length - 112), 112)
+  buf.writeUInt32BE(options.discoveryVector ?? 0x00000001, 114)
+  buf[118] = options.page ?? 0
+  buf[119] = options.lastPage ?? 0
+  universes.forEach((universe, i) => buf.writeUInt16BE(universe, 120 + i * 2))
+  return buf
+}

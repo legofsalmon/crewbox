@@ -1,6 +1,6 @@
 import dgram from 'node:dgram'
 import { parseArtNet } from './artnet.ts'
-import { parseSacn, parseSacnSync } from './sacn.ts'
+import { DISCOVERY_UNIVERSE, parseSacn, parseSacnDiscovery, parseSacnSync } from './sacn.ts'
 import { DmxState } from './state.ts'
 
 /**
@@ -50,6 +50,8 @@ export interface DmxListenerStatus {
     joined: number[]
     /** Universes whose group could not be joined, with why. */
     failed: Array<{ universe: number; reason: string }>
+    /** Whether universe 64214 was joined, so sources can advertise to us. */
+    discovery: boolean
   }
   interfaceIp: string | null
   /** Packets accepted since start, across both protocols. */
@@ -102,7 +104,7 @@ export class DmxListener {
     this.status = {
       mode: options.mode,
       artnet: { listening: false, error: null },
-      sacn: { listening: false, error: null, joined: [], failed: [] },
+      sacn: { listening: false, error: null, joined: [], failed: [], discovery: false },
       interfaceIp: options.interfaceIp ?? null,
       packets: 0,
       ignored: 0,
@@ -133,6 +135,7 @@ export class DmxListener {
     this.sacnSocket = null
     this.status.artnet.listening = false
     this.status.sacn.listening = false
+    this.status.sacn.discovery = false
     this.state.clear()
   }
 
@@ -202,6 +205,12 @@ export class DmxListener {
         this.state.noteSacnSync(sync.syncAddress, Date.now())
         return
       }
+      const discovery = parseSacnDiscovery(buf)
+      if (discovery) {
+        this.status.packets++
+        this.state.noteDiscovery(discovery, Date.now())
+        return
+      }
       this.status.ignored++
     })
 
@@ -210,6 +219,30 @@ export class DmxListener {
     // chosen per group below instead.
     socket.bind(SACN_PORT, () => {
       this.status.sacn.listening = true
+
+      // Universe discovery first, and unconditionally. E1.31 §12 says it
+      // exists precisely so a monitoring system does not have to join every
+      // group to find out what is being transmitted — which is this box's
+      // whole problem — so it earns its one membership before any universe
+      // somebody guessed at. 16 universes plus this is 17, still inside the
+      // 20 the kernel allows.
+      //
+      // Kept out of `joined`, which means "universes you asked to watch": it
+      // is not one of those, and counting it there would report 17 to
+      // somebody who listed 16.
+      try {
+        if (this.options.interfaceIp) {
+          socket.addMembership(sacnGroup(DISCOVERY_UNIVERSE), this.options.interfaceIp)
+        } else {
+          socket.addMembership(sacnGroup(DISCOVERY_UNIVERSE))
+        }
+        this.status.sacn.discovery = true
+      } catch {
+        // Not fatal, and not worth a warning of its own — everything else
+        // still works, there is just no "here is what the desks are sending"
+        // to show. The admin panel says so where it would have shown it.
+      }
+
       const wanted = this.options.universes.slice(0, MAX_SACN_UNIVERSES)
       const dropped = this.options.universes.slice(MAX_SACN_UNIVERSES)
       for (const universe of wanted) {

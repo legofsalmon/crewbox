@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseSacn, parseSacnSync } from '../src/dmx/sacn.ts'
-import { sacnData, sacnSync } from './dmxPackets.ts'
+import { parseSacn, parseSacnDiscovery, parseSacnSync } from '../src/dmx/sacn.ts'
+import { sacnData, sacnDiscovery, sacnSync } from './dmxPackets.ts'
 
 // Packets here are synthesised, not captured off a rig — see dmxPackets.ts.
 
@@ -191,5 +191,70 @@ describe('sACN: universe synchronization', () => {
 
   it('survives a truncated synchronization packet', () => {
     expect(parseSacnSync(sacnSync().subarray(0, 40))).toBeNull()
+  })
+})
+
+describe('sACN: universe discovery', () => {
+  it('reads a source advertising what it transmits on', () => {
+    const found = parseSacnDiscovery(
+      sacnDiscovery({ universes: [1, 2, 3, 101], sourceName: 'grandMA3' })
+    )!
+    expect(found).not.toBeNull()
+    expect(found.universes).toEqual([1, 2, 3, 101])
+    expect(found.sourceName).toBe('grandMA3')
+    expect(found.page).toBe(0)
+    expect(found.lastPage).toBe(0)
+  })
+
+  it('accepts an empty list, which is a legal thing to send', () => {
+    // §8.4: a source not transmitting on anything "may choose to send an
+    // E1.31 Universe Discovery Packet with an empty List of Universes".
+    // Treating that as a parse failure would leave a desk that has just been
+    // unpatched looking like a desk that has gone away.
+    const found = parseSacnDiscovery(sacnDiscovery({ universes: [] }))
+    expect(found).not.toBeNull()
+    expect(found!.universes).toEqual([])
+  })
+
+  it('drops trailing zero padding rather than reporting universe 0', () => {
+    const found = parseSacnDiscovery(sacnDiscovery({ universes: [1, 2], padTo: 8 }))!
+    expect(found.universes).toEqual([1, 2])
+  })
+
+  it('carries the paging so an incomplete list can be known to be incomplete', () => {
+    const found = parseSacnDiscovery(sacnDiscovery({ page: 1, lastPage: 2 }))!
+    expect(found.page).toBe(1)
+    expect(found.lastPage).toBe(2)
+  })
+
+  it('rejects a page number past the last page', () => {
+    expect(parseSacnDiscovery(sacnDiscovery({ page: 3, lastPage: 2 }))).toBeNull()
+  })
+
+  it('keeps all three packet types apart', () => {
+    // The vector values collide across layers: discovery's framing vector is
+    // the data packet's, and its discovery vector is the sync packet's
+    // framing vector. Only the combination separates them.
+    expect(parseSacnDiscovery(sacnData())).toBeNull()
+    expect(parseSacnDiscovery(sacnSync())).toBeNull()
+    expect(parseSacn(sacnDiscovery())).toBeNull()
+    expect(parseSacnSync(sacnDiscovery())).toBeNull()
+  })
+
+  it('discards a packet whose discovery vector is not the universe list', () => {
+    // "Receivers shall discard the packet if the received value is not
+    // VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST" (§8.2).
+    expect(parseSacnDiscovery(sacnDiscovery({ discoveryVector: 0x00000002 }))).toBeNull()
+    expect(parseSacnDiscovery(sacnDiscovery({ rootVector: 0x00000004 }))).toBeNull()
+    expect(parseSacnDiscovery(sacnDiscovery({ framingVector: 0x00000001 }))).toBeNull()
+  })
+
+  it('survives a packet truncated mid-list', () => {
+    const full = sacnDiscovery({ universes: [1, 2, 3, 4] })
+    // An odd number of bytes into the list: the half universe is dropped
+    // rather than read against whatever follows it in memory.
+    const found = parseSacnDiscovery(full.subarray(0, 127))!
+    expect(found.universes).toEqual([1, 2, 3])
+    expect(parseSacnDiscovery(full.subarray(0, 100))).toBeNull()
   })
 })

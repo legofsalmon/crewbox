@@ -1008,12 +1008,12 @@ export function buildApp({
       // network is a separate thing that can be fine while the box is not,
       // and the other way round.
       lighting: dmx
-        ? dmxReadiness(dmx.snapshot(), dmx.state.health(), Date.now())
+        ? dmxReadiness(dmx.snapshot(), dmx.state.health(), Date.now(), dmx.state.discovered())
         : dmxReadiness(
             {
               mode: 'off',
               artnet: { listening: false, error: null },
-              sacn: { listening: false, error: null, joined: [], failed: [] },
+              sacn: { listening: false, error: null, joined: [], failed: [], discovery: false },
               interfaceIp: null,
               packets: 0,
               ignored: 0,

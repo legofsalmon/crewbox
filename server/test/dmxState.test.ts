@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DmxState, signedByteDiff } from '../src/dmx/state.ts'
+import type { SacnDiscovery } from '../src/dmx/sacn.ts'
 import { DEFAULT_PRIORITY, type DmxFrame } from '../src/dmx/types.ts'
 
 /**
@@ -438,5 +439,99 @@ describe('whether the levels are on stage', () => {
     expect(state.health()[0].sources).toHaveLength(0)
     expect(state.health()[0].sync).toBe('none')
     expect(state.health()[0].syncAddress).toBe(0)
+  })
+})
+
+describe('what the desks say they are sending', () => {
+  const advert = (over: Partial<SacnDiscovery> = {}): SacnDiscovery => ({
+    sourceId: 'desk-a',
+    sourceName: 'grandMA3',
+    page: 0,
+    lastPage: 0,
+    universes: [1, 2, 3],
+    ...over,
+  })
+
+  it('records a single-page advertisement whole', () => {
+    const state = new DmxState()
+    state.noteDiscovery(advert(), 1000)
+    const [found] = state.discovered()
+    expect(found.universes).toEqual([1, 2, 3])
+    expect(found.complete).toBe(true)
+    expect(found.name).toBe('grandMA3')
+  })
+
+  it('joins pages that arrive out of order', () => {
+    // §6.7.1.1 says pages "may be dropped or arrive out of order, potentially
+    // even mixed in between different runs of pages", and leaves what to do
+    // about it to the receiver.
+    const state = new DmxState()
+    state.noteDiscovery(advert({ page: 1, lastPage: 1, universes: [10, 11] }), 1000)
+    state.noteDiscovery(advert({ page: 0, lastPage: 1, universes: [1, 2] }), 1010)
+    const [found] = state.discovered()
+    expect(found.universes).toEqual([1, 2, 10, 11])
+    expect(found.complete).toBe(true)
+  })
+
+  it('reports a partial list as partial rather than as the whole truth', () => {
+    // Waiting for a complete set would report nothing at all when one page
+    // keeps getting lost; reporting the union silently would present half a
+    // desk as all of it. So: the union, and say which it is.
+    const state = new DmxState()
+    state.noteDiscovery(advert({ page: 0, lastPage: 2, universes: [1, 2] }), 1000)
+    state.noteDiscovery(advert({ page: 2, lastPage: 2, universes: [20] }), 1010)
+    const [found] = state.discovered()
+    expect(found.universes).toEqual([1, 2, 20])
+    expect(found.complete).toBe(false)
+    expect(found.pagesSeen).toBe(2)
+    expect(found.pages).toBe(3)
+  })
+
+  it('lets a source drop a universe rather than advertising it forever', () => {
+    const state = new DmxState()
+    state.noteDiscovery(advert({ universes: [1, 2, 3] }), 1000)
+    state.noteDiscovery(advert({ universes: [1, 2] }), 12_000)
+    expect(state.discovered()[0].universes).toEqual([1, 2])
+  })
+
+  it('drops pages a shortened run no longer has', () => {
+    // A desk unpatched from half its universes goes from two pages to one.
+    // Keeping page 1 around would keep advertising universes it let go.
+    const state = new DmxState()
+    state.noteDiscovery(advert({ page: 0, lastPage: 1, universes: [1, 2] }), 1000)
+    state.noteDiscovery(advert({ page: 1, lastPage: 1, universes: [10, 11] }), 1010)
+    expect(state.discovered()[0].universes).toEqual([1, 2, 10, 11])
+
+    state.noteDiscovery(advert({ page: 0, lastPage: 0, universes: [1, 2] }), 11_000)
+    const [found] = state.discovered()
+    expect(found.universes).toEqual([1, 2])
+    expect(found.complete).toBe(true)
+  })
+
+  it('forgets a source two discovery intervals after it stops advertising', () => {
+    // 20 s, because §12.2 lets a source that has stopped transmitting wait
+    // until the second interval before saying so — anything shorter calls a
+    // conforming desk stale while it is behaving exactly as specified.
+    const state = new DmxState()
+    state.noteDiscovery(advert(), 1000)
+    state.sweep(19_000)
+    expect(state.discovered()).toHaveLength(1)
+    state.sweep(22_000)
+    expect(state.discovered()).toHaveLength(0)
+  })
+
+  it('keeps sources apart by CID', () => {
+    const state = new DmxState()
+    state.noteDiscovery(advert({ sourceId: 'a', sourceName: 'Desk A', universes: [1] }), 1000)
+    state.noteDiscovery(advert({ sourceId: 'b', sourceName: 'Desk B', universes: [9] }), 1000)
+    expect(state.discovered().map((s) => s.name)).toEqual(['Desk A', 'Desk B'])
+    expect(state.discovered().map((s) => s.universes)).toEqual([[1], [9]])
+  })
+
+  it('carries an empty advertisement without inventing universes', () => {
+    const state = new DmxState()
+    state.noteDiscovery(advert({ universes: [] }), 1000)
+    expect(state.discovered()[0].universes).toEqual([])
+    expect(state.discovered()[0].complete).toBe(true)
   })
 })
