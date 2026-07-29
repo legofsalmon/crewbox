@@ -440,3 +440,63 @@ channel falls back to peak-in-footprint and the live bar reports how many
 fixtures were judged which way; a fixture patched across several DMX breaks
 has channels this can't place, and the readout shows them with no address
 rather than reading the wrong slots.
+
+## Cross-checking against other people's work
+
+Everything above was written from the published specifications. That is
+necessary and not sufficient — the first draft of this design had sACN's
+option bits one place too low, and a suite built on it would have been green
+while calling every live rig silent. Reading a spec is a thing you can do
+wrong quietly.
+
+So the constants were checked a second time against implementations written
+by people who have never seen this codebase. Where two unrelated projects
+agree with each other _and_ with the standard, a misreading has to be shared
+three ways to survive.
+
+| Source                                               | What it settled                                                                                                                                         |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ANSI E1.31-2018][e131] (ESTA TSP, free)             | The standard itself.                                                                                                                                    |
+| [libe131][libe131] (C)                               | Every sACN offset, by construction — its packed struct _is_ the layout. Also the option bit numbers, the validation set, and the sequence discard rule. |
+| [Hundemeier/sacn][pysacn] (Python)                   | The same offsets, reached independently: `raw_data[112] & 0b10000000` for preview, `& 0b01000000` for terminated, `& 0b00100000` for force-sync.        |
+| [Art-Net 4 specification][artnet] (Artistic Licence) | The standard itself.                                                                                                                                    |
+| [OLA][ola] `plugins/artnet/ArtNetPackets.h`          | ArtDmx field order and the opcodes; `id[8]` + opcode puts ArtPollReply's short name at 26 and long name at 44.                                          |
+| [OLA][ola] `plugins/artnet/ArtNetNode.h`             | `MERGE_TIMEOUT = 10` seconds, "as per the spec".                                                                                                        |
+| [python-gdtf][pygdtf] test files                     | A real GDTF profile written by another tool — see `web/src/modules/lighting/model/__fixtures__/`.                                                       |
+
+### What that turned up
+
+Two things, both in code that was already shipping:
+
+**The Art-Net data-loss timeout was sACN's.** `state.ts` timed out every
+source at 2.5 seconds, which is E1.31's figure. Art-Net senders are allowed
+to stop repeating themselves when nothing changes and re-send the last frame
+only about every 4 seconds, and Art-Net's own merge timeout is 10. So a
+console parked on a look — most of a show — was dropped between its own
+keep-alives, and the panel flapped between "receiving" and "nothing
+arriving" on a completely healthy rig. A monitor that cries wolf is worse
+than no monitor. The timeout is now per protocol.
+
+**The DMP layer's addressing was not checked.** E1.31 fixes a DMX packet to
+one shape: single-byte properties, first address 0, increment 1. Both
+reference implementations reject all three mismatches; crewbox checked none
+of them, so other DMP traffic on port 5568 could have been read as levels at
+offsets that only make sense for this one layout. Now checked, with a test.
+
+A third, smaller: an sACN priority above the legal 200 is now capped rather
+than believed, so a malformed source can't take a universe off a console
+correctly asking for 200.
+
+[e131]: https://tsp.esta.org/tsp/documents/docs/ANSI_E1-31-2018.pdf
+[artnet]: https://art-net.org.uk/downloads/art-net.pdf
+[libe131]: https://github.com/hhromic/libe131
+[pysacn]: https://github.com/Hundemeier/sacn
+[ola]: https://github.com/OpenLightingProject/ola
+[pygdtf]: https://github.com/open-stage/python-gdtf
+
+### Still outstanding
+
+None of this replaces a real console. Two implementations agreeing on a byte
+offset is strong evidence about the format and says nothing about whether a
+grandMA3 on a festival network behaves the way three documents say it should.
+`scripts/dmx-sniff.mjs --dump` remains the thing to run first.

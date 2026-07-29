@@ -317,3 +317,54 @@
     color: $color-danger;
   }
 }
+
+/* The gap between two acts.
+   Drawn as a rule across the list with the number in the middle of it,
+   because that is what it is — a boundary between two sets, not a property
+   of either one. The sheet draws it the same way, in the narrow column
+   between two act blocks. */
+.changeover {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 2px;
+  font-size: 0.8rem;
+  color: $color-muted;
+}
+
+.changeover label {
+  white-space: nowrap;
+}
+
+.changeoverRule {
+  flex: 1;
+  min-width: 12px;
+  height: 1px;
+  background: $color-border;
+}
+
+.changeoverInput {
+  width: 4.5em;
+  padding: 3px 6px;
+  border: 1px solid $color-border;
+  border-radius: $radius-small;
+  background: $color-surface-alt;
+  color: $color-ink;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* "1 hr 30" beside the raw minutes, for anything an hour or over — the way
+   it is said out loud. Below that the minutes already read fine. */
+.changeoverPretty {
+  color: $color-ink;
+  font-weight: 600;
+}
+
+/* The written changeover and the set times disagree. Not an error: both are
+   the crew's own numbers and either could be the stale one. */
+.changeoverClash {
+  color: $color-danger;
+  font-weight: 600;
+}

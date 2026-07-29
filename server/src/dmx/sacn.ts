@@ -1,4 +1,4 @@
-import { UNIVERSE_SIZE, type DmxFrame } from './types.ts'
+import { MAX_PRIORITY, UNIVERSE_SIZE, type DmxFrame } from './types.ts'
 
 /**
  * ANSI E1.31 (sACN), receive side only.
@@ -40,6 +40,21 @@ const VECTOR_ROOT_DATA = 0x00000004
 const VECTOR_FRAMING_DATA = 0x00000002
 const VECTOR_DMP_SET_PROPERTY = 0x02
 
+/**
+ * The DMP layer's addressing, which E1.31 fixes to exactly one shape.
+ *
+ * A DMX data packet always addresses one contiguous run of one-byte
+ * properties starting at zero. These three constants are what say so, and
+ * checking them is what stops other DMP traffic on the same port from being
+ * read as levels at offsets that only make sense for this one layout.
+ *
+ * Both reference implementations cross-checked against (libe131 and the
+ * Hundemeier Python sACN library) treat all three as hard validation errors.
+ */
+const DMP_ADDRESS_DATA_TYPE = 0xa1
+const DMP_FIRST_PROPERTY_ADDRESS = 0x0000
+const DMP_ADDRESS_INCREMENT = 0x0001
+
 /** DMX levels. Other start codes exist (RDM, text) and are not ours. */
 const START_CODE_DMX = 0x00
 
@@ -56,9 +71,6 @@ const HEADER = 126
  */
 const OPTION_PREVIEW_DATA = 0x80
 const OPTION_STREAM_TERMINATED = 0x40
-
-/** A source that stops sending is gone after this long (E1.31 §6.7.1). */
-export const NETWORK_DATA_LOSS_MS = 2500
 
 /**
  * How far behind the last sequence number a packet may be before it is taken
@@ -77,6 +89,9 @@ export function parseSacn(buf: Buffer): DmxFrame | null {
   if (buf.readUInt32BE(18) !== VECTOR_ROOT_DATA) return null
   if (buf.readUInt32BE(40) !== VECTOR_FRAMING_DATA) return null
   if (buf[117] !== VECTOR_DMP_SET_PROPERTY) return null
+  if (buf[118] !== DMP_ADDRESS_DATA_TYPE) return null
+  if (buf.readUInt16BE(119) !== DMP_FIRST_PROPERTY_ADDRESS) return null
+  if (buf.readUInt16BE(121) !== DMP_ADDRESS_INCREMENT) return null
   if (buf[125] !== START_CODE_DMX) return null
 
   const universe = buf.readUInt16BE(113)
@@ -101,7 +116,11 @@ export function parseSacn(buf: Buffer): DmxFrame | null {
     // an address cannot.
     sourceId: buf.subarray(22, 38).toString('hex'),
     sourceName: nameRaw.toString('utf8', 0, nameEnd === -1 ? nameRaw.length : nameEnd).trim(),
-    priority: buf[108]!,
+    // Capped rather than rejected. 200 is the ceiling a legal source may
+    // claim, and letting a malformed 255 through would hand a misbehaving
+    // sender the universe over a console correctly asking for 200 — while
+    // dropping the packet outright would lose a whole rig over one byte.
+    priority: Math.min(buf[108]!, MAX_PRIORITY),
     sequence: buf[111]!,
     sequenced: true,
     slots: new Uint8Array(buf.subarray(HEADER, HEADER + length)),

@@ -60,7 +60,7 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
     if (!file) return
     try {
       const rows = parseCsv(await file.text())
-      const { data, skippedColumns } = sheetFromCsv(rows)
+      const { data, skippedColumns, warnings } = sheetFromCsv(rows)
       if (data.channels.length === 0) {
         addToast('Import failed', 'No rows found in that CSV', 'error')
         return
@@ -71,7 +71,12 @@ export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) =>
       if (skippedColumns.length > 0) {
         summary.push(`skipped columns: ${skippedColumns.join(', ')}`)
       }
-      addToast('Imported', summary.join(' · '), skippedColumns.length > 0 ? 'warning' : 'success')
+      // A sheet whose changeovers disagree with its own set times still
+      // imports — it is the crew's sheet and both numbers are theirs. Saying
+      // so at the moment they open it is the whole value.
+      summary.push(...(warnings ?? []))
+      const off = skippedColumns.length > 0 || (warnings?.length ?? 0) > 0
+      addToast('Imported', summary.join(' · '), off ? 'warning' : 'success')
       onOpen(sheetId)
     } catch (error) {
       addToast('Import failed', error instanceof Error ? error.message : 'Unreadable file', 'error')

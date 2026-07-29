@@ -235,3 +235,32 @@ test('the stage patch is derived from the grid, not typed again', async ({ brows
   await expect(page.getByRole('dialog').getByText(/Two channels on one tail/)).toBeVisible()
   await expect(page.getByRole('dialog').getByText('BSNAKE 4', { exact: true })).toBeVisible()
 })
+
+/**
+ * The changeover: how long there is between one act coming down and the next
+ * going on. On a festival stage it is the number the day is planned around,
+ * and the sheet keeps it as free text ("45", "HR") in the narrow column
+ * beside each act name.
+ */
+test('the changeover between two acts comes across, and is checked', async ({ browser }) => {
+  const page = await newDevice(browser, 'Changeover Tech')
+
+  await openPatch(page)
+  await page.locator('input[type=file]').setInputFiles('e2e/fixtures/festival-day-sheet.csv')
+  await expect(page.locator('table')).toBeVisible()
+  await page.getByRole('button', { name: 'Lineup' }).click()
+
+  // "45" on the second act and "HR" on the next two — an hour, written the
+  // way a crew writes it. The first act has none: nothing to change over
+  // from.
+  const changeovers = page.locator('input[type=number]')
+  await expect(changeovers.nth(0)).toHaveValue('45')
+  await expect(changeovers.nth(1)).toHaveValue('60')
+  await expect(changeovers.nth(2)).toHaveValue('60')
+
+  // Move one so it disagrees with the running order, and it says so rather
+  // than quietly holding two different answers.
+  await changeovers.nth(1).fill('30')
+  await changeovers.nth(1).blur()
+  await expect(page.getByText('the set times leave 1 hr')).toBeVisible()
+})

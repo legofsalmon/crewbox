@@ -1,3 +1,4 @@
+import { formatChangeover, gapBetween, parseChangeover } from './changeover'
 import type { ImportedSheetData } from './sheetDoc'
 import type { PatchField } from './types'
 
@@ -75,7 +76,18 @@ const looksLikeSpec = (cell: string): boolean => norm(cell).startsWith('spec')
 function readActHeaders(
   rows: string[][],
   layout: Layout
-): Array<{ name: string; startTime?: string; endTime?: string; spec?: string }> {
+): {
+  acts: Array<{
+    name: string
+    startTime?: string
+    endTime?: string
+    changeover: number
+    spec?: string
+    notes?: string
+  }>
+  /** What the sheet literally said, per act, before anything was derived. */
+  written: Array<number | null>
+} {
   let nameRow: string[] | null = null
   let timesRow: string[] | null = null
   let specRow: string[] | null = null
@@ -94,7 +106,7 @@ function readActHeaders(
     }
   }
 
-  return layout.groups.map((c, i) => {
+  const acts = layout.groups.map((c, i) => {
     const raw = (timesRow?.[c + 1] ?? '').trim()
     // "19:00 - 20:00" is a set time; "Start - End" is the empty template.
     const times = /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/.exec(raw)
@@ -105,8 +117,60 @@ function readActHeaders(
         ? { startTime: times[1].replace('.', ':'), endTime: times[2].replace('.', ':') }
         : {}),
       ...(looksLikeSpec(spec) ? {} : { spec }),
+      /**
+       * The narrow column to the left of an act's name carries the
+       * changeover into that act — "45", "HR". It reads as sitting between
+       * the two acts, and it belongs to the one it comes before.
+       */
+      changeover: parseChangeover(nameRow?.[c] ?? '') ?? 0,
     }
   })
+
+  // Keep what was literally written before filling any of it in, so the
+  // cross-check below compares the sheet against the sheet.
+  const written = acts.map((act) => (act.changeover > 0 ? act.changeover : null))
+
+  // Where nobody wrote one, the set times already know it. Where somebody
+  // did, the two should agree — see `changeoverWarnings`.
+  for (let i = 1; i < acts.length; i++) {
+    const previous = acts[i - 1]!
+    const act = acts[i]!
+    if (act.changeover > 0 || !previous.endTime || !act.startTime) continue
+    act.changeover = gapBetween(previous.endTime, act.startTime) ?? 0
+  }
+
+  return { acts, written }
+}
+
+/**
+ * Where the written changeover and the running order disagree.
+ *
+ * Both are typed by hand into the same sheet, so one of them drifts the
+ * moment a set time moves and nobody updates the other. The sheet then looks
+ * authoritative and is quietly lying about the one number the day runs on.
+ *
+ * This says so rather than picking a winner: which is right depends on
+ * whether the times moved or the changeover did, and only the person holding
+ * the running order knows that.
+ */
+export function changeoverWarnings(
+  acts: Array<{ name: string; startTime?: string; endTime?: string; changeover: number }>,
+  written: Array<number | null>
+): string[] {
+  const out: string[] = []
+  for (let i = 1; i < acts.length; i++) {
+    const stated = written[i]
+    const previous = acts[i - 1]!
+    const act = acts[i]!
+    if (!stated || !previous.endTime || !act.startTime) continue
+    const derived = gapBetween(previous.endTime, act.startTime)
+    if (derived === null || derived === stated) continue
+    out.push(
+      `${act.name}: sheet says a ${formatChangeover(stated)} changeover, ` +
+        `but the set times leave ${formatChangeover(derived)}`
+    )
+  }
+  return out
 }
 
 /** Common gaffer-tape colours, so an imported box arrives the right colour. */
@@ -168,10 +232,79 @@ function readSubBoxLegend(
   return found.length >= 2 ? found : []
 }
 
+/**
+ * Everything an act carries that lives *below* the channel grid.
+ *
+ * `readActHeaders` walks up from the header row and so can only ever see the
+ * name, the set time and the SPEC line. The rest of what a crew writes about
+ * an act is underneath the channels: a free-text "Additional info" box, and a
+ * NO./ITEM table of kit they want from the house.
+ *
+ * Both are real production information — "require 3 57s from house", "5 tall
+ * stands" — and both were being read as "not a channel row" and dropped. The
+ * artist already has a `notes` field with a textarea bound to it; this fills
+ * it.
+ */
+function readActFooters(rows: string[][], layout: Layout, firstRowBelowData: number): string[] {
+  const info = layout.groups.map(() => '')
+  const items = layout.groups.map<string[]>(() => [])
+
+  for (let r = firstRowBelowData; r < rows.length; r++) {
+    const row = rows[r]!
+    layout.groups.forEach((c, i) => {
+      // The free-text box: a label cell reading "Additional info:" and the
+      // text under it. The label repeats per act, so match on the label
+      // rather than on a fixed row.
+      const label = norm(row[c + 1])
+      if (label.startsWith('additionalinfo')) {
+        const text = (rows[r + 1]?.[c + 1] ?? '').trim()
+        // The template repeats a prompt in every unfilled act's box. It is
+        // instructions to whoever fills the sheet in, not information about
+        // the act, and copying it onto sixteen acts would be noise.
+        if (text && !info[i] && !isTemplatePrompt(text)) info[i] = text
+      }
+
+      // The kit table: "NO." / "ITEM" headers, then count/name pairs.
+      if (norm(row[c + 1]) === 'no' && norm(row[c + 2]) === 'item') {
+        for (let k = r + 1; k < rows.length; k++) {
+          const count = (rows[k]?.[c + 1] ?? '').trim()
+          const item = (rows[k]?.[c + 2] ?? '').trim()
+          if (!count && !item) {
+            // One blank row inside the table is a gap; two is the end of it.
+            const next = rows[k + 1]
+            if (!next || (!(next[c + 1] ?? '').trim() && !(next[c + 2] ?? '').trim())) break
+            continue
+          }
+          if (item) items[i]!.push(count ? `${count} × ${item}` : item)
+        }
+      }
+    })
+  }
+
+  return layout.groups.map((_, i) =>
+    [info[i], items[i]!.length > 0 ? `Kit from house: ${items[i]!.join(', ')}` : '']
+      .filter(Boolean)
+      .join('\n\n')
+  )
+}
+
+/**
+ * A prompt the template puts in every act's box, rather than a note about
+ * one act.
+ *
+ * The real sheet repeats "Touring Desks / Multis / Power / Other info to
+ * speed up changeover from their specs" across every act nobody has filled
+ * in yet. Importing that would put the same paragraph on twelve acts.
+ */
+const isTemplatePrompt = (text: string): boolean =>
+  /other info|their specs|speed up changeover/i.test(text)
+
 export interface FestivalImport {
   data: ImportedSheetData
   /** Set when the file isn't in this layout at all. */
   matched: boolean
+  /** Things worth telling whoever ran the import. Never fatal. */
+  warnings: string[]
 }
 
 /**
@@ -182,21 +315,32 @@ export interface FestivalImport {
  */
 export function festivalSheetFromCsv(rows: string[][]): FestivalImport {
   const layout = findLayout(rows)
-  if (!layout) return { data: { channels: [], artists: [], patches: [] }, matched: false }
+  if (!layout) {
+    return { data: { channels: [], artists: [], patches: [] }, matched: false, warnings: [] }
+  }
 
-  const artists = readActHeaders(rows, layout)
+  const { acts: artists, written } = readActHeaders(rows, layout)
   const subBoxes = readSubBoxLegend(rows, layout.headerRow)
 
   // Data runs until the channel numbers stop. Below them sit the "Additional
   // info" boxes and the per-act tail tables, which are not channels.
   const channels: Array<{ label: string; input: string }> = []
   const dataRows: string[][] = []
+  let belowData = rows.length
   for (let r = layout.headerRow + 1; r < rows.length; r++) {
     const row = rows[r]!
     const label = (row[0] ?? '').trim()
-    if (!/^\d+$/.test(label)) break
+    if (!/^\d+$/.test(label)) {
+      belowData = r
+      break
+    }
     channels.push({ label, input: (row[1] ?? '').trim() })
     dataRows.push(row)
+  }
+
+  const footers = readActFooters(rows, layout, belowData)
+  for (const [i, artist] of artists.entries()) {
+    if (footers[i]) artist.notes = footers[i]!
   }
 
   const patches: ImportedSheetData['patches'] = layout.groups.map((c) =>
@@ -213,5 +357,6 @@ export function festivalSheetFromCsv(rows: string[][]): FestivalImport {
   return {
     data: { channels, artists, subBoxes, patches },
     matched: channels.length > 0,
+    warnings: changeoverWarnings(artists, written),
   }
 }

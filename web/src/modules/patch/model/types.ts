@@ -39,6 +39,13 @@ export interface Artist {
   name: string
   startTime: string
   endTime: string
+  /**
+   * Minutes between the previous act coming down and this one going on.
+   *
+   * 0 when nothing says — including for the first act of the day, which has
+   * no act before it to change over from. See `changeover.ts`.
+   */
+  changeover: number
   /** What the act brings and needs — the "SPEC:" line on a paper sheet. */
   spec: string
   /** Anything else. The "Additional info" box. */
