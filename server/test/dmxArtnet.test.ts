@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseArtNet } from '../src/dmx/artnet.ts'
-import { artDmx, artPollReply } from './dmxPackets.ts'
+import { artDmx, artPollReply, artSync } from './dmxPackets.ts'
 
 // Packets here are synthesised, not captured off a rig — see dmxPackets.ts for
 // why that matters and what would replace it.
@@ -108,5 +108,32 @@ describe('Art-Net: nodes that announce themselves', () => {
     if (packet?.kind !== 'pollReply') return
     expect(packet.reply.shortName).toBe('Node7')
     expect(packet.reply.longName).toBe('')
+  })
+})
+
+describe('Art-Net: synchronisation', () => {
+  it('recognises an ArtSync', () => {
+    const packet = parseArtNet(artSync(), '2.0.0.10')
+    expect(packet?.kind).toBe('sync')
+  })
+
+  it('does not mistake it for data', () => {
+    // 0x5200 and 0x5000 differ in one nibble, and an ArtSync has no payload
+    // at all — reading one as ArtDmx would report a universe of zeros.
+    const packet = parseArtNet(artDmx({ opcode: 0x5200 }), '2.0.0.10')
+    expect(packet?.kind).toBe('sync')
+  })
+
+  it('carries a force-sync of true, because a node reverts on its own', () => {
+    // Art-Net has no equivalent bit. A node times out to non-synchronous
+    // operation four seconds after the last ArtSync and carries on
+    // outputting, which is what sACN's force-synchronization describes when
+    // it is set — so `false` here would claim Art-Net rigs freeze, and they
+    // do not.
+    const packet = parseArtNet(artDmx(), '2.0.0.10')
+    expect(packet?.kind).toBe('dmx')
+    if (packet?.kind !== 'dmx') return
+    expect(packet.frame.forceSync).toBe(true)
+    expect(packet.frame.syncAddress).toBe(0)
   })
 })

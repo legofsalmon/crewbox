@@ -51,6 +51,28 @@ export const DATA_LOSS_MS: Record<DmxProtocol, number> = {
 }
 
 /**
+ * How long an Art-Net node keeps buffering after the last ArtSync.
+ *
+ * The Art-Net 4 specification's synchronisation section: a node "shall time
+ * out to non-synchronous operation if an ArtSync is not received for 4
+ * seconds or more". There is no per-packet sync field in ArtDmx, so this
+ * timer is the entire difference between levels that are on stage and levels
+ * a node is holding.
+ */
+export const ARTSYNC_TIMEOUT_MS = 4000
+
+/**
+ * How many sources an Art-Net node will merge.
+ *
+ * From the same specification's Data Merging section: merging is limited to
+ * two sources, and "if there are more than two sources, the node shall ignore
+ * the extra sources". So a third console on an Art-Net universe is not a
+ * three-way argument — it is a console that is being silently discarded,
+ * which is worth saying differently from a two-way conflict.
+ */
+export const ARTNET_MERGE_SOURCES = 2
+
+/**
  * A universe's worth of levels from one source, at one moment.
  *
  * `slots` is index-0-for-slot-1, which is the opposite of how everyone says it
@@ -81,6 +103,45 @@ export interface DmxFrame {
   sequenced: boolean
   /** Up to 512 levels. Shorter is legal and common — a 24-way rig sends 24. */
   slots: Uint8Array
+  /**
+   * The universe this data is waiting on, when it is waiting on one.
+   *
+   * sACN carries a synchronization address. 0 means the data stands on its
+   * own and is acted on immediately. Non-zero names a universe that
+   * synchronization packets are sent on, and a receiver that is *also*
+   * receiving that stream holds this packet until the next one arrives
+   * (E1.31 §6.2.4.1) rather than outputting it.
+   *
+   * Both halves matter, and the second is easy to miss: §6.2.4.1 is explicit
+   * that a receiver "must not attempt to synchronize any data on a
+   * Synchronization Address until it has received its first E1.31
+   * Synchronization Packet containing that address". A non-zero address on
+   * its own therefore says the source *intends* synchronisation, not that
+   * anything is being held — see `sync` in state.ts for the distinction.
+   *
+   * Art-Net has no per-packet equivalent; a node buffers from the moment it
+   * sees an ArtSync until `ARTSYNC_TIMEOUT_MS` after the last one, so this is
+   * always 0 there.
+   */
+  syncAddress: number
+  /**
+   * What the source wants receivers to do when synchronisation stops.
+   *
+   * E1.31 §6.2.6, options bit 5. Set means a receiver that was synchronised
+   * may carry on acting on data packets as they arrive. **Clear** — the
+   * default, and what most sources send — means components "shall not update
+   * with any new packets until synchronization resumes": the rig freezes on
+   * its last look.
+   *
+   * So a sync stream that stops is not a cosmetic fault. It is the difference
+   * between a stage that keeps following the desk and a stage that stopped
+   * moving several minutes ago, and this bit is which one.
+   *
+   * Art-Net reverts to non-synchronous operation on its own after four
+   * seconds, which is the behaviour this bit describes when set — hence
+   * `true` there.
+   */
+  forceSync: boolean
   /** Console preview, not the stage. Never counts as output. */
   preview: boolean
   /** The source says it is done with this universe. */

@@ -1,6 +1,6 @@
 import dgram from 'node:dgram'
 import { parseArtNet } from './artnet.ts'
-import { parseSacn } from './sacn.ts'
+import { parseSacn, parseSacnSync } from './sacn.ts'
 import { DmxState } from './state.ts'
 
 /**
@@ -163,6 +163,12 @@ export class DmxListener {
         this.state.noteNode(packet.reply.ip, packet.reply.longName || packet.reply.shortName)
         return
       }
+      if (packet.kind === 'sync') {
+        // Every node on the network is now buffering ArtDmx, so the levels
+        // being read are queued rather than on stage until the next one.
+        this.state.noteArtSync(Date.now())
+        return
+      }
       this.state.apply(packet.frame, Date.now())
     })
     // Art-Net is broadcast, so there is nothing to join — just the port.
@@ -182,12 +188,21 @@ export class DmxListener {
     })
     socket.on('message', (buf) => {
       const frame = parseSacn(buf)
-      if (!frame) {
-        this.status.ignored++
+      if (frame) {
+        this.status.packets++
+        this.state.apply(frame, Date.now())
         return
       }
-      this.status.packets++
-      this.state.apply(frame, Date.now())
+      // Data and synchronization packets differ from the root vector onwards,
+      // so `parseSacn` has already bailed at octet 18 by the time we get here
+      // and this second pass costs a header check, not a second parse.
+      const sync = parseSacnSync(buf)
+      if (sync) {
+        this.status.packets++
+        this.state.noteSacnSync(sync.syncAddress, Date.now())
+        return
+      }
+      this.status.ignored++
     })
 
     // Bind 0.0.0.0, never a specific unicast address: on Linux, binding to an
@@ -214,6 +229,10 @@ export class DmxListener {
       for (const universe of dropped) {
         this.status.sacn.failed.push({ universe, reason: `over the ${MAX_SACN_UNIVERSES} limit` })
       }
+      // Synchronization packets only reach their own universe's group
+      // (E1.31 §6.3.3.1), so which groups were joined decides whether a
+      // missing sync stream is a fault we can see or one we cannot.
+      this.state.watchSyncUniverses(this.status.sacn.joined)
       this.options.log?.info(
         `sACN: listening on ${SACN_PORT}, joined ${this.status.sacn.joined.length}` +
           (this.options.interfaceIp ? ` via ${this.options.interfaceIp}` : '')

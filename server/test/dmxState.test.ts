@@ -17,6 +17,8 @@ const frame = (over: Partial<DmxFrame> = {}): DmxFrame => ({
   sequence: 1,
   sequenced: true,
   slots: new Uint8Array([0, 0, 0, 0]),
+  syncAddress: 0,
+  forceSync: false,
   preview: false,
   terminated: false,
   ...over,
@@ -279,5 +281,162 @@ describe('sequence arithmetic', () => {
     expect(signedByteDiff(4, 5)).toBe(-1)
     expect(signedByteDiff(127, 0)).toBe(127)
     expect(signedByteDiff(128, 0)).toBe(-128)
+  })
+})
+
+describe('whether the levels are on stage', () => {
+  /**
+   * A console that keeps sending, with sequence numbers that advance.
+   *
+   * Needed because a source is dropped after its own data-loss timeout, and
+   * these tests are about what happens to a rig whose *desk is fine* and
+   * whose synchronisation has failed. Sweeping past both timeouts at once
+   * tests something else entirely — and did, until this existed.
+   */
+  const keepSending = (state: DmxState, over: Partial<DmxFrame>, times: number[]) => {
+    times.forEach((t, i) => state.apply(frame({ ...over, sequence: i + 1 }), t))
+  }
+
+  it('says nothing about a rig that is not synchronising', () => {
+    const state = new DmxState()
+    state.apply(frame(), 1000)
+    expect(state.health()[0].sync).toBe('none')
+    expect(state.health()[0].syncAddress).toBe(0)
+  })
+
+  it('will not call data held on a sync address alone', () => {
+    // The easy mistake, and E1.31 §6.2.4.1 forbids it outright: a receiver
+    // "must not attempt to synchronize any data on a Synchronization Address
+    // until it has received its first E1.31 Synchronization Packet containing
+    // that address". A source advertising an address is stating an intent,
+    // not a fact about any receiver.
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.apply(frame({ syncAddress: 7962 }), 1000)
+    expect(state.health()[0].sync).not.toBe('held')
+  })
+
+  it('holds once the synchronization stream is actually arriving', () => {
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.noteSacnSync(7962, 1000)
+    state.apply(frame({ syncAddress: 7962 }), 1000)
+    expect(state.health()[0].sync).toBe('held')
+    expect(state.health()[0].syncAddress).toBe(7962)
+  })
+
+  it('calls the stage frozen when the sync stream dies and force-sync is clear', () => {
+    // The fault this exists for. §11.1.2 stops a receiver synchronising after
+    // E131_NETWORK_DATA_LOSS_TIMEOUT with no sync packet, and §6.2.6 says
+    // what happens next when force-synchronization is 0: components "shall
+    // not update with any new packets until synchronization resumes". The
+    // desk carries on sending and the stage stops moving, and neither end can
+    // see it from where it is standing.
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.noteSacnSync(7962, 1000)
+    keepSending(state, { syncAddress: 7962, forceSync: false }, [1000, 2000, 3000])
+    expect(state.health()[0].sync).toBe('held')
+
+    state.sweep(3000)
+    expect(state.health()[0].sync).toBe('held')
+
+    // The desk is still sending — that is the whole point. Only the sync
+    // stream has stopped, and 2.5 s past the last one is E1.31's own
+    // deadline for giving up on it.
+    keepSending(state, { syncAddress: 7962, forceSync: false }, [3500])
+    state.sweep(3600)
+    expect(state.health()[0].sync).toBe('frozen')
+  })
+
+  it('does not claim frozen when the source let receivers carry on', () => {
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.noteSacnSync(7962, 1000)
+    keepSending(state, { syncAddress: 7962, forceSync: true }, [1000, 3500])
+    state.sweep(3600)
+    expect(state.health()[0].sync).toBe('lost')
+  })
+
+  it('admits it cannot see a sync universe it never joined', () => {
+    // §6.3.3.1 sends synchronization packets only to their own universe's
+    // multicast group. A box listening to 1-8 would never hear 7962's, so
+    // reporting a fault would be crying wolf at a rig that is fine — and the
+    // fix, adding 7962 to the list, is only obvious if we say which.
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 2])
+    keepSending(state, { syncAddress: 7962 }, [1000, 8500])
+    state.sweep(9000)
+    expect(state.health()[0].sync).toBe('unwatched')
+    expect(state.health()[0].syncAddress).toBe(7962)
+  })
+
+  it('treats knowing nothing about joins as unwatched, not as a fault', () => {
+    const state = new DmxState()
+    keepSending(state, { syncAddress: 7962 }, [1000, 8500])
+    state.sweep(9000)
+    expect(state.health()[0].sync).toBe('unwatched')
+  })
+
+  it('recovers when the sync stream comes back', () => {
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.noteSacnSync(7962, 1000)
+    keepSending(state, { syncAddress: 7962 }, [1000, 3900])
+    state.sweep(4000)
+    expect(state.health()[0].sync).toBe('frozen')
+    state.noteSacnSync(7962, 4100)
+    expect(state.health()[0].sync).toBe('held')
+  })
+
+  it('buffers every Art-Net universe once an ArtSync is seen', () => {
+    // ArtSync carries no port address and is broadcast, so it is one fact
+    // about the network rather than one per universe.
+    const state = new DmxState({ artnetBase: 0 })
+    state.apply(frame({ protocol: 'artnet', sourceId: '2.0.0.7', wireUniverse: 0 }), 1000)
+    state.apply(frame({ protocol: 'artnet', sourceId: '2.0.0.7', wireUniverse: 1 }), 1000)
+    expect(state.health().map((u) => u.sync)).toEqual(['none', 'none'])
+
+    state.noteArtSync(1000)
+    expect(state.health().map((u) => u.sync)).toEqual(['held', 'held'])
+  })
+
+  it('lets an Art-Net node revert to non-synchronous after four seconds', () => {
+    // The Art-Net 4 specification's own figure. Holding "held" indefinitely
+    // after a controller stops sending ArtSync would say a rig is waiting on
+    // a cue that is never coming, when in fact it went back to outputting
+    // normally.
+    const state = new DmxState({ artnetBase: 0 })
+    state.apply(frame({ protocol: 'artnet', sourceId: '2.0.0.7' }), 1000)
+    state.noteArtSync(1000)
+
+    state.sweep(4500)
+    expect(state.health()[0].sync).toBe('held')
+    state.sweep(5500)
+    expect(state.health()[0].sync).toBe('none')
+  })
+
+  it('still records everLit for data that is being held', () => {
+    // "Is the desk sending to these addresses" is a question about the desk
+    // and the patch, and the answer is yes whether or not a receiver has been
+    // told to take it. Gating the verdict on sync would report a correctly
+    // patched, correctly synchronised rig as unpatched.
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.noteSacnSync(7962, 1000)
+    state.apply(frame({ syncAddress: 7962, slots: levels({ 5: 128 }) }), 1000)
+    expect(state.verdict(1, 5, 1)).toBe('live')
+  })
+  it('stops claiming a sync address once every source has gone', () => {
+    // Otherwise a universe nobody is sending to keeps reporting itself frozen
+    // on the last synchronisation the departed console asked for — a fault
+    // attributed to a rig that is not there.
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.apply(frame({ syncAddress: 7962 }), 1000)
+    state.sweep(9000)
+    expect(state.health()[0].sources).toHaveLength(0)
+    expect(state.health()[0].sync).toBe('none')
+    expect(state.health()[0].syncAddress).toBe(0)
   })
 })

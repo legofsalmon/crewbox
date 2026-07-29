@@ -25,6 +25,8 @@ const frame = (over: Partial<DmxFrame> = {}): DmxFrame => ({
   sequence: 1,
   sequenced: true,
   slots: new Uint8Array(512),
+  syncAddress: 0,
+  forceSync: false,
   preview: false,
   terminated: false,
   ...over,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useStore } from '../../../store.ts'
-import { liveSummary, universesInPlot } from '../model/live'
+import { liveSummary, syncNotice, universesInPlot } from '../model/live'
 import type { PlotSnapshot } from '../model/types'
 import styles from './LiveBar.module.scss'
 
@@ -59,6 +59,7 @@ export default function LiveBar({
   }
 
   const heard = dmx.universes.length
+  const sync = syncNotice(summary.sync)
   const since = summary.since
     ? new Date(summary.since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
     : null
@@ -104,10 +105,18 @@ export default function LiveBar({
           )}
         </>
       )}
-      {summary.conflicts.length > 0 && (
-        <span className={styles.conflict}>
-          ⚠ Two sources on universe {summary.conflicts.join(', ')}
+      {summary.conflicts.map((c) => (
+        <span key={c.universe} className={styles.conflict}>
+          ⚠ {c.sources} sources on universe {c.universe}
         </span>
+      ))}
+      {/* Not a warning by default: data held for synchronisation is the
+          system working. It is here because it changes what the numbers
+          above mean, and because a sync stream that has died leaves a stage
+          frozen while the desk carries on — which looks like nothing at all
+          from either end. */}
+      {sync && (
+        <span className={sync.tone === 'warn' ? styles.conflict : styles.basis}>{sync.text}</span>
       )}
       <button
         type="button"

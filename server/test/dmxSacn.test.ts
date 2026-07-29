@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseSacn } from '../src/dmx/sacn.ts'
-import { sacnData } from './dmxPackets.ts'
+import { parseSacn, parseSacnSync } from '../src/dmx/sacn.ts'
+import { sacnData, sacnSync } from './dmxPackets.ts'
 
 // Packets here are synthesised, not captured off a rig — see dmxPackets.ts.
 
@@ -135,5 +135,61 @@ describe('sACN: what it rejects', () => {
 
   it('caps at a universe even if the sender sends more', () => {
     expect(parseSacn(sacnData({ slots: new Array(600).fill(9) }))!.slots.length).toBe(512)
+  })
+})
+
+describe('sACN: universe synchronization', () => {
+  it('reads the synchronization address off a data packet', () => {
+    // 0 is the ordinary case and means the data stands on its own; a non-zero
+    // value names the universe a receiver waits for a sync packet on.
+    expect(parseSacn(sacnData())!.syncAddress).toBe(0)
+    expect(parseSacn(sacnData({ syncAddress: 7962 }))!.syncAddress).toBe(7962)
+  })
+
+  it('reads force-synchronization, the bit below the two that were wrong', () => {
+    // Options bit 5, mask 0x20 (§6.2.6). Clear — the default — means a
+    // receiver that loses sync freezes on its last look rather than carrying
+    // on, so this bit is the difference between a stuck stage and a live one.
+    expect(parseSacn(sacnData())!.forceSync).toBe(false)
+    expect(parseSacn(sacnData({ forceSync: true }))!.forceSync).toBe(true)
+    // And it must not be confused with its neighbours in either direction.
+    expect(parseSacn(sacnData({ forceSync: true }))!.preview).toBe(false)
+    expect(parseSacn(sacnData({ forceSync: true }))!.terminated).toBe(false)
+    expect(parseSacn(sacnData({ preview: true }))!.forceSync).toBe(false)
+  })
+
+  it('reads a synchronization packet', () => {
+    const sync = parseSacnSync(sacnSync({ syncAddress: 7962, sequence: 236 }))!
+    expect(sync).not.toBeNull()
+    expect(sync.syncAddress).toBe(7962)
+    expect(sync.sequence).toBe(236)
+    expect(sync.sourceId).toBe(Buffer.from('0123456789abcdef', 'latin1').toString('hex'))
+  })
+
+  it('keeps the two packet types apart', () => {
+    // They share only the root layer, and the root vector is where they
+    // diverge. Reading one as the other would take a sync packet's sequence
+    // number for a priority.
+    expect(parseSacn(sacnSync())).toBeNull()
+    expect(parseSacnSync(sacnData())).toBeNull()
+  })
+
+  it('ignores a synchronization packet addressed to universe 0', () => {
+    // "A Synchronization Address of 0 is thus meaningless, and shall not be
+    // transmitted. Receivers shall ignore [them]" (§6.3.3.1). Believing one
+    // would create a sync stream on a universe no data can reference.
+    expect(parseSacnSync(sacnSync({ syncAddress: 0 }))).toBeNull()
+  })
+
+  it('rejects the wrong vectors at either layer', () => {
+    // The framing vector 0x02 under the extended root is *discovery*, not
+    // data — the two vectors only disambiguate as a pair.
+    expect(parseSacnSync(sacnSync({ rootVector: 0x00000004 }))).toBeNull()
+    expect(parseSacnSync(sacnSync({ framingVector: 0x00000002 }))).toBeNull()
+    expect(parseSacnSync(sacnSync({ acnId: 'not-acn\0\0\0\0\0' }))).toBeNull()
+  })
+
+  it('survives a truncated synchronization packet', () => {
+    expect(parseSacnSync(sacnSync().subarray(0, 40))).toBeNull()
   })
 })

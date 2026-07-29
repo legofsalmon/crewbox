@@ -1,6 +1,7 @@
 import type { ReadinessCheck } from '../readiness.ts'
 import type { DmxListenerStatus } from './listener.ts'
 import type { UniverseHealth } from './state.ts'
+import { ARTNET_MERGE_SOURCES } from './types.ts'
 
 /**
  * "Lighting network", beside "This box" and "This network".
@@ -128,9 +129,13 @@ export function dmxReadiness(
       `, last seen ${ago(now, Math.max(...live.map((u) => u.lastSeen)))}.`,
   })
 
-  // Two sources at one priority is the fault worth shouting about: E1.31
-  // leaves the outcome undefined, so it runs a whole show unnoticed.
+  // Two sources at one priority is the fault worth shouting about: what a
+  // receiver does about it is not settled between them, so it runs a whole
+  // show unnoticed.
   if (conflicts.length > 0) {
+    const crowded = conflicts.some(
+      (u) => u.protocol === 'artnet' && u.sources.length > ARTNET_MERGE_SOURCES
+    )
     checks.push({
       id: 'dmx-conflict',
       label: 'Two sources on one universe',
@@ -138,10 +143,62 @@ export function dmxReadiness(
       detail: conflicts
         .map(
           (u) =>
-            `Universe ${u.universe}: ${u.sources.map((s) => s.name || s.id.slice(0, 8)).join(' and ')} both at priority ${Math.max(...u.sources.map((s) => s.priority))}`
+            `Universe ${u.universe}: ${u.sources.map((s) => s.name || s.id.slice(0, 8)).join(' and ')} all at priority ${Math.max(...u.sources.map((s) => s.priority))}`
         )
         .join('; '),
-      fix: 'Whichever arrives last wins, so the rig may look fine and behave oddly. Unpatch one, or give them different priorities.',
+      fix:
+        'Crewbox shows one of them and cannot merge, so the rig may look fine here and behave oddly on stage. Unpatch one, or give them different priorities.' +
+        // The extra sources are not merged more aggressively — they are
+        // dropped, so one of these consoles is doing nothing at all.
+        (crowded
+          ? ` An Art-Net node merges at most ${ARTNET_MERGE_SOURCES} sources and ignores any beyond that, so one of these is being discarded entirely.`
+          : ''),
+    })
+  }
+
+  // --- Is what we can see what is on stage ---------------------------------
+  //
+  // A synchronised rig whose sync stream has died is the nastiest fault in
+  // this whole panel: the desk keeps sending, crewbox keeps showing levels
+  // changing, and the stage has not moved since the stream stopped.
+  const stuck = live.filter((u) => u.sync === 'frozen' || u.sync === 'lost')
+  const held = live.filter((u) => u.sync === 'held')
+  const unwatched = live.filter((u) => u.sync === 'unwatched')
+
+  if (stuck.length > 0) {
+    const frozen = stuck.some((u) => u.sync === 'frozen')
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'limited',
+      detail:
+        `${plural(stuck.length, 'universe')} asking to be synchronised on universe ` +
+        `${[...new Set(stuck.map((u) => u.syncAddress))].join(', ')}, but nothing is ` +
+        `arriving there.` +
+        (frozen
+          ? ' Receivers hold their last look until it comes back, so the stage may have stopped following the desk.'
+          : ' The sources allow receivers to carry on, so the stage is live but no longer synchronised.'),
+      fix: 'Check what is meant to be sending synchronization packets on that universe. Until it is back, levels shown here are not proof of what is on stage.',
+    })
+  } else if (unwatched.length > 0) {
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'limited',
+      detail:
+        `${plural(unwatched.length, 'universe')} synchronised on universe ` +
+        `${[...new Set(unwatched.map((u) => u.syncAddress))].join(', ')}, which this box is ` +
+        'not listening to — so whether those levels have reached the stage is unknown.',
+      fix: `Add ${[...new Set(unwatched.map((u) => u.syncAddress))].join(',')} to CREWBOX_DMX_UNIVERSES and restart.`,
+    })
+  } else if (held.length > 0) {
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'ok',
+      detail:
+        `${plural(held.length, 'universe')} synchronised and the stream is arriving. ` +
+        'Levels shown are queued for the next synchronization packet rather than already on stage.',
     })
   }
 

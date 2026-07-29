@@ -100,6 +100,10 @@ function decodeArtNet(buf, fromIp) {
     }
     return { kind: 'pollReply', fromIp, shortName: cstr(26, 18), longName: cstr(44, 64) }
   }
+  // ArtSync. No payload and no port address — from here on every node on the
+  // network buffers ArtDmx rather than outputting it, until four seconds pass
+  // without another one. Levels on the wire stop being levels on stage.
+  if (opcode === 0x5200) return { kind: 'sync', protocol: 'artnet', fromIp }
   if (opcode !== 0x5000 || buf.length < 18) return null
   const protVer = buf.readUInt16BE(10)
   const portAddress = buf.readUInt16LE(14) & 0x7fff
@@ -127,9 +131,27 @@ function decodeArtNet(buf, fromIp) {
  * discover, not a contradiction to be tidied away.
  */
 function decodeSacn(buf, fromIp) {
-  if (buf.length < 126) return null
+  if (buf.length < 47) return null
   if (buf.readUInt16BE(0) !== 0x0010) return null
   if (!buf.subarray(4, 16).equals(ACN_PID)) return null
+
+  // Synchronization packets share only the root layer and diverge at its
+  // vector: 0x08 rather than 0x04, with 0x01 under it. Worth showing because
+  // data carrying a sync address is only actually held by a receiver that is
+  // also seeing this stream (E1.31 §6.2.4.1) — "the desk asks for sync and
+  // nothing is sending it" is a fault you can only spot by watching for both.
+  if (buf.readUInt32BE(18) === 0x00000008 && buf.readUInt32BE(40) === 0x00000001) {
+    return {
+      kind: 'sync',
+      protocol: 'sacn',
+      fromIp,
+      cid: buf.subarray(22, 38).toString('hex'),
+      syncAddress: buf.readUInt16BE(45),
+      sequence: buf[44],
+    }
+  }
+
+  if (buf.length < 126) return null
   if (buf.readUInt32BE(18) !== 0x00000004) return null
   if (buf.readUInt32BE(40) !== 0x00000002) return null
   if (buf[117] !== 0x02) return null
@@ -152,6 +174,10 @@ function decodeSacn(buf, fromIp) {
     // to stop anyone shipping.
     preview: (options & 0x80) !== 0,
     terminated: (options & 0x40) !== 0,
+    // Bit 5. Clear means a receiver that loses sync freezes on its last look
+    // rather than carrying on — so a rig can be stuck while the desk is fine.
+    forceSync: (options & 0x20) !== 0,
+    syncAddress: buf.readUInt16BE(109),
     universe: buf.readUInt16BE(113),
     startCode,
     declaredLength: count,
@@ -203,6 +229,8 @@ function report(packet) {
   const flags = [
     packet.preview ? 'PREVIEW' : '',
     packet.terminated ? 'TERMINATED' : '',
+    packet.syncAddress ? `SYNC=u${packet.syncAddress}` : '',
+    packet.syncAddress && packet.forceSync ? 'FORCE-SYNC' : '',
     packet.startCode !== undefined && packet.startCode !== 0
       ? `start=0x${packet.startCode.toString(16)}`
       : '',
@@ -213,6 +241,34 @@ function report(packet) {
     `  ${label(packet)}  ${rate}  ${packet.slots.length} slots, ${lit} lit  [${head}${
       packet.slots.length > slotsToShow ? ' …' : ''
     }]${flags ? ` ${flags}` : ''}`
+  )
+  entry.lastPrinted = now
+}
+
+/** sync stream key → { packets, lastPrinted, firstSeen } */
+const syncSeen = new Map()
+
+/**
+ * A synchronisation stream, reported the same way a data stream is.
+ *
+ * Rate matters more than content here: a stream at 44/s is doing its job, and
+ * one that appears and then stops is the thing that leaves a rig frozen.
+ */
+function reportSync(protocol, where, id) {
+  const key = `${protocol}:sync:${where}:${id}`
+  const now = Date.now()
+  let entry = syncSeen.get(key)
+  if (!entry) {
+    entry = { packets: 0, lastPrinted: 0, firstSeen: now }
+    syncSeen.set(key, entry)
+    console.log(`\n+ ${protocol} SYNC ${where}  ${id.slice(0, 8)}`)
+  }
+  entry.packets++
+  if (now - entry.lastPrinted < 1000) return
+  const elapsed = now - entry.firstSeen
+  const rate = elapsed >= 500 ? `${Math.round((entry.packets * 1000) / elapsed)}/s` : '…/s'
+  console.log(
+    `  ${protocol} SYNC ${where}  ${rate}  (data on these universes is held until each one)`
   )
   entry.lastPrinted = now
 }
@@ -243,6 +299,10 @@ if (wantArtNet) {
       console.log(`\n+ Art-Net node ${packet.fromIp}: ${packet.longName || packet.shortName}`)
       return
     }
+    if (packet.kind === 'sync') {
+      reportSync('Art-Net', packet.fromIp, packet.fromIp)
+      return
+    }
     report({ ...packet, raw: buf })
   })
   socket.bind(ARTNET_PORT, () => {
@@ -256,7 +316,12 @@ if (wantSacn) {
   socket.on('error', (err) => console.error(`sACN socket: ${err.message}`))
   socket.on('message', (buf, rinfo) => {
     const packet = decodeSacn(buf, rinfo.address)
-    if (packet) report({ ...packet, raw: buf })
+    if (!packet) return
+    if (packet.kind === 'sync') {
+      reportSync('sACN', `u${packet.syncAddress}`, packet.cid)
+      return
+    }
+    report({ ...packet, raw: buf })
   })
   // Bind 0.0.0.0, never a unicast address: binding to a specific interface IP
   // stops multicast arriving at all on Linux.

@@ -233,6 +233,21 @@ export interface DmxUniverseWire {
   sources: number
   /** Two or more sources at the top priority; nobody can say who wins. */
   conflict: boolean
+  /**
+   * Whether these levels are on stage.
+   *
+   * `none` is the ordinary case. `held` means a receiver is queueing them
+   * until the next synchronization packet. `frozen` means the sync stream
+   * died and receivers are stuck on their last look while the desk keeps
+   * sending — the fault this exists to catch. `lost` is the same failure
+   * where the source allowed receivers to carry on regardless. `unwatched`
+   * means the sync universe isn't one this box joined, so it can't tell.
+   *
+   * See `DmxSyncState` in the server for the clauses behind each.
+   */
+  sync: 'none' | 'held' | 'frozen' | 'lost' | 'unwatched'
+  /** The universe synchronization packets are expected on, or 0. */
+  syncAddress: number
   /** When this universe was first heard — the window the verdicts speak for. */
   since: number
   lastSeen: number

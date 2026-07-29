@@ -455,3 +455,54 @@ test('a GDTF profile turns the live view from a level meter into a readout', asy
     console_.stop()
   }
 })
+
+/**
+ * A rig that is being sent to and is not moving.
+ *
+ * Universe synchronisation means a desk sends its levels and then, separately,
+ * tells receivers to take them. If that second stream dies, E1.31 §6.2.6 has
+ * conforming receivers hold their last look — the desk carries on, every level
+ * on the wire carries on changing, and the stage stops. Every other check in
+ * the app reads green through all of it.
+ *
+ * Universe 2 rather than 1, because `everLit` is cumulative per universe for as
+ * long as the box is listening and the tests above already use 1.
+ */
+test('a plot says when the levels it is showing are not what is on stage', async ({ browser }) => {
+  const console_ = new FakeConsole()
+  try {
+    // Sync-addressed to universe 1, which the box does join — so it can tell
+    // "nothing is sending sync" from "we would not have heard it".
+    console_.syncOn(1)
+    await console_.start(2, { 10: 255 })
+    console_.startSync()
+
+    const page = await newDevice(browser, 'Sync Tech')
+    await openLighting(page)
+    await createPlot(page, uniqueName('Synced Rig'))
+    await addFixture(page, { purpose: 'LED panel', address: 10, footprint: 1 })
+
+    // The fixture is on universe 2, which the default is not.
+    const row = page.locator('tbody tr').last()
+    await row.getByLabel(/^Universe/).fill('2')
+    await row.getByLabel(/^Universe/).press('Enter')
+
+    // Receiving — and said in the same breath to be queued rather than output.
+    await expect(page.getByText(/1 receiving/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/held for sync/)).toBeVisible({ timeout: 15000 })
+
+    // Kill the sync stream and leave the data running. This is the fault.
+    console_.stopSync()
+    await expect(page.getByText(/frozen on its last look/)).toBeVisible({ timeout: 20000 })
+
+    // The desk is still fine, and the app still says so — the point is that
+    // "receiving" and "on stage" have come apart, not that either is false.
+    await expect(page.getByText(/1 receiving/)).toBeVisible()
+
+    // And it recovers rather than latching.
+    console_.startSync()
+    await expect(page.getByText(/held for sync/)).toBeVisible({ timeout: 20000 })
+  } finally {
+    console_.stop()
+  }
+})

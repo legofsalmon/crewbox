@@ -89,6 +89,49 @@ Every one of those carries "since HH:MM" in the UI, because that is the only
 window we can speak for. A box that started listening two minutes ago knows
 nothing about the blackout ten minutes before.
 
+### And whether the wire is the stage
+
+All three of those are statements about what the **desk is sending**. Universe
+synchronisation breaks the assumption that sending and outputting are the same
+thing: a source sends its data, then sends a separate synchronization packet,
+and receivers hold everything until it arrives so several universes land
+together. Media servers, LED panels and fast dimmers use it.
+
+So a second, orthogonal verdict, per universe:
+
+| `sync`      | Means                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| `none`      | Data stands on its own. Wire is stage. Nearly every rig, nearly all the time.              |
+| `held`      | Sync-addressed and the sync stream is arriving. These levels are queued, not output.       |
+| `frozen`    | Sync-addressed, sync universe joined, nothing arriving on it, force-sync clear. **Stuck.** |
+| `lost`      | The same, but force-sync set, so receivers were free to carry on unsynchronised.           |
+| `unwatched` | Sync-addressed to a universe this box hasn't joined, so which of the above is unknowable.  |
+
+`frozen` is the one worth the work. E1.31 §11.1.2 stops a receiver
+synchronising when no synchronization packet arrives within the data-loss
+timeout, and §6.2.6 says what happens then when Force_Synchronization is clear
+— the default — components "shall not update with any new packets until
+synchronization resumes". The desk carries on sending. Crewbox carries on
+showing levels moving. **The stage has not changed since the stream died**, and
+from either end on its own it looks like nothing at all.
+
+Two things this deliberately does not do:
+
+- **`everLit` is still recorded for held data.** "Is the desk sending to these
+  addresses" is a question about the desk and the patch, and the answer is yes
+  whether or not a receiver has been told to take it. Gating the patch check on
+  sync would report a correctly patched, correctly synchronised rig as
+  unpatched.
+- **A non-zero sync address is never on its own enough to say `held`.** §6.2.4.1
+  is explicit that a receiver "must not attempt to synchronize any data on a
+  Synchronization Address until it has received its first E1.31 Synchronization
+  Packet containing that address" — a source advertising an address states an
+  intent, not a fact about any receiver. Hence parsing the synchronization
+  packet, and hence `unwatched` existing at all: §6.3.3.1 sends those packets
+  only to their own universe's multicast group, so a box listening to 1–8 will
+  never hear universe 7962's, and calling that a fault would be crying wolf at
+  a rig that is fine.
+
 ## Protocols
 
 Two parsers, both pure functions from `Buffer` to a typed packet or `null`.
@@ -115,6 +158,30 @@ out-of-order delivery, not to reorder.
 `ArtPollReply` is **listened for, never solicited**. Nodes emit it unsolicited
 on power-up and periodically, and it carries the node's short and long name —
 free source identification without us ever sending an ArtPoll.
+
+`ArtSync` (opcode **0x5200**) has no payload and no port address. From the
+moment a node sees one it buffers ArtDmx rather than outputting it, and it
+"shall time out to non-synchronous operation if an ArtSync is not received for
+4 seconds or more". Because there is no port address, this is one fact about
+the whole network rather than one per universe — which is why `DmxState` keeps
+a single ArtSync timer where sACN gets a map keyed by sync universe.
+
+**Data merging**, from the specification's own section, and it changes what a
+conflict means on Art-Net:
+
+- A node merges **at most two sources**. "If there are more than two sources,
+  the node shall ignore the extra sources" — so a third console is not a
+  louder argument, it is a console doing nothing at all, and the admin panel
+  says so specifically.
+- The merge is **LTP or HTP**, selected per node via ArtAddress. Crewbox
+  cannot know which, and does not merge; it shows one source and reports the
+  conflict.
+- A conflict is detected by **differing sender IP**, or by a differing
+  Physical port from the same IP.
+- A source that fails is held in the merge buffer for **10 seconds**. If both
+  fail, the node's output holds the last merged result. This is where
+  `DATA_LOSS_MS.artnet` comes from — see below; it used to rest on a comment in
+  OLA's source, and now rests on the specification.
 
 **Known limitation of staying passive:** a controller configured to unicast
 ArtDmx only to nodes that have answered its ArtPoll will not be seen, because
@@ -156,6 +223,19 @@ Behaviours that are not optional:
 - **Priority**: highest wins. Equal priority from two CIDs on one universe is
   the source conflict worth reporting — E1.31 leaves receiver behaviour
   implementation-defined, which is exactly why nobody notices it happening.
+  Among tied sources crewbox shows the **lowest CID**, always: §6.2.3.3 warns
+  against schemes that "generate different results from the same source
+  combination on different occasions" and names order of arrival as the
+  example not to follow, which is what this used to do. It is not a merge and
+  is not meant to be one — the useful output is `conflict`, which says nobody
+  can know what the rig is doing. §6.2.3.4 and §6.2.3.5 require the algorithm
+  and the sources-exceeded behaviour to be declared, which is what this
+  paragraph is.
+- **Synchronization Address** (framing octets 109–110) and
+  **Force_Synchronization** (options bit 5) are both read; the separate
+  **E1.31 Synchronization Packet** (root vector `0x08`, framing vector `0x01`,
+  no DMP layer) is parsed as well. See "And whether the wire is the stage"
+  above for why all three are needed rather than just the first.
 
 A source is identified by CID, not by IP. Two consoles behind one NAT and one
 console that changed IP are both handled correctly by that, and neither is by
@@ -503,6 +583,8 @@ Everything the implementations had agreed on was confirmed:
 | `E131_NETWORK_DATA_LOSS_TIMEOUT` = 2.5 s                                    | §6.7.1, App. A | Confirmed.                                                 |
 | Priority is 0–200, highest wins                                             | §6.2.3         | Confirmed; the cap matches the standard's own bound.       |
 | Terminated packets' values must be ignored                                  | §6.2.6         | Already correct — `apply()` returns before touching slots. |
+| Receivers must not vary their answer for the same source set                | §6.2.3.3       | **Not met.** Order of arrival decided it — now lowest CID. |
+| The receiver's algorithm must be declared                                   | §6.2.3.4/5     | Now written down, here and on `pickWinner`.                |
 
 And it corrected one piece of reasoning that was wrong even though the fix it
 justified was right:
@@ -522,6 +604,23 @@ Two questions closed with no code:
   so there is nothing to implement.
 - **Alternate START codes** more generally are E1.11's business, and a
   monitor that only wants levels is right to ignore them.
+
+### Then built from it
+
+**Universe synchronisation, both protocols.** ✅ The standard's §11 turned out
+to describe a fault crewbox could not see and could not have guessed at: a rig
+frozen on its last look because its synchronization stream died, while the desk
+carries on sending and every other check in the panel reads green. Reading
+§6.2.4.1, §6.3, §6.2.6 and §11.1.2 together is what makes the four-way verdict
+above possible — in particular that a sync _address_ is an intent and only the
+sync _packet_ makes it a fact, which a from-memory implementation would have
+got wrong in the direction of false alarms.
+
+Art-Net's ArtSync got the same treatment from its own specification: opcode
+0x5200, no port address, four-second reversion.
+
+**Deterministic arbitration.** ✅ §6.2.3.3 asked for it directly and crewbox
+was not doing it. See the table above.
 
 ### Now specified, and worth building
 
@@ -545,6 +644,14 @@ offset says nothing about whether a grandMA3 on a festival network behaves
 the way they say. `scripts/dmx-sniff.mjs --dump` remains the thing to run
 first.
 
-**Art-Net has had no equivalent pass.** It is not an ESTA standard — the
-specification is Artistic Licence's own, and the 10-second timeout above
-still rests on a comment in OLA's source rather than on that document.
+**Art-Net now has a partial pass.** It is not an ESTA standard — the
+specification is Artistic Licence's own (v1.4, rev 1.4dp). Colm supplied its
+Data Merging and synchronisation sections, which closed the last provenance
+gap: the **10-second** merge timeout `DATA_LOSS_MS.artnet` uses is the
+specification's own figure and no longer rests on a comment in OLA's source.
+The same pass added the two-source merge limit, the LTP/HTP selection, the
+IP-and-Physical conflict rule and ArtSync's four-second reversion, all of
+which are now in "Art-Net (Art-Net 4)" above.
+
+The rest of the Art-Net layer — the ArtPollReply name offsets in particular —
+has still only been read once.

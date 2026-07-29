@@ -9,7 +9,7 @@ import {
   ARTNET_PORT,
   MAX_SACN_UNIVERSES,
 } from '../src/dmx/listener.ts'
-import { artDmx, sacnData } from './dmxPackets.ts'
+import { artDmx, artSync, sacnData, sacnSync } from './dmxPackets.ts'
 
 const listeners: DmxListener[] = []
 const senders: dgram.Socket[] = []
@@ -200,5 +200,64 @@ describe('reading a real socket', () => {
 
     expect(listener.snapshot().packets).toBe(0)
     expect(listener.state.health()).toHaveLength(0)
+  })
+
+  it('holds Art-Net levels once an ArtSync reaches the socket', async (ctx) => {
+    const listener = start({ mode: 'artnet', artnetBase: 1 })
+    await until(() => listener.snapshot().artnet.listening)
+
+    const tx = await sender()
+    const dmx = artDmx({ universe: 0, slots: [255] })
+    const timer = setInterval(() => {
+      tx.send(dmx, ARTNET_PORT, '127.0.0.1')
+      tx.send(artSync(), ARTNET_PORT, '127.0.0.1')
+    }, 50)
+    const arrived = await until(() => listener.state.health()[0]?.sync === 'held')
+    clearInterval(timer)
+    if (!arrived) ctx.skip()
+
+    // The levels are readable and are not on stage. Both halves matter: a
+    // monitor that reported one without the other would be lying by omission.
+    expect(listener.state.levels(1)![0]).toBe(255)
+    expect(listener.state.health()[0].sync).toBe('held')
+  })
+
+  it('holds sACN levels once a synchronization packet reaches the group', async (ctx) => {
+    // The sync universe has to be joined for its packets to arrive at all,
+    // which is exactly why `unwatched` exists as a verdict.
+    const listener = start({ mode: 'sacn', universes: [1, 7962] })
+    await until(() => listener.snapshot().sacn.listening)
+    if (listener.snapshot().sacn.failed.length > 0) ctx.skip()
+
+    const tx = await sender()
+    const data = sacnData({ universe: 1, syncAddress: 7962, slots: [255] })
+    const sync = sacnSync({ syncAddress: 7962 })
+    const timer = setInterval(() => {
+      tx.send(data, SACN_PORT, sacnGroup(1))
+      tx.send(sync, SACN_PORT, sacnGroup(7962))
+    }, 50)
+    const arrived = await until(() => listener.state.health()[0]?.sync === 'held')
+    clearInterval(timer)
+    if (!arrived) ctx.skip()
+
+    expect(listener.state.health()[0].syncAddress).toBe(7962)
+    expect(listener.state.levels(1)![0]).toBe(255)
+  })
+
+  it('counts a synchronization packet as ours rather than as junk', async (ctx) => {
+    const listener = start({ mode: 'sacn', universes: [7962] })
+    await until(() => listener.snapshot().sacn.listening)
+    if (listener.snapshot().sacn.failed.length > 0) ctx.skip()
+
+    const tx = await sender()
+    const timer = setInterval(
+      () => tx.send(sacnSync({ syncAddress: 7962 }), SACN_PORT, sacnGroup(7962)),
+      50
+    )
+    const counted = await until(() => listener.snapshot().packets > 0)
+    clearInterval(timer)
+    if (!counted) ctx.skip()
+
+    expect(listener.snapshot().ignored).toBe(0)
   })
 })

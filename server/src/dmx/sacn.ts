@@ -41,6 +41,19 @@ const VECTOR_FRAMING_DATA = 0x00000002
 const VECTOR_DMP_SET_PROPERTY = 0x02
 
 /**
+ * The other root vector, and the framing vector under it that means "this is
+ * a synchronization packet" (E1.31 Appendix A).
+ *
+ * `VECTOR_E131_EXTENDED_SYNCHRONIZATION` is 0x01 and
+ * `VECTOR_E131_EXTENDED_DISCOVERY` is 0x02 — note that discovery's value is
+ * the same number as `VECTOR_FRAMING_DATA` above, which is only unambiguous
+ * because the *root* vector differs. Reading the framing vector without
+ * having checked the root one first would take a discovery packet for data.
+ */
+const VECTOR_ROOT_EXTENDED = 0x00000008
+const VECTOR_EXTENDED_SYNCHRONIZATION = 0x00000001
+
+/**
  * The DMP layer's addressing, which E1.31 fixes to exactly one shape.
  *
  * A DMX data packet always addresses one contiguous run of one-byte
@@ -72,6 +85,7 @@ const HEADER = 126
  */
 const OPTION_PREVIEW_DATA = 0x80
 const OPTION_STREAM_TERMINATED = 0x40
+const OPTION_FORCE_SYNCHRONIZATION = 0x20
 
 /**
  * How far behind the last sequence number a packet may be before it is taken
@@ -128,8 +142,66 @@ export function parseSacn(buf: Buffer): DmxFrame | null {
     priority: Math.min(buf[108]!, MAX_PRIORITY),
     sequence: buf[111]!,
     sequenced: true,
+    // Non-zero means a conforming receiver holds this packet until the
+    // matching synchronization packet arrives (§6.2.4), so what is on the
+    // wire is not yet what is on stage.
+    syncAddress: buf.readUInt16BE(109),
+    forceSync: (options & OPTION_FORCE_SYNCHRONIZATION) !== 0,
     slots: new Uint8Array(buf.subarray(HEADER, HEADER + length)),
     preview: (options & OPTION_PREVIEW_DATA) !== 0,
     terminated: (options & OPTION_STREAM_TERMINATED) !== 0,
+  }
+}
+
+/** A source telling receivers to act on what they are holding. */
+export interface SacnSync {
+  /** The universe this synchronises. Never 0 — §6.3.3.1 forbids it. */
+  syncAddress: number
+  /** The sending CID, hex, same identity a data packet carries. */
+  sourceId: string
+  sequence: number
+}
+
+/**
+ * Parse an E1.31 Synchronization Packet, or null if it isn't one.
+ *
+ * A separate function rather than another arm of `parseSacn` because the two
+ * share only the root layer: there is no DMP layer here at all, no priority,
+ * no options, no slots, and the framing layer is nine octets long.
+ *
+ * ```
+ *  0..37   Root layer, as above, but vector 0x00000008
+ *  38..39  Framing flags & length
+ *  40..43  Framing vector         0x00000001
+ * 44       Sequence number
+ * 45..46   Synchronization address
+ * 47..48   Reserved — transmitted as 0, ignored here (§6.3.4)
+ * ```
+ *
+ * Worth reading at all because of §6.2.4.1: data carrying a synchronization
+ * address is only *held* by a receiver that is seeing this stream. Without
+ * parsing these, crewbox could not tell a rig waiting on a cue from a rig
+ * frozen because the sync stream died.
+ */
+export function parseSacnSync(buf: Buffer): SacnSync | null {
+  // 47 for everything up to the address; the two reserved octets after it are
+  // not worth rejecting a packet over.
+  if (buf.length < 47) return null
+  if (buf.readUInt16BE(0) !== 0x0010) return null
+  if (buf.readUInt16BE(2) !== 0x0000) return null
+  if (!buf.subarray(4, 16).equals(ACN_PID)) return null
+  if (buf.readUInt32BE(18) !== VECTOR_ROOT_EXTENDED) return null
+  if (buf.readUInt32BE(40) !== VECTOR_EXTENDED_SYNCHRONIZATION) return null
+
+  // "A Synchronization Address of 0 is thus meaningless, and shall not be
+  // transmitted. Receivers shall ignore E1.31 Synchronization Packets
+  // containing a Synchronization Address of 0." (§6.3.3.1)
+  const syncAddress = buf.readUInt16BE(45)
+  if (syncAddress < 1 || syncAddress > 63999) return null
+
+  return {
+    syncAddress,
+    sourceId: buf.subarray(22, 38).toString('hex'),
+    sequence: buf[44]!,
   }
 }

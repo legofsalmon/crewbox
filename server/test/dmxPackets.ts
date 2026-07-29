@@ -47,6 +47,19 @@ export function artDmx(options: ArtDmxOptions = {}): Buffer {
   return buf
 }
 
+/**
+ * An ArtSync packet. Eight bytes of identifier, the opcode, and the version —
+ * there is no payload and no port address, which is the whole reason a node's
+ * sync state is one timer for the network rather than per universe.
+ */
+export function artSync(): Buffer {
+  const buf = Buffer.alloc(14)
+  Buffer.from('Art-Net\0', 'latin1').copy(buf, 0)
+  buf.writeUInt16LE(0x5200, 8)
+  buf.writeUInt16BE(14, 10)
+  return buf
+}
+
 export function artPollReply(ip: string, shortName: string, longName: string): Buffer {
   const buf = Buffer.alloc(240)
   Buffer.from('Art-Net\0', 'latin1').copy(buf, 0)
@@ -66,6 +79,8 @@ export interface SacnOptions {
   slots?: number[]
   preview?: boolean
   terminated?: boolean
+  forceSync?: boolean
+  syncAddress?: number
   startCode?: number
   rootVector?: number
   framingVector?: number
@@ -94,9 +109,10 @@ export function sacnData(options: SacnOptions = {}): Buffer {
   buf.writeUInt32BE(options.framingVector ?? 0x00000002, 40)
   Buffer.from(options.sourceName ?? 'Test Console', 'utf8').copy(buf, 44)
   buf[108] = options.priority ?? 100
-  buf.writeUInt16BE(0, 109)
+  buf.writeUInt16BE(options.syncAddress ?? 0, 109)
   buf[111] = options.sequence ?? 1
-  buf[112] = (options.preview ? 0x80 : 0) | (options.terminated ? 0x40 : 0)
+  buf[112] =
+    (options.preview ? 0x80 : 0) | (options.terminated ? 0x40 : 0) | (options.forceSync ? 0x20 : 0)
   buf.writeUInt16BE(options.universe ?? 1, 113)
   buf.writeUInt16BE(0x7000 | (buf.length - 115), 115)
   buf[117] = options.dmpVector ?? 0x02
@@ -106,6 +122,39 @@ export function sacnData(options: SacnOptions = {}): Buffer {
   buf.writeUInt16BE(options.declaredCount ?? slots.length + 1, 123)
   buf[125] = options.startCode ?? 0x00
   for (let i = 0; i < slots.length; i++) buf[126 + i] = slots[i]!
+  return buf
+}
+
+export interface SacnSyncOptions {
+  syncAddress?: number
+  sequence?: number
+  cid?: string
+  rootVector?: number
+  framingVector?: number
+  acnId?: string
+}
+
+/**
+ * An E1.31 Synchronization Packet (Table 4-2). 49 octets, no DMP layer.
+ *
+ * Note the root vector: `VECTOR_ROOT_E131_EXTENDED` (0x08), not the data
+ * packet's 0x04. The framing vector under it is 0x01 — which is *not* the
+ * data packet's 0x02, but is a value discovery packets also use under a
+ * different root, so the two vectors only disambiguate as a pair.
+ */
+export function sacnSync(options: SacnSyncOptions = {}): Buffer {
+  const buf = Buffer.alloc(49)
+  buf.writeUInt16BE(0x0010, 0)
+  buf.writeUInt16BE(0x0000, 2)
+  Buffer.from(options.acnId ?? 'ASC-E1.17\0\0\0', 'latin1').copy(buf, 4)
+  buf.writeUInt16BE(0x7000 | (buf.length - 16), 16)
+  buf.writeUInt32BE(options.rootVector ?? 0x00000008, 18)
+  Buffer.from((options.cid ?? '0123456789abcdef').padEnd(16, '\0'), 'latin1').copy(buf, 22)
+  buf.writeUInt16BE(0x7000 | (buf.length - 38), 38)
+  buf.writeUInt32BE(options.framingVector ?? 0x00000001, 40)
+  buf[44] = options.sequence ?? 1
+  buf.writeUInt16BE(options.syncAddress ?? 7962, 45)
+  // 47-48 reserved, transmitted as 0 (§6.3.4). Already zero from alloc.
   return buf
 }
 

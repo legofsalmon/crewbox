@@ -101,8 +101,24 @@ export interface LiveSummary {
   missing: number
   /** Earliest "listening since" across the universes in play, or null. */
   since: number | null
-  /** Universes with two sources at the top priority. */
-  conflicts: number[]
+  /**
+   * Universes with two or more sources at the top priority, and how many.
+   *
+   * The count is carried because "two sources" was a lie above two: an
+   * Art-Net node merges at most two and ignores the rest outright, so a third
+   * console is not a louder argument, it is a console being discarded. See
+   * `ARTNET_MERGE_SOURCES` and docs/DMX_MONITORING.md.
+   */
+  conflicts: Array<{ universe: number; sources: number }>
+  /**
+   * Universes whose levels are not what is on stage, and why.
+   *
+   * Separate from `conflicts` because it is a different kind of doubt: a
+   * conflict means we can't tell *which* levels are being sent, while this
+   * means we can see the levels perfectly well and they may not have been
+   * taken. Empty is the ordinary case for almost every rig.
+   */
+  sync: Array<{ universe: number; state: DmxUniverseWire['sync']; syncAddress: number }>
   /** How many of the counted fixtures were judged on their dimmer alone. */
   profiled: number
 }
@@ -120,6 +136,7 @@ export function liveSummary(
     missing: 0,
     since: null,
     conflicts: [],
+    sync: [],
     profiled: 0,
   }
   for (const fixture of fixtures) {
@@ -133,9 +150,71 @@ export function liveSummary(
   for (const universe of universes) {
     summary.since =
       summary.since === null ? universe.since : Math.min(summary.since, universe.since)
-    if (universe.conflict) summary.conflicts.push(universe.universe)
+    if (universe.conflict) {
+      summary.conflicts.push({ universe: universe.universe, sources: universe.sources })
+    }
+    if (universe.sync !== 'none') {
+      summary.sync.push({
+        universe: universe.universe,
+        state: universe.sync,
+        syncAddress: universe.syncAddress,
+      })
+    }
   }
   return summary
+}
+
+/**
+ * The one thing worth saying about universe synchronisation, or nothing.
+ *
+ * A plot can be in more than one sync state at once, and a bar with four
+ * lines of protocol commentary on it is a bar nobody reads. So: report the
+ * worst, name the universes it applies to, and say what it means for what is
+ * on screen rather than what it means in the standard.
+ *
+ * Ordered by how wrong the rig is, not by how interesting the state is.
+ * `frozen` is a stage that stopped moving; `held` is the system working
+ * exactly as designed and is only mentioned because it changes what the
+ * level readout means.
+ */
+export function syncNotice(
+  sync: LiveSummary['sync']
+): { tone: 'warn' | 'info'; text: string } | null {
+  const worst = (['frozen', 'lost', 'unwatched', 'held'] as const).find((state) =>
+    sync.some((s) => s.state === state)
+  )
+  if (!worst) return null
+
+  const affected = sync.filter((s) => s.state === worst)
+  const list = affected.map((s) => s.universe).join(', ')
+  const plural = affected.length === 1 ? '' : 's'
+  // Every state but Art-Net's `held` names a real sync universe.
+  const on = affected[0]!.syncAddress > 0 ? ` ${affected[0]!.syncAddress}` : ''
+
+  switch (worst) {
+    case 'frozen':
+      return {
+        tone: 'warn',
+        text: `⚠ Sync stopped on universe${on} — universe${plural} ${list} may be frozen on its last look`,
+      }
+    case 'lost':
+      return {
+        tone: 'warn',
+        text: `⚠ Sync stopped on universe${on}, affecting universe${plural} ${list}`,
+      }
+    case 'unwatched':
+      return {
+        tone: 'warn',
+        text:
+          `Universe${plural} ${list} sync on universe${on}, which this box ` +
+          'is not listening to — these levels may not be on stage',
+      }
+    default:
+      return {
+        tone: 'info',
+        text: `Universe${plural} ${list} held for sync — levels are queued, not on stage`,
+      }
+  }
 }
 
 /** Universes a plot's fixtures actually use, for the watch request. */
