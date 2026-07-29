@@ -98,6 +98,7 @@ export const initSheet = (doc: Y.Doc, options: InitSheetOptions): void => {
         name: 'Artist 1',
         startTime: '19:00',
         endTime: '20:00',
+        changeover: 0,
         spec: '',
         notes: '',
         files: new Y.Array<ArtistFile>(),
@@ -206,6 +207,7 @@ export const addArtist = (doc: Y.Doc): string => {
         name: `Artist ${artists.length + 1}`,
         startTime: '19:00',
         endTime: '20:00',
+        changeover: 0,
         spec: '',
         notes: '',
         files: new Y.Array<ArtistFile>(),
@@ -478,7 +480,14 @@ export const setPatchSubBox = (doc: Y.Doc, artistId: string, channelId: string, 
 export interface ImportedSheetData {
   /** `input` is the house input on that channel, shared by every artist. */
   channels: { label: string; input?: string }[]
-  artists: { name: string; startTime?: string; endTime?: string; spec?: string; notes?: string }[]
+  artists: {
+    name: string
+    startTime?: string
+    endTime?: string
+    changeover?: number
+    spec?: string
+    notes?: string
+  }[]
   /** Sub-boxes the file declared, so cells resolve to them rather than to text. */
   subBoxes?: Array<Omit<SubBox, 'id'>>
   /** patches[artistIndex][channelIndex] — sparse. */
@@ -526,6 +535,7 @@ export const buildImportedSheet = (
           name: artist.name.trim() || `Artist ${artistIndex + 1}`,
           startTime: artist.startTime ?? '19:00',
           endTime: artist.endTime ?? '20:00',
+          changeover: artist.changeover ?? 0,
           spec: artist.spec ?? '',
           notes: artist.notes ?? '',
           files: new Y.Array<ArtistFile>(),
@@ -590,7 +600,10 @@ export const snapshotSheet = (doc: Y.Doc): SheetSnapshot => {
       .map((m) => ({ input: '', ...(m.toJSON() as Partial<Channel>) }) as Channel),
     artists: artists
       .toArray()
-      .map((m) => ({ files: [], spec: '', ...(m.toJSON() as Partial<Artist>) }) as Artist),
+      .map(
+        (m) =>
+          ({ files: [], spec: '', changeover: 0, ...(m.toJSON() as Partial<Artist>) }) as Artist
+      ),
     subBoxes: subBoxes.toArray().map((m) => m.toJSON() as SubBox),
     patches: patchesJson,
   }

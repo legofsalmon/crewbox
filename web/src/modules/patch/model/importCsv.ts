@@ -6,6 +6,12 @@ export interface ImportResult {
   data: ImportedSheetData
   /** Headers from the source that had no matching Live Patch field. */
   skippedColumns: string[]
+  /**
+   * Things the file said that are worth telling whoever imported it —
+   * a changeover that disagrees with the running order, so far. Never fatal;
+   * the sheet still imports.
+   */
+  warnings?: string[]
 }
 
 const FIELD_LABELS = PATCH_FIELDS.map((f) => PATCH_FIELD_LABELS[f])
@@ -120,6 +126,8 @@ export const sheetFromCsv = (rows: string[][]): ImportResult => {
   const lead = ownExportLead(nonEmpty)
   if (lead !== null) return fromOwnExport(nonEmpty, lead)
   const festival = festivalSheetFromCsv(rows)
-  if (festival.matched) return { data: festival.data, skippedColumns: [] }
+  if (festival.matched) {
+    return { data: festival.data, skippedColumns: [], warnings: festival.warnings }
+  }
   return fromGenericSheet(nonEmpty)
 }

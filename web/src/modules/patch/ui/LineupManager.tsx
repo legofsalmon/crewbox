@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import type * as Y from 'yjs'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import {
@@ -8,6 +8,7 @@ import {
   removeArtistFile,
   updateArtist,
 } from '../model/sheetDoc'
+import { formatChangeover, gapBetween } from '../model/changeover'
 import type { Artist, SheetSnapshot } from '../model/types'
 import {
   attachmentUrl,
@@ -218,6 +219,57 @@ function ArtistRow({
   )
 }
 
+/**
+ * The gap between two acts, editable, with the running order to check it.
+ *
+ * A festival day is a sequence of changeovers with sets in between, and this
+ * is the number people actually plan around. It is stored on the act it
+ * precedes; it is drawn between the two so nobody has to know that.
+ *
+ * When the set times imply a different gap, both are shown. Which is right
+ * depends on whether the times moved or the changeover did, and only the
+ * person holding the running order knows — so this points at the
+ * disagreement instead of resolving it.
+ */
+function Changeover({ doc, artist, previous }: { doc: Y.Doc; artist: Artist; previous: Artist }) {
+  const derived = gapBetween(previous.endTime, artist.startTime)
+  const stated = artist.changeover
+  const disagrees = stated > 0 && derived !== null && derived !== stated
+
+  return (
+    <div className={styles.changeover}>
+      <span className={styles.changeoverRule} aria-hidden="true" />
+      <label htmlFor={`artist-changeover-${artist.id}`}>Changeover:</label>
+      <input
+        id={`artist-changeover-${artist.id}`}
+        type="number"
+        min={0}
+        step={5}
+        className={styles.changeoverInput}
+        value={stated > 0 ? String(stated) : ''}
+        placeholder={derived === null ? '—' : String(derived)}
+        onChange={(e) => {
+          const value = Number(e.target.value)
+          updateArtist(doc, artist.id, {
+            changeover: Number.isFinite(value) && value > 0 ? Math.round(value) : 0,
+          })
+        }}
+      />
+      <span>min</span>
+      {/* "1 hr 30" is easier to hold in your head than "90". Below an hour
+          the minutes already read fine and repeating them would just say
+          "45 min" twice. */}
+      {stated >= 60 && <span className={styles.changeoverPretty}>{formatChangeover(stated)}</span>}
+      {disagrees && (
+        <span className={styles.changeoverClash} role="status">
+          ⚠ the set times leave {formatChangeover(derived)}
+        </span>
+      )}
+      <span className={styles.changeoverRule} aria-hidden="true" />
+    </div>
+  )
+}
+
 export default function LineupManager({
   doc,
   snapshot,
@@ -256,19 +308,28 @@ export default function LineupManager({
               + Add Artist
             </button>
           </div>
-          {snapshot.artists.map((artist) => (
-            <ArtistRow
-              key={artist.id}
-              doc={doc}
-              artist={artist}
-              removable={snapshot.artists.length > 1}
-              hasContent={
-                artist.files.length > 0 ||
-                Object.entries(snapshot.patches).some(
-                  ([key, entry]) => key.startsWith(`${artist.id}:`) && patchEntryHasContent(entry)
-                )
-              }
-            />
+          {snapshot.artists.map((artist, index) => (
+            <Fragment key={artist.id}>
+              {/* The changeover sits *between* two acts, which is where the
+                  sheet draws it and how a crew thinks about it — "we've
+                  forty-five minutes after this one". Drawn as a divider
+                  rather than as a field on either act, so there is never a
+                  question about which of the two it belongs to. */}
+              {index > 0 && (
+                <Changeover doc={doc} artist={artist} previous={snapshot.artists[index - 1]!} />
+              )}
+              <ArtistRow
+                doc={doc}
+                artist={artist}
+                removable={snapshot.artists.length > 1}
+                hasContent={
+                  artist.files.length > 0 ||
+                  Object.entries(snapshot.patches).some(
+                    ([key, entry]) => key.startsWith(`${artist.id}:`) && patchEntryHasContent(entry)
+                  )
+                }
+              />
+            </Fragment>
           ))}
         </div>
       </div>

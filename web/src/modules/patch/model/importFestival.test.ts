@@ -242,3 +242,58 @@ describe('what actually lands in the document', () => {
     expect(snapshot.artists[4]!.notes).toBe('')
   })
 })
+
+describe('the changeover between two acts', () => {
+  it('reads the cell in the narrow column beside each act name', () => {
+    // "45" on the second act, "HR" on the third and fourth. The value in an
+    // act's column is the gap *into* that act — it reads as sitting between
+    // the two, and the sheet's own set times agree on all three.
+    const { data } = festivalSheetFromCsv(dayRows())
+    expect(data.artists.slice(0, 4).map((a) => a.changeover)).toEqual([0, 45, 60, 60])
+  })
+
+  it('leaves the first act of the day without one', () => {
+    // There is no act before it to change over from.
+    expect(festivalSheetFromCsv(dayRows()).data.artists[0]!.changeover).toBe(0)
+  })
+
+  it('works it out from the set times where nobody wrote one', () => {
+    const rows = dayRows()
+    // Blank the "45" cell: the times still say 18:00 → 18:45.
+    rows[5]![5] = ''
+    expect(festivalSheetFromCsv(rows).data.artists[1]!.changeover).toBe(45)
+  })
+
+  it('says nothing rather than guessing when neither is there', () => {
+    const { data } = festivalSheetFromCsv(dayRows())
+    // The empty template slots have no times and no changeover cell.
+    expect(data.artists[6]!.changeover).toBe(0)
+  })
+
+  it('flags a written changeover that disagrees with the running order', () => {
+    // The number a day is planned around, typed twice in the same sheet.
+    // Move a set time and the changeover beside it is quietly stale — this
+    // is what says so, and it names both figures rather than picking one.
+    const rows = dayRows()
+    rows[5]![5] = '30'
+    const { warnings } = festivalSheetFromCsv(rows)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('Tin Chapel')
+    expect(warnings[0]).toContain('30 min')
+    expect(warnings[0]).toContain('45 min')
+  })
+
+  it('stays quiet when the sheet agrees with itself', () => {
+    expect(festivalSheetFromCsv(dayRows()).warnings).toEqual([])
+  })
+
+  it('carries the changeover into the document', () => {
+    const doc = new Y.Doc()
+    buildImportedSheet(doc, festivalSheetFromCsv(dayRows()).data, { title: 'Day 1' })
+    expect(
+      snapshotSheet(doc)
+        .artists.slice(0, 4)
+        .map((a) => a.changeover)
+    ).toEqual([0, 45, 60, 60])
+  })
+})
