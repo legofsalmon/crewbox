@@ -663,8 +663,9 @@ export const useStore = create<AppState>()((set, get) => {
       if (!voiceManager) {
         // First use: load the voice module (and the LiveKit SDK) on demand.
         const { VoiceManager } = await import('./lib/voice.ts')
-        voiceManager ??= new VoiceManager((partial) =>
-          set({ voice: { ...useStore.getState().voice, ...partial } })
+        voiceManager ??= new VoiceManager(
+          (partial) => set({ voice: { ...useStore.getState().voice, ...partial } }),
+          (message) => get().toast(message, 'warning')
         )
       }
       // Browsers only hand over a microphone in a secure context, and a box
