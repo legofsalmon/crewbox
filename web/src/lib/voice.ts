@@ -31,6 +31,15 @@ const LEVEL_INTERVAL_MS = 100
 
 type Publish = (state: Partial<VoiceState>) => void
 
+/**
+ * Something the crew has to be told, rather than a state the UI can render.
+ *
+ * Needed because the two moments that matter most here — a join that failed
+ * and a room that dropped — both end with the voice bar unmounted, so there
+ * is no longer any surface left to put the reason on.
+ */
+type Notify = (message: string) => void
+
 function toQuality(q: ConnectionQuality): VoiceQuality {
   switch (q) {
     case ConnectionQuality.Excellent:
@@ -60,7 +69,10 @@ export class VoiceManager {
   private micTestStream: MediaStream | null = null
   private talking = false
 
-  constructor(private readonly publish: Publish) {
+  constructor(
+    private readonly publish: Publish,
+    private readonly notify: Notify = () => {}
+  ) {
     navigator.mediaDevices?.addEventListener?.('devicechange', () => {
       void this.refreshDevices()
     })
@@ -118,7 +130,18 @@ export class VoiceManager {
       .on(RoomEvent.Reconnecting, () => this.publish({ status: 'reconnecting' }))
       .on(RoomEvent.Reconnected, () => this.publish({ status: 'connected' }))
       .on(RoomEvent.Disconnected, () => {
-        if (this.room === room) this.reset()
+        // Only an *unexpected* drop reaches this: `leave()` nulls `this.room`
+        // before disconnecting, so a deliberate exit fails this guard and
+        // stays silent.
+        if (this.room === room) {
+          this.reset()
+          // Being dropped off comms without being told is worse than a failed
+          // join. A failed join is at least visibly nothing happening — this
+          // leaves someone believing they are on the intercom, talking to a
+          // channel that stopped hearing them, which on a show is how a call
+          // for help goes unanswered.
+          this.notify('Voice dropped — you are no longer on the intercom')
+        }
       })
 
     try {
@@ -141,7 +164,23 @@ export class VoiceManager {
       void this.refreshDevices()
       void this.acquireMic()
     } catch (err) {
-      this.reset(err instanceof Error ? err.message : 'could not join voice')
+      const message = err instanceof Error ? err.message : 'could not join voice'
+      this.reset(message)
+      // Rethrow, or nobody ever finds out.
+      //
+      // `reset()` files the reason in `voice.error` and nulls `channelId`,
+      // which unmounts the voice bar — so the entire visible result of a
+      // failed join was a banner appearing for one frame and vanishing, with
+      // the reason readable only in the audio settings panel you would have
+      // had to already have open. The store's `joinVoice` has the toast, and
+      // swallowing here meant its catch block only ever fired for a failed
+      // *token* request, never for a failed connection — which is the far
+      // likelier failure and the one that was actually reported.
+      //
+      // Reproduced before fixing: box pointed at an unreachable SFU, join
+      // clicked, bar flashed, no toast, real reason in the browser console
+      // where no crew member will ever look.
+      throw err instanceof Error ? err : new Error(message)
     }
   }
 
