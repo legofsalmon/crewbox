@@ -62,20 +62,25 @@ const START_CODE_DMX = 0x00
 const HEADER = 126
 
 /**
- * Options bits, which are numbered from the most significant end.
+ * Options bits, numbered from the most significant end (E1.31 §6.2.6).
  *
  * These two were wrong in the first draft of the design — recorded as bits 6
  * and 5 — and a parser built on that reads every live packet as a preview,
- * discards it, and reports a rig that is running as silent. The tests below
- * pin them explicitly for that reason.
+ * discards it, and reports a rig that is running as silent. Since confirmed
+ * against two independent implementations and then against the standard
+ * itself, which is why the tests pin them explicitly.
  */
 const OPTION_PREVIEW_DATA = 0x80
 const OPTION_STREAM_TERMINATED = 0x40
 
 /**
  * How far behind the last sequence number a packet may be before it is taken
- * as a straggler rather than as the next frame. E1.31's rule is to discard
- * when the signed difference is in (-20, 0].
+ * as a straggler rather than as the next frame.
+ *
+ * E1.31 §6.7.2 states it as: with A the last sequence number and B the new
+ * one, discard when B − A in signed 8-bit arithmetic is ≤ 0 and > −20. The
+ * window is deliberately generous so a source resetting its counter is
+ * followed immediately rather than ignored for 20 frames.
  */
 export const SEQUENCE_DISCARD_WINDOW = 20
 

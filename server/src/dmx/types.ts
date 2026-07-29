@@ -26,18 +26,24 @@ export const UNIVERSE_SIZE = 512
 /**
  * How long a source may go quiet before it is treated as gone.
  *
- * The two protocols are not close on this and using one number for both is a
- * bug that only shows up on a rig sitting still:
+ * **Both** protocols stop repeating themselves when nothing is changing —
+ * that part is the same, and an earlier version of this comment had it wrong
+ * by claiming sACN streams continuously. What differs is how often each one
+ * checks in, and one timeout for both is a bug that only shows on a rig
+ * sitting still:
  *
- * - **sACN** sources send continuously, and E1.31 §6.7.1 gives a network data
- *   loss timeout of 2.5 seconds.
- * - **Art-Net** senders are explicitly allowed to stop repeating themselves
- *   when nothing is changing, re-transmitting the last frame only about every
- *   4 seconds. Judging them at 2.5 seconds drops a perfectly healthy console
- *   between its own keep-alives, so the panel flaps between "receiving" and
- *   "nothing arriving" for a rig that is simply parked on a look — which is
- *   most of a show. 10 seconds is the Art-Net merge timeout, and it tolerates
- *   two missed re-transmissions.
+ * - **sACN** suppresses unchanged data after three identical packets, then
+ *   sends a keep-alive every 800–1000 ms (E1.31 §6.6.2). The standard's own
+ *   `E131_NETWORK_DATA_LOSS_TIMEOUT` is 2.5 s (§6.7.1, Appendix A), which
+ *   comfortably tolerates two missed keep-alives.
+ * - **Art-Net** re-transmits an unchanged frame only about every 4 seconds,
+ *   and its merge timeout is 10. Judging it at sACN's 2.5 s drops a healthy
+ *   console *between its own keep-alives*, so the panel flaps between
+ *   "receiving" and "nothing arriving" for a rig parked on a look — which is
+ *   most of a show.
+ *
+ * So the rule is the same for both: allow two missed keep-alives. The
+ * numbers differ only because the intervals do.
  */
 export const DATA_LOSS_MS: Record<DmxProtocol, number> = {
   sacn: 2500,

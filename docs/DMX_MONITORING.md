@@ -469,34 +469,82 @@ three ways to survive.
 Two things, both in code that was already shipping:
 
 **The Art-Net data-loss timeout was sACN's.** `state.ts` timed out every
-source at 2.5 seconds, which is E1.31's figure. Art-Net senders are allowed
-to stop repeating themselves when nothing changes and re-send the last frame
-only about every 4 seconds, and Art-Net's own merge timeout is 10. So a
+source at 2.5 seconds, which is E1.31's figure. Art-Net re-transmits an
+unchanged frame only about every 4 seconds and its merge timeout is 10, so a
 console parked on a look — most of a show — was dropped between its own
-keep-alives, and the panel flapped between "receiving" and "nothing
-arriving" on a completely healthy rig. A monitor that cries wolf is worse
-than no monitor. The timeout is now per protocol.
+keep-alives and the panel flapped between "receiving" and "nothing arriving"
+on a completely healthy rig. A monitor that cries wolf is worse than no
+monitor. The timeout is now per protocol.
 
 **The DMP layer's addressing was not checked.** E1.31 fixes a DMX packet to
 one shape: single-byte properties, first address 0, increment 1. Both
-reference implementations reject all three mismatches; crewbox checked none
-of them, so other DMP traffic on port 5568 could have been read as levels at
-offsets that only make sense for this one layout. Now checked, with a test.
+reference implementations reject all three mismatches; crewbox checked none,
+so other DMP traffic on port 5568 could have been read as levels at offsets
+that only make sense for this one layout. Now checked, with a test.
 
 A third, smaller: an sACN priority above the legal 200 is now capped rather
 than believed, so a malformed source can't take a universe off a console
 correctly asking for 200.
 
-[e131]: https://tsp.esta.org/tsp/documents/docs/ANSI_E1-31-2018.pdf
-[artnet]: https://art-net.org.uk/downloads/art-net.pdf
-[libe131]: https://github.com/hhromic/libe131
-[pysacn]: https://github.com/Hundemeier/sacn
-[ola]: https://github.com/OpenLightingProject/ola
-[pygdtf]: https://github.com/open-stage/python-gdtf
+## Then against the standards themselves
+
+Colm supplied **ANSI E1.31-2025** and **ANSI E1.11-2024** — newer revisions
+than the implementations above were built against. The documents are ESTA's
+copyright and are not redistributable, so they are not in this repo; what
+follows is clause references and the factual constants, which is what the
+code needed.
+
+Everything the implementations had agreed on was confirmed:
+
+| Checked                                                                     | Clause         | Result                                                     |
+| --------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------- |
+| Options bits — Preview_Data 7, Stream_Terminated 6, Force_Synchronization 5 | §6.2.6         | Confirmed. The bits this design originally had wrong.      |
+| Sequence discard — signed 8-bit `B − A` in (−20, 0]                         | §6.7.2         | Confirmed exactly, including the window.                   |
+| `E131_NETWORK_DATA_LOSS_TIMEOUT` = 2.5 s                                    | §6.7.1, App. A | Confirmed.                                                 |
+| Priority is 0–200, highest wins                                             | §6.2.3         | Confirmed; the cap matches the standard's own bound.       |
+| Terminated packets' values must be ignored                                  | §6.2.6         | Already correct — `apply()` returns before touching slots. |
+
+And it corrected one piece of reasoning that was wrong even though the fix it
+justified was right:
+
+**Both protocols suppress unchanged data.** The comment on `DATA_LOSS_MS`
+used to say sACN sources stream continuously and Art-Net ones don't. They
+both stop repeating themselves; E1.31 §6.6.2 has an sACN source send three
+identical packets and then a keep-alive every 800–1000 ms. So the real rule
+is the same for both — _tolerate two missed keep-alives_ — and the numbers
+differ only because the intervals do. Right answer, wrong reason, now fixed
+in the comment.
+
+Two questions closed with no code:
+
+- **Per-address priority (start code 0xDD) is not in E1.31.** It is a vendor
+  extension. Rejecting every non-zero START code is correct per the standard,
+  so there is nothing to implement.
+- **Alternate START codes** more generally are E1.11's business, and a
+  monitor that only wants levels is right to ignore them.
+
+### Now specified, and worth building
+
+**Universe discovery.** E1.31 has a discovery packet that lists the universes
+a source is transmitting, sent to its own universe every 10 seconds — so the
+box could report "this desk is sending universes 1–8" _before_ anyone patches
+a plot, instead of only reporting on universes a plot happens to ask about.
+The constants are `E131_DISCOVERY_UNIVERSE` 64214,
+`VECTOR_ROOT_E131_EXTENDED` 0x00000008, `VECTOR_E131_EXTENDED_DISCOVERY`
+0x00000002, `VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST` 0x00000001, interval 10 s
+(§4.3, §8, App. A). The list is paged, and §6.7.1.1 warns pages can arrive out
+of order or interleaved between runs — so a receiver has to tolerate that
+rather than assume a clean sequence.
+
+Not built yet. It is the most useful thing left in the protocol layer.
 
 ### Still outstanding
 
-None of this replaces a real console. Two implementations agreeing on a byte
-offset is strong evidence about the format and says nothing about whether a
-grandMA3 on a festival network behaves the way three documents say it should.
-`scripts/dmx-sniff.mjs --dump` remains the thing to run first.
+None of this replaces a real console. Three documents agreeing on a byte
+offset says nothing about whether a grandMA3 on a festival network behaves
+the way they say. `scripts/dmx-sniff.mjs --dump` remains the thing to run
+first.
+
+**Art-Net has had no equivalent pass.** It is not an ESTA standard — the
+specification is Artistic Licence's own, and the 10-second timeout above
+still rests on a comment in OLA's source rather than on that document.
