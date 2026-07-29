@@ -100,6 +100,10 @@ function decodeArtNet(buf, fromIp) {
     }
     return { kind: 'pollReply', fromIp, shortName: cstr(26, 18), longName: cstr(44, 64) }
   }
+  // ArtSync. No payload and no port address — from here on every node on the
+  // network buffers ArtDmx rather than outputting it, until four seconds pass
+  // without another one. Levels on the wire stop being levels on stage.
+  if (opcode === 0x5200) return { kind: 'sync', protocol: 'artnet', fromIp }
   if (opcode !== 0x5000 || buf.length < 18) return null
   const protVer = buf.readUInt16BE(10)
   const portAddress = buf.readUInt16LE(14) & 0x7fff
@@ -127,9 +131,56 @@ function decodeArtNet(buf, fromIp) {
  * discover, not a contradiction to be tidied away.
  */
 function decodeSacn(buf, fromIp) {
-  if (buf.length < 126) return null
+  if (buf.length < 47) return null
   if (buf.readUInt16BE(0) !== 0x0010) return null
   if (!buf.subarray(4, 16).equals(ACN_PID)) return null
+
+  // Synchronization packets share only the root layer and diverge at its
+  // vector: 0x08 rather than 0x04, with 0x01 under it. Worth showing because
+  // data carrying a sync address is only actually held by a receiver that is
+  // also seeing this stream (E1.31 §6.2.4.1) — "the desk asks for sync and
+  // nothing is sending it" is a fault you can only spot by watching for both.
+  if (buf.readUInt32BE(18) === 0x00000008 && buf.readUInt32BE(40) === 0x00000001) {
+    return {
+      kind: 'sync',
+      protocol: 'sacn',
+      fromIp,
+      cid: buf.subarray(22, 38).toString('hex'),
+      syncAddress: buf.readUInt16BE(45),
+      sequence: buf[44],
+    }
+  }
+
+  // Universe discovery: the same extended root, framing vector 0x02 (which
+  // is also a data packet's, hence checking the root first) and a universe
+  // list from octet 120. This is the standard's own answer to "what is out
+  // there" — §12 says it exists so a monitor need not join every group.
+  if (
+    buf.length >= 120 &&
+    buf.readUInt32BE(18) === 0x00000008 &&
+    buf.readUInt32BE(40) === 0x00000002 &&
+    buf.readUInt32BE(114) === 0x00000001
+  ) {
+    const universes = []
+    for (let i = 0; i < Math.floor((buf.length - 120) / 2); i++) {
+      const universe = buf.readUInt16BE(120 + i * 2)
+      if (universe > 0) universes.push(universe)
+    }
+    const raw = buf.subarray(44, 108)
+    const end = raw.indexOf(0)
+    return {
+      kind: 'discovery',
+      protocol: 'sacn',
+      fromIp,
+      cid: buf.subarray(22, 38).toString('hex'),
+      sourceName: raw.toString('utf8', 0, end === -1 ? raw.length : end).trim(),
+      page: buf[118],
+      lastPage: buf[119],
+      universes,
+    }
+  }
+
+  if (buf.length < 126) return null
   if (buf.readUInt32BE(18) !== 0x00000004) return null
   if (buf.readUInt32BE(40) !== 0x00000002) return null
   if (buf[117] !== 0x02) return null
@@ -152,6 +203,10 @@ function decodeSacn(buf, fromIp) {
     // to stop anyone shipping.
     preview: (options & 0x80) !== 0,
     terminated: (options & 0x40) !== 0,
+    // Bit 5. Clear means a receiver that loses sync freezes on its last look
+    // rather than carrying on — so a rig can be stuck while the desk is fine.
+    forceSync: (options & 0x20) !== 0,
+    syncAddress: buf.readUInt16BE(109),
     universe: buf.readUInt16BE(113),
     startCode,
     declaredLength: count,
@@ -203,6 +258,8 @@ function report(packet) {
   const flags = [
     packet.preview ? 'PREVIEW' : '',
     packet.terminated ? 'TERMINATED' : '',
+    packet.syncAddress ? `SYNC=u${packet.syncAddress}` : '',
+    packet.syncAddress && packet.forceSync ? 'FORCE-SYNC' : '',
     packet.startCode !== undefined && packet.startCode !== 0
       ? `start=0x${packet.startCode.toString(16)}`
       : '',
@@ -213,6 +270,54 @@ function report(packet) {
     `  ${label(packet)}  ${rate}  ${packet.slots.length} slots, ${lit} lit  [${head}${
       packet.slots.length > slotsToShow ? ' …' : ''
     }]${flags ? ` ${flags}` : ''}`
+  )
+  entry.lastPrinted = now
+}
+
+/** CID → the last advertisement printed, so a repeat every 10 s is silent. */
+const discoverySeen = new Map()
+
+/**
+ * A source saying what it transmits on, which is the single most useful line
+ * this script can print: it names the universes to point crewbox at, without
+ * anyone having to guess and without joining a single one of their groups.
+ */
+function reportDiscovery(packet) {
+  const list = packet.universes.join(',')
+  const key = `${packet.cid}:${packet.page}`
+  if (discoverySeen.get(key) === list) return
+  discoverySeen.set(key, list)
+  const paging = packet.lastPage > 0 ? ` (page ${packet.page + 1} of ${packet.lastPage + 1})` : ''
+  console.log(
+    `\n+ sACN source ${packet.sourceName || packet.cid.slice(0, 8)} at ${packet.fromIp}` +
+      ` transmits on: ${list || '(nothing)'}${paging}`
+  )
+}
+
+/** sync stream key → { packets, lastPrinted, firstSeen } */
+const syncSeen = new Map()
+
+/**
+ * A synchronisation stream, reported the same way a data stream is.
+ *
+ * Rate matters more than content here: a stream at 44/s is doing its job, and
+ * one that appears and then stops is the thing that leaves a rig frozen.
+ */
+function reportSync(protocol, where, id) {
+  const key = `${protocol}:sync:${where}:${id}`
+  const now = Date.now()
+  let entry = syncSeen.get(key)
+  if (!entry) {
+    entry = { packets: 0, lastPrinted: 0, firstSeen: now }
+    syncSeen.set(key, entry)
+    console.log(`\n+ ${protocol} SYNC ${where}  ${id.slice(0, 8)}`)
+  }
+  entry.packets++
+  if (now - entry.lastPrinted < 1000) return
+  const elapsed = now - entry.firstSeen
+  const rate = elapsed >= 500 ? `${Math.round((entry.packets * 1000) / elapsed)}/s` : '…/s'
+  console.log(
+    `  ${protocol} SYNC ${where}  ${rate}  (data on these universes is held until each one)`
   )
   entry.lastPrinted = now
 }
@@ -243,6 +348,10 @@ if (wantArtNet) {
       console.log(`\n+ Art-Net node ${packet.fromIp}: ${packet.longName || packet.shortName}`)
       return
     }
+    if (packet.kind === 'sync') {
+      reportSync('Art-Net', packet.fromIp, packet.fromIp)
+      return
+    }
     report({ ...packet, raw: buf })
   })
   socket.bind(ARTNET_PORT, () => {
@@ -256,13 +365,25 @@ if (wantSacn) {
   socket.on('error', (err) => console.error(`sACN socket: ${err.message}`))
   socket.on('message', (buf, rinfo) => {
     const packet = decodeSacn(buf, rinfo.address)
-    if (packet) report({ ...packet, raw: buf })
+    if (!packet) return
+    if (packet.kind === 'sync') {
+      reportSync('sACN', `u${packet.syncAddress}`, packet.cid)
+      return
+    }
+    if (packet.kind === 'discovery') {
+      reportDiscovery(packet)
+      return
+    }
+    report({ ...packet, raw: buf })
   })
   // Bind 0.0.0.0, never a unicast address: binding to a specific interface IP
   // stops multicast arriving at all on Linux.
   socket.bind(SACN_PORT, () => {
     const failed = []
-    for (const universe of universes) {
+    // 64214 always, on top of whatever was asked for. It costs one membership
+    // and it is the only group that answers "which universes should I have
+    // asked for" — which is the first question anyone plugging this in has.
+    for (const universe of [64214, ...universes]) {
       const group = `239.255.${(universe >> 8) & 0xff}.${universe & 0xff}`
       try {
         if (ifaceIp) socket.addMembership(group, ifaceIp)
@@ -272,8 +393,9 @@ if (wantSacn) {
       }
     }
     console.log(
-      `sACN: listening on 0.0.0.0:${SACN_PORT}, joined ${universes.length - failed.length}/${universes.length} groups` +
-        (ifaceIp ? ` via ${ifaceIp}` : ' via the default route')
+      `sACN: listening on 0.0.0.0:${SACN_PORT}, joined ${universes.length + 1 - failed.length}/${universes.length + 1} groups` +
+        (ifaceIp ? ` via ${ifaceIp}` : ' via the default route') +
+        ' (including universe discovery on 64214)'
     )
     if (failed.length > 0) {
       console.error(`sACN: could NOT join ${failed.join(', ')}`)

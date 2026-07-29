@@ -26,6 +26,7 @@ import { DEFAULT_PRIORITY, UNIVERSE_SIZE, type ArtPollReply, type DmxFrame } fro
 const ID = 'Art-Net\0'
 const OP_DMX = 0x5000
 const OP_POLL_REPLY = 0x2100
+const OP_SYNC = 0x5200
 
 /** Header bytes before the DMX data begins. */
 const DMX_HEADER = 18
@@ -34,7 +35,14 @@ const DMX_HEADER = 18
 const MIN_PROT_VER = 14
 
 export type ArtNetPacket =
-  { kind: 'dmx'; frame: DmxFrame } | { kind: 'pollReply'; reply: ArtPollReply }
+  | { kind: 'dmx'; frame: DmxFrame }
+  | { kind: 'pollReply'; reply: ArtPollReply }
+  /**
+   * A controller telling every node to output what it has been sent. Nodes
+   * buffer ArtDmx from the moment they see one of these, so its presence
+   * changes what the levels on the wire mean.
+   */
+  | { kind: 'sync' }
 
 /** A null-terminated fixed-width name field, or '' when it isn't there. */
 function fixedString(buf: Buffer, start: number, length: number): string {
@@ -70,6 +78,8 @@ export function parseArtNet(buf: Buffer, fromIp: string): ArtNetPacket | null {
     }
   }
 
+  if (opcode === OP_SYNC) return { kind: 'sync' }
+
   if (opcode !== OP_DMX || buf.length < DMX_HEADER) return null
   if (buf.readUInt16BE(10) < MIN_PROT_VER) return null
 
@@ -98,6 +108,15 @@ export function parseArtNet(buf: Buffer, fromIp: string): ArtNetPacket | null {
       priority: DEFAULT_PRIORITY,
       sequence,
       sequenced: sequence !== 0,
+      // Art-Net has no per-packet sync field. Whether these levels are being
+      // held depends on whether an ArtSync has been seen recently, which is
+      // a property of the network rather than of this packet — see
+      // `ARTSYNC_TIMEOUT_MS` and `noteArtSync` in state.ts.
+      syncAddress: 0,
+      // A node reverts to non-synchronous operation four seconds after the
+      // last ArtSync and carries on outputting, which is what sACN's
+      // force-synchronization bit describes when it is set.
+      forceSync: true,
       slots: new Uint8Array(buf.subarray(DMX_HEADER, DMX_HEADER + length)),
       // Art-Net has no equivalent of either.
       preview: false,

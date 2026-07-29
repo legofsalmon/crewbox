@@ -6,6 +6,7 @@ import {
   fixturePeak,
   fixtureVerdict,
   liveSummary,
+  syncNotice,
   universesInPlot,
 } from './live'
 import { emptyFixture, type Fixture, type FixtureType } from './types'
@@ -142,6 +143,8 @@ describe('the summary line', () => {
     source: 'grandMA3',
     sources: 1,
     conflict: false,
+    sync: 'none',
+    syncAddress: 0,
     since: 5000,
     lastSeen: 9000,
     everLit: '',
@@ -168,12 +171,88 @@ describe('the summary line', () => {
     expect(summary.since).toBe(3000)
   })
 
-  it('collects the universes with two sources fighting', () => {
+  it('collects the universes with sources fighting, and how many', () => {
     const summary = liveSummary([], new Map(), [
       universe(),
-      universe({ universe: 3, conflict: true }),
+      universe({ universe: 3, conflict: true, sources: 2 }),
     ])
-    expect(summary.conflicts).toEqual([3])
+    expect(summary.conflicts).toEqual([{ universe: 3, sources: 2 }])
+  })
+
+  it('carries the source count, because above two it is a different fault', () => {
+    // An Art-Net node merges two sources and ignores the rest outright, so a
+    // third console is not a louder argument — it is a console nobody is
+    // listening to. "Two sources on universe 5" was wrong for that case.
+    const summary = liveSummary([], new Map(), [
+      universe({ universe: 5, protocol: 'artnet', conflict: true, sources: 3 }),
+    ])
+    expect(summary.conflicts).toEqual([{ universe: 5, sources: 3 }])
+  })
+})
+
+describe('whether the levels are on stage', () => {
+  const universe = (over: Partial<DmxUniverseWire> = {}): DmxUniverseWire => ({
+    universe: 1,
+    wireUniverse: 1,
+    protocol: 'sacn',
+    source: 'grandMA3',
+    sources: 1,
+    conflict: false,
+    sync: 'none',
+    syncAddress: 0,
+    since: 5000,
+    lastSeen: 9000,
+    everLit: '',
+    ...over,
+  })
+
+  it('says nothing at all about a rig that is not synchronising', () => {
+    // Which is nearly every rig. A bar that explains universe
+    // synchronisation to someone who isn't using it is a bar in the way.
+    const summary = liveSummary([], new Map(), [universe(), universe({ universe: 2 })])
+    expect(summary.sync).toEqual([])
+    expect(syncNotice(summary.sync)).toBeNull()
+  })
+
+  it('says held data is queued rather than on stage', () => {
+    const summary = liveSummary([], new Map(), [
+      universe({ sync: 'held', syncAddress: 7962 }),
+      universe({ universe: 2, sync: 'held', syncAddress: 7962 }),
+    ])
+    const notice = syncNotice(summary.sync)
+    expect(notice?.tone).toBe('info')
+    expect(notice?.text).toContain('Universes 1, 2')
+    expect(notice?.text).toContain('not on stage')
+  })
+
+  it('leads with a frozen stage even when other universes are merely held', () => {
+    // Worst first: one stuck universe matters more than three working ones,
+    // and four lines of protocol commentary is a bar nobody reads.
+    const notice = syncNotice(
+      liveSummary([], new Map(), [
+        universe({ sync: 'held', syncAddress: 7962 }),
+        universe({ universe: 2, sync: 'frozen', syncAddress: 7962 }),
+      ]).sync
+    )
+    expect(notice?.tone).toBe('warn')
+    expect(notice?.text).toContain('frozen')
+    expect(notice?.text).toContain('universe 7962')
+  })
+
+  it('does not claim a stage is frozen when the source allowed it to carry on', () => {
+    const notice = syncNotice(
+      liveSummary([], new Map(), [universe({ sync: 'lost', syncAddress: 7962 })]).sync
+    )
+    expect(notice?.tone).toBe('warn')
+    expect(notice?.text).not.toContain('frozen')
+  })
+
+  it('admits when the sync universe is one this box never joined', () => {
+    const notice = syncNotice(
+      liveSummary([], new Map(), [universe({ sync: 'unwatched', syncAddress: 7962 })]).sync
+    )
+    expect(notice?.text).toContain('not listening')
+    expect(notice?.text).toContain('7962')
   })
 })
 

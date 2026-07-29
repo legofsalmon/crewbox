@@ -1,6 +1,7 @@
 import type { ReadinessCheck } from '../readiness.ts'
 import type { DmxListenerStatus } from './listener.ts'
-import type { UniverseHealth } from './state.ts'
+import type { DiscoveredSource, UniverseHealth } from './state.ts'
+import { ARTNET_MERGE_SOURCES } from './types.ts'
 
 /**
  * "Lighting network", beside "This box" and "This network".
@@ -14,6 +15,23 @@ import type { UniverseHealth } from './state.ts'
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
+/**
+ * "1-8, 101" rather than "1, 2, 3, 4, 5, 6, 7, 8, 101".
+ *
+ * A desk on 32 universes is a normal desk, and the list is being read off a
+ * phone by someone standing under a truss.
+ */
+const summarise = (universes: number[]): string => {
+  const runs: string[] = []
+  for (let i = 0; i < universes.length;) {
+    let end = i
+    while (end + 1 < universes.length && universes[end + 1] === universes[end]! + 1) end++
+    runs.push(end > i ? `${universes[i]}-${universes[end]}` : String(universes[i]))
+    i = end + 1
+  }
+  return runs.join(', ')
+}
+
 const ago = (now: number, then: number): string => {
   const secs = Math.round((now - then) / 1000)
   if (secs < 2) return 'just now'
@@ -24,7 +42,8 @@ const ago = (now: number, then: number): string => {
 export function dmxReadiness(
   status: DmxListenerStatus,
   universes: UniverseHealth[],
-  now: number
+  now: number,
+  discovered: DiscoveredSource[] = []
 ): ReadinessCheck[] {
   if (status.mode === 'off') {
     return [
@@ -96,6 +115,46 @@ export function dmxReadiness(
     }
   }
 
+  // --- What the desks say they are sending, whether we joined it or not ----
+  //
+  // Deliberately before the "nothing arriving" check below, because that is
+  // exactly when it is worth most: a box listening to 1–2 while the desk
+  // advertises 1–8 looks, from every other check here, like a network fault.
+  // It is a typo in one environment variable, and this is the only thing that
+  // can say so.
+  if (discovered.length > 0) {
+    const advertised = [...new Set(discovered.flatMap((s) => s.universes))].sort((a, b) => a - b)
+    const missing = advertised.filter((u) => !status.sacn.joined.includes(u))
+    const partial = discovered.filter((s) => !s.complete)
+    checks.push({
+      id: 'dmx-discovery',
+      label: 'Sources advertising',
+      state: missing.length > 0 ? 'limited' : 'ok',
+      detail:
+        discovered
+          .slice(0, 4)
+          .map(
+            (source) =>
+              `${source.name || source.id.slice(0, 8)}: ${
+                source.universes.length > 0 ? summarise(source.universes) : 'nothing'
+              }` +
+              // §6.7.1.1 lets pages be dropped or reordered. Reporting the
+              // union of what arrived is the useful answer; pretending it is
+              // the whole list is not.
+              (source.complete ? '' : ` (${source.pagesSeen} of ${source.pages} pages seen)`)
+          )
+          .join('; ') +
+        (discovered.length > 4 ? `; and ${discovered.length - 4} more` : '') +
+        (partial.length > 0
+          ? ' — a partial list is the union of the pages that arrived, not necessarily everything.'
+          : ''),
+      fix:
+        missing.length > 0
+          ? `Not listening to ${summarise(missing)}. Add to CREWBOX_DMX_UNIVERSES and restart to check those fixtures too.`
+          : undefined,
+    })
+  }
+
   // --- Is anything actually arriving --------------------------------------
   if (live.length === 0) {
     checks.push({
@@ -128,9 +187,13 @@ export function dmxReadiness(
       `, last seen ${ago(now, Math.max(...live.map((u) => u.lastSeen)))}.`,
   })
 
-  // Two sources at one priority is the fault worth shouting about: E1.31
-  // leaves the outcome undefined, so it runs a whole show unnoticed.
+  // Two sources at one priority is the fault worth shouting about: what a
+  // receiver does about it is not settled between them, so it runs a whole
+  // show unnoticed.
   if (conflicts.length > 0) {
+    const crowded = conflicts.some(
+      (u) => u.protocol === 'artnet' && u.sources.length > ARTNET_MERGE_SOURCES
+    )
     checks.push({
       id: 'dmx-conflict',
       label: 'Two sources on one universe',
@@ -138,10 +201,62 @@ export function dmxReadiness(
       detail: conflicts
         .map(
           (u) =>
-            `Universe ${u.universe}: ${u.sources.map((s) => s.name || s.id.slice(0, 8)).join(' and ')} both at priority ${Math.max(...u.sources.map((s) => s.priority))}`
+            `Universe ${u.universe}: ${u.sources.map((s) => s.name || s.id.slice(0, 8)).join(' and ')} all at priority ${Math.max(...u.sources.map((s) => s.priority))}`
         )
         .join('; '),
-      fix: 'Whichever arrives last wins, so the rig may look fine and behave oddly. Unpatch one, or give them different priorities.',
+      fix:
+        'Crewbox shows one of them and cannot merge, so the rig may look fine here and behave oddly on stage. Unpatch one, or give them different priorities.' +
+        // The extra sources are not merged more aggressively — they are
+        // dropped, so one of these consoles is doing nothing at all.
+        (crowded
+          ? ` An Art-Net node merges at most ${ARTNET_MERGE_SOURCES} sources and ignores any beyond that, so one of these is being discarded entirely.`
+          : ''),
+    })
+  }
+
+  // --- Is what we can see what is on stage ---------------------------------
+  //
+  // A synchronised rig whose sync stream has died is the nastiest fault in
+  // this whole panel: the desk keeps sending, crewbox keeps showing levels
+  // changing, and the stage has not moved since the stream stopped.
+  const stuck = live.filter((u) => u.sync === 'frozen' || u.sync === 'lost')
+  const held = live.filter((u) => u.sync === 'held')
+  const unwatched = live.filter((u) => u.sync === 'unwatched')
+
+  if (stuck.length > 0) {
+    const frozen = stuck.some((u) => u.sync === 'frozen')
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'limited',
+      detail:
+        `${plural(stuck.length, 'universe')} asking to be synchronised on universe ` +
+        `${[...new Set(stuck.map((u) => u.syncAddress))].join(', ')}, but nothing is ` +
+        `arriving there.` +
+        (frozen
+          ? ' Receivers hold their last look until it comes back, so the stage may have stopped following the desk.'
+          : ' The sources allow receivers to carry on, so the stage is live but no longer synchronised.'),
+      fix: 'Check what is meant to be sending synchronization packets on that universe. Until it is back, levels shown here are not proof of what is on stage.',
+    })
+  } else if (unwatched.length > 0) {
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'limited',
+      detail:
+        `${plural(unwatched.length, 'universe')} synchronised on universe ` +
+        `${[...new Set(unwatched.map((u) => u.syncAddress))].join(', ')}, which this box is ` +
+        'not listening to — so whether those levels have reached the stage is unknown.',
+      fix: `Add ${[...new Set(unwatched.map((u) => u.syncAddress))].join(',')} to CREWBOX_DMX_UNIVERSES and restart.`,
+    })
+  } else if (held.length > 0) {
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'ok',
+      detail:
+        `${plural(held.length, 'universe')} synchronised and the stream is arriving. ` +
+        'Levels shown are queued for the next synchronization packet rather than already on stage.',
     })
   }
 

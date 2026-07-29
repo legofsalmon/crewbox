@@ -1,0 +1,65 @@
+name: Desktop helpers
+
+# Compile checks for the only native code in the repo: the macOS menu-bar
+# item and the Windows tray icon. Until a job built them outside a release, a
+# typo in either surfaced for the first time in the middle of cutting a
+# version.
+#
+# These lived in ci.yml and ran on every single push. On a private repo macOS
+# runners bill at ten times the Linux rate, so a job that compiles one Swift
+# file was costing about six billable minutes per push to check code that
+# changes a few times a year — and it was a real part of why a release
+# eventually couldn't get a runner at all.
+#
+# Paths-filtered instead. The release build compiles both helpers anyway
+# (build-mac-app.mjs calls build-menubar.mjs), so a break that slipped past
+# this filter still cannot reach a published artifact — it stops the release
+# instead, which is the outcome this job existed to avoid, but now only in
+# the rare case where something outside these paths broke the build.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'native/macos/**'
+      - 'native/windows/**'
+      - 'scripts/build-menubar.mjs'
+      - 'scripts/build-tray.mjs'
+      - '.github/workflows/desktop-helpers.yml'
+  pull_request:
+    paths:
+      - 'native/macos/**'
+      - 'native/windows/**'
+      - 'scripts/build-menubar.mjs'
+      - 'scripts/build-tray.mjs'
+      - '.github/workflows/desktop-helpers.yml'
+
+jobs:
+  # These run the same scripts the release build runs, deliberately. The first
+  # version of this job re-implemented the csc invocation in bash and failed on
+  # something the real build cannot hit: MSYS path conversion rewrote /nologo
+  # into C:/Program Files/Git/nologo. A check that fails for reasons the thing
+  # it checks does not have is worse than no check.
+  #
+  # Compiling is all this proves. Whether a menu appears, and whether Quit
+  # stops the box, needs a real desktop session and a person looking at it.
+  helpers:
+    name: Desktop helpers compile (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS menu bar
+            os: macos-latest
+            run: node scripts/build-menubar.mjs build/check/CrewboxMenuBar
+          - name: Windows tray
+            os: windows-latest
+            run: node scripts/build-tray.mjs build/check/crewbox-tray.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: ${{ matrix.run }}

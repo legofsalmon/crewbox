@@ -64,17 +64,12 @@ jobs:
     needs: validate
     strategy:
       matrix:
-        # No macos-13 here despite Intel Macs mattering: it is GitHub's last
-        # Intel image and on the way out, and during the v0.5.0 release it sat
-        # unschedulable for the best part of an hour while every other job
-        # finished, blocking the release entirely. The Intel box is now
-        # cross-built on the Apple Silicon runner instead — see the step below.
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS is not in here: it now has its own job, which builds the
+        # darwin boxes and packages the app in one go rather than handing
+        # artifacts to a second ten-times-billed runner. See `mac` below.
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # Generous, because the macOS leg compiles LiveKit from source and then
-    # cross-builds the Intel box on top of that. Still far short of the
-    # six-hour default a wedged runner would otherwise burn.
-    timeout-minutes: 40
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -142,13 +137,25 @@ jobs:
           name: box-${{ matrix.os }}
           path: build/box/crewbox-*
 
-  macapp:
-    name: macOS app (.dmg)
-    needs: [validate, box]
+  # macOS: build and package on one runner.
+  #
+  # This used to be two jobs — the matrix leg above built the darwin boxes and
+  # uploaded them, then a separate job downloaded them to sign and notarise.
+  # Two jobs meant two checkouts, two `npm ci`s and an artifact round trip on
+  # a runner GitHub bills at ten times the Linux rate, for no parallelism
+  # worth having: the second could not start until the first finished anyway.
+  #
+  # Merging them costs a little wall-clock (the .dmg no longer overlaps with
+  # the Linux and Windows boxes) and saves roughly fifteen to twenty billable
+  # minutes a release.
+  mac:
+    name: macOS box and app
+    needs: validate
     runs-on: macos-latest
-    # Includes notarisation, which is a round trip to Apple and the slowest
-    # step in a release — the first submission on a new account especially.
-    timeout-minutes: 45
+    # Compiles LiveKit from source, cross-builds the Intel box on top of that,
+    # and then notarises — a round trip to Apple and the slowest step in a
+    # release. Still far short of the six-hour default a wedged runner burns.
+    timeout-minutes: 75
     # Only the trust step needs Apple credentials; the packaging runs either
     # way so the path is exercised on every release rather than first tried
     # on the day the certificate arrives.
@@ -163,11 +170,51 @@ jobs:
       MAC_SIGN_CERT_PASSWORD: ${{ secrets.MAC_SIGN_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-node@v4
         with:
-          pattern: box-macos-*
-          path: mac
-          merge-multiple: true
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w web
+      # LiveKit publishes no macOS binary, so the darwin box compiles one from
+      # source (see scripts/fetch-livekit.mjs). Pure Go, no cgo — this is what
+      # Homebrew's formula does.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      # Voice ships inside the box, so the SFU is fetched here rather than
+      # installed by whoever runs the box. A failure here is fatal on
+      # purpose: a release binary that silently lost voice is worse than a
+      # red build.
+      - run: node scripts/fetch-livekit.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: node scripts/build-box.mjs
+      # Start the box we just built and use it. A box can build perfectly and
+      # still ship without working voice — a missing asset, an SFU that won't
+      # execute on this OS — and none of that appears in a build log.
+      - name: Smoke-test the box
+        run: ./scripts/smoke-box.sh build/box/crewbox-*
+      # The Intel Mac box, built here rather than on an Intel runner. A SEA
+      # blob is architecture-independent, so it can be injected into an x64
+      # Node; the embedded SFU is native, so it is recompiled for amd64 with
+      # cgo on (only a Mac can do that for a darwin target).
+      #
+      # Soft on purpose. Everything above has already succeeded by this point,
+      # and shipping Linux, Windows, Apple Silicon and the APK beats failing
+      # the whole release over one architecture. A skipped Intel build shows
+      # up as a missing asset, which is visible, rather than a broken one.
+      - name: Cross-build the Intel Mac box
+        continue-on-error: true
+        env:
+          CREWBOX_TARGET_ARCH: x64
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          LIVEKIT_REFETCH=1 node scripts/fetch-livekit.mjs
+          CREWBOX_BASE_NODE="$(node scripts/fetch-node.mjs darwin x64)" \
+            node scripts/build-box.mjs
+          file build/box/crewbox-darwin-x64
       # The signing certificate lives in a throwaway keychain that dies with
       # the runner, so the private key never touches the default one.
       - name: Import signing certificate
@@ -185,16 +232,20 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$PASSWORD" "$KEYCHAIN"
           security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
           rm -f "$RUNNER_TEMP/cert.p12"
-      - run: chmod +x mac/crewbox-darwin-*
+      # Kept from when these arrived as a downloaded artifact, which strips
+      # the executable bit. They no longer make that round trip, but the
+      # cross-built Intel box never gets executed on this runner, so nothing
+      # else here would notice if it came out without the bit.
+      - run: chmod +x build/box/crewbox-darwin-*
       # Glob rather than naming both: if the Intel cross-build was skipped,
       # this still produces a working Apple Silicon app instead of failing.
       # build-mac-app.mjs takes one binary or two.
-      - run: node scripts/build-mac-app.mjs mac/crewbox-darwin-*
+      - run: node scripts/build-mac-app.mjs build/box/crewbox-darwin-*
       # Run the universal box from inside the built app, not just the binaries
       # that went into it. lipo has to preserve each slice's injected SEA
       # section; if it doesn't, the app can't find its own payload and this is
       # where that surfaces. Only the native slice actually executes here, so
-      # this proves arm64 — the Intel slice is covered by the box job.
+      # this proves arm64 — the Intel slice is covered by the smoke test above.
       #
       # Resources/, not MacOS/: the bundle's executable is the menu-bar
       # wrapper now, and a GUI app with a run loop is not something a headless
@@ -220,6 +271,16 @@ jobs:
             esac
           done
           codesign --verify --strict --verbose=2 "$WRAPPER"
+      # Two uploads, not one with two paths: upload-artifact roots an
+      # artifact at the least common ancestor of everything in it, so
+      # build/box/… and build/mac/… together would arrive as box/ and mac/
+      # subdirectories and the publish job's flat asset check would reject
+      # them. Separate single-path uploads keep the layout the two-job
+      # version produced.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: box-macos
+          path: build/box/crewbox-darwin-*
       - uses: actions/upload-artifact@v4
         with:
           name: macapp
@@ -252,7 +313,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [validate, box, macapp, apk]
+    needs: [validate, box, mac, apk]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

@@ -517,15 +517,21 @@ export class Hub {
         source: winner?.name || winner?.id.slice(0, 8) || '',
         sources: found.sources.length,
         conflict: found.conflict,
+        sync: found.sync,
+        syncAddress: found.syncAddress,
         since: found.since,
         lastSeen: found.lastSeen,
         everLit,
       })
     }
 
-    // Source counts and conflicts change rarely; resending the whole list
-    // every tick would be most of the traffic for none of the information.
-    const summary = universes.map((u) => `${u.universe}:${u.sources}:${u.conflict}`).join(',')
+    // Source counts, conflicts and sync state change rarely; resending the
+    // whole list every tick would be most of the traffic for none of the
+    // information. Sync belongs in here — a rig freezing because its
+    // synchronization stream stopped is exactly the change worth pushing.
+    const summary = universes
+      .map((u) => `${u.universe}:${u.sources}:${u.conflict}:${u.sync}:${u.syncAddress}`)
+      .join(',')
     if (stateChanged || summary !== conn.dmxSummary) {
       conn.dmxSummary = summary
       this.send(conn.ws, { type: 'dmxState', listening: true, universes })

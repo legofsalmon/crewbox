@@ -1,5 +1,11 @@
-import { SEQUENCE_DISCARD_WINDOW } from './sacn.ts'
-import { DATA_LOSS_MS, UNIVERSE_SIZE, type DmxFrame, type DmxProtocol } from './types.ts'
+import { DISCOVERY_TIMEOUT_MS, SEQUENCE_DISCARD_WINDOW, type SacnDiscovery } from './sacn.ts'
+import {
+  ARTSYNC_TIMEOUT_MS,
+  DATA_LOSS_MS,
+  UNIVERSE_SIZE,
+  type DmxFrame,
+  type DmxProtocol,
+} from './types.ts'
 
 /**
  * What the lighting network is doing, kept in memory and never written down.
@@ -16,6 +22,41 @@ import { DATA_LOSS_MS, UNIVERSE_SIZE, type DmxFrame, type DmxProtocol } from './
 
 /** What a fixture's addresses have been seen doing. */
 export type FixtureVerdict = 'no-data' | 'silent' | 'live'
+
+/**
+ * Whether the levels on the wire are the levels on stage.
+ *
+ * Universe synchronisation exists so that several universes land together —
+ * a source sends the data, then sends a synchronization packet, and receivers
+ * output everything they were holding at once (E1.31 §11, Art-Net's ArtSync).
+ * It is used for media servers, LED panels and anything where a split-second
+ * of skew is visible.
+ *
+ * For a monitor it changes what a level *means*, so it cannot be ignored:
+ *
+ * - `none` — data stands on its own. What is on the wire is on stage. The
+ *   ordinary case, and what most rigs do.
+ * - `held` — the data is sync-addressed and the sync stream is arriving, so
+ *   a conforming receiver is holding these levels until the next
+ *   synchronization packet. They are queued, not output.
+ * - `frozen` — sync-addressed, the sync universe *is* being listened to,
+ *   nothing has arrived on it for the data-loss timeout (§11.1.2), and the
+ *   source's force-synchronization bit is clear. §6.2.6 is unambiguous about
+ *   what that means: receivers "shall not update with any new packets until
+ *   synchronization resumes". The stage is stuck on its last look while the
+ *   desk carries on sending, and neither end can see it from where it is
+ *   standing. This is the fault worth building the whole thing for.
+ * - `lost` — the same, but with force-synchronization set, so receivers were
+ *   free to carry on unsynchronised. Milder — the stage is following the desk
+ *   again — but the multi-universe timing the source asked for is gone, which
+ *   is what it was configured for.
+ * - `unwatched` — sync-addressed to a universe this box has not joined, so
+ *   whether it is `held`, `frozen` or `lost` is unknowable. §6.3.3.1 sends
+ *   synchronization packets only to their own universe's multicast group, so
+ *   this happens whenever the sync universe isn't in `CREWBOX_DMX_UNIVERSES`
+ *   — and the fix is to add it.
+ */
+export type DmxSyncState = 'none' | 'held' | 'frozen' | 'lost' | 'unwatched'
 
 export interface DmxSource {
   id: string
@@ -38,9 +79,60 @@ export interface UniverseHealth {
   winnerId: string | null
   /** Two or more sources at the top priority. Nobody can say who wins. */
   conflict: boolean
+  /** Whether these levels are on stage, being held, or stuck. */
+  sync: DmxSyncState
+  /**
+   * The universe synchronization packets for this data are sent on, or 0.
+   *
+   * Carried because it is the actionable part: a `unwatched` verdict is
+   * fixed by adding this number to the box's universe list, and a `lost` one
+   * is diagnosed by looking at what is meant to be sending on it.
+   */
+  syncAddress: number
   lastSeen: number
   /** When this universe was first heard — the window the verdicts speak for. */
   since: number
+}
+
+/**
+ * What a source says it is transmitting on, without anyone having to join a
+ * single one of those groups to find out.
+ *
+ * This is E1.31's own answer to the problem crewbox has: §12 says universe
+ * discovery is "specifically intended to reduce the imposed load on a network
+ * that would otherwise be created by a monitoring system joining every single
+ * E1.31 multicast group in order to probe its traffic to report this same
+ * information". That monitoring system is this one.
+ */
+export interface DiscoveredSource {
+  id: string
+  name: string
+  /** Every universe advertised across the pages seen, sorted. */
+  universes: number[]
+  /**
+   * Whether every page of the list has actually arrived.
+   *
+   * §6.7.1.1 warns that pages "may be dropped or arrive out of order,
+   * potentially even mixed in between different runs of pages", and leaves
+   * the response to receivers. Waiting for a complete set would report
+   * nothing at all when one page keeps getting lost; reporting the union
+   * without saying so would present a partial list as the whole truth. So:
+   * report the union, and say which it is.
+   */
+  complete: boolean
+  /** Pages seen out of `lastPage + 1`. Only interesting when incomplete. */
+  pagesSeen: number
+  pages: number
+  lastSeen: number
+}
+
+interface DiscoveryRecord {
+  id: string
+  name: string
+  /** page number → { universes, when } so a stale page can be aged out alone. */
+  pages: Map<number, { universes: number[]; at: number }>
+  lastPage: number
+  lastSeen: number
 }
 
 interface SourceRecord extends DmxSource {
@@ -60,6 +152,10 @@ interface UniverseRecord {
   lastSeen: number
   since: number
   slots: Uint8Array
+  /** The winning source's synchronization address, 0 when it isn't using one. */
+  syncAddress: number
+  /** The winning source's force-synchronization bit. See `DmxFrame`. */
+  forceSync: boolean
   /**
    * Whether each slot has ever been above zero since we started listening.
    *
@@ -81,6 +177,29 @@ export class DmxState {
   private readonly artnetBase: number
   /** Art-Net sender IP → name, learned from any ArtPollReply it volunteered. */
   private readonly nodeNames = new Map<string, string>()
+  /**
+   * sACN sync universe → when a synchronization packet was last seen on it.
+   *
+   * Keyed by sync address rather than by source: §11.2.1 says two sources
+   * synchronising the same address is "beyond the scope of this standard, and
+   * may cause unpredictable behavior", so what matters to a receiver is only
+   * whether the stream exists at all.
+   */
+  private readonly sacnSync = new Map<number, number>()
+  /** When the last ArtSync arrived. Art-Net's is one timer for the network. */
+  private artSyncAt: number | null = null
+  /**
+   * sACN universes whose multicast group this box has actually joined.
+   *
+   * Needed to tell "no synchronization packets are being sent" from "we
+   * wouldn't have heard them if they were" — see `DmxSyncState`. Empty means
+   * unknown, which reads as `unwatched` rather than as `lost`: claiming a
+   * fault we cannot see would be exactly the cry-wolf the per-protocol
+   * timeout fix was about.
+   */
+  private joinedUniverses = new Set<number>()
+  /** CID → what that source last advertised it is transmitting on. */
+  private readonly discovery = new Map<string, DiscoveryRecord>()
 
   constructor(options: DmxStateOptions = {}) {
     this.artnetBase = options.artnetBase ?? 1
@@ -109,6 +228,82 @@ export class DmxState {
     }
   }
 
+  /** Which sACN groups are actually joined, so `lost` can be told from unheard. */
+  watchSyncUniverses(universes: number[]): void {
+    this.joinedUniverses = new Set(universes)
+  }
+
+  /** An sACN synchronization packet arrived for this sync universe. */
+  noteSacnSync(syncAddress: number, now: number): void {
+    this.sacnSync.set(syncAddress, now)
+  }
+
+  /**
+   * An ArtSync arrived.
+   *
+   * Not recorded per universe or per sender: ArtSync is broadcast and carries
+   * no port address, so every node on the network starts buffering. One timer
+   * is the whole of what the protocol offers.
+   */
+  noteArtSync(now: number): void {
+    this.artSyncAt = now
+  }
+
+  /**
+   * Fold in one page of a source's universe advertisement.
+   *
+   * Pages are stored individually rather than merged into a running set, so
+   * that a source dropping a universe is eventually reflected: each page
+   * carries its own timestamp and ages out on its own. Merging into one set
+   * would mean a universe advertised once was advertised forever.
+   *
+   * `lastPage` shrinking is taken as a new, shorter run and the pages past it
+   * are dropped immediately — a desk that has been unpatched from half its
+   * universes should say so within one interval, not two.
+   */
+  noteDiscovery(packet: SacnDiscovery, now: number): void {
+    let record = this.discovery.get(packet.sourceId)
+    if (!record) {
+      record = {
+        id: packet.sourceId,
+        name: packet.sourceName,
+        pages: new Map(),
+        lastPage: packet.lastPage,
+        lastSeen: now,
+      }
+      this.discovery.set(packet.sourceId, record)
+    }
+    if (packet.sourceName) record.name = packet.sourceName
+    record.lastPage = packet.lastPage
+    record.lastSeen = now
+    record.pages.set(packet.page, { universes: packet.universes, at: now })
+    for (const page of record.pages.keys()) {
+      if (page > packet.lastPage) record.pages.delete(page)
+    }
+  }
+
+  /** Every source that has advertised itself, and what it claims. */
+  discovered(): DiscoveredSource[] {
+    return [...this.discovery.values()]
+      .map((record) => {
+        const universes = new Set<number>()
+        for (const page of record.pages.values()) {
+          for (const universe of page.universes) universes.add(universe)
+        }
+        const pages = record.lastPage + 1
+        return {
+          id: record.id,
+          name: record.name,
+          universes: [...universes].sort((a, b) => a - b),
+          complete: record.pages.size === pages,
+          pagesSeen: record.pages.size,
+          pages,
+          lastSeen: record.lastSeen,
+        }
+      })
+      .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id))
+  }
+
   /** Fold one frame in. `now` is passed rather than read so tests own the clock. */
   apply(frame: DmxFrame, now: number): void {
     // A preview is a console showing itself a cue it has not output. Counting
@@ -135,6 +330,8 @@ export class DmxState {
         lastSeen: now,
         since: now,
         slots: new Uint8Array(UNIVERSE_SIZE),
+        syncAddress: 0,
+        forceSync: false,
         everLit: new Uint8Array(UNIVERSE_SIZE),
       }
       this.universes.set(universe, record)
@@ -184,10 +381,38 @@ export class DmxState {
     if (record.winnerId === frame.sourceId) {
       record.slots.fill(0, frame.slots.length)
       record.slots.set(frame.slots)
+      // Deliberately recorded even when the data is being held for
+      // synchronisation. `everLit` answers "is the desk sending to these
+      // addresses", which is a question about the desk and the patch, and the
+      // answer is yes whether or not a receiver has been told to take it. The
+      // separate `sync` verdict is what says the levels may not be on stage.
       for (let i = 0; i < frame.slots.length; i++) {
         if (frame.slots[i]! > 0) record.everLit[i] = 1
       }
+      record.syncAddress = frame.syncAddress
+      record.forceSync = frame.forceSync
     }
+  }
+
+  /**
+   * Whether a universe's levels are on stage. See `DmxSyncState`.
+   *
+   * `now` is only needed for Art-Net, whose sync state is a timer rather than
+   * a stream — sACN's expiry happens in `sweep`, so its answer here is a
+   * lookup.
+   */
+  private syncState(record: UniverseRecord): DmxSyncState {
+    if (record.protocol === 'artnet') {
+      // No per-packet address, so it is one question: has a node been told to
+      // buffer recently enough that it still is? `sweep` clears the timer.
+      return this.artSyncAt === null ? 'none' : 'held'
+    }
+    if (record.syncAddress === 0) return 'none'
+    if (this.sacnSync.has(record.syncAddress)) return 'held'
+    // A sync universe we never joined would look identical to one nobody is
+    // sending on. Only the joined case can honestly be called a failure.
+    if (!this.joinedUniverses.has(record.syncAddress)) return 'unwatched'
+    return record.forceSync ? 'lost' : 'frozen'
   }
 
   /**
@@ -205,27 +430,69 @@ export class DmxState {
       }
       this.pickWinner(record)
     }
+
+    // Sync streams age out here too, for the same reason and on the same
+    // timer as the class's own I/O-free contract: nothing tells us a stream
+    // stopped, and `health()` stays a pure read of what `apply` and `sweep`
+    // have been told rather than reaching for a clock of its own.
+    for (const [universe, seen] of this.sacnSync) {
+      // §11.1.2: a synchronized receiver stops synchronizing if no
+      // synchronization packet arrives on that universe within
+      // E131_NETWORK_DATA_LOSS_TIMEOUT.
+      if (now - seen > DATA_LOSS_MS.sacn) this.sacnSync.delete(universe)
+    }
+    if (this.artSyncAt !== null && now - this.artSyncAt > ARTSYNC_TIMEOUT_MS) {
+      this.artSyncAt = null
+    }
+
+    // Advertisements age page by page, so a source that dropped a universe
+    // stops claiming it once that page goes stale, rather than only when the
+    // whole source does.
+    for (const [id, record] of this.discovery) {
+      for (const [page, seen] of record.pages) {
+        if (now - seen.at > DISCOVERY_TIMEOUT_MS) record.pages.delete(page)
+      }
+      if (record.pages.size === 0) this.discovery.delete(id)
+    }
   }
 
   /**
-   * Highest priority wins; a tie is a conflict rather than a decision.
+   * Highest priority wins; a tie is a conflict, resolved the same way every
+   * time.
    *
-   * E1.31 leaves what a receiver does with equal-priority sources
-   * implementation-defined, which is precisely why two consoles patched to one
-   * universe can run for a whole show before anybody notices. Reporting it is
-   * most of the value.
+   * E1.31 §6.2.3.3 is explicit that a receiver should not pick between
+   * equal-priority sources in a way that "generate[s] different results from
+   * the same source combination on different occasions", because it makes a
+   * network hard to troubleshoot. It names order-of-arrival schemes as the
+   * example not to follow — which is what this used to be: whichever console
+   * spoke last won, so the same two desks produced different answers
+   * depending on packet timing, and the levels flipped between them.
+   *
+   * For a tool whose whole job is troubleshooting somebody's network, that is
+   * the wrong failure mode. So: lowest source id wins. A CID is stable across
+   * IP changes and reboots, so the same two desks always give the same
+   * answer, and the answer doesn't move while you are looking at it.
+   *
+   * The choice is arbitrary and is meant to be — it is not a merge. The
+   * useful output here is `conflict`, which says nobody can know what the
+   * rig is really doing. §6.2.3.4 and §6.2.3.5 require a receiver to declare
+   * both this algorithm and its behaviour when sources are exceeded, which is
+   * why they are written down here and in docs/DMX_MONITORING.md.
    */
   private pickWinner(record: UniverseRecord): void {
     const sources = [...record.sources.values()]
     if (sources.length === 0) {
       record.winnerId = null
+      // Nothing is being sent, so nothing is being held. Leaving the last
+      // winner's sync address behind would keep reporting a universe as
+      // frozen long after the source that asked for synchronisation went
+      // away — a fault attributed to a rig nobody is sending to.
+      record.syncAddress = 0
+      record.forceSync = false
       return
     }
     const top = Math.max(...sources.map((s) => s.priority))
-    const contenders = sources.filter((s) => s.priority === top)
-    // Most recently heard among the top priority — stable when there is only
-    // one, and honest about being arbitrary when there isn't.
-    const winner = contenders.reduce((a, b) => (b.lastSeen >= a.lastSeen ? b : a))
+    const winner = sources.filter((s) => s.priority === top).reduce((a, b) => (b.id < a.id ? b : a))
     record.winnerId = winner.id
   }
 
@@ -252,6 +519,8 @@ export class DmxState {
           })),
           winnerId: record.winnerId,
           conflict: sources.filter((s) => s.priority === top).length > 1,
+          sync: this.syncState(record),
+          syncAddress: record.syncAddress,
           lastSeen: record.lastSeen,
           since: record.since,
         }
@@ -310,6 +579,10 @@ export class DmxState {
   clear(): void {
     this.universes.clear()
     this.nodeNames.clear()
+    this.sacnSync.clear()
+    this.joinedUniverses.clear()
+    this.discovery.clear()
+    this.artSyncAt = null
   }
 }
 

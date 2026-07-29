@@ -41,6 +41,41 @@ const VECTOR_FRAMING_DATA = 0x00000002
 const VECTOR_DMP_SET_PROPERTY = 0x02
 
 /**
+ * The other root vector, and the framing vector under it that means "this is
+ * a synchronization packet" (E1.31 Appendix A).
+ *
+ * `VECTOR_E131_EXTENDED_SYNCHRONIZATION` is 0x01 and
+ * `VECTOR_E131_EXTENDED_DISCOVERY` is 0x02 — note that discovery's value is
+ * the same number as `VECTOR_FRAMING_DATA` above, which is only unambiguous
+ * because the *root* vector differs. Reading the framing vector without
+ * having checked the root one first would take a discovery packet for data.
+ */
+const VECTOR_ROOT_EXTENDED = 0x00000008
+const VECTOR_EXTENDED_SYNCHRONIZATION = 0x00000001
+const VECTOR_EXTENDED_DISCOVERY = 0x00000002
+const VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST = 0x00000001
+
+/**
+ * The universe sources advertise themselves on (E1.31 Appendix A).
+ *
+ * 64214 is outside the 1–63999 range a data packet may use, so joining its
+ * group cannot collide with a real universe.
+ */
+export const DISCOVERY_UNIVERSE = 64214
+
+/**
+ * How long a source's advertised universe list is believed.
+ *
+ * `E131_UNIVERSE_DISCOVERY_INTERVAL` is 10 s. Two of them, for the same
+ * reason every other timeout here allows two missed transmissions — and
+ * because §12.2 lets a source that has stopped transmitting wait until "no
+ * later than the second E131_UNIVERSE_DISCOVERY_INTERVAL" before saying so,
+ * which means a shorter window would call a conforming source stale while it
+ * is behaving exactly as specified.
+ */
+export const DISCOVERY_TIMEOUT_MS = 20_000
+
+/**
  * The DMP layer's addressing, which E1.31 fixes to exactly one shape.
  *
  * A DMX data packet always addresses one contiguous run of one-byte
@@ -62,20 +97,26 @@ const START_CODE_DMX = 0x00
 const HEADER = 126
 
 /**
- * Options bits, which are numbered from the most significant end.
+ * Options bits, numbered from the most significant end (E1.31 §6.2.6).
  *
  * These two were wrong in the first draft of the design — recorded as bits 6
  * and 5 — and a parser built on that reads every live packet as a preview,
- * discards it, and reports a rig that is running as silent. The tests below
- * pin them explicitly for that reason.
+ * discards it, and reports a rig that is running as silent. Since confirmed
+ * against two independent implementations and then against the standard
+ * itself, which is why the tests pin them explicitly.
  */
 const OPTION_PREVIEW_DATA = 0x80
 const OPTION_STREAM_TERMINATED = 0x40
+const OPTION_FORCE_SYNCHRONIZATION = 0x20
 
 /**
  * How far behind the last sequence number a packet may be before it is taken
- * as a straggler rather than as the next frame. E1.31's rule is to discard
- * when the signed difference is in (-20, 0].
+ * as a straggler rather than as the next frame.
+ *
+ * E1.31 §6.7.2 states it as: with A the last sequence number and B the new
+ * one, discard when B − A in signed 8-bit arithmetic is ≤ 0 and > −20. The
+ * window is deliberately generous so a source resetting its counter is
+ * followed immediately rather than ignored for 20 frames.
  */
 export const SEQUENCE_DISCARD_WINDOW = 20
 
@@ -123,8 +164,142 @@ export function parseSacn(buf: Buffer): DmxFrame | null {
     priority: Math.min(buf[108]!, MAX_PRIORITY),
     sequence: buf[111]!,
     sequenced: true,
+    // Non-zero means a conforming receiver holds this packet until the
+    // matching synchronization packet arrives (§6.2.4), so what is on the
+    // wire is not yet what is on stage.
+    syncAddress: buf.readUInt16BE(109),
+    forceSync: (options & OPTION_FORCE_SYNCHRONIZATION) !== 0,
     slots: new Uint8Array(buf.subarray(HEADER, HEADER + length)),
     preview: (options & OPTION_PREVIEW_DATA) !== 0,
     terminated: (options & OPTION_STREAM_TERMINATED) !== 0,
+  }
+}
+
+/** A source telling receivers to act on what they are holding. */
+export interface SacnSync {
+  /** The universe this synchronises. Never 0 — §6.3.3.1 forbids it. */
+  syncAddress: number
+  /** The sending CID, hex, same identity a data packet carries. */
+  sourceId: string
+  sequence: number
+}
+
+/**
+ * Parse an E1.31 Synchronization Packet, or null if it isn't one.
+ *
+ * A separate function rather than another arm of `parseSacn` because the two
+ * share only the root layer: there is no DMP layer here at all, no priority,
+ * no options, no slots, and the framing layer is nine octets long.
+ *
+ * ```
+ *  0..37   Root layer, as above, but vector 0x00000008
+ *  38..39  Framing flags & length
+ *  40..43  Framing vector         0x00000001
+ * 44       Sequence number
+ * 45..46   Synchronization address
+ * 47..48   Reserved — transmitted as 0, ignored here (§6.3.4)
+ * ```
+ *
+ * Worth reading at all because of §6.2.4.1: data carrying a synchronization
+ * address is only *held* by a receiver that is seeing this stream. Without
+ * parsing these, crewbox could not tell a rig waiting on a cue from a rig
+ * frozen because the sync stream died.
+ */
+export function parseSacnSync(buf: Buffer): SacnSync | null {
+  // 47 for everything up to the address; the two reserved octets after it are
+  // not worth rejecting a packet over.
+  if (buf.length < 47) return null
+  if (buf.readUInt16BE(0) !== 0x0010) return null
+  if (buf.readUInt16BE(2) !== 0x0000) return null
+  if (!buf.subarray(4, 16).equals(ACN_PID)) return null
+  if (buf.readUInt32BE(18) !== VECTOR_ROOT_EXTENDED) return null
+  if (buf.readUInt32BE(40) !== VECTOR_EXTENDED_SYNCHRONIZATION) return null
+
+  // "A Synchronization Address of 0 is thus meaningless, and shall not be
+  // transmitted. Receivers shall ignore E1.31 Synchronization Packets
+  // containing a Synchronization Address of 0." (§6.3.3.1)
+  const syncAddress = buf.readUInt16BE(45)
+  if (syncAddress < 1 || syncAddress > 63999) return null
+
+  return {
+    syncAddress,
+    sourceId: buf.subarray(22, 38).toString('hex'),
+    sequence: buf[44]!,
+  }
+}
+
+/** One page of a source's "here is what I am transmitting on" advertisement. */
+export interface SacnDiscovery {
+  sourceId: string
+  sourceName: string
+  /** 0-based (§8.3). */
+  page: number
+  /** The final page number, also 0-based (§8.4). */
+  lastPage: number
+  /** Sorted 16-bit universes. May legitimately be empty (§8.5). */
+  universes: number[]
+}
+
+/**
+ * Parse an E1.31 Universe Discovery Packet, or null if it isn't one.
+ *
+ * ```
+ *   0..37   Root layer, vector 0x00000008
+ *  38..39   Framing flags & length
+ *  40..43   Framing vector          0x00000002
+ *  44..107  Source name             64 bytes, UTF-8
+ * 108..111  Reserved                (§6.4.3)
+ * 112..113  Discovery flags & length
+ * 114..117  Discovery vector        0x00000001
+ * 118       Page                    0-based
+ * 119       Last page               0-based
+ * 120..     Universes, 16-bit, sorted, up to 512
+ * ```
+ *
+ * The vector values are a trap worth naming once: the framing vector here is
+ * 0x02, the same number a *data* packet uses, and the discovery vector is
+ * 0x01, the same number a *synchronization* packet's framing vector uses.
+ * They are only unambiguous in combination with the layer they appear in and
+ * with the root vector, which is why this checks all three in order.
+ */
+export function parseSacnDiscovery(buf: Buffer): SacnDiscovery | null {
+  // 120 is a legal packet: a source that has stopped transmitting may
+  // advertise an empty list rather than going quiet (§8.4, §12.1).
+  if (buf.length < 120) return null
+  if (buf.readUInt16BE(0) !== 0x0010) return null
+  if (buf.readUInt16BE(2) !== 0x0000) return null
+  if (!buf.subarray(4, 16).equals(ACN_PID)) return null
+  if (buf.readUInt32BE(18) !== VECTOR_ROOT_EXTENDED) return null
+  if (buf.readUInt32BE(40) !== VECTOR_EXTENDED_DISCOVERY) return null
+  // "Receivers shall discard the packet if the received value is not
+  // VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST" (§8.2).
+  if (buf.readUInt32BE(114) !== VECTOR_UNIVERSE_DISCOVERY_UNIVERSE_LIST) return null
+
+  const page = buf[118]!
+  const lastPage = buf[119]!
+  if (page > lastPage) return null
+
+  // Take what is actually present rather than what any length field claims,
+  // and stop at 512 — the same rule the data parser uses, for the same
+  // reason: a truncated datagram is commoner than a short one.
+  const available = Math.floor((buf.length - 120) / 2)
+  const universes: number[] = []
+  for (let i = 0; i < Math.min(available, 512); i++) {
+    const universe = buf.readUInt16BE(120 + i * 2)
+    // The list is meant to be sorted and non-zero. A padded packet reads as
+    // a run of zeroes, which is worth dropping rather than reporting as
+    // "this desk is transmitting universe 0".
+    if (universe > 0) universes.push(universe)
+  }
+
+  const nameRaw = buf.subarray(44, 108)
+  const nameEnd = nameRaw.indexOf(0)
+
+  return {
+    sourceId: buf.subarray(22, 38).toString('hex'),
+    sourceName: nameRaw.toString('utf8', 0, nameEnd === -1 ? nameRaw.length : nameEnd).trim(),
+    page,
+    lastPage,
+    universes,
   }
 }
