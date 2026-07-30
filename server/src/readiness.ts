@@ -31,11 +31,27 @@ export interface ReadinessInput {
   /** True when the crew reached this box over TLS. */
   secure: boolean
   voice: 'embedded' | 'external' | 'off'
+  /**
+   * What the embedded SFU said when asked, just now, to validate one of this
+   * box's tokens. Absent when there is nothing to ask (external, off, tests).
+   *
+   * This is what lets the voice line speak from evidence instead of from
+   * config. `rejected` is the case that earns it: something *is* answering
+   * on the SFU's port and it is not holding this box's keys, so voice looks
+   * configured everywhere and every join fails. A stray livekit-server from
+   * an old test session did exactly this for a day.
+   */
+  sfu?: 'ok' | 'rejected' | 'unreachable'
+  /** Why the embedded SFU refused to start, when startup could tell. */
+  voiceFailure?: 'port-held' | 'no-start'
   dataDir: string
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
   host: string
 }
+
+/** The command that names the squatter. Worth stating once, verbatim. */
+const FIND_HOLDER = 'lsof -nP -iTCP:7880 -sTCP:LISTEN'
 
 /** Bytes free on the data volume, or null if it can't be determined. */
 export function freeBytes(dataDir: string): number | null {
@@ -49,6 +65,87 @@ export function freeBytes(dataDir: string): number | null {
 
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`
 
+/**
+ * The voice line, which speaks from evidence where it has any.
+ *
+ * The cases are ordered by how badly the old copy would have lied about
+ * them. "Voice server running inside this box" was, for one real afternoon,
+ * printed while the box's SFU was dead and a stranger was answering on its
+ * port — the panel's job is to be the thing that would have said so.
+ */
+function voiceCheck(input: ReadinessInput): ReadinessCheck {
+  const base = { id: 'voice', label: 'Push-to-talk voice' }
+
+  // The embedded SFU was asked, just now, and something is wrong. These
+  // outrank everything below because they are measurements, not config.
+  if (input.voice === 'embedded' && input.sfu === 'rejected') {
+    return {
+      ...base,
+      state: 'off',
+      detail:
+        'Something is answering on the voice port, and it is not this box — it rejects ' +
+        'the tokens this box mints, so voice joins fail even though voice looks configured.',
+      fix: `Find what is holding the port: ${FIND_HOLDER} — stop it, then restart this box. A voice server left running by something else looks exactly like a working one until someone tries to talk.`,
+    }
+  }
+  if (input.voice === 'embedded' && input.sfu === 'unreachable') {
+    return {
+      ...base,
+      state: 'off',
+      detail: 'The voice server inside this box has stopped answering.',
+      fix: 'Restart the box. If it keeps happening, start it from a terminal — the log says why.',
+    }
+  }
+
+  // Startup already knew why there is no SFU. Saying "this build ships
+  // without one" here would send someone to download a binary they have.
+  if (input.voice === 'off' && input.voiceFailure === 'port-held') {
+    return {
+      ...base,
+      state: 'off',
+      detail:
+        'Another process was already holding the voice port when this box started, so its own ' +
+        'voice server could not run.',
+      fix: `Find it: ${FIND_HOLDER} — stop it, then restart this box.`,
+    }
+  }
+  if (input.voice === 'off' && input.voiceFailure === 'no-start') {
+    return {
+      ...base,
+      state: 'off',
+      detail: 'The voice server inside this box failed to start.',
+      fix: 'Start the box from a terminal — the log says why.',
+    }
+  }
+
+  if (input.voice === 'off') {
+    return {
+      ...base,
+      state: 'off',
+      detail: 'No voice server on this box.',
+      fix: 'This build ships without one. Download the release binary rather than running from source, or set LIVEKIT_URL to an SFU you run.',
+    }
+  }
+
+  return {
+    ...base,
+    state: input.secure ? 'ok' : 'limited',
+    detail:
+      input.voice === 'embedded'
+        ? // Only claimed once the SFU has validated one of this box's tokens;
+          // `sfu` undefined (external, tests) falls through to config wording.
+          input.sfu === 'ok'
+          ? 'Voice server running inside this box, checked just now — it accepts this box’s tokens.'
+          : 'Voice server running inside this box.'
+        : 'Using the voice server you configured. Not checked from here.',
+    // The mic is gated on a secure context, so without HTTPS voice is
+    // real but only reachable from the native apps.
+    fix: input.secure
+      ? undefined
+      : `Works in the Android and iOS apps now. For browsers too, put cert.pem and key.pem for your domain in ${input.dataDir} and restart — the box serves HTTPS itself.`,
+  }
+}
+
 export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
   const checks: ReadinessCheck[] = []
 
@@ -59,30 +156,7 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
     detail: 'Working for everyone, in any phone browser, with or without internet.',
   })
 
-  checks.push(
-    input.voice === 'off'
-      ? {
-          id: 'voice',
-          label: 'Push-to-talk voice',
-          state: 'off',
-          detail: 'No voice server on this box.',
-          fix: 'This build ships without one. Download the release binary rather than running from source, or set LIVEKIT_URL to an SFU you run.',
-        }
-      : {
-          id: 'voice',
-          label: 'Push-to-talk voice',
-          state: input.secure ? 'ok' : 'limited',
-          detail:
-            input.voice === 'embedded'
-              ? 'Voice server running inside this box.'
-              : 'Using the voice server you configured.',
-          // The mic is gated on a secure context, so without HTTPS voice is
-          // real but only reachable from the native apps.
-          fix: input.secure
-            ? undefined
-            : `Works in the Android and iOS apps now. For browsers too, put cert.pem and key.pem for your domain in ${input.dataDir} and restart — the box serves HTTPS itself.`,
-        }
-  )
+  checks.push(voiceCheck(input))
 
   checks.push(
     input.secure

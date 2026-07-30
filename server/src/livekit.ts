@@ -39,6 +39,81 @@ export interface EmbeddedLiveKit {
 }
 
 /**
+ * Why the embedded SFU is not running, when that can be said.
+ *
+ * `port-held` is the one worth a name of its own: something else is
+ * listening on the SFU's port, so this box's own SFU cannot bind and
+ * whatever *is* there will reject this box's tokens. Found the hard way — a
+ * `livekit-server` left behind by an old test session held 7880 for a day,
+ * and every layer above reported voice as fine while every join died.
+ */
+export type SfuFailure = 'port-held' | 'no-start'
+
+export interface SpawnOutcome {
+  sfu: EmbeddedLiveKit | null
+  failure?: SfuFailure
+}
+
+/** What a live SFU probe found. Facts, not inferences — see `probeSfu`. */
+export type SfuProbeResult = 'ok' | 'rejected' | 'unreachable'
+
+/**
+ * Ask whatever is on the SFU port whether it accepts this box's tokens.
+ *
+ * `waitForPort` proves only that *something* is listening, and that is not
+ * the question. The failure this exists for: a stray SFU (an orphan from
+ * another data directory, or a process someone started by hand) holds the
+ * port, this box's own SFU dies of EADDRINUSE, the port check sees the
+ * stranger and reports success — and then every token this box mints is
+ * rejected by a process holding different keys. Voice looks configured
+ * everywhere and works nowhere.
+ *
+ * So: mint a real token and call the SFU's own validate endpoint — the same
+ * `/rtc/validate` the browser SDK calls before opening its socket. Only a
+ * LiveKit holding this box's key can answer 200 to that.
+ *
+ * - `ok`          — it accepted the token. It is ours and healthy.
+ * - `rejected`    — something answered and did not accept it. Almost always
+ *                   the stranger-on-the-port case above.
+ * - `unreachable` — nothing answered.
+ */
+export async function probeSfu(
+  port: number,
+  key: string,
+  secret: string,
+  timeoutMs = 1500
+): Promise<SfuProbeResult> {
+  let token: string
+  try {
+    // Dynamic, matching app.ts: keeps the SDK off the --stop/--status path.
+    const { AccessToken } = await import('livekit-server-sdk')
+    const at = new AccessToken(key, secret, { identity: 'crewbox-health', ttl: '60s' })
+    // The same grant shape a real join carries; validate checks for it.
+    at.addGrant({ room: 'crewbox-health-probe', roomJoin: true })
+    token = await at.toJwt()
+  } catch {
+    // Could not even mint a token — nothing useful to say about the SFU.
+    return 'unreachable'
+  }
+
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:${port}/rtc/validate?access_token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(timeoutMs) }
+    )
+    return res.ok ? 'ok' : 'rejected'
+  } catch (error) {
+    // A connection that was refused outright is nothing listening. Anything
+    // else — a reset, garbage instead of HTTP — is something listening that
+    // is not usable, which is the `rejected` story with a different accent.
+    const code = (error as { cause?: { code?: string } })?.cause?.code
+    if (code === 'ECONNREFUSED') return 'unreachable'
+    if (error instanceof Error && error.name === 'TimeoutError') return 'unreachable'
+    return 'rejected'
+  }
+}
+
+/**
  * API credentials for the embedded SFU. Generated once per box and kept, so
  * tokens minted before a restart stay valid after it.
  */
@@ -201,21 +276,22 @@ export async function reapOrphanLiveKit(dir: string, log: BoxLog): Promise<boole
 }
 
 /**
- * Start an already-unpacked SFU and wait for it to listen. Returns null if it
- * won't run or never comes up; the caller leaves voice off either way.
+ * Start an already-unpacked SFU and prove it is the one answering. The
+ * caller leaves voice off on any failure; `failure` says which kind, so the
+ * admin panel can tell someone what to actually do about it.
  */
 export async function spawnLiveKit(
   binPath: string,
   configPath: string,
   creds: { key: string; secret: string },
   log: BoxLog
-): Promise<EmbeddedLiveKit | null> {
+): Promise<SpawnOutcome> {
   let child: ChildProcess
   try {
     child = spawn(binPath, ['--config', configPath], { stdio: ['ignore', 'ignore', 'pipe'] })
   } catch (error) {
     log.warn(`voice: could not start the SFU (${String(error)}); voice stays off`)
-    return null
+    return { sfu: null, failure: 'no-start' }
   }
 
   // Recorded before the wait, so a box killed mid-startup still leaves a
@@ -239,24 +315,53 @@ export async function spawnLiveKit(
   })
 
   const up = await waitForPort(LIVEKIT_PORT, 8000)
-  if (!up || exited) {
+  if (!up) {
     child.kill()
     log.warn('voice: SFU did not start listening; voice stays off')
-    return null
+    return { sfu: null, failure: 'no-start' }
+  }
+  if (exited) {
+    // The port is listening and our child is dead: the EADDRINUSE signature.
+    // Whatever is on the port is not ours and will reject our tokens.
+    log.warn(
+      `voice: something else is already holding :${LIVEKIT_PORT}; voice stays off — ` +
+        `find it with: lsof -nP -iTCP:${LIVEKIT_PORT} -sTCP:LISTEN`
+    )
+    return { sfu: null, failure: 'port-held' }
   }
 
-  log.info(`voice: SFU running on :${LIVEKIT_PORT}`)
+  // The port being open is not the same thing as our SFU being behind it.
+  // The race this closes: a stranger already holds the port, our child dies
+  // of EADDRINUSE a few milliseconds *after* waitForPort saw the stranger
+  // listening — `exited` is still false, and without this check the box
+  // reports voice up while every token it mints gets rejected. Ask the
+  // listener to validate one of our tokens; only our SFU can.
+  const probe = await probeSfu(LIVEKIT_PORT, creds.key, creds.secret, 4000)
+  if (probe !== 'ok') {
+    child.kill()
+    log.warn(
+      probe === 'rejected'
+        ? `voice: the process on :${LIVEKIT_PORT} rejects this box's tokens (not our SFU?); ` +
+            `voice stays off — find it with: lsof -nP -iTCP:${LIVEKIT_PORT} -sTCP:LISTEN`
+        : 'voice: SFU listening but not answering; voice stays off'
+    )
+    return { sfu: null, failure: probe === 'rejected' ? 'port-held' : 'no-start' }
+  }
+
+  log.info(`voice: SFU running on :${LIVEKIT_PORT} and accepting this box's tokens`)
 
   return {
-    port: LIVEKIT_PORT,
-    key: creds.key,
-    secret: creds.secret,
-    stop: async () => {
-      if (exited) return
-      child.kill('SIGTERM')
-      // Give it a moment to close rooms cleanly, then insist.
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      if (!exited) child.kill('SIGKILL')
+    sfu: {
+      port: LIVEKIT_PORT,
+      key: creds.key,
+      secret: creds.secret,
+      stop: async () => {
+        if (exited) return
+        child.kill('SIGTERM')
+        // Give it a moment to close rooms cleanly, then insist.
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        if (!exited) child.kill('SIGKILL')
+      },
     },
   }
 }
@@ -266,11 +371,11 @@ export async function spawnLiveKit(
  * binary, or when it failed to come up — the caller treats both the same way
  * and simply leaves voice off.
  */
-export async function startEmbeddedLiveKit(
-  options: StartLiveKitOptions
-): Promise<EmbeddedLiveKit | null> {
+export async function startEmbeddedLiveKit(options: StartLiveKitOptions): Promise<SpawnOutcome> {
   const asset = seaAsset(`livekit/${assetName()}`)
-  if (!asset) return null
+  // No failure recorded: a build without the binary is a build without
+  // voice, not a fault — the readiness copy for that case already exists.
+  if (!asset) return { sfu: null }
 
   // Before anything else. A box that was killed rather than stopped leaves
   // its SFU running, and that orphan is *executing the very file* the unpack
@@ -285,7 +390,7 @@ export async function startEmbeddedLiveKit(
     unpacked = unpackLiveKit(options.dataDir, asset, options.key, options.secret)
   } catch (error) {
     options.log.warn(`voice: could not unpack the SFU (${String(error)}); voice stays off`)
-    return null
+    return { sfu: null, failure: 'no-start' }
   }
   return spawnLiveKit(unpacked.binPath, unpacked.configPath, options, options.log)
 }

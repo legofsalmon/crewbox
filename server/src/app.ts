@@ -15,7 +15,7 @@ import { DocsRelay, parseRoomName } from './docs.ts'
 import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
 import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
-import { LIVEKIT_PORT } from './livekit.ts'
+import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
 import { boxReadiness, worstState } from './readiness.ts'
 import type { DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
@@ -141,6 +141,13 @@ export interface AppDeps {
    */
   livekit?: { url: string; key: string; secret: string; embedded?: boolean; port?: number }
   /**
+   * Why the embedded SFU refused to start, when it did and could tell.
+   * Without this the admin panel reports "no voice server on this box" with
+   * a fix about downloading a different build — actively wrong when the real
+   * problem is another process squatting on the SFU's port.
+   */
+  voiceFailure?: SfuFailure
+  /**
    * Admin panel password from the environment. Overrides whatever is stored,
    * so it doubles as the way back in when the password is lost. Omit and the
    * box uses the stored one, minting and printing it on first start.
@@ -184,6 +191,7 @@ export function buildApp({
   adminPassword,
   filesDir,
   livekit,
+  voiceFailure,
   sessionTtlMs,
   trustProxy = false,
   modules = ['chat'],
@@ -975,14 +983,24 @@ export function buildApp({
       .send(dnsConfigFile(dnsPlan(hostname, address)))
   })
 
-  fastify.get('/api/admin/settings', (req, reply) => {
+  fastify.get('/api/admin/settings', async (req, reply) => {
     if (!authAdmin(req, reply)) return reply
     const stats = hub.stats()
+    // Asked live, on every panel open, rather than trusted from startup: the
+    // SFU can die mid-show, and — found on a real MacBook — something else
+    // can be squatting on its port, rejecting every token this box mints
+    // while every config-derived answer reads "voice is fine". This is the
+    // one check in the panel that talks to the thing it reports on.
+    const sfu = livekit?.embedded
+      ? await probeSfu(livekit.port ?? LIVEKIT_PORT, livekit.key, livekit.secret)
+      : undefined
     const readiness = boxReadiness({
       // req.protocol is 'https' for a TLS connection, and honours
       // x-forwarded-proto only when this box is configured to trust a proxy.
       secure: req.protocol === 'https',
       voice: livekit?.embedded ? 'embedded' : livekit?.url ? 'external' : 'off',
+      ...(sfu ? { sfu } : {}),
+      ...(voiceFailure ? { voiceFailure } : {}),
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,
       host: hostOf(req),
