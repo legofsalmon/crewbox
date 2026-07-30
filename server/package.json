@@ -1,6 +1,6 @@
 {
   "name": "@crewbox/server",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",

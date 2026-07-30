@@ -2,9 +2,9 @@ import { join } from 'node:path'
 import { HOME_CHANNEL } from '@crewbox/shared'
 import { existsSync, mkdirSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
-import { config, warnOnDefaults } from './config.ts'
+import { config, dmxMode, warnOnDefaults } from './config.ts'
 import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
-import { DmxListener } from './dmx/listener.ts'
+import { DmxListener, parseUniverseList } from './dmx/listener.ts'
 import {
   boxDataDir,
   lanIps,
@@ -71,16 +71,37 @@ async function main(): Promise<void> {
     store.createChannel(HOME_CHANNEL, 'public', 'Everyone, everything')
   }
 
-  // Whether the pinned crew adapter (CREWBOX_IFACE) is actually present.
-  // Decided once, up front, because two things hang off it: which address
-  // the SFU binds below, and which address the web server binds further
-  // down. A pinned address no adapter has falls back to answering
-  // everywhere — a box that refuses to start over a pulled cable is a crew
-  // with no comms — and the admin panel's network check names the mismatch.
-  const ifaceUp = Boolean(config.iface) && lanIps().includes(config.iface)
-  if (config.iface && !ifaceUp) {
+  // Network settings resolve env-first, then whatever the admin saved in the
+  // setup page or the panel — so a relaunch needs no terminal, and a bad
+  // save is still recoverable by setting the env var. Resolved once, here:
+  // everything below (SFU bind, web bind, DMX listener, banner) runs off
+  // this one answer, and the panel compares its saved settings against it
+  // to say when a restart is due.
+  const saved = {
+    crewIface: store.getSetting('crewIface') ?? '',
+    dmxMode: store.getSetting('dmxMode') ?? '',
+    dmxIface: store.getSetting('dmxIface') ?? '',
+    dmxUniverses: store.getSetting('dmxUniverses') ?? '',
+  }
+  const boot = {
+    iface: config.iface || saved.crewIface,
+    dmxMode: config.dmx.modeFromEnv ? config.dmx.mode : dmxMode(saved.dmxMode || undefined),
+    dmxIface: config.dmx.ifaceFromEnv ? (config.dmx.interfaceIp ?? '') : saved.dmxIface,
+    dmxUniverses: config.dmx.universesFromEnv
+      ? config.dmx.universesRaw
+      : saved.dmxUniverses || '1-16',
+  }
+
+  // Whether the crew adapter is actually present. Decided once, up front,
+  // because two things hang off it: which address the SFU binds below, and
+  // which address the web server binds further down. A pinned address no
+  // adapter has falls back to answering everywhere — a box that refuses to
+  // start over a pulled cable is a crew with no comms — and the admin
+  // panel's network check names the mismatch.
+  const ifaceUp = Boolean(boot.iface) && lanIps().includes(boot.iface)
+  if (boot.iface && !ifaceUp) {
     console.warn(
-      `CREWBOX_IFACE is ${config.iface} but no adapter has that address — answering on all adapters`
+      `crew network is set to ${boot.iface} but no adapter has that address — answering on all adapters`
     )
   }
 
@@ -99,7 +120,7 @@ async function main(): Promise<void> {
       const outcome = await startEmbeddedLiveKit({
         dataDir,
         ...creds,
-        ...(ifaceUp ? { iface: config.iface } : {}),
+        ...(ifaceUp ? { iface: boot.iface } : {}),
         log: console,
       })
       embedded = outcome.sfu
@@ -123,13 +144,13 @@ async function main(): Promise<void> {
   // default, and read-only however it is configured: the sockets it opens
   // have had `send` taken off them (server/src/dmx/listener.ts).
   const dmx =
-    config.dmx.mode === 'off'
+    boot.dmxMode === 'off'
       ? undefined
       : new DmxListener({
-          mode: config.dmx.mode,
-          universes: config.dmx.universes,
+          mode: boot.dmxMode,
+          universes: parseUniverseList(boot.dmxUniverses),
           artnetBase: config.dmx.artnetBase,
-          ...(config.dmx.interfaceIp ? { interfaceIp: config.dmx.interfaceIp } : {}),
+          ...(boot.dmxIface ? { interfaceIp: boot.dmxIface } : {}),
         })
 
   const app = buildApp({
@@ -145,6 +166,15 @@ async function main(): Promise<void> {
     modules: config.modules,
     dataDir,
     ...(config.iface ? { iface: config.iface } : {}),
+    network: {
+      boot,
+      env: {
+        iface: Boolean(config.iface),
+        dmxMode: config.dmx.modeFromEnv,
+        dmxIface: config.dmx.ifaceFromEnv,
+        dmxUniverses: config.dmx.universesFromEnv,
+      },
+    },
     ...(dmx ? { dmx } : {}),
     ...(tls ? { tls } : {}),
   })
@@ -172,7 +202,7 @@ async function main(): Promise<void> {
   // set it knows what they want. Otherwise CREWBOX_IFACE binds the box to
   // the crew adapter, so a machine that also has a leg on the lighting VLAN
   // answers nothing there — not even a port scan.
-  const bindHost = config.hostExplicit ? config.host : ifaceUp ? config.iface : config.host
+  const bindHost = config.hostExplicit ? config.host : ifaceUp ? boot.iface : config.host
   await app.listen({ host: bindHost, port: config.port })
   attachWs(app)
 
@@ -192,7 +222,7 @@ async function main(): Promise<void> {
   // the box serving crew — it becomes a line in the admin panel instead.
   if (dmx) {
     dmx.start()
-    app.log.info(`lighting network: listening (${config.dmx.mode})`)
+    app.log.info(`lighting network: listening (${boot.dmxMode})`)
   }
 
   if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
@@ -214,13 +244,13 @@ async function main(): Promise<void> {
     printBoxBanner(config.port, eventPin, Boolean(tls), {
       eventName,
       firstRun,
-      iface: config.iface,
+      iface: boot.iface,
     })
 
     // Tell the menu-bar/tray helper what to show and, crucially, which
     // process to stop. Written after listen() so its presence means the box
     // is actually answering, not merely starting.
-    const urls = lanUrls(config.port, Boolean(tls), config.iface)
+    const urls = lanUrls(config.port, Boolean(tls), boot.iface)
     writeBoxStatus(dataDir, {
       pid: process.pid,
       port: config.port,

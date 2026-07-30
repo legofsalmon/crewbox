@@ -2122,6 +2122,41 @@ ul {
   font-size: 15px;
 }
 
+.admin-networks {
+  padding: 0 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-networks label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.admin-networks select,
+.admin-networks input {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.admin-networks .admin-note {
+  padding: 0;
+  border: 0;
+}
+
+.admin-networks .admin-btn {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
 .admin-info {
   padding: 4px 20px 8px;
   display: flex;

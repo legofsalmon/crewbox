@@ -140,7 +140,17 @@ deployment choice.
 
 The usual site shape: one adapter on the crew Wi-Fi, one on the lighting
 VLAN. Tell the box which is which, or the join QR is a coin flip between a
-network crew phones can reach and one they cannot:
+network crew phones can reach and one they cannot.
+
+**Pick them from dropdowns** — the first-run setup page has a Networks
+section, and the admin panel has the same under **Networks**. Choices are
+saved in the box's own database, so relaunches need nothing typed. Saving
+redirects the join links immediately; the socket binding and the lighting
+listener apply when the box next starts, and the panel's **Crew network**
+line says so until you do.
+
+The environment variables still exist and always win — which makes the
+terminal the recovery path if a saved setting is ever wrong:
 
 ```
 CREWBOX_IFACE=192.168.1.50      # the crew network — everything crew-facing

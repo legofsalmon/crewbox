@@ -16,9 +16,9 @@ import { boxProbes, certNames, createEnvironmentCache, type Probes } from './env
 import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
-import { lanIps } from './box.ts'
+import { lanAdapters, lanIps } from './box.ts'
 import { boxReadiness, worstState } from './readiness.ts'
-import type { DmxListener } from './dmx/listener.ts'
+import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
 import { setupPage } from './setup.ts'
 import {
@@ -81,7 +81,37 @@ const channelPatchSchema = z.object({
   retired: z.boolean().optional(),
 })
 
+/** An IPv4 address, or '' meaning "no preference". */
+const ipv4OrEmpty = z
+  .string()
+  .trim()
+  .max(45)
+  .refine(
+    (v) =>
+      v === '' ||
+      (/^(\d{1,3}\.){3}\d{1,3}$/.test(v) && v.split('.').every((octet) => Number(octet) <= 255)),
+    'not an IPv4 address'
+  )
+
+/**
+ * Network settings an admin can save. They live in the settings table so a
+ * relaunch needs no terminal; the matching environment variables still win
+ * when set, which keeps the terminal the recovery path for a bad save.
+ */
+const networkPatchSchema = {
+  crewIface: ipv4OrEmpty.optional(),
+  dmxMode: z.enum(['off', 'artnet', 'sacn', 'both']).optional(),
+  dmxIface: ipv4OrEmpty.optional(),
+  dmxUniverses: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((v) => v === '' || parseUniverseList(v).length > 0, 'no universes in that list')
+    .optional(),
+}
+
 const settingsPatchSchema = z.object({
+  ...networkPatchSchema,
   /** What crew see instead of "Crewbox" once the box is set up for an event. */
   eventName: z.string().trim().max(64).optional(),
   wifiSsid: z.string().trim().max(64).optional(),
@@ -152,8 +182,19 @@ export interface AppDeps {
    * IP of the crew-facing adapter (CREWBOX_IFACE). Governs every address the
    * box advertises — QR, /connect, DNS suggestions — on a machine that also
    * sits on a lighting VLAN. Binding is the caller's half (see index.ts).
+   * Env-only: the admin-saved value is read from the store live, so a save
+   * in the panel redirects the QR without a restart.
    */
   iface?: string
+  /**
+   * What this process actually booted with, and which pieces came from the
+   * environment — so the panel can say "saved, applies on restart" only when
+   * it is true, and mark env-pinned fields as not editable here.
+   */
+  network?: {
+    boot: { iface: string; dmxMode: string; dmxIface: string; dmxUniverses: string }
+    env: { iface: boolean; dmxMode: boolean; dmxIface: boolean; dmxUniverses: boolean }
+  }
   /**
    * Admin panel password from the environment. Overrides whatever is stored,
    * so it doubles as the way back in when the password is lost. Omit and the
@@ -200,6 +241,7 @@ export function buildApp({
   livekit,
   voiceFailure,
   iface = '',
+  network,
   sessionTtlMs,
   trustProxy = false,
   modules = ['chat'],
@@ -382,8 +424,49 @@ export function buildApp({
     }
   }
 
+  /**
+   * The crew adapter in effect: environment first, then whatever the admin
+   * saved. Read per call so a save in the panel redirects the QR and
+   * /connect immediately — the *binding* still applies on restart, and the
+   * panel says so rather than pretending.
+   */
+  const effectiveIface = (): string => iface || store.getSetting('crewIface') || ''
+
+  const storedNetwork = () => ({
+    crewIface: store.getSetting('crewIface') ?? '',
+    dmxMode: store.getSetting('dmxMode') ?? '',
+    dmxIface: store.getSetting('dmxIface') ?? '',
+    dmxUniverses: store.getSetting('dmxUniverses') ?? '',
+  })
+
+  /** What the next start will run with: env where set, saved otherwise. */
+  const nextBootNetwork = () => {
+    const saved = storedNetwork()
+    const boot = network?.boot
+    const env = network?.env
+    return {
+      iface: env?.iface && boot ? boot.iface : saved.crewIface,
+      dmxMode: env?.dmxMode && boot ? boot.dmxMode : saved.dmxMode || 'off',
+      dmxIface: env?.dmxIface && boot ? boot.dmxIface : saved.dmxIface,
+      dmxUniverses: env?.dmxUniverses && boot ? boot.dmxUniverses : saved.dmxUniverses || '1-16',
+    }
+  }
+
+  /** True when saved settings differ from what this process booted with. */
+  const networkRestartNeeded = (): boolean =>
+    network ? JSON.stringify(nextBootNetwork()) !== JSON.stringify(network.boot) : false
+
+  /** The panel's Networks section, sent on GET and after a network save. */
+  const networkPayload = () => ({
+    adapters: lanAdapters(),
+    saved: storedNetwork(),
+    fromEnv: network?.env ?? { iface: false, dmxMode: false, dmxIface: false, dmxUniverses: false },
+    advertised: lanIps(effectiveIface())[0] ?? '',
+    restartNeeded: networkRestartNeeded(),
+  })
+
   /** Best routable IPv4 — the crew adapter when configured — for DNS entries. */
-  const lanAddress = (): string | undefined => lanIps(iface)[0]
+  const lanAddress = (): string | undefined => lanIps(effectiveIface())[0]
 
   const hostOf = (req: FastifyRequest): string =>
     (req.headers.host ?? 'localhost').split(':')[0] || 'localhost'
@@ -409,7 +492,7 @@ export function buildApp({
     const host = req.headers.host ?? 'localhost'
     if (!/^(localhost|127\.)/.test(host)) return `${proto}://${host}`
     const port = host.split(':')[1] ?? ''
-    const ip = lanIps(iface)[0]
+    const ip = lanIps(effectiveIface())[0]
     if (ip) return `${proto}://${ip}${port ? `:${port}` : ''}`
     return `${proto}://${host}`
   }
@@ -422,10 +505,28 @@ export function buildApp({
    */
   const setupOpen = (): boolean => store.countUsers() === 0
 
+  const setupNetwork = () => {
+    const saved = storedNetwork()
+    return {
+      adapters: lanAdapters(),
+      crewIface: saved.crewIface,
+      dmxMode: saved.dmxMode,
+      dmxIface: saved.dmxIface,
+      dmxUniverses: saved.dmxUniverses,
+      fromEnv: network?.env ?? {
+        iface: false,
+        dmxMode: false,
+        dmxIface: false,
+        dmxUniverses: false,
+      },
+    }
+  }
+
   const setupValues = () => ({
     eventName: store.getSetting('eventName') ?? '',
     wifiSsid: publicConfig().wifiSsid,
     eventPin: effectiveEventPin(),
+    network: setupNetwork(),
     // undefined hides the field entirely — see SetupValues.
     ...(envAdminHash ? {} : { adminPassword: mintedAdminPassword ?? '' }),
   })
@@ -466,6 +567,12 @@ export function buildApp({
       eventName: String(body.eventName ?? ''),
       wifiSsid: String(body.wifiSsid ?? ''),
       eventPin: String(body.eventPin ?? ''),
+      // Env-locked fields are not rendered, so their absence means "leave
+      // alone" rather than "clear".
+      ...(body.crewIface !== undefined ? { crewIface: String(body.crewIface) } : {}),
+      ...(body.dmxMode !== undefined ? { dmxMode: String(body.dmxMode) } : {}),
+      ...(body.dmxIface !== undefined ? { dmxIface: String(body.dmxIface) } : {}),
+      ...(body.dmxUniverses !== undefined ? { dmxUniverses: String(body.dmxUniverses) } : {}),
       ...(typedAdminPassword ? { adminPassword: typedAdminPassword } : {}),
     })
     if (!parsed.success) {
@@ -477,6 +584,7 @@ export function buildApp({
             eventName: String(body.eventName ?? ''),
             wifiSsid: String(body.wifiSsid ?? ''),
             eventPin: String(body.eventPin ?? ''),
+            network: setupNetwork(),
             ...(envAdminHash ? {} : { adminPassword: typedAdminPassword }),
           },
           base: crewUrl(req),
@@ -489,6 +597,10 @@ export function buildApp({
     store.setSetting('eventName', parsed.data.eventName ?? '')
     store.setSetting('wifiSsid', parsed.data.wifiSsid ?? '')
     if (parsed.data.eventPin) store.setSetting('eventPin', parsed.data.eventPin)
+    for (const key of ['crewIface', 'dmxMode', 'dmxIface', 'dmxUniverses'] as const) {
+      const value = parsed.data[key]
+      if (value !== undefined) store.setSetting(key, value)
+    }
     // Ignored when ADMIN_PASSWORD is set: the form hides the field in that
     // case, so anything arriving here was hand-crafted.
     if (parsed.data.adminPassword && !envAdminHash) {
@@ -997,8 +1109,9 @@ export function buildApp({
       ...(voiceFailure ? { voiceFailure } : {}),
       // Live, not from startup: adapters come and go on site (a cable pulled,
       // Wi-Fi re-joined), and the panel exists to say what is true now.
-      iface,
-      addresses: lanIps(iface),
+      iface: effectiveIface(),
+      addresses: lanIps(effectiveIface()),
+      restartNeeded: networkRestartNeeded(),
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,
       host: hostOf(req),
@@ -1020,6 +1133,7 @@ export function buildApp({
       },
       readiness,
       readinessState: worstState(readiness),
+      network: networkPayload(),
       // Its own panel rather than folded into the box checks: a lighting
       // network is a separate thing that can be fine while the box is not,
       // and the other way round.
@@ -1055,6 +1169,10 @@ export function buildApp({
     if (parsed.data.eventPin !== undefined) {
       store.setSetting('eventPin', parsed.data.eventPin)
     }
+    for (const key of ['crewIface', 'dmxMode', 'dmxIface', 'dmxUniverses'] as const) {
+      const value = parsed.data[key]
+      if (value !== undefined) store.setSetting(key, value)
+    }
     let reissued: string | undefined
     if (parsed.data.adminPassword !== undefined) {
       // Saying nothing here would be worse than refusing: the panel would
@@ -1082,6 +1200,7 @@ export function buildApp({
         wifiSsid: config.wifiSsid,
         eventPin: effectiveEventPin(),
       },
+      network: networkPayload(),
       ...(reissued ? { adminToken: reissued } : {}),
     }
   })

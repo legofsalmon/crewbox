@@ -97,6 +97,21 @@ export function lanIps(prefer = '', interfaces = networkInterfaces()): string[] 
   return ips
 }
 
+/** Adapters an admin can choose between, for the setup and admin dropdowns. */
+export function lanAdapters(
+  interfaces = networkInterfaces()
+): Array<{ name: string; address: string }> {
+  const out: Array<{ name: string; address: string }> = []
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    for (const addr of addrs ?? []) {
+      if (addr.family === 'IPv4' && !addr.internal && !addr.address.startsWith('169.254.')) {
+        out.push({ name, address: addr.address })
+      }
+    }
+  }
+  return out
+}
+
 /** Reachable LAN URLs for the crew (non-internal IPv4s), best first. */
 export function lanUrls(port: number, secure = false, prefer = ''): string[] {
   const scheme = secure ? 'https' : 'http'
