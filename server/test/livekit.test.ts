@@ -363,3 +363,25 @@ describe('a stranger on the SFU port', () => {
     }
   }, 20_000)
 })
+
+describe('binding the SFU to the crew adapter', () => {
+  it('binds signalling to loopback plus the crew adapter when one is pinned', () => {
+    // The whole point of CREWBOX_IFACE is that a box on a lighting VLAN
+    // answers nothing there. The SFU's signalling was the last thing still
+    // bound to every adapter. Loopback stays, because the box's own proxy
+    // and health probe reach the SFU at 127.0.0.1.
+    const yaml = livekitConfigYaml('k', 's', '192.168.1.50')
+    expect(yaml).toContain('bind_addresses: ["127.0.0.1", "192.168.1.50"]')
+    expect(yaml).not.toContain('0.0.0.0')
+  })
+
+  it('keeps binding everywhere when no adapter is pinned', () => {
+    expect(livekitConfigYaml('k', 's')).toContain('bind_addresses: ["0.0.0.0"]')
+  })
+
+  it('writes the pinned adapter into the unpacked config', () => {
+    const dataDir = tempDir()
+    const { configPath } = unpackLiveKit(dataDir, listenerStub(), 'k', 's', '192.168.1.50')
+    expect(readFileSync(configPath, 'utf8')).toContain('"192.168.1.50"')
+  })
+})

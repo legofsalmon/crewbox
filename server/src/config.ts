@@ -14,6 +14,24 @@ function positiveDays(value: string | undefined, fallback: number): number {
 
 export const config = {
   host: process.env.HOST ?? '0.0.0.0',
+  /** Whether HOST was set by hand, in which case it outranks CREWBOX_IFACE. */
+  hostExplicit: process.env.HOST !== undefined,
+  /**
+   * IP of the crew-facing network adapter (`CREWBOX_IFACE`).
+   *
+   * A festival box usually sits on two networks: the crew Wi-Fi and the
+   * lighting VLAN (`CREWBOX_DMX_IFACE`, receive-only). Without this, every
+   * advertised address — the join QR, the terminal banner, /connect — takes
+   * the first adapter the OS enumerates, which on a two-network machine is a
+   * coin flip; and the web server answers on every adapter, including the
+   * lighting network's.
+   *
+   * Set, it decides both halves: the box binds its HTTP server to this
+   * address (plus localhost) and advertises only it — so the crew-facing
+   * product generates no traffic on the lighting network at all, not even
+   * replies to a port scan.
+   */
+  iface: process.env.CREWBOX_IFACE?.trim() ?? '',
   // Deliberately not the generic PORT — dev harnesses set that for the web app.
   port: Number(process.env.CREWBOX_PORT ?? 8787),
   dataDir: resolve(process.env.DATA_DIR ?? './data'),

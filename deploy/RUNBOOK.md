@@ -136,6 +136,45 @@ deployment choice.
 4. Phone test: scan poster → green padlock → join → send message → PTT to a
    second phone. **Do this before the crew arrives.**
 
+## A box on two networks (crew + lighting)
+
+The usual site shape: one adapter on the crew Wi-Fi, one on the lighting
+VLAN. Tell the box which is which, or the join QR is a coin flip between a
+network crew phones can reach and one they cannot:
+
+```
+CREWBOX_IFACE=192.168.1.50      # the crew network — everything crew-facing
+CREWBOX_DMX=both
+CREWBOX_DMX_IFACE=2.0.0.50      # the lighting network — receive-only
+```
+
+`CREWBOX_IFACE` does two things: every advertised address (QR, banner,
+`/connect`, DNS suggestions) points at it, and the web server and the voice
+server's signalling **bind** to it (plus localhost), so neither answers on
+the lighting VLAN at all. The admin panel's **Crew network** line confirms
+which address is in play, and flags the coin flip if you forgot to set this
+on a two-network machine.
+
+What crewbox puts on the lighting network, in full: the IGMP membership
+reports the OS must send to receive sACN multicast — nothing else. The DMX
+sockets structurally cannot transmit (their `send` is removed; a test
+asserts it throws). One honest residual: the voice server's _media_ ports
+(TCP 7881/UDP 7882) still bind every adapter — they only ever speak to
+crew phones that have joined a channel, but a probe of those two ports
+would get an answer where everything else stays silent.
+
+What crewbox **cannot** silence is the operating system itself. Windows in
+particular will ARP, and by default speak NetBIOS/LLMNR/SSDP, on any
+connected adapter. If the lighting network must stay pristine, that is
+adapter configuration, not crewbox configuration:
+
+- Give the lighting adapter a **static IP** (no DHCP broadcasts; standard on
+  lighting networks anyway — Art-Net convention is 2.x.x.x or 10.x.x.x).
+- Adapter → IPv4 properties → WINS → **disable NetBIOS over TCP/IP**.
+- Leave the adapter's default gateway **empty** so nothing routes out of it.
+- Untick file/printer sharing and client-for-microsoft-networks bindings on
+  that adapter.
+
 ## When you can't touch the venue's DNS
 
 The normal path is the local override on your own router — **Admin → This

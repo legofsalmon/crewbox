@@ -3,10 +3,11 @@ import { HOME_CHANNEL } from '@crewbox/shared'
 import { existsSync, mkdirSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
 import { config, warnOnDefaults } from './config.ts'
-import { attachWs, buildApp } from './app.ts'
+import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
 import { DmxListener } from './dmx/listener.ts'
 import {
   boxDataDir,
+  lanIps,
   clearBoxStatus,
   extractWebDist,
   isBox,
@@ -70,6 +71,19 @@ async function main(): Promise<void> {
     store.createChannel(HOME_CHANNEL, 'public', 'Everyone, everything')
   }
 
+  // Whether the pinned crew adapter (CREWBOX_IFACE) is actually present.
+  // Decided once, up front, because two things hang off it: which address
+  // the SFU binds below, and which address the web server binds further
+  // down. A pinned address no adapter has falls back to answering
+  // everywhere — a box that refuses to start over a pulled cable is a crew
+  // with no comms — and the admin panel's network check names the mismatch.
+  const ifaceUp = Boolean(config.iface) && lanIps().includes(config.iface)
+  if (config.iface && !ifaceUp) {
+    console.warn(
+      `CREWBOX_IFACE is ${config.iface} but no adapter has that address — answering on all adapters`
+    )
+  }
+
   // Voice. An explicit LIVEKIT_URL always wins — someone pointing at an SFU
   // they already run shouldn't have the box start a second one. Otherwise a
   // box build carrying the SFU starts it, and voice is simply on.
@@ -82,7 +96,12 @@ async function main(): Promise<void> {
         (key) => store.getSetting(key),
         (key, value) => store.setSetting(key, value)
       )
-      const outcome = await startEmbeddedLiveKit({ dataDir, ...creds, log: console })
+      const outcome = await startEmbeddedLiveKit({
+        dataDir,
+        ...creds,
+        ...(ifaceUp ? { iface: config.iface } : {}),
+        log: console,
+      })
       embedded = outcome.sfu
       // Carried into the admin panel: "voice is off" with no reason reads as
       // a build limitation, and the fix for a held port is nothing like the
@@ -125,6 +144,7 @@ async function main(): Promise<void> {
     trustProxy: config.trustProxy,
     modules: config.modules,
     dataDir,
+    ...(config.iface ? { iface: config.iface } : {}),
     ...(dmx ? { dmx } : {}),
     ...(tls ? { tls } : {}),
   })
@@ -148,8 +168,25 @@ async function main(): Promise<void> {
     })
   }
 
-  await app.listen({ host: config.host, port: config.port })
+  // Which address to answer on. An explicit HOST always wins — someone who
+  // set it knows what they want. Otherwise CREWBOX_IFACE binds the box to
+  // the crew adapter, so a machine that also has a leg on the lighting VLAN
+  // answers nothing there — not even a port scan.
+  const bindHost = config.hostExplicit ? config.host : ifaceUp ? config.iface : config.host
+  await app.listen({ host: bindHost, port: config.port })
   attachWs(app)
+
+  // Bound to one adapter, the box would lose localhost — which is the mic
+  // test, the health checks, and where a browser on the box itself goes. A
+  // small mirror keeps it. See mirrorOnLoopback.
+  let closeLoopback: (() => Promise<void>) | undefined
+  if (ifaceUp && !config.hostExplicit) {
+    try {
+      closeLoopback = await mirrorOnLoopback(app, config.port)
+    } catch (error) {
+      app.log.warn(`localhost mirror did not start (${String(error)}); use ${config.iface} locally`)
+    }
+  }
 
   // After listen(), so a lighting network that refuses to open never stops
   // the box serving crew — it becomes a line in the admin panel instead.
@@ -174,12 +211,16 @@ async function main(): Promise<void> {
     const firstRun = store.countUsers() === 0
     const eventPin = store.getSetting('eventPin') ?? config.eventPin
     const eventName = store.getSetting('eventName') ?? ''
-    printBoxBanner(config.port, eventPin, Boolean(tls), { eventName, firstRun })
+    printBoxBanner(config.port, eventPin, Boolean(tls), {
+      eventName,
+      firstRun,
+      iface: config.iface,
+    })
 
     // Tell the menu-bar/tray helper what to show and, crucially, which
     // process to stop. Written after listen() so its presence means the box
     // is actually answering, not merely starting.
-    const urls = lanUrls(config.port, Boolean(tls))
+    const urls = lanUrls(config.port, Boolean(tls), config.iface)
     writeBoxStatus(dataDir, {
       pid: process.pid,
       port: config.port,
@@ -207,6 +248,7 @@ async function main(): Promise<void> {
       // that is on its way down.
       if (box) clearBoxStatus(dataDir)
       hub.close()
+      await closeLoopback?.()
       await app.close()
       await embedded?.stop()
       db.close()

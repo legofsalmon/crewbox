@@ -68,16 +68,39 @@ export function extractWebDist(dataDir: string): string {
   return root
 }
 
-/** Reachable LAN URLs for the crew (non-internal IPv4s). */
-export function lanUrls(port: number, secure = false): string[] {
-  const urls: string[] = []
-  const scheme = secure ? 'https' : 'http'
-  for (const addrs of Object.values(networkInterfaces())) {
+/**
+ * This machine's LAN IPv4 addresses, best first.
+ *
+ * "Best" used to mean "whatever the OS enumerated first", which on a box
+ * with a crew adapter and a lighting adapter is a coin flip — and a join QR
+ * pointing at the lighting VLAN is a QR no crew phone can use. `prefer`
+ * (CREWBOX_IFACE) pins the crew network to the front; a preferred address no
+ * adapter currently has is ignored here and reported by the readiness panel,
+ * because a box that hides its working addresses over a typo'd one helps
+ * nobody.
+ *
+ * Link-local 169.254.* is dropped outright: it appears when an adapter has a
+ * cable but no DHCP, and putting it on a poster was never right.
+ */
+export function lanIps(prefer = '', interfaces = networkInterfaces()): string[] {
+  const ips: string[] = []
+  for (const addrs of Object.values(interfaces)) {
     for (const addr of addrs ?? []) {
-      if (addr.family === 'IPv4' && !addr.internal) urls.push(`${scheme}://${addr.address}:${port}`)
+      if (addr.family === 'IPv4' && !addr.internal && !addr.address.startsWith('169.254.')) {
+        ips.push(addr.address)
+      }
     }
   }
-  return urls
+  if (prefer && ips.includes(prefer)) {
+    return [prefer, ...ips.filter((ip) => ip !== prefer)]
+  }
+  return ips
+}
+
+/** Reachable LAN URLs for the crew (non-internal IPv4s), best first. */
+export function lanUrls(port: number, secure = false, prefer = ''): string[] {
+  const scheme = secure ? 'https' : 'http'
+  return lanIps(prefer).map((ip) => `${scheme}://${ip}:${port}`)
 }
 
 /** What the menu-bar and tray helpers need to draw their menu. */
@@ -266,9 +289,13 @@ export function printBoxBanner(
   port: number,
   eventPin: string,
   secure = false,
-  { eventName = '', firstRun = false }: { eventName?: string; firstRun?: boolean } = {}
+  {
+    eventName = '',
+    firstRun = false,
+    iface = '',
+  }: { eventName?: string; firstRun?: boolean; iface?: string } = {}
 ): void {
-  const urls = lanUrls(port, secure)
+  const urls = lanUrls(port, secure, iface)
   const joinUrl = urls[0] ?? `${secure ? 'https' : 'http'}://localhost:${port}`
   const lines = [
     '',

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -8,7 +9,6 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
-import { networkInterfaces } from 'node:os'
 import QRCode from 'qrcode-svg'
 import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
@@ -16,6 +16,7 @@ import { boxProbes, certNames, createEnvironmentCache, type Probes } from './env
 import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
+import { lanIps } from './box.ts'
 import { boxReadiness, worstState } from './readiness.ts'
 import type { DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
@@ -148,6 +149,12 @@ export interface AppDeps {
    */
   voiceFailure?: SfuFailure
   /**
+   * IP of the crew-facing adapter (CREWBOX_IFACE). Governs every address the
+   * box advertises — QR, /connect, DNS suggestions — on a machine that also
+   * sits on a lighting VLAN. Binding is the caller's half (see index.ts).
+   */
+  iface?: string
+  /**
    * Admin panel password from the environment. Overrides whatever is stored,
    * so it doubles as the way back in when the password is lost. Omit and the
    * box uses the stored one, minting and printing it on first start.
@@ -192,6 +199,7 @@ export function buildApp({
   filesDir,
   livekit,
   voiceFailure,
+  iface = '',
   sessionTtlMs,
   trustProxy = false,
   modules = ['chat'],
@@ -374,17 +382,8 @@ export function buildApp({
     }
   }
 
-  /** First routable IPv4, which is what a local DNS entry should point at. */
-  const lanAddress = (): string | undefined => {
-    for (const addrs of Object.values(networkInterfaces())) {
-      for (const addr of addrs ?? []) {
-        if (addr.family === 'IPv4' && !addr.internal && !addr.address.startsWith('169.254.')) {
-          return addr.address
-        }
-      }
-    }
-    return undefined
-  }
+  /** Best routable IPv4 — the crew adapter when configured — for DNS entries. */
+  const lanAddress = (): string | undefined => lanIps(iface)[0]
 
   const hostOf = (req: FastifyRequest): string =>
     (req.headers.host ?? 'localhost').split(':')[0] || 'localhost'
@@ -410,13 +409,8 @@ export function buildApp({
     const host = req.headers.host ?? 'localhost'
     if (!/^(localhost|127\.)/.test(host)) return `${proto}://${host}`
     const port = host.split(':')[1] ?? ''
-    for (const addrs of Object.values(networkInterfaces())) {
-      for (const addr of addrs ?? []) {
-        if (addr.family === 'IPv4' && !addr.internal) {
-          return `${proto}://${addr.address}${port ? `:${port}` : ''}`
-        }
-      }
-    }
+    const ip = lanIps(iface)[0]
+    if (ip) return `${proto}://${ip}${port ? `:${port}` : ''}`
     return `${proto}://${host}`
   }
 
@@ -1001,6 +995,10 @@ export function buildApp({
       voice: livekit?.embedded ? 'embedded' : livekit?.url ? 'external' : 'off',
       ...(sfu ? { sfu } : {}),
       ...(voiceFailure ? { voiceFailure } : {}),
+      // Live, not from startup: adapters come and go on site (a cable pulled,
+      // Wi-Fi re-joined), and the panel exists to say what is true now.
+      iface,
+      addresses: lanIps(iface),
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,
       host: hostOf(req),
@@ -1171,4 +1169,38 @@ export function attachWs(app: App): WebSocketServer {
     socket.destroy()
   })
   return wss
+}
+
+/**
+ * Answer on 127.0.0.1 as well, when the box is bound to one adapter.
+ *
+ * Binding to CREWBOX_IFACE is what keeps the web server off the lighting
+ * VLAN, but a strict single-address bind would also take localhost away —
+ * and localhost is load-bearing: it is the one address that is a secure
+ * context on plain http (the mic test that diagnosed the MacBook), it is
+ * what health checks and smoke scripts curl, and it is where a browser on
+ * the box itself lands out of habit.
+ *
+ * A Node server binds one address, so localhost is a second tiny server
+ * that forwards both plain requests and websocket upgrades into the real
+ * one's emitter. Same handlers, same state, zero routing of its own.
+ */
+export function mirrorOnLoopback(app: App, port: number): Promise<() => Promise<void>> {
+  const mirror = createServer((req, res) => {
+    app.server.emit('request', req, res)
+  })
+  mirror.on('upgrade', (req, socket, head) => {
+    app.server.emit('upgrade', req, socket, head)
+  })
+  return new Promise((resolve, reject) => {
+    mirror.once('error', reject)
+    mirror.listen(port, '127.0.0.1', () => {
+      resolve(
+        () =>
+          new Promise<void>((done) => {
+            mirror.close(() => done())
+          })
+      )
+    })
+  })
 }

@@ -161,6 +161,14 @@ export interface StartLiveKitOptions {
   dataDir: string
   key: string
   secret: string
+  /**
+   * Crew-facing adapter IP (CREWBOX_IFACE), when one is pinned and present.
+   * The SFU's signalling then binds to it plus loopback instead of every
+   * adapter, keeping the voice server from answering on the lighting VLAN.
+   * Loopback stays in the list because the box's own proxy and health probe
+   * reach the SFU at 127.0.0.1.
+   */
+  iface?: string
   log: BoxLog
 }
 
@@ -171,10 +179,12 @@ export interface StartLiveKitOptions {
  * use_external_ip stays off: this SFU serves a LAN with no route to the
  * internet, and STUN lookups against a dead uplink only add startup latency.
  */
-export const livekitConfigYaml = (key: string, secret: string): string =>
+export const livekitConfigYaml = (key: string, secret: string, iface = ''): string =>
   [
     `port: ${LIVEKIT_PORT}`,
-    `bind_addresses: ["0.0.0.0"]`,
+    // Media (rtc.*) binds every adapter regardless — it only ever speaks to
+    // connected peers. This list is the signalling HTTP/WS surface.
+    iface ? `bind_addresses: ["127.0.0.1", "${iface}"]` : `bind_addresses: ["0.0.0.0"]`,
     `rtc:`,
     `  tcp_port: ${LIVEKIT_TCP_PORT}`,
     `  udp_port: ${LIVEKIT_UDP_PORT}`,
@@ -196,7 +206,8 @@ export function unpackLiveKit(
   dataDir: string,
   binary: ArrayBuffer | Buffer,
   key: string,
-  secret: string
+  secret: string,
+  iface = ''
 ): { binPath: string; configPath: string } {
   const dir = join(dataDir, 'livekit')
   const binPath = join(dir, assetName())
@@ -204,7 +215,7 @@ export function unpackLiveKit(
   mkdirSync(dir, { recursive: true })
   writeFileSync(binPath, Buffer.from(binary as ArrayBuffer))
   if (process.platform !== 'win32') chmodSync(binPath, 0o755)
-  writeFileSync(configPath, livekitConfigYaml(key, secret))
+  writeFileSync(configPath, livekitConfigYaml(key, secret, iface))
   return { binPath, configPath }
 }
 
@@ -387,7 +398,7 @@ export async function startEmbeddedLiveKit(options: StartLiveKitOptions): Promis
 
   let unpacked: { binPath: string; configPath: string }
   try {
-    unpacked = unpackLiveKit(options.dataDir, asset, options.key, options.secret)
+    unpacked = unpackLiveKit(options.dataDir, asset, options.key, options.secret, options.iface)
   } catch (error) {
     options.log.warn(`voice: could not unpack the SFU (${String(error)}); voice stays off`)
     return { sfu: null, failure: 'no-start' }
