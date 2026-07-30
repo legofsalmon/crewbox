@@ -98,3 +98,72 @@ describe('box readiness', () => {
     ).toBe('off')
   })
 })
+
+describe('the voice line speaks from evidence, not config', () => {
+  /**
+   * "Voice server running inside this box" was printed, for one real
+   * afternoon, while the box's SFU was dead and a stray livekit-server from
+   * an old test session answered on its port — rejecting every token this
+   * box minted. These pin the panel's answer for each thing the live probe
+   * can actually find.
+   */
+  it("calls voice off when the listener rejects this box's tokens", () => {
+    const voice = find(boxReadiness(input({ voice: 'embedded', sfu: 'rejected' })), 'voice')
+    expect(voice.state).toBe('off')
+    expect(voice.detail).toMatch(/not this box/)
+    // The squatter is invisible to everything but the operating system, so
+    // the fix has to hand over the command that names it.
+    expect(voice.fix).toContain('lsof')
+  })
+
+  it('calls voice off when its own SFU has stopped answering', () => {
+    const voice = find(boxReadiness(input({ voice: 'embedded', sfu: 'unreachable' })), 'voice')
+    expect(voice.state).toBe('off')
+    expect(voice.detail).toMatch(/stopped answering/)
+  })
+
+  it('outranks the HTTPS nuance: a rejected SFU is off even on a secure box', () => {
+    // 'limited' would read as "works in the apps", and it does not.
+    const voice = find(
+      boxReadiness(input({ secure: true, voice: 'embedded', sfu: 'rejected' })),
+      'voice'
+    )
+    expect(voice.state).toBe('off')
+  })
+
+  it('says a checked SFU was checked', () => {
+    const voice = find(boxReadiness(input({ voice: 'embedded', sfu: 'ok', secure: true })), 'voice')
+    expect(voice.state).toBe('ok')
+    expect(voice.detail).toMatch(/checked just now/)
+  })
+
+  it('claims nothing extra when nothing was probed', () => {
+    // Tests and callers without a probe still get the old wording — the
+    // stronger sentence is reserved for the case that earned it.
+    const voice = find(boxReadiness(input({ voice: 'embedded', secure: true })), 'voice')
+    expect(voice.state).toBe('ok')
+    expect(voice.detail).not.toMatch(/checked just now/)
+  })
+
+  it('explains a start blocked by a held port instead of blaming the build', () => {
+    // The old copy for voice-off sent people to download a binary they
+    // already had. A held port is a different problem with a different fix.
+    const voice = find(boxReadiness(input({ voice: 'off', voiceFailure: 'port-held' })), 'voice')
+    expect(voice.state).toBe('off')
+    expect(voice.detail).toMatch(/holding the voice port/)
+    expect(voice.fix).toContain('lsof')
+    expect(voice.fix).not.toMatch(/Download/)
+  })
+
+  it('points a failed start at the log', () => {
+    const voice = find(boxReadiness(input({ voice: 'off', voiceFailure: 'no-start' })), 'voice')
+    expect(voice.state).toBe('off')
+    expect(voice.fix).toMatch(/log/)
+  })
+
+  it('does not check what it cannot reach: external SFUs stay honestly unverified', () => {
+    const voice = find(boxReadiness(input({ voice: 'external', secure: true })), 'voice')
+    expect(voice.state).toBe('ok')
+    expect(voice.detail).toMatch(/Not checked from here/)
+  })
+})

@@ -65,7 +65,7 @@ beforeEach(async () => {
     dataDir: filesDir,
     // The embedded shape: no explicit url, so voiceUrl() hands clients the
     // box's own origin and the upgrade lands on the proxy.
-    livekit: { embedded: true, port: sfuPort, key: 'devkey', secret: 'secret' },
+    livekit: { url: '', embedded: true, port: sfuPort, key: 'devkey', secret: 'secret' },
     logger: false,
   })
   await app.listen({ host: '127.0.0.1', port: 0 })

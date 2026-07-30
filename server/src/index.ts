@@ -18,7 +18,13 @@ import {
   stopRunningBox,
   writeBoxStatus,
 } from './box.ts'
-import { hasEmbeddedLiveKit, livekitCredentials, startEmbeddedLiveKit } from './livekit.ts'
+import {
+  hasEmbeddedLiveKit,
+  livekitCredentials,
+  startEmbeddedLiveKit,
+  type EmbeddedLiveKit,
+  type SfuFailure,
+} from './livekit.ts'
 import { preventSleep } from './nosleep.ts'
 import { loadTls } from './tls.ts'
 
@@ -68,14 +74,20 @@ async function main(): Promise<void> {
   // they already run shouldn't have the box start a second one. Otherwise a
   // box build carrying the SFU starts it, and voice is simply on.
   let livekit: { url: string; key: string; secret: string; embedded?: boolean } = config.livekit
-  let embedded: Awaited<ReturnType<typeof startEmbeddedLiveKit>> = null
+  let embedded: EmbeddedLiveKit | null = null
+  let voiceFailure: SfuFailure | undefined
   if (box && !process.env.LIVEKIT_URL) {
     if (hasEmbeddedLiveKit()) {
       const creds = livekitCredentials(
         (key) => store.getSetting(key),
         (key, value) => store.setSetting(key, value)
       )
-      embedded = await startEmbeddedLiveKit({ dataDir, ...creds, log: console })
+      const outcome = await startEmbeddedLiveKit({ dataDir, ...creds, log: console })
+      embedded = outcome.sfu
+      // Carried into the admin panel: "voice is off" with no reason reads as
+      // a build limitation, and the fix for a held port is nothing like the
+      // fix for a missing binary.
+      voiceFailure = outcome.failure
     }
     livekit = embedded
       ? { url: '', key: embedded.key, secret: embedded.secret, embedded: true }
@@ -108,6 +120,7 @@ async function main(): Promise<void> {
     ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
     filesDir: join(dataDir, 'files'),
     livekit,
+    ...(voiceFailure ? { voiceFailure } : {}),
     sessionTtlMs: config.sessionTtlMs,
     trustProxy: config.trustProxy,
     modules: config.modules,

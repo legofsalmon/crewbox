@@ -10,10 +10,12 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createServer, type Server } from 'node:http'
 import {
   LIVEKIT_PORT,
   livekitConfigYaml,
   livekitCredentials,
+  probeSfu,
   reapOrphanLiveKit,
   spawnLiveKit,
   unpackLiveKit,
@@ -37,11 +39,28 @@ const tempDir = () => {
   return dir
 }
 
-/** A stub that listens on the SFU port, as the real one would. */
+/**
+ * A stub that behaves like the real SFU as far as the supervisor can tell:
+ * it listens on the SFU port and answers 200 to /rtc/validate. The probe's
+ * own token semantics are unit-tested directly against in-process servers;
+ * here the stub only has to *pass* the probe, since a bare TCP listener no
+ * longer counts as a running SFU — that was the whole bug.
+ */
 const listenerStub = (): Buffer =>
   Buffer.from(
     `#!/usr/bin/env node\n` +
-      `require('node:net').createServer().listen(${LIVEKIT_PORT}, '0.0.0.0')\n` +
+      `require('node:http').createServer((req, res) => {\n` +
+      `  res.statusCode = req.url.startsWith('/rtc/validate') ? 200 : 404\n` +
+      `  res.end('success')\n` +
+      `}).listen(${LIVEKIT_PORT}, '0.0.0.0')\n` +
+      `process.on('SIGTERM', () => process.exit(0))\n`
+  )
+
+/** A stub that starts and stays alive without ever binding the port. */
+const loiterStub = (): Buffer =>
+  Buffer.from(
+    `#!/usr/bin/env node\n` +
+      `setInterval(() => {}, 1000)\n` +
       `process.on('SIGTERM', () => process.exit(0))\n`
   )
 
@@ -100,15 +119,15 @@ describe('supervisor', () => {
     const dataDir = tempDir()
     const { binPath, configPath } = unpackLiveKit(dataDir, listenerStub(), 'key', 'secret')
 
-    const handle = await spawnLiveKit(
+    const { sfu } = await spawnLiveKit(
       binPath,
       configPath,
       { key: 'key', secret: 'secret' },
       silentLog
     )
-    expect(handle).not.toBeNull()
-    running.push(handle!)
-    expect(handle).toMatchObject({ port: LIVEKIT_PORT, key: 'key', secret: 'secret' })
+    expect(sfu).not.toBeNull()
+    running.push(sfu!)
+    expect(sfu).toMatchObject({ port: LIVEKIT_PORT, key: 'key', secret: 'secret' })
   }, 15_000)
 
   it('stops what it started, freeing the port', async () => {
@@ -116,14 +135,14 @@ describe('supervisor', () => {
     const { binPath, configPath } = unpackLiveKit(dataDir, listenerStub(), 'k', 's')
 
     const first = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
-    expect(first).not.toBeNull()
-    await first!.stop()
+    expect(first.sfu).not.toBeNull()
+    await first.sfu!.stop()
 
     // A leaked SFU would hold the port and the next boot would silently lose
     // voice, so proving the port comes back is the point of this test.
     const second = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
-    expect(second).not.toBeNull()
-    running.push(second!)
+    expect(second.sfu).not.toBeNull()
+    running.push(second.sfu!)
   }, 20_000)
 
   it('gives up quietly when the SFU dies instead of listening', async () => {
@@ -131,7 +150,7 @@ describe('supervisor', () => {
     const { binPath, configPath } = unpackLiveKit(dataDir, crasherStub(), 'k', 's')
     const warnings: string[] = []
 
-    const handle = await spawnLiveKit(
+    const { sfu, failure } = await spawnLiveKit(
       binPath,
       configPath,
       { key: 'k', secret: 's' },
@@ -142,7 +161,8 @@ describe('supervisor', () => {
     )
 
     // Null, not a throw: a box whose voice won't start is still a box.
-    expect(handle).toBeNull()
+    expect(sfu).toBeNull()
+    expect(failure).toBe('no-start')
     expect(warnings.join(' ')).toMatch(/SFU/)
   }, 20_000)
 
@@ -150,13 +170,14 @@ describe('supervisor', () => {
     const dataDir = tempDir()
     const { configPath } = unpackLiveKit(dataDir, listenerStub(), 'k', 's')
 
-    const handle = await spawnLiveKit(
+    const { sfu, failure } = await spawnLiveKit(
       join(dataDir, 'does-not-exist'),
       configPath,
       { key: 'k', secret: 's' },
       silentLog
     )
-    expect(handle).toBeNull()
+    expect(sfu).toBeNull()
+    expect(failure).toBe('no-start')
   }, 20_000)
 })
 
@@ -171,9 +192,9 @@ describe('orphaned SFU from a killed box', () => {
   it('records the running SFU so a later boot can find it', async () => {
     const dir = tempDir()
     const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
-    const handle = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
-    expect(handle).not.toBeNull()
-    running.push(handle!)
+    const { sfu } = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    expect(sfu).not.toBeNull()
+    running.push(sfu!)
 
     const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
     expect(Number.isInteger(pid)).toBe(true)
@@ -184,8 +205,8 @@ describe('orphaned SFU from a killed box', () => {
   it('clears the record when the SFU stops cleanly', async () => {
     const dir = tempDir()
     const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
-    const handle = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
-    await handle!.stop()
+    const { sfu } = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    await sfu!.stop()
     // A stale file would make the next boot kill an unrelated process that
     // happened to inherit the number.
     await new Promise((r) => setTimeout(r, 300))
@@ -195,7 +216,8 @@ describe('orphaned SFU from a killed box', () => {
   it('kills an orphan it finds, and frees the port', async () => {
     const dir = tempDir()
     const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
-    const orphan = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    const orphan = (await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog))
+      .sfu
     expect(orphan).not.toBeNull()
     const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
 
@@ -226,4 +248,118 @@ describe('orphaned SFU from a killed box', () => {
     expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
     expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
   })
+})
+
+describe('probing whatever holds the SFU port', () => {
+  /**
+   * The check `waitForPort` cannot make. That helper proves something is
+   * listening; a stray livekit-server from an old test session proved for a
+   * full day that "something" is not the same as "ours" — it held 7880 with
+   * different keys, the box's own SFU died of EADDRINUSE, and voice read as
+   * configured everywhere while every join was rejected.
+   */
+  const servers: Server[] = []
+  const serve = (status: number): Promise<number> =>
+    new Promise((resolve) => {
+      const server = createServer((req, res) => {
+        res.statusCode = req.url?.startsWith('/rtc/validate') ? status : 404
+        res.end(status === 200 ? 'success' : 'invalid token')
+      })
+      servers.push(server)
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address()
+        resolve(typeof address === 'object' && address ? address.port : 0)
+      })
+    })
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('says ok when the listener validates the token', async () => {
+    const port = await serve(200)
+    expect(await probeSfu(port, 'k', 'ssssssssssssssssssssssssssssssss')).toBe('ok')
+  })
+
+  it('says rejected when the listener refuses it', async () => {
+    // A real LiveKit holding someone else's keys answers exactly this way.
+    const port = await serve(401)
+    expect(await probeSfu(port, 'k', 'ssssssssssssssssssssssssssssssss')).toBe('rejected')
+  })
+
+  it('says rejected for a listener that is not an SFU at all', async () => {
+    // Anything HTTP that is not answering /rtc/validate with 200 — a dev
+    // server, a proxy — is equally unusable for voice.
+    const port = await serve(503)
+    expect(await probeSfu(port, 'k', 'ssssssssssssssssssssssssssssssss')).toBe('rejected')
+  })
+
+  it('says unreachable when nothing is listening', async () => {
+    const port = await serve(200)
+    await new Promise<void>((resolve) => servers.pop()!.close(() => resolve()))
+    expect(await probeSfu(port, 'k', 'ssssssssssssssssssssssssssssssss')).toBe('unreachable')
+  })
+})
+
+describe('a stranger on the SFU port', () => {
+  it('refuses to claim a listener that rejects its tokens', async () => {
+    // The race the probe closes: the stranger is listening, so waitForPort
+    // reports up immediately — possibly before this box's own SFU has had
+    // time to die of EADDRINUSE. The loiter stub pins that window open: the
+    // child is alive and never binds, exactly the state the old code saw
+    // when it declared voice running.
+    const stranger = createServer((req, res) => {
+      res.statusCode = 401
+      res.end('invalid token')
+    })
+    await new Promise<void>((resolve) => stranger.listen(LIVEKIT_PORT, '0.0.0.0', resolve))
+
+    try {
+      const dir = tempDir()
+      const { binPath, configPath } = unpackLiveKit(dir, loiterStub(), 'k', 's')
+      const warnings: string[] = []
+      const { sfu, failure } = await spawnLiveKit(
+        binPath,
+        configPath,
+        { key: 'k', secret: 's' },
+        { info: () => {}, warn: (m) => warnings.push(m) }
+      )
+
+      expect(sfu).toBeNull()
+      expect(failure).toBe('port-held')
+      // The log has to hand someone the command, because at this point the
+      // squatter is invisible to everything except the operating system.
+      expect(warnings.join(' ')).toContain('lsof')
+    } finally {
+      await new Promise<void>((resolve) => stranger.close(() => resolve()))
+    }
+  }, 20_000)
+
+  it('names the held port when its own SFU dies of the collision', async () => {
+    // Same stranger, but the child exits quickly — the EADDRINUSE shape a
+    // real livekit-server produces. Whichever side of the race the timing
+    // lands on, the verdict must come out port-held, not success.
+    const stranger = createServer((req, res) => {
+      res.statusCode = 401
+      res.end('invalid token')
+    })
+    await new Promise<void>((resolve) => stranger.listen(LIVEKIT_PORT, '0.0.0.0', resolve))
+
+    try {
+      const dir = tempDir()
+      const { binPath, configPath } = unpackLiveKit(dir, crasherStub(), 'k', 's')
+      const { sfu, failure } = await spawnLiveKit(
+        binPath,
+        configPath,
+        { key: 'k', secret: 's' },
+        silentLog
+      )
+      expect(sfu).toBeNull()
+      expect(failure).toBe('port-held')
+    } finally {
+      await new Promise<void>((resolve) => stranger.close(() => resolve()))
+    }
+  }, 20_000)
 })
