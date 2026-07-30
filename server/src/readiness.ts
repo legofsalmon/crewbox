@@ -44,6 +44,14 @@ export interface ReadinessInput {
   sfu?: 'ok' | 'rejected' | 'unreachable'
   /** Why the embedded SFU refused to start, when startup could tell. */
   voiceFailure?: 'port-held' | 'no-start'
+  /** CREWBOX_IFACE, when set: the adapter every crew-facing address uses. */
+  iface?: string
+  /**
+   * This machine's LAN IPv4 addresses, best first — the first is what the
+   * join QR points at. Passed in so the check is pure and the caller decides
+   * when to enumerate.
+   */
+  addresses?: string[]
   dataDir: string
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
@@ -73,6 +81,73 @@ const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`
  * printed while the box's SFU was dead and a stranger was answering on its
  * port — the panel's job is to be the thing that would have said so.
  */
+/**
+ * Which network the crew-facing addresses point at — the check for a box
+ * that sits on two.
+ *
+ * A festival box usually has a crew adapter and a lighting adapter. Every
+ * advertised address takes the first entry of `addresses`; without
+ * CREWBOX_IFACE that order is whatever the OS enumerated, so the join QR is
+ * a coin flip between a network crew phones can reach and one they cannot —
+ * and a QR pointing at the lighting VLAN fails in a way that looks like
+ * "crewbox is broken", not "wrong network".
+ */
+function networkCheck(input: ReadinessInput): ReadinessCheck {
+  const base = { id: 'network', label: 'Crew network' }
+  const addresses = input.addresses ?? []
+
+  if (input.iface && addresses[0] === input.iface) {
+    return {
+      ...base,
+      state: 'ok',
+      detail:
+        `Crew join links point at ${input.iface}, and the box answers only there ` +
+        '(and on localhost). Other networks this machine is on never see its traffic.',
+    }
+  }
+  if (input.iface) {
+    // Configured but no adapter has that address: a pulled cable, a DHCP
+    // lease change, or a typo. The box has fallen back to answering
+    // everywhere rather than nowhere, and this is where that is said.
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        `CREWBOX_IFACE is set to ${input.iface}, but no adapter currently has that ` +
+        `address — the box is answering on every network` +
+        (addresses.length > 0 ? ` and the join QR points at ${addresses[0]}` : '') +
+        '.',
+      fix: 'Check the cable and the adapter\u2019s IP, then restart the box.',
+    }
+  }
+  if (addresses.length > 1) {
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        `This machine is on ${addresses.length} networks (${addresses.join(', ')}) and the ` +
+        `join QR points at ${addresses[0]}.`,
+      fix:
+        'If crew phones are on a different network — say this box also has a leg on the ' +
+        'lighting VLAN — set CREWBOX_IFACE to the crew network\u2019s address and restart. ' +
+        'That also stops the box answering on the other networks at all.',
+    }
+  }
+  if (addresses.length === 1) {
+    return {
+      ...base,
+      state: 'ok',
+      detail: `Crew join links point at ${addresses[0]}, the only network this machine is on.`,
+    }
+  }
+  return {
+    ...base,
+    state: 'limited',
+    detail: 'This machine has no LAN address, so there is nothing for a join QR to point at.',
+    fix: 'Connect the box to the crew network.',
+  }
+}
+
 function voiceCheck(input: ReadinessInput): ReadinessCheck {
   const base = { id: 'voice', label: 'Push-to-talk voice' }
 
@@ -155,6 +230,8 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
     state: 'ok',
     detail: 'Working for everyone, in any phone browser, with or without internet.',
   })
+
+  checks.push(networkCheck(input))
 
   checks.push(voiceCheck(input))
 

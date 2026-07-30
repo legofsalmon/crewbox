@@ -167,3 +167,49 @@ describe('the voice line speaks from evidence, not config', () => {
     expect(voice.detail).toMatch(/Not checked from here/)
   })
 })
+
+describe('the crew network line on a two-network box', () => {
+  it('flags the coin flip when two networks exist and none is pinned', () => {
+    // The trap this exists for: the join QR takes the first address the OS
+    // enumerated, which on a crew+lighting machine may be the lighting VLAN
+    // — an address no crew phone can reach, failing in a way that reads as
+    // "crewbox is broken" rather than "wrong network".
+    const check = find(boxReadiness(input({ addresses: ['2.0.0.7', '192.168.1.50'] })), 'network')
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('2.0.0.7')
+    expect(check.fix).toContain('CREWBOX_IFACE')
+  })
+
+  it('reports a pinned adapter as settled, and says what that buys', () => {
+    const check = find(
+      boxReadiness(input({ iface: '192.168.1.50', addresses: ['192.168.1.50', '2.0.0.7'] })),
+      'network'
+    )
+    expect(check.state).toBe('ok')
+    expect(check.detail).toContain('192.168.1.50')
+    expect(check.detail).toMatch(/never see its traffic/)
+  })
+
+  it('says when the pinned address is not on any adapter', () => {
+    // A pulled cable or a moved DHCP lease. The box has fallen back to
+    // answering everywhere rather than nowhere; this is where that is said.
+    const check = find(
+      boxReadiness(input({ iface: '10.0.0.99', addresses: ['2.0.0.7'] })),
+      'network'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('10.0.0.99')
+    expect(check.detail).toContain('2.0.0.7')
+  })
+
+  it('keeps quiet-and-green on a one-network machine', () => {
+    const check = find(boxReadiness(input({ addresses: ['192.168.1.50'] })), 'network')
+    expect(check.state).toBe('ok')
+  })
+
+  it('says plainly when there is no network at all', () => {
+    const check = find(boxReadiness(input({ addresses: [] })), 'network')
+    expect(check.state).toBe('limited')
+    expect(check.fix).toMatch(/Connect/)
+  })
+})
