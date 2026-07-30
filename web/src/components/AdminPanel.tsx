@@ -432,6 +432,23 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         onChange={setSsid}
         onSave={save({ wifiSsid: ssid.trim() }, 'Wi-Fi network saved')}
       />
+      {data?.network && (
+        <NetworksSection
+          network={data.network}
+          saving={saving}
+          onSave={(patch, note) => {
+            setSaving(true)
+            void api
+              .adminUpdateSettings(auth(), patch)
+              .then(({ network: fresh }) => {
+                setData((d) => (d && fresh ? { ...d, network: fresh } : d))
+                onNote(note)
+              })
+              .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Save failed'))
+              .finally(() => setSaving(false))
+          }}
+        />
+      )}
       {info && <AdminPasswordField fromEnv={info.adminPasswordFromEnv} onNote={onNote} />}
       {info && (
         <dl className="admin-info">
@@ -462,6 +479,128 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         </dl>
       )}
     </>
+  )
+}
+
+/**
+ * Which adapter faces the crew, and which the lighting listener reads.
+ *
+ * Dropdowns of the adapters the machine actually has, because the on-site
+ * alternative was a terminal, an ipconfig, and an environment variable. The
+ * advertised join links follow a save immediately; the socket binding and
+ * the lighting listener follow at the next start, and the readiness panel
+ * says so for as long as that gap exists rather than pretending.
+ */
+function NetworksSection({
+  network,
+  onSave,
+  saving,
+}: {
+  network: api.AdminNetwork
+  onSave: (patch: Parameters<typeof api.adminUpdateSettings>[1], note: string) => void
+  saving: boolean
+}) {
+  const [crewIface, setCrewIface] = useState(network.saved.crewIface)
+  const [dmxMode, setDmxMode] = useState(network.saved.dmxMode || 'off')
+  const [dmxIface, setDmxIface] = useState(network.saved.dmxIface)
+  const [universes, setUniverses] = useState(network.saved.dmxUniverses)
+
+  const adapterOptions = (blank: string) => (
+    <>
+      <option value="">{blank}</option>
+      {network.adapters.map((a) => (
+        <option key={`${a.name}-${a.address}`} value={a.address}>
+          {a.address} — {a.name}
+        </option>
+      ))}
+    </>
+  )
+
+  const dirty =
+    crewIface !== network.saved.crewIface ||
+    dmxMode !== (network.saved.dmxMode || 'off') ||
+    dmxIface !== network.saved.dmxIface ||
+    universes !== network.saved.dmxUniverses
+
+  return (
+    <form
+      className="admin-networks"
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSave(
+          {
+            ...(network.fromEnv.iface ? {} : { crewIface }),
+            ...(network.fromEnv.dmxMode
+              ? {}
+              : { dmxMode: dmxMode as 'off' | 'artnet' | 'sacn' | 'both' }),
+            ...(network.fromEnv.dmxIface ? {} : { dmxIface }),
+            ...(network.fromEnv.dmxUniverses ? {} : { dmxUniverses: universes.trim() }),
+          },
+          'Network settings saved — join links updated now; restart the box to apply the rest'
+        )
+      }}
+    >
+      <h3 className="admin-subhead">Networks</h3>
+      {network.restartNeeded && (
+        <p className="admin-note">
+          Saved settings differ from what this box started with — restart it to apply them.
+        </p>
+      )}
+      <label htmlFor="admin-crew-iface">Crew network</label>
+      {network.fromEnv.iface ? (
+        <p className="admin-note">Set by CREWBOX_IFACE in the environment; change it there.</p>
+      ) : (
+        <select
+          id="admin-crew-iface"
+          value={crewIface}
+          onChange={(e) => setCrewIface(e.target.value)}
+        >
+          {adapterOptions('All networks — first adapter wins')}
+        </select>
+      )}
+      <label htmlFor="admin-dmx-mode">Lighting network listening</label>
+      {network.fromEnv.dmxMode ? (
+        <p className="admin-note">Set by CREWBOX_DMX in the environment; change it there.</p>
+      ) : (
+        <select id="admin-dmx-mode" value={dmxMode} onChange={(e) => setDmxMode(e.target.value)}>
+          <option value="off">Off</option>
+          <option value="sacn">sACN</option>
+          <option value="artnet">Art-Net</option>
+          <option value="both">Both</option>
+        </select>
+      )}
+      {dmxMode !== 'off' && (
+        <>
+          <label htmlFor="admin-dmx-iface">Lighting network adapter</label>
+          {network.fromEnv.dmxIface ? (
+            <p className="admin-note">Set by CREWBOX_DMX_IFACE in the environment.</p>
+          ) : (
+            <select
+              id="admin-dmx-iface"
+              value={dmxIface}
+              onChange={(e) => setDmxIface(e.target.value)}
+            >
+              {adapterOptions('Let the OS choose')}
+            </select>
+          )}
+          <label htmlFor="admin-dmx-universes">sACN universes</label>
+          {network.fromEnv.dmxUniverses ? (
+            <p className="admin-note">Set by CREWBOX_DMX_UNIVERSES in the environment.</p>
+          ) : (
+            <input
+              id="admin-dmx-universes"
+              value={universes}
+              placeholder="1-16"
+              maxLength={200}
+              onChange={(e) => setUniverses(e.target.value)}
+            />
+          )}
+        </>
+      )}
+      <button className="admin-btn" type="submit" disabled={saving || !dirty}>
+        {saving ? 'Saving…' : 'Save networks'}
+      </button>
+    </form>
   )
 }
 

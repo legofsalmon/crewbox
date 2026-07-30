@@ -52,6 +52,8 @@ export interface ReadinessInput {
    * when to enumerate.
    */
   addresses?: string[]
+  /** Saved network settings differ from what this process booted with. */
+  restartNeeded?: boolean
   dataDir: string
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
@@ -74,14 +76,6 @@ export function freeBytes(dataDir: string): number | null {
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`
 
 /**
- * The voice line, which speaks from evidence where it has any.
- *
- * The cases are ordered by how badly the old copy would have lied about
- * them. "Voice server running inside this box" was, for one real afternoon,
- * printed while the box's SFU was dead and a stranger was answering on its
- * port — the panel's job is to be the thing that would have said so.
- */
-/**
  * Which network the crew-facing addresses point at — the check for a box
  * that sits on two.
  *
@@ -95,6 +89,21 @@ const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`
 function networkCheck(input: ReadinessInput): ReadinessCheck {
   const base = { id: 'network', label: 'Crew network' }
   const addresses = input.addresses ?? []
+
+  // Outranks everything below: whatever else is true of the running config,
+  // the saved one is different, and every other line here describes a state
+  // that changes at the next start.
+  if (input.restartNeeded) {
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        'Network settings have been saved, but this box is still running with its old ones. ' +
+        'Join links already point at the saved crew network; the binding and the lighting ' +
+        'listener change at the next start.',
+      fix: 'Restart the box — close it and run it again. Nothing else is lost: crew rejoin automatically.',
+    }
+  }
 
   if (input.iface && addresses[0] === input.iface) {
     return {
@@ -148,6 +157,14 @@ function networkCheck(input: ReadinessInput): ReadinessCheck {
   }
 }
 
+/**
+ * The voice line, which speaks from evidence where it has any.
+ *
+ * The cases are ordered by how badly the old copy would have lied about
+ * them. "Voice server running inside this box" was, for one real afternoon,
+ * printed while the box's SFU was dead and a stranger was answering on its
+ * port — the panel's job is to be the thing that would have said so.
+ */
 function voiceCheck(input: ReadinessInput): ReadinessCheck {
   const base = { id: 'voice', label: 'Push-to-talk voice' }
 

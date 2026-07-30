@@ -29,8 +29,21 @@ const adminHeaders = (auth: AdminAuth): Record<string, string> => ({
   'x-admin-token': auth.adminToken,
 })
 
+/** The panel's Networks section — which adapter faces the crew. */
+export interface AdminNetwork {
+  adapters: Array<{ name: string; address: string }>
+  saved: { crewIface: string; dmxMode: string; dmxIface: string; dmxUniverses: string }
+  /** Fields pinned by an environment variable; saving them here would lose. */
+  fromEnv: { iface: boolean; dmxMode: boolean; dmxIface: boolean; dmxUniverses: boolean }
+  /** Where join links point right now. */
+  advertised: string
+  /** Saved settings differ from what this process booted with. */
+  restartNeeded: boolean
+}
+
 export interface AdminSettings {
   settings: { eventName: string; wifiSsid: string }
+  network: AdminNetwork
   serverInfo: {
     version: string
     uptimeSec: number
@@ -243,9 +256,19 @@ export function adminGetSettings(auth: AdminAuth): Promise<AdminSettings> {
 
 export function adminUpdateSettings(
   auth: AdminAuth,
-  patch: { eventName?: string; wifiSsid?: string; eventPin?: string; adminPassword?: string }
+  patch: {
+    eventName?: string
+    wifiSsid?: string
+    eventPin?: string
+    adminPassword?: string
+    crewIface?: string
+    dmxMode?: 'off' | 'artnet' | 'sacn' | 'both'
+    dmxIface?: string
+    dmxUniverses?: string
+  }
 ): Promise<{
   settings: { eventName: string; wifiSsid: string; eventPin: string }
+  network: AdminNetwork
   /**
    * Present only when the admin password changed. Changing it revokes every
    * unlock including this one, so the caller must swap in this replacement or

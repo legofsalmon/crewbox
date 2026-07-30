@@ -33,6 +33,21 @@ export interface SetupValues {
    *   an edit that would silently do nothing.
    */
   adminPassword?: string
+  /**
+   * Network choices, offered as dropdowns of the adapters this machine
+   * actually has — asked here because the on-site alternative is a terminal
+   * and an environment variable, discovered mid-get-in. Fields pinned by an
+   * environment variable are hidden rather than shown as edits that would
+   * silently lose.
+   */
+  network: {
+    adapters: Array<{ name: string; address: string }>
+    crewIface: string
+    dmxMode: string
+    dmxIface: string
+    dmxUniverses: string
+    fromEnv: { iface: boolean; dmxMode: boolean; dmxIface: boolean; dmxUniverses: boolean }
+  }
 }
 
 export interface SetupPageOptions {
@@ -55,6 +70,86 @@ const field = (id: string, label: string, value: string, hint: string, attrs: st
   <input id="${id}" name="${id}" value="${escapeHtml(value)}" ${attrs}>
   <span class="hint">${escapeHtml(hint)}</span>`
 
+const select = (
+  id: string,
+  label: string,
+  value: string,
+  hint: string,
+  options: Array<{ value: string; label: string }>
+): string => `
+  <label for="${id}">${escapeHtml(label)}</label>
+  <select id="${id}" name="${id}">${options
+    .map(
+      (o) =>
+        `<option value="${escapeHtml(o.value)}"${o.value === value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+    )
+    .join('')}</select>
+  <span class="hint">${escapeHtml(hint)}</span>`
+
+/** "192.168.1.50 — Wi-Fi" reads better than either half alone. */
+const adapterOptions = (
+  adapters: Array<{ name: string; address: string }>,
+  blankLabel: string
+): Array<{ value: string; label: string }> => [
+  { value: '', label: blankLabel },
+  ...adapters.map((a) => ({ value: a.address, label: `${a.address} — ${a.name}` })),
+]
+
+/**
+ * The networks block: which adapter faces the crew, and which (if any) the
+ * lighting listener reads. Open by default only on a machine where the
+ * choice exists — a one-adapter laptop gets it folded away.
+ */
+const networkSection = (network: SetupValues['network']): string => {
+  const { adapters, fromEnv } = network
+  const crew = fromEnv.iface
+    ? ''
+    : select(
+        'crewIface',
+        'Crew network',
+        network.crewIface,
+        'The network crew phones are on. The join QR, and everything else the box shows, points here — and the box answers only here.',
+        adapterOptions(adapters, 'All networks — first adapter wins')
+      )
+  const mode = fromEnv.dmxMode
+    ? ''
+    : select(
+        'dmxMode',
+        'Lighting network listening',
+        network.dmxMode || 'off',
+        'Watch the lighting network, read-only, to check the patch against what the desk really sends.',
+        [
+          { value: 'off', label: 'Off' },
+          { value: 'sacn', label: 'sACN' },
+          { value: 'artnet', label: 'Art-Net' },
+          { value: 'both', label: 'Both' },
+        ]
+      )
+  const dmxIface = fromEnv.dmxIface
+    ? ''
+    : select(
+        'dmxIface',
+        'Lighting network adapter',
+        network.dmxIface,
+        'The adapter plugged into the lighting network. Only read from — the box never transmits there.',
+        adapterOptions(adapters, 'Let the OS choose')
+      )
+  const universes = fromEnv.dmxUniverses
+    ? ''
+    : field(
+        'dmxUniverses',
+        'sACN universes',
+        network.dmxUniverses,
+        'Which universes to watch, e.g. 1-8,101. Leave blank for 1-16. The panel will say if the desk sends others.',
+        'maxlength="200" placeholder="1-16" autocomplete="off" spellcheck="false"'
+      )
+  const body = crew + mode + dmxIface + universes
+  if (!body) return ''
+  return `<details${adapters.length > 1 ? ' open' : ''}><summary>Networks</summary>${body}
+  <span class="hint">Network changes picked here apply when the box next starts; everything else on this page applies immediately.</span>
+  </details>`
+}
+
 export function setupPage({ values, base, error, warnings = [] }: SetupPageOptions): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -65,7 +160,12 @@ export function setupPage({ values, base, error, warnings = [] }: SetupPageOptio
   input { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 12px 14px;
           font: inherit; font-size: 16px; color: #f2eee7; background: #1b1815;
           border: 1px solid #3a342c; border-radius: 10px; }
-  input:focus { outline: 2px solid #f5b73e; outline-offset: 1px; }
+  input:focus, select:focus { outline: 2px solid #f5b73e; outline-offset: 1px; }
+  select { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 12px 14px;
+           font: inherit; font-size: 16px; color: #f2eee7; background: #1b1815;
+           border: 1px solid #3a342c; border-radius: 10px; }
+  details { margin-top: 22px; border: 1px solid #3a342c; border-radius: 10px; padding: 4px 14px 14px; }
+  summary { font-weight: 700; padding: 10px 0 6px; cursor: pointer; }
   .hint { display: block; color: #a29a8c; font-size: 13px; margin-top: 5px; }
   button { width: 100%; margin-top: 26px; padding: 14px; font: inherit; font-size: 17px;
            font-weight: 700; color: #12100e; background: #f5b73e;
@@ -107,6 +207,7 @@ export function setupPage({ values, base, error, warnings = [] }: SetupPageOptio
             'minlength="8" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false"'
           )
     }
+    ${networkSection(values.network)}
     <button type="submit">Save and show the QR</button>
   </form>
   <p class="meta">Crew will use <strong>${escapeHtml(base.replace(/^https?:\/\//, ''))}</strong></p>

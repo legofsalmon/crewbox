@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { parseUniverseList, type DmxMode } from './dmx/listener.ts'
 
 /** `CREWBOX_DMX`, defaulting to off — a box never listens unless asked. */
-function dmxMode(value: string | undefined): DmxMode {
+export function dmxMode(value: string | undefined): DmxMode {
   return value === 'artnet' || value === 'sacn' || value === 'both' ? value : 'off'
 }
 
@@ -86,6 +86,14 @@ export const config = {
   dmx: {
     mode: dmxMode(process.env.CREWBOX_DMX),
     /**
+     * Which of these came from the environment. Settings saved in the admin
+     * panel fill the gaps; an env var always wins, which keeps the terminal
+     * the recovery path when a saved setting is wrong.
+     */
+    modeFromEnv: process.env.CREWBOX_DMX !== undefined,
+    ifaceFromEnv: process.env.CREWBOX_DMX_IFACE !== undefined,
+    universesFromEnv: process.env.CREWBOX_DMX_UNIVERSES !== undefined,
+    /**
      * Interface to join sACN multicast groups on — **not** a bind address.
      * The socket always binds 0.0.0.0; binding it to a specific unicast
      * address stops multicast arriving at all on Linux. On a box with more
@@ -94,6 +102,8 @@ export const config = {
      */
     interfaceIp: process.env.CREWBOX_DMX_IFACE || undefined,
     universes: parseUniverseList(process.env.CREWBOX_DMX_UNIVERSES ?? '1-16'),
+    /** The list as typed, for "did the saved settings change" comparisons. */
+    universesRaw: process.env.CREWBOX_DMX_UNIVERSES ?? '1-16',
     /**
      * Plot universe that Art-Net universe 0 corresponds to. Art-Net counts
      * from 0 and a plot counts from 1, and getting this wrong checks every
