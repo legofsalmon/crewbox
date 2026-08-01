@@ -1,5 +1,5 @@
-import { existsSync, statfsSync } from 'node:fs'
-import { join } from 'node:path'
+import { statfsSync } from 'node:fs'
+import { latestApk } from './box.ts'
 
 /**
  * What this box can actually do, right now, on this machine.
@@ -269,7 +269,7 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
         }
   )
 
-  const apk = existsSync(join(input.dataDir, 'crewbox.apk'))
+  const apk = latestApk(input.dataDir) !== null
   checks.push({
     id: 'apk',
     label: 'Android app download',
@@ -279,7 +279,7 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
       : 'No Android app on this box.',
     fix: apk
       ? undefined
-      : `Drop crewbox.apk into ${input.dataDir} and it appears on /connect. The Android app is what gives crew lock-screen alerts with no internet.`,
+      : `Drop the .apk from the release into ${input.dataDir} — any crewbox*.apk name works — and it appears on /connect. The Android app is what gives crew lock-screen alerts with no internet.`,
   })
 
   const free = freeBytes(input.dataDir)

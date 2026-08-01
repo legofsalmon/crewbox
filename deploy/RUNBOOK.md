@@ -268,9 +268,10 @@ vibrate on a high-priority channel.
 1. Build it once per release:
    `npm run build:native && cd native/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug`
    → `native/android/app/build/outputs/apk/debug/app-debug.apk`.
-2. Copy it onto the crew box as `/var/lib/crewbox/crewbox.apk` — the app
-   serves it at `/crewbox.apk` automatically (and links it from `/connect` — or just
-   drop it in the web dist folder before starting the server).
+2. Copy it into `/var/lib/crewbox/` on the crew box — any `crewbox*.apk`
+   name works as-is (release assets are versioned, e.g. `crewbox-v0.9.5.apk`;
+   newest file wins). The app serves it at `/crewbox.apk` automatically and
+   links it from `/connect`.
 3. Add a line to the QR poster: "Android? Scan to install the app — it buzzes
    even when locked." QR → `http://chat.<your-domain>/crewbox.apk`. Crew must
    allow install-from-browser once (Android prompts).

@@ -2,8 +2,8 @@
 // Writes deploy/poster.html — print a stack and zip-tie them to poles.
 // Includes a second QR for the Android APK (served from the crew box as
 // /crewbox.apk per the RUNBOOK) so phones that need lock-screen alerts can
-// grab the app with no internet. The APK box only helps once crewbox.apk is
-// actually deployed next to the web dist — the RUNBOOK step, not this one.
+// grab the app with no internet. The APK box only helps once an apk is
+// actually deployed into the data directory — the RUNBOOK step, not this one.
 import { writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'

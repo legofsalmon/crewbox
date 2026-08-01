@@ -99,7 +99,7 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
             alert(
                 "Crewbox is incomplete",
                 "The server executable is missing from the app bundle. "
-                    + "Download Crewbox.dmg again."
+                    + "Download the Crewbox .dmg again."
             )
             NSApp.terminate(nil)
             return

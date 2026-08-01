@@ -39,12 +39,22 @@ arm64 | aarch64) cpu="arm64" ;;
 *) die "no build for $arch" ;;
 esac
 
-asset="crewbox-$plat-$cpu"
-
-url="https://github.com/$REPO/releases/latest/download/$asset"
-target="$INSTALL_DIR/crewbox"
-
 command -v curl >/dev/null 2>&1 || die "curl is required"
+
+# --- Which version?
+# Asset filenames carry the version (crewbox-linux-x64-v0.9.5) so a download
+# on disk says what it is. That means "latest" has to be resolved to a tag
+# first: the releases/latest page redirects to releases/tag/<version>, and
+# the version names the asset exactly. No GitHub API call — the API is
+# rate-limited per IP, and a festival's crew all NAT out of one address.
+tag="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+  "https://github.com/$REPO/releases/latest" 2>/dev/null | sed -n 's|.*/tag/||p')" || true
+[ -n "$tag" ] || die "could not find the latest release of $REPO — is github.com reachable?"
+
+asset="crewbox-$plat-$cpu-$tag"
+
+url="https://github.com/$REPO/releases/download/$tag/$asset"
+target="$INSTALL_DIR/crewbox"
 
 say ""
 say "  Crewbox"

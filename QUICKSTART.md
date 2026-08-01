@@ -5,7 +5,7 @@ app store, nothing to install on anyone's phone unless they want it.
 
 ## Run it
 
-**macOS** — download `Crewbox.dmg` from the download page, open it, drag
+**macOS** — download the `.dmg` from the download page, open it, drag
 Crewbox to Applications, and launch it. One file works on every Mac, Intel or
 Apple Silicon. It keeps the machine awake while it runs, so a laptop with the
 lid shut is still a working box.
@@ -25,7 +25,7 @@ Downloads the box for your machine, clears the macOS quarantine flag, and
 starts it. This installs the bare binary rather than the app, so it is the
 Linux path and the macOS fallback; on a Mac the `.dmg` is now the easier one.
 
-**Windows** — download `crewbox-win32-x64.exe` from the download page and
+**Windows** — download the `.exe` from the download page and
 double-click it. SmartScreen will warn about an unsigned app: **More info →
 Run anyway**. That warning means Windows hasn't seen this file before, not
 that anything is wrong with it.
@@ -147,8 +147,9 @@ with a foreground service holding its own connection to the box, buzzing for
 messages and mentions while the phone is locked, entirely on the LAN. Give
 Android phones to the roles that must not miss a call.
 
-Drop `crewbox.apk` from the release into the box's data directory — the
-readiness panel names the path — and the box serves it to crew at `/connect`.
+Drop the `.apk` from the release into the box's data directory — the
+readiness panel names the path, and any `crewbox*.apk` name works as
+downloaded — and the box serves it to crew at `/connect`.
 
 ## Running an event
 
