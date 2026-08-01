@@ -334,10 +334,30 @@ jobs:
       # pointless on a download page and confusing beside it. A glob quietly
       # gaining a file is invisible; a missing one is worse, because it looks
       # like a successful release that simply lacks your platform.
-      - name: The release has exactly the expected assets
+      # The version goes in the filename, because downloads all land in the
+      # same folder: three files called crewbox-win32-x64.exe tell an admin
+      # nothing, and "which one am I installing" was a real on-site question.
+      # Explicit mv per file, no globs — a build that failed to produce one
+      # fails here by name instead of shipping five assets.
+      - name: Stamp the version into the filenames
+        env:
+          V: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
-          EXPECTED="Crewbox.dmg crewbox-darwin-arm64 crewbox-darwin-x64 crewbox-linux-x64 crewbox-win32-x64.exe crewbox.apk"
+          cd artifacts
+          mv crewbox-win32-x64.exe "crewbox-win32-x64-$V.exe"
+          mv crewbox-linux-x64 "crewbox-linux-x64-$V"
+          mv crewbox-darwin-arm64 "crewbox-darwin-arm64-$V"
+          mv crewbox-darwin-x64 "crewbox-darwin-x64-$V"
+          mv Crewbox.dmg "Crewbox-$V.dmg"
+          mv crewbox.apk "crewbox-$V.apk"
+
+      - name: The release has exactly the expected assets
+        env:
+          V: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          EXPECTED="Crewbox-$V.dmg crewbox-darwin-arm64-$V crewbox-darwin-x64-$V crewbox-linux-x64-$V crewbox-win32-x64-$V.exe crewbox-$V.apk"
           ACTUAL="$(cd artifacts && ls | sort | tr '\n' ' ' | sed 's/ $//')"
           SORTED_EXPECTED="$(echo "$EXPECTED" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
           echo "assets: $ACTUAL"
@@ -364,13 +384,13 @@ jobs:
 
             | Platform | File |
             | --- | --- |
-            | Linux x64 | `crewbox-linux-x64` |
-            | Windows x64 | `crewbox-win32-x64.exe` |
-            | **macOS** | **`Crewbox.dmg`** — universal, works on Intel and Apple Silicon |
-            | macOS (bare binary) | `crewbox-darwin-arm64` / `crewbox-darwin-x64` |
-            | Android (sideload) | `crewbox.apk` — or drop it into the box's data dir to serve it at `/crewbox.apk` |
+            | Linux x64 | `crewbox-linux-x64-${{ needs.validate.outputs.version }}` |
+            | Windows x64 | `crewbox-win32-x64-${{ needs.validate.outputs.version }}.exe` |
+            | **macOS** | **`Crewbox-${{ needs.validate.outputs.version }}.dmg`** — universal, works on Intel and Apple Silicon |
+            | macOS (bare binary) | `crewbox-darwin-arm64-${{ needs.validate.outputs.version }}` / `-x64-` |
+            | Android (sideload) | `crewbox-${{ needs.validate.outputs.version }}.apk` — or drop it into the box's data dir (any crewbox*.apk name) to serve it at `/crewbox.apk` |
 
-            `Crewbox.dmg` is signed, notarised and stapled — it opens with no
+            The `.dmg` is signed, notarised and stapled — it opens with no
             warning, and with no internet. The bare `crewbox-darwin-*` binaries
             are not signed and still need **right-click → Open**. Windows warns
             about an unsigned app: **More info → Run anyway**. On Linux:
@@ -401,12 +421,12 @@ jobs:
 
             | Platform | File |
             | --- | --- |
-            | Linux x64 | `crewbox-linux-x64` |
-            | Windows x64 | `crewbox-win32-x64.exe` |
-            | **macOS** | **`Crewbox.dmg`** — universal, works on Intel and Apple Silicon |
-            | macOS (bare binary) | `crewbox-darwin-arm64` / `crewbox-darwin-x64` |
-            | Android | `crewbox.apk` |
+            | Linux x64 | `crewbox-linux-x64-${{ needs.validate.outputs.version }}` |
+            | Windows x64 | `crewbox-win32-x64-${{ needs.validate.outputs.version }}.exe` |
+            | **macOS** | **`Crewbox-${{ needs.validate.outputs.version }}.dmg`** — universal, works on Intel and Apple Silicon |
+            | macOS (bare binary) | `crewbox-darwin-arm64-${{ needs.validate.outputs.version }}` / `-x64-` |
+            | Android | `crewbox-${{ needs.validate.outputs.version }}.apk` |
 
-            `Crewbox.dmg` is signed and notarised — it just opens. The bare
+            The `.dmg` is signed and notarised — it just opens. The bare
             macOS binaries and the Windows `.exe` are unsigned and warn on
             first launch. On Linux: `chmod +x` then run.

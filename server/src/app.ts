@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, mkdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { rename, stat, unlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import cors from '@fastify/cors'
@@ -16,7 +16,7 @@ import { boxProbes, certNames, createEnvironmentCache, type Probes } from './env
 import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
-import { lanAdapters, lanIps } from './box.ts'
+import { lanAdapters, lanIps, latestApk } from './box.ts'
 import { boxReadiness, worstState } from './readiness.ts'
 import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
@@ -207,7 +207,7 @@ export interface AppDeps {
   trustProxy?: boolean
   /** Module ids this box enables; clients hide modules not listed. */
   modules?: string[]
-  /** Data directory root; /connect offers crewbox.apk from here when present. */
+  /** Data directory root; /connect offers the newest crewbox*.apk from here. */
   dataDir?: string
   /** Certificate material; when present the box serves HTTPS itself. */
   tls?: { cert: Buffer; key: Buffer; ca?: Buffer }
@@ -393,16 +393,23 @@ export function buildApp({
   // Public settings the pre-auth join screen and offline screen need.
   fastify.get('/api/config', () => publicConfig())
 
-  const apkPath = dataDir ? join(dataDir, 'crewbox.apk') : undefined
-  const apkAvailable = (): boolean => Boolean(apkPath && existsSync(apkPath))
+  // Any crewbox*.apk in the data directory, newest first — release assets
+  // carry the version in the filename, so the file works as downloaded.
+  const apkFile = (): string | null => (dataDir ? latestApk(dataDir) : null)
+  const apkAvailable = (): boolean => apkFile() !== null
 
   // Sideloadable Android app, dropped into DATA_DIR by the operator — no
-  // reverse-proxy configuration needed to distribute it on site.
+  // reverse-proxy configuration needed to distribute it on site. The URL
+  // stays /crewbox.apk whatever the file is called, so printed posters and
+  // the Android in-app update check never go stale; the download itself is
+  // named after the real file, which is where the version lives.
   fastify.get('/crewbox.apk', (_req, reply) => {
-    if (!apkPath || !apkAvailable()) return reply.code(404).send({ error: 'no APK installed' })
+    const apkPath = apkFile()
+    if (!apkPath) return reply.code(404).send({ error: 'no APK installed' })
+    const filename = basename(apkPath).replace(/[^\w.-]/g, '_')
     return reply
       .header('content-type', 'application/vnd.android.package-archive')
-      .header('content-disposition', 'attachment; filename="crewbox.apk"')
+      .header('content-disposition', `attachment; filename="${filename}"`)
       .send(createReadStream(apkPath))
   })
 

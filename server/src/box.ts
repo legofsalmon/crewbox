@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -95,6 +95,33 @@ export function lanIps(prefer = '', interfaces = networkInterfaces()): string[] 
     return [prefer, ...ips.filter((ip) => ip !== prefer)]
   }
   return ips
+}
+
+/**
+ * The Android app this box can offer on /connect: the newest crewbox*.apk in
+ * the data directory, or null when there is none.
+ *
+ * Release assets carry the version in the filename (crewbox-v0.9.5.apk), so
+ * the box takes any crewbox*.apk rather than demanding a rename to exactly
+ * crewbox.apk — a file downloaded from the release works as dropped. Newest
+ * by modification time wins, so upgrading is also just dropping a file.
+ */
+export function latestApk(dataDir: string): string | null {
+  try {
+    const apks = readdirSync(dataDir)
+      .filter((name) => /^crewbox.*\.apk$/i.test(name))
+      .flatMap((name) => {
+        try {
+          return [{ name, mtime: statSync(join(dataDir, name)).mtimeMs }]
+        } catch {
+          return [] // deleted between readdir and stat
+        }
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+    return apks[0] ? join(dataDir, apks[0].name) : null
+  } catch {
+    return null
+  }
 }
 
 /** Adapters an admin can choose between, for the setup and admin dropdowns. */

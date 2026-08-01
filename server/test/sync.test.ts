@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -1239,5 +1239,22 @@ describe('onboarding & runtime settings', () => {
     // Once installed, /connect advertises the download.
     const html = await (await fetch(`${baseUrl}/connect`)).text()
     expect(html).toContain('crewbox.apk')
+  })
+
+  it('serves the newest crewbox*.apk under the stable /crewbox.apk URL', async () => {
+    // Release assets carry the version in the filename (crewbox-v0.9.5.apk),
+    // so the box accepts any crewbox*.apk as downloaded — no rename step.
+    // Newest by mtime wins, so upgrading is dropping a file beside the old one.
+    writeFileSync(pathJoin(filesDir, 'crewbox.apk'), 'old-apk')
+    const old = new Date('2020-01-01')
+    utimesSync(pathJoin(filesDir, 'crewbox.apk'), old, old)
+    writeFileSync(pathJoin(filesDir, 'crewbox-v9.9.9.apk'), 'versioned-apk')
+
+    const res = await fetch(`${baseUrl}/crewbox.apk`)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('versioned-apk')
+    // The download is named after the real file — the version survives onto
+    // the phone — while the URL never changes, so posters don't go stale.
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="crewbox-v9.9.9.apk"')
   })
 })

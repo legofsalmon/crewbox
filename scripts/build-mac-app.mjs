@@ -252,9 +252,10 @@ mkdirSync(stage, { recursive: true })
 cpSync(app, join(stage, 'Crewbox.app'), { recursive: true })
 run('ln', ['-s', '/Applications', join(stage, 'Applications')])
 
-// Unversioned filename on purpose: the download page and install.sh both
-// link through releases/latest/download/<name>, which only resolves for a
-// stable asset name. The version travels in the volume name and the bundle.
+// Unversioned filename here: this is the internal artifact name the release
+// workflow expects — it stamps the version into the published filename
+// (Crewbox-v0.9.5.dmg). The version also travels in the volume name and the
+// bundle, so the mounted image says what it is.
 const dmg = join(outDir, 'Crewbox.dmg')
 run('hdiutil', [
   'create',

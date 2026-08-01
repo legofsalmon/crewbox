@@ -76,6 +76,18 @@ describe('box readiness', () => {
     expect(find(boxReadiness(input({ dataDir })), 'apk').state).toBe('ok')
   })
 
+  it('detects a version-stamped apk without a rename', () => {
+    // Release assets are named crewbox-v0.9.5.apk; demanding exactly
+    // crewbox.apk would make every download need a rename step.
+    const dataDir = tempDir()
+    writeFileSync(join(dataDir, 'crewbox-v0.9.5.apk'), 'stub')
+    expect(find(boxReadiness(input({ dataDir })), 'apk').state).toBe('ok')
+    // Other crewbox files in the data dir are not apks.
+    const empty = tempDir()
+    writeFileSync(join(empty, 'crewbox.db'), 'stub')
+    expect(find(boxReadiness(input({ dataDir: empty })), 'apk').state).toBe('off')
+  })
+
   it('nudges when nobody has joined yet', () => {
     const crew = find(boxReadiness(input({ crewCount: 0 })), 'crew')
     expect(crew.state).toBe('limited')

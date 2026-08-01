@@ -98,8 +98,8 @@ join and become admin anyway, so an open form grants nothing extra, and the
 moment someone joins it closes and the admin panel takes over.
 
 **`/connect`** is the live onboarding page: a QR of the join URL (event PIN
-prefilled), the PIN in print, and the Android APK download when
-`crewbox.apk` sits in the data directory. The event name, event PIN and Wi-Fi
+prefilled), the PIN in print, and the Android APK download when a
+`crewbox*.apk` sits in the data directory. The event name, event PIN and Wi-Fi
 hint are all changeable at runtime from the admin panel.
 
 **Admin → This box** reports what actually works on that machine right now —

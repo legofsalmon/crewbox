@@ -188,9 +188,11 @@
       <div class="others" id="others"></div>
 
       <!-- Filled in from the GitHub API on load, and left empty if that fails.
-           Nothing here is load-bearing: the download links resolve through
-           /releases/latest on GitHub's side, so they work with the script
-           switched off entirely. -->
+           The same API call upgrades the download links from the releases
+           page to direct asset downloads — asset filenames carry the version
+           (crewbox-win32-x64-v0.9.5.exe), so the names can't be baked in
+           here. With the script off or the API down, every link still lands
+           on the releases page, one click from the same files. -->
       <p class="under" id="version"></p>
 
       <h2>Or one line</h2>
@@ -267,40 +269,47 @@
     <script>
       // Name the file the visitor actually needs, rather than making a
       // production manager work out what "darwin-arm64" means.
-      const DIST = 'https://github.com/legofsalmon/crewbox-dist/releases/latest/download/'
+      //
+      // Every link starts life pointing at the releases page — the one URL
+      // that can never 404 — and is upgraded to a direct download once the
+      // API says what the latest release's assets are actually called.
+      // Asset filenames carry the version (crewbox-win32-x64-v0.9.5.exe),
+      // so they're matched by shape here, never spelled out.
+      const RELEASES = 'https://github.com/legofsalmon/crewbox-dist/releases/latest'
       // The Mac download is a universal .dmg, so there is no Intel vs Apple
       // Silicon choice to get wrong — which matters, because a browser can't
       // tell them apart anyway (both report "MacIntel").
       const BUILDS = [
-        { id: 'Crewbox.dmg', label: 'macOS' },
-        { id: 'crewbox-win32-x64.exe', label: 'Windows' },
-        { id: 'crewbox-linux-x64', label: 'Linux' },
-        { id: 'crewbox.apk', label: 'Android app' },
+        { id: 'mac', label: 'macOS', matches: (n) => n.endsWith('.dmg') },
+        { id: 'windows', label: 'Windows', matches: (n) => n.startsWith('crewbox-win32-x64-') },
+        { id: 'linux', label: 'Linux', matches: (n) => n.startsWith('crewbox-linux-x64-') },
+        { id: 'android', label: 'Android app', matches: (n) => n.endsWith('.apk') },
       ]
 
       const ua = navigator.userAgent
       const guess = /Mac/i.test(ua)
-        ? 'Crewbox.dmg'
+        ? 'mac'
         : /Win/i.test(ua)
-          ? 'crewbox-win32-x64.exe'
+          ? 'windows'
           : /Android/i.test(ua)
-            ? 'crewbox.apk'
+            ? 'android'
             : /Linux/i.test(ua)
-              ? 'crewbox-linux-x64'
+              ? 'linux'
               : null
 
       const button = document.getElementById('download')
       const caption = document.getElementById('platform')
       const others = document.getElementById('others')
 
+      const links = {}
       const chosen = BUILDS.find((b) => b.id === guess)
       if (chosen) {
-        button.href = DIST + chosen.id
+        links[chosen.id] = button
         button.textContent = 'Download for ' + chosen.label
         caption.textContent =
-          chosen.id === 'crewbox.apk'
+          chosen.id === 'android'
             ? 'The phone app. To run the box itself, use a laptop.'
-            : chosen.id === 'Crewbox.dmg'
+            : chosen.id === 'mac'
               ? 'Works on any Mac, Intel or Apple Silicon. Open it and drag Crewbox to Applications.'
               : 'About 120 MB — it carries the app and the voice server inside it.'
       }
@@ -308,29 +317,35 @@
       for (const build of BUILDS) {
         if (build.id === guess) continue
         const link = document.createElement('a')
-        link.href = DIST + build.id
+        link.href = RELEASES
         link.textContent = build.label
         others.appendChild(link)
+        links[build.id] = link
       }
 
-      // Which version the buttons above will actually hand you.
+      // Which version the buttons above will actually hand you — and the
+      // asset URLs themselves, since versioned filenames mean the names
+      // change every release.
       //
       // Asked at load time rather than baked in at build time, because the
-      // links resolve through /releases/latest — so the only honest answer is
-      // whatever GitHub calls latest right now, and a number written into this
-      // page would start lying the moment a release was cut without a site
-      // redeploy.
+      // only honest answer is whatever GitHub calls latest right now, and a
+      // number written into this page would start lying the moment a release
+      // was cut without a site redeploy.
       //
       // Best-effort by design. Unauthenticated GitHub allows 60 calls an hour
       // per address, and this page is also read on flaky venue Wi-Fi; when it
-      // fails the line simply stays empty rather than showing a stale or wrong
-      // version, which is worse than showing none.
+      // fails the version line stays empty and every button lands on the
+      // releases page — one click further from the same files, never a 404.
       fetch('https://api.github.com/repos/legofsalmon/crewbox-dist/releases/latest', {
         headers: { accept: 'application/vnd.github+json' },
       })
         .then((res) => (res.ok ? res.json() : null))
         .then((release) => {
           if (!release?.tag_name) return
+          for (const build of BUILDS) {
+            const asset = (release.assets ?? []).find((a) => build.matches(a.name))
+            if (asset?.browser_download_url) links[build.id].href = asset.browser_download_url
+          }
           const el = document.getElementById('version')
           const when = release.published_at
             ? new Date(release.published_at).toLocaleDateString(undefined, {
@@ -344,7 +359,8 @@
             : `Latest release ${release.tag_name}`
         })
         .catch(() => {
-          // Offline, rate-limited, or GitHub having a day. The downloads work.
+          // Offline, rate-limited, or GitHub having a day. The buttons still
+          // point at the releases page.
         })
     </script>
   </body>
