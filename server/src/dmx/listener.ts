@@ -79,8 +79,12 @@ export class DmxTransmitAttempt extends Error {
  * future change that tries to answer an ArtPoll or "just send one discovery
  * packet" fails loudly in development instead of quietly putting traffic on a
  * show network. The test suite asserts it throws.
+ *
+ * Exported because the media-network watchers (server/src/netwatch) make the
+ * same promise on the same grounds, and one implementation keeps it one
+ * promise.
  */
-function receiveOnly(socket: dgram.Socket): dgram.Socket {
+export function receiveOnly(socket: dgram.Socket): dgram.Socket {
   const refuse = () => {
     throw new DmxTransmitAttempt()
   }

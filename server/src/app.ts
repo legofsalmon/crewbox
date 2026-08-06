@@ -20,6 +20,8 @@ import { lanAdapters, lanIps, latestApk } from './box.ts'
 import { boxReadiness, worstState } from './readiness.ts'
 import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
+import { mediaReadiness } from './netwatch/readiness.ts'
+import type { NetWatch } from './netwatch/listener.ts'
 import { setupPage } from './setup.ts'
 import {
   isVoiceUpgrade,
@@ -218,6 +220,8 @@ export interface AppDeps {
    * Omit and the admin panel says so rather than reporting a silent rig.
    */
   dmx?: DmxListener
+  /** Media-network watchers (PTP/mDNS/SAP), when this box was asked to watch. */
+  netwatch?: NetWatch
   logger?: boolean
 }
 
@@ -249,6 +253,7 @@ export function buildApp({
   tls,
   probes,
   dmx,
+  netwatch,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -1166,6 +1171,20 @@ export function buildApp({
             [],
             Date.now()
           ),
+      // Present only when the box was asked to watch (CREWBOX_WATCH=1):
+      // unlike lighting, this panel is opt-in and invisible until then, so
+      // an audio-less rig never carries an empty section.
+      ...(netwatch
+        ? {
+            media: mediaReadiness(
+              netwatch.snapshot(),
+              netwatch.ptp.status(Date.now()),
+              netwatch.mdns.roster(),
+              netwatch.sap.roster(),
+              Date.now()
+            ),
+          }
+        : {}),
     }
   })
 
