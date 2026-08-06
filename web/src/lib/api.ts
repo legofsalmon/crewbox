@@ -63,6 +63,11 @@ export interface AdminSettings {
    * is not, and the other way round. Optional so an older box still parses.
    */
   lighting?: ReadinessCheck[]
+  /**
+   * The audio/media network (PTP clock, Dante/NDI rosters, AES67 streams).
+   * Present only when the box was asked to watch (CREWBOX_WATCH=1).
+   */
+  media?: ReadinessCheck[]
 }
 
 export interface EnvCheck {

@@ -5,6 +5,7 @@ import { randomInt } from 'node:crypto'
 import { config, dmxMode, warnOnDefaults } from './config.ts'
 import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
 import { DmxListener, parseUniverseList } from './dmx/listener.ts'
+import { NetWatch } from './netwatch/listener.ts'
 import {
   advertisedUrls,
   boxDataDir,
@@ -154,6 +155,16 @@ async function main(): Promise<void> {
           ...(boot.dmxIface ? { interfaceIp: boot.dmxIface } : {}),
         })
 
+  // Watching the audio/media network (PTP clock, Dante/NDI rosters, AES67
+  // streams), when asked. Same off-by-default posture and the same
+  // structural read-only guarantee as the lighting listener.
+  const netwatch = config.watch.enabled
+    ? new NetWatch({
+        ...(config.watch.interfaceIp ? { interfaceIp: config.watch.interfaceIp } : {}),
+        log: console,
+      })
+    : undefined
+
   const app = buildApp({
     store,
     eventPin: config.eventPin,
@@ -177,6 +188,7 @@ async function main(): Promise<void> {
       },
     },
     ...(dmx ? { dmx } : {}),
+    ...(netwatch ? { netwatch } : {}),
     ...(tls ? { tls } : {}),
   })
   const hub = app.hub
@@ -224,6 +236,10 @@ async function main(): Promise<void> {
   if (dmx) {
     dmx.start()
     app.log.info(`lighting network: listening (${boot.dmxMode})`)
+  }
+  if (netwatch) {
+    netwatch.start()
+    app.log.info('media network: watching (PTP clock, mDNS rosters, SAP streams)')
   }
 
   if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
@@ -296,6 +312,7 @@ async function main(): Promise<void> {
       // that is on its way down.
       if (box) clearBoxStatus(dataDir)
       hub.close()
+      netwatch?.stop()
       await closeLoopback?.()
       await app.close()
       await embedded?.stop()

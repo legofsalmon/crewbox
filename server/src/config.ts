@@ -112,6 +112,22 @@ export const config = {
      */
     artnetBase: Number(process.env.CREWBOX_DMX_ARTNET_BASE ?? 1) || 0,
   },
+  /**
+   * Watching the audio/media network: PTP clock health, the Dante/NDI device
+   * roster (mDNS), and the AES67 stream directory (SAP). Off unless asked,
+   * and read-only however it is configured — the sockets it opens have had
+   * `send` removed (server/src/netwatch/listener.ts), the same guarantee the
+   * lighting listener makes.
+   */
+  watch: {
+    enabled: process.env.CREWBOX_WATCH === '1',
+    /**
+     * Interface to join the multicast groups on — not a bind address, for
+     * the same Linux reason as CREWBOX_DMX_IFACE. On a box with more than
+     * one card this is effectively required.
+     */
+    interfaceIp: process.env.CREWBOX_WATCH_IFACE?.trim() || undefined,
+  },
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
     /**

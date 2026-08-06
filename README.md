@@ -13,9 +13,11 @@ Crewbox unifies [inter](https://github.com/legofsalmon/inter) and
 [Live Patch](https://github.com/legofsalmon/livepatch); both full histories are
 merged into this repo. See [docs/UNIFICATION_PLAN.md](docs/UNIFICATION_PLAN.md)
 for the plan and roadmap, [docs/MODULES.md](docs/MODULES.md) for how to add
-a module for another department, and
-[docs/DMX_MONITORING.md](docs/DMX_MONITORING.md) for the planned (not yet
-built) read-only Art-Net and sACN listener.
+a module for another department,
+[docs/DMX_MONITORING.md](docs/DMX_MONITORING.md) for the read-only Art-Net
+and sACN listener, and [docs/NETWATCH.md](docs/NETWATCH.md) for the
+audio/media-network watchers (PTP clock health, Dante/NDI rosters, AES67
+streams — same read-only guarantee).
 
 ## Modules
 
