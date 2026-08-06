@@ -14,6 +14,7 @@ import {
   extractWebDist,
   isBox,
   openBrowser,
+  portInUse,
   printBoxBanner,
   printBoxStatus,
   startTrayHelper,
@@ -105,6 +106,27 @@ async function main(): Promise<void> {
     console.warn(
       `crew network is set to ${boot.iface} but no adapter has that address — answering on all adapters`
     )
+  }
+
+  // Which address to answer on. An explicit HOST always wins — someone who set
+  // it knows what they want. Otherwise CREWBOX_IFACE binds the box to the crew
+  // adapter, so a machine that also has a leg on the lighting VLAN answers
+  // nothing there — not even a port scan. Decided here, before anything binds,
+  // because the port pre-flight below and the real listen further down must
+  // agree on the address.
+  const bindHost = config.hostExplicit ? config.host : ifaceUp ? boot.iface : config.host
+
+  // Refuse a second box before it does anything destructive. If this port is
+  // already held, another crewbox owns this data directory — and its voice
+  // server. Without this, the SFU reap in startEmbeddedLiveKit below would
+  // kill *that* box's live SFU (taking voice down mid-show) and this start
+  // would then die on the port bind regardless. Fail first, touch nothing.
+  if (box && (await portInUse(bindHost, config.port))) {
+    console.error(
+      `port ${config.port} is already in use on ${bindHost} — a crewbox is already running ` +
+        `here (stop it with: crewbox --stop), or something else holds the port. Not starting.`
+    )
+    process.exit(1)
   }
 
   // Voice. An explicit LIVEKIT_URL always wins — someone pointing at an SFU
@@ -211,11 +233,7 @@ async function main(): Promise<void> {
     })
   }
 
-  // Which address to answer on. An explicit HOST always wins — someone who
-  // set it knows what they want. Otherwise CREWBOX_IFACE binds the box to
-  // the crew adapter, so a machine that also has a leg on the lighting VLAN
-  // answers nothing there — not even a port scan.
-  const bindHost = config.hostExplicit ? config.host : ifaceUp ? boot.iface : config.host
+  // Bind the address resolved up top (see bindHost, before the voice block).
   await app.listen({ host: bindHost, port: config.port })
   attachWs(app)
 
