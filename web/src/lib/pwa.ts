@@ -2,6 +2,9 @@ import { registerSW } from 'virtual:pwa-register'
 
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
 
+/** The live SW registration, so an update check can be forced on demand. */
+let swRegistration: ServiceWorkerRegistration | undefined
+
 /**
  * Register the service worker in prompt mode. When a new build is deployed,
  * `onNeedRefresh` fires while the app is running (or on next open) — we tell
@@ -13,6 +16,7 @@ export function initPwa(onUpdateReady: () => void): (reload?: boolean) => Promis
   const updateSW = registerSW({
     onNeedRefresh: onUpdateReady,
     onRegisteredSW(_swUrl, registration) {
+      swRegistration = registration
       // Re-check for a new build every 30 min so long-running installed apps
       // (a phone left in a pocket all shift) eventually notice a redeploy.
       if (registration) {
@@ -21,4 +25,17 @@ export function initPwa(onUpdateReady: () => void): (reload?: boolean) => Promis
     },
   })
   return updateSW
+}
+
+/**
+ * Force the service worker to check for a new build now.
+ *
+ * The reconnect welcome can spot a redeploy (its server version differs) long
+ * before the 30-minute periodic check would — but the "Reload" pill only does
+ * anything once the SW has actually fetched the new worker and it is waiting.
+ * Kicking the check here makes that worker appear within seconds, so the pill
+ * the welcome raised is not a dead button until the next periodic sweep.
+ */
+export function checkForUpdate(): void {
+  void swRegistration?.update()
 }
