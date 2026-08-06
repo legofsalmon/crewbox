@@ -309,6 +309,11 @@ export class Hub {
       return
     }
     this.store.touchSession(msg.token)
+    // A repeated hello on the same socket must not double-count presence: the
+    // close handler decrements exactly once, so onHello has to increment at
+    // most once per connection. Remember whether this socket was already
+    // authed before adopting the new identity, and reconcile below.
+    const previous = conn.user
     conn.user = user
 
     const channels = this.store.listChannelsFor(user.id)
@@ -362,7 +367,17 @@ export class Hub {
         Date.now() - DELETION_REPLAY_MS
       ),
     })
-    this.markOnline(user.id, conn.remote)
+    // Count this socket exactly once. A first hello brings the user online; a
+    // repeat on an already-authed socket is presence-idempotent (a client
+    // re-sending hello can't inflate the online tally); a re-auth as someone
+    // else — unusual, but possible — moves the one count from the old id to
+    // the new so `close`'s single decrement still balances.
+    if (!previous) {
+      this.markOnline(user.id, conn.remote)
+    } else if (previous.id !== user.id) {
+      this.markOffline(previous.id, conn.remote)
+      this.markOnline(user.id, conn.remote)
+    }
   }
 
   private onSend(conn: Conn, user: User, msg: Extract<ClientMessage, { type: 'send' }>): void {
