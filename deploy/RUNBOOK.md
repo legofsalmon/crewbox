@@ -110,8 +110,12 @@ deployment choice.
    </plist>
    ```
 
-   then `launchctl load` that file once. A renewal lands at the box's next
-   start — per-gig, that's the next gig; a running event is never touched.
+   then `launchctl load` that file once. Or skip the schedule and run the
+   script by hand as part of the pre-gig ritual — it is safe any time, and
+   does nothing unless the certificate actually needs renewing. Manual mode
+   just means the renewal belongs on the same checklist as charging the
+   radios. A renewal lands at the box's next start — per-gig, that's the
+   next gig; a running event is never touched.
 
 2. **Software up to date.** Which of these you do depends on how the box was
    installed:
