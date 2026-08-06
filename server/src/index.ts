@@ -244,8 +244,12 @@ async function main(): Promise<void> {
   if (box) {
     // Nobody has joined yet means nobody has set this box up yet, so send the
     // admin to the three questions rather than to a QR for an unnamed event.
-    // /setup redirects to /connect once anyone has joined, so a box that has
-    // run before goes straight to the QR.
+    // A box that has run before opens the app itself: whoever launches a
+    // running box is almost always already crew, and `/` is the page that
+    // adapts — the app when this browser holds a session, the join screen
+    // when it doesn't. The QR poster page stays one step away (the banner
+    // prints /connect, and the menu-bar helper links it) for the screens
+    // whose job is showing the QR to everyone else.
     // A Mac box that sleeps takes the whole crew's comms with it.
     preventSleep(app.log)
     const firstRun = store.countUsers() === 0
@@ -279,7 +283,7 @@ async function main(): Promise<void> {
     // After the status file, which is the only thing it reads.
     startTrayHelper(dataDir)
 
-    openBrowser(`${origin}${firstRun ? '/setup' : '/connect'}`)
+    openBrowser(`${origin}${firstRun ? '/setup' : '/'}`)
   }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {

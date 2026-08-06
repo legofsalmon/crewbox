@@ -1210,6 +1210,9 @@ describe('onboarding & runtime settings', () => {
     const html = await res.text()
     expect(html).toContain('<svg')
     expect(html).toContain(`Event PIN: <strong>${EVENT_PIN}</strong>`)
+    // The URL under the QR is the join link itself, PIN prefilled — on a
+    // phone this page was shared to, tapping it is scanning it.
+    expect(html).toMatch(new RegExp(`<a href="https?://[^"]+/\\?pin=${EVENT_PIN}">`))
     // No APK installed in this test — the download link must not appear.
     expect(html).not.toContain('crewbox.apk')
   })
