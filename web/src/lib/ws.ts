@@ -5,6 +5,14 @@ import { wsUrl } from './server.ts'
 const HEARTBEAT_MS = 10_000
 const DEAD_AFTER_MS = 25_000
 const MAX_BACKOFF_MS = 10_000
+/**
+ * How long a socket may sit in CONNECTING before it is abandoned. A captive
+ * portal or a black-hole network can leave a socket connecting forever,
+ * firing neither onopen nor onclose — and because `connect()` bails while a
+ * socket exists, that pins the client and turns every reconnect, the Retry
+ * button included, into a no-op. This bounds the wait.
+ */
+const CONNECT_TIMEOUT_MS = 10_000
 
 export interface WsHandlers {
   /** Called before hello is sent; supplies auth + resume cursors. */
@@ -25,6 +33,7 @@ export class WsClient {
   private attempts = 0
   private reconnectTimer: number | null = null
   private heartbeatTimer: number | null = null
+  private connectTimer: number | null = null
   private lastActivity = 0
   private stopped = false
   private rttSamples: number[] = []
@@ -70,6 +79,9 @@ export class WsClient {
       this.send({ type: 'ping', t: Date.now() })
       return
     }
+    // A socket exists but isn't OPEN — it is stuck CONNECTING. Abandon it, or
+    // the connect() below no-ops and Retry does nothing.
+    this.dropSocket()
     this.attempts = 0
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer)
@@ -78,14 +90,37 @@ export class WsClient {
     this.connect()
   }
 
+  /** Tear down the current socket without triggering a scheduled reconnect. */
+  private dropSocket(): void {
+    if (!this.ws) return
+    const ws = this.ws
+    this.ws = null // so the onclose identity guard bails and won't reschedule
+    this.clearTimers()
+    try {
+      ws.close()
+    } catch {
+      // already closing/closed
+    }
+  }
+
   private connect(): void {
     if (this.stopped || this.ws) return
     this.handlers.onStatus('connecting')
     const ws = new WebSocket(wsUrl())
     this.ws = ws
     this.lastActivity = Date.now()
+    // Force a stuck-CONNECTING socket closed so onclose frees this.ws and a
+    // normal backoff reconnect follows — without this, a black-hole network
+    // pins the client at "connecting" and no retry can recover.
+    this.connectTimer = window.setTimeout(() => {
+      if (this.ws === ws && ws.readyState !== WebSocket.OPEN) ws.close()
+    }, CONNECT_TIMEOUT_MS)
 
     ws.onopen = () => {
+      if (this.connectTimer !== null) {
+        clearTimeout(this.connectTimer)
+        this.connectTimer = null
+      }
       const { token, cursors } = this.handlers.hello()
       ws.send(JSON.stringify({ type: 'hello', token, cursors }))
       this.startHeartbeat()
@@ -148,7 +183,9 @@ export class WsClient {
   private clearTimers(): void {
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer)
     if (this.heartbeatTimer !== null) clearInterval(this.heartbeatTimer)
+    if (this.connectTimer !== null) clearTimeout(this.connectTimer)
     this.reconnectTimer = null
     this.heartbeatTimer = null
+    this.connectTimer = null
   }
 }

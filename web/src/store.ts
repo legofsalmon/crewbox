@@ -24,7 +24,7 @@ import {
 } from './lib/alerts.ts'
 import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
 import type { VoiceManager } from './lib/voice.ts'
-import { APP_VERSION, initPwa } from './lib/pwa.ts'
+import { APP_VERSION, checkForUpdate, initPwa } from './lib/pwa.ts'
 import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
 import { currentRoute, navigate, onRouteChange, type Route } from './shell/router.ts'
@@ -33,19 +33,28 @@ const TOKEN_KEY = 'crewbox:token'
 const THEME_KEY = 'crewbox:theme'
 const SSID_KEY = 'crewbox:wifi-ssid'
 const EVENT_NAME_KEY = 'crewbox:event-name'
+const MODULES_KEY = 'crewbox:modules'
 const TYPING_TTL_MS = 4000
 const TYPING_THROTTLE_MS = 2500
 
 /**
- * Last-known Wi-Fi SSID and event name, cached so a cold offline start shows
- * the event it belongs to and the network to rejoin rather than generic copy.
+ * Last-known Wi-Fi SSID, event name and enabled modules, cached so a cold
+ * offline start shows the event it belongs to, the network to rejoin, and the
+ * department panes this box actually runs — rather than generic copy.
+ *
+ * Modules matter most: without caching them, a phone that reopens the app with
+ * no signal falls back to chat-only, hiding the patch sheet and lighting the
+ * crew were using minutes ago. Offline is the default here, so the last-known
+ * shape has to survive a cold start.
  */
 function initialConfig(): PublicConfig {
+  const cachedModules = localStorage.getItem(MODULES_KEY)
   return {
     eventName: localStorage.getItem(EVENT_NAME_KEY) ?? '',
     wifiSsid: localStorage.getItem(SSID_KEY) ?? '',
     voiceEnabled: true,
-    modules: ['chat'],
+    // Chat is always on; the cache carries whatever else this box last ran.
+    modules: cachedModules ? cachedModules.split(',').filter(Boolean) : ['chat'],
   }
 }
 
@@ -57,6 +66,8 @@ function remember(key: string, value: string | undefined): void {
 function rememberConfig(config: PublicConfig): void {
   remember(SSID_KEY, config.wifiSsid)
   remember(EVENT_NAME_KEY, config.eventName)
+  // So the next cold offline start shows the same department panes.
+  remember(MODULES_KEY, config.modules.join(','))
 }
 
 export interface Pending {
@@ -387,6 +398,9 @@ export const useStore = create<AppState>()((set, get) => {
       navigator.serviceWorker?.controller
     ) {
       set({ updateReady: true })
+      // Kick the SW to fetch the new build now, so the pill we just raised
+      // isn't a dead button until the next 30-minute periodic check.
+      checkForUpdate()
     }
 
     // Channels where the replay was truncated have a gap between our cache
@@ -448,9 +462,11 @@ export const useStore = create<AppState>()((set, get) => {
     }
 
     // A protocol mismatch means this bundle predates the server (they deploy
-    // in lockstep) — surface the reload pill immediately.
+    // in lockstep) — surface the reload pill immediately, and kick the SW so
+    // the new worker is waiting by the time the pill is tapped.
     if (msg.protocolVersion !== undefined && msg.protocolVersion !== PROTOCOL_VERSION) {
       set({ updateReady: true })
+      checkForUpdate()
     }
     // The channel on screen counts as read while the app is focused.
     const activeId = get().activeChannelId
