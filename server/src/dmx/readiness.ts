@@ -1,6 +1,6 @@
 import type { ReadinessCheck } from '../readiness.ts'
 import type { DmxListenerStatus } from './listener.ts'
-import type { DiscoveredSource, UniverseHealth } from './state.ts'
+import type { ArtNode, DiscoveredSource, DmxOutage, UniverseHealth } from './state.ts'
 import { ARTNET_MERGE_SOURCES } from './types.ts'
 
 /**
@@ -39,11 +39,19 @@ const ago = (now: number, then: number): string => {
   return `${Math.round(secs / 60)} min ago`
 }
 
+/** Wall-clock HH:MM in the box's own timezone, for "went dark at 14:32". */
+const clock = (at: number): string => new Date(at).toTimeString().slice(0, 5)
+
+/** Loss below this is rounding noise on a UDP network; at or above, a fault. */
+const LOSS_REPORT_THRESHOLD = 0.01
+
 export function dmxReadiness(
   status: DmxListenerStatus,
   universes: UniverseHealth[],
   now: number,
-  discovered: DiscoveredSource[] = []
+  discovered: DiscoveredSource[] = [],
+  nodes: ArtNode[] = [],
+  outages: DmxOutage[] = []
 ): ReadinessCheck[] {
   if (status.mode === 'off') {
     return [
@@ -155,6 +163,62 @@ export function dmxReadiness(
     })
   }
 
+  // --- Who is out there -----------------------------------------------------
+  //
+  // Overheard, never solicited: consoles poll their nodes constantly, and the
+  // replies are broadcast, so an inventory falls out of listening. Like the
+  // advertising check above it survives the nothing-arriving early return —
+  // "these nodes were announcing themselves until 14:32" is worth most
+  // exactly when the data has stopped.
+  if (nodes.length > 0) {
+    const stale = (node: ArtNode) => now - node.lastSeen > 5 * 60_000
+    checks.push({
+      id: 'dmx-nodes',
+      label: 'Art-Net nodes',
+      state: 'ok',
+      detail:
+        `${plural(nodes.length, 'node has', 'nodes have')} announced themselves: ` +
+        nodes
+          .slice(0, 6)
+          .map(
+            (node) =>
+              `${node.name || node.longName || node.ip}${node.name || node.longName ? ` (${node.ip})` : ''}` +
+              (stale(node) ? ` — last seen ${ago(now, node.lastSeen)}` : '')
+          )
+          .join(', ') +
+        (nodes.length > 6 ? `, and ${nodes.length - 6} more` : '') +
+        '. Heard because consoles poll; crewbox never polls.',
+    })
+  }
+
+  // --- Did everything die at once ------------------------------------------
+  //
+  // Before the generic "nothing arriving" check, because it is the diagnosis
+  // that check can't make: N universes going dark within moments of each
+  // other is one fault about the path, and reporting it as N silences sends
+  // someone to check N desks that are all fine.
+  for (const outage of outages) {
+    const label = outage.protocol === 'sacn' ? 'sACN' : 'Art-Net'
+    checks.push({
+      id: `dmx-outage-${outage.protocol}`,
+      label: 'Lighting network outage',
+      state: 'limited',
+      detail:
+        `All ${plural(outage.universes.length, `${label} universe`)} ` +
+        `(${summarise(outage.universes)}) went silent within moments of each other at ` +
+        `${clock(outage.at)}.` +
+        (outage.otherProtocolAlive
+          ? outage.protocol === 'sacn'
+            ? ' Art-Net broadcast is still arriving, so the cable and the box are fine — multicast delivery failed, which points at the switch or IGMP snooping, not at the desk.'
+            : ' sACN multicast is still arriving, so the cable and the box are fine — broadcast traffic stopped, which points at switch filtering, not at the desk.'
+          : ' Simultaneous loss is one network fault — a cable, a switch, a VLAN — not every source failing at once.'),
+      fix:
+        outage.otherProtocolAlive && outage.protocol === 'sacn'
+          ? 'Check the switch: IGMP snooping without a querier drops multicast a few minutes after the last join. This notice clears itself when data resumes.'
+          : 'Check the box’s cable and the switch before touching any desk. This notice clears itself when data resumes.',
+    })
+  }
+
   // --- Is anything actually arriving --------------------------------------
   if (live.length === 0) {
     checks.push({
@@ -211,6 +275,36 @@ export function dmxReadiness(
         (crowded
           ? ` An Art-Net node merges at most ${ARTNET_MERGE_SOURCES} sources and ignores any beyond that, so one of these is being discarded entirely.`
           : ''),
+    })
+  }
+
+  // --- Are frames going missing --------------------------------------------
+  //
+  // Measured from the sequence numbers both protocols already carry, with
+  // reordered stragglers refunded — so a number here is loss, not jitter.
+  // The threshold keeps rounding noise off the panel; a rig genuinely losing
+  // 1% of frames flickers visibly on fades and deserves the line.
+  const lossy = live.flatMap((u) =>
+    u.sources
+      .filter((s) => (s.lossPct ?? 0) >= LOSS_REPORT_THRESHOLD)
+      .map((s) => ({ universe: u.universe, source: s }))
+  )
+  if (lossy.length > 0) {
+    checks.push({
+      id: 'dmx-loss',
+      label: 'Frames going missing',
+      state: 'limited',
+      detail:
+        lossy
+          .slice(0, 4)
+          .map(
+            ({ universe, source }) =>
+              `Universe ${universe}: losing ${Math.round((source.lossPct ?? 0) * 100)}% of frames from ${
+                source.name || source.id.slice(0, 8)
+              }`
+          )
+          .join('; ') + (lossy.length > 4 ? `; and ${lossy.length - 4} more` : ''),
+      fix: 'Frames are vanishing between that source and this box. Look at the path — Wi-Fi bridges, daisy-chained switches, a duplex mismatch — because a path that is lossy to this box is usually lossy to the nodes too.',
     })
   }
 

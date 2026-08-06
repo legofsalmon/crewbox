@@ -163,7 +163,7 @@ describe('who is sending', () => {
     const state = new DmxState()
     state.apply(frame({ protocol: 'artnet', sourceId: '2.0.0.7', sourceName: '' }), 1000)
     expect(state.health()[0].sources[0].name).toBe('')
-    state.noteNode('2.0.0.7', 'Stage Left Node')
+    state.noteNode({ ip: '2.0.0.7', shortName: 'SL Node', longName: 'Stage Left Node' }, 1500)
     expect(state.health()[0].sources[0].name).toBe('Stage Left Node')
   })
 })
@@ -282,6 +282,203 @@ describe('sequence arithmetic', () => {
     expect(signedByteDiff(4, 5)).toBe(-1)
     expect(signedByteDiff(127, 0)).toBe(127)
     expect(signedByteDiff(128, 0)).toBe(-128)
+  })
+})
+
+describe('frames going missing', () => {
+  /** Send `count` frames from `start`, skipping the sequence numbers named. */
+  const send = (
+    state: DmxState,
+    from: number,
+    count: number,
+    skip: number[] = [],
+    startAt = 1000,
+    gapMs = 33
+  ): number => {
+    let at = startAt
+    for (let seq = from; seq < from + count; seq++) {
+      if (!skip.includes(seq & 0xff)) state.apply(frame({ sequence: seq & 0xff }), at)
+      at += gapMs
+    }
+    return at
+  }
+
+  it('reads sequence gaps as loss once a window completes', () => {
+    const state = new DmxState()
+    // ~330 frames over 11 s with 10 skipped: 10 missed of 330 sent ≈ 3%.
+    // Skip values chosen so their +256 counterparts fall past frame 333 —
+    // the sequence wraps, and a value under 78 would be skipped twice.
+    const skipped = [100, 101, 102, 103, 104, 150, 151, 152, 153, 154]
+    send(state, 1, 333, skipped)
+    const [health] = state.health()
+    const loss = health.sources[0].lossPct
+    expect(loss).not.toBeNull()
+    expect(loss!).toBeGreaterThan(0.02)
+    expect(loss!).toBeLessThan(0.04)
+  })
+
+  it('reports zero loss for a clean stream, not null and not noise', () => {
+    const state = new DmxState()
+    send(state, 1, 333)
+    expect(state.health()[0].sources[0].lossPct).toBe(0)
+  })
+
+  it('refunds a straggler the network reordered rather than lost', () => {
+    const state = new DmxState()
+    // 5 arrives late: skipped at its slot (counted missing), then delivered.
+    const at = send(state, 1, 4) // 1..4
+    state.apply(frame({ sequence: 6 }), at) // gap: 5 counted missing
+    state.apply(frame({ sequence: 5 }), at + 5) // the straggler arrives
+    send(state, 7, 320, [], at + 33)
+    expect(state.health()[0].sources[0].lossPct).toBe(0)
+  })
+
+  it('reads a big forward jump as a source restart, not a massacre', () => {
+    const state = new DmxState()
+    const at = send(state, 1, 10)
+    // The console rebooted and its sequence leapt. Counting the jump as loss
+    // would report a healthy desk as losing half its frames for ten seconds.
+    state.apply(frame({ sequence: 200 }), at)
+    send(state, 201, 320, [], at + 33)
+    expect(state.health()[0].sources[0].lossPct).toBe(0)
+  })
+
+  it('cannot say anything about an unsequenced source', () => {
+    const state = new DmxState()
+    for (let i = 0; i < 400; i++) {
+      state.apply(
+        frame({ protocol: 'artnet', sourceId: '2.0.0.7', sequence: 0, sequenced: false }),
+        1000 + i * 33
+      )
+    }
+    // Art-Net with sequencing disabled has no gaps to count. Null, not 0% —
+    // 0% would be the panel inventing evidence.
+    expect(state.health()[0].sources[0].lossPct).toBeNull()
+  })
+
+  it('recovers to the truth after a lossy spell ends', () => {
+    const state = new DmxState()
+    send(state, 1, 333, [100, 101, 102, 103, 104, 150, 151, 152, 153, 154])
+    expect(state.health()[0].sources[0].lossPct).not.toBeNull()
+    // The rig parks on a look: keep-alives once a second, all arriving. The
+    // windows that follow are sparse but intact, so the loss figure walks
+    // back to zero rather than freezing the bad number on the panel.
+    let at = 20_000
+    for (let seq = 100; seq < 130; seq++) {
+      state.apply(frame({ sequence: seq & 0xff }), at)
+      at += 900
+    }
+    expect(state.health()[0].sources[0].lossPct).toBe(0)
+  })
+})
+
+describe('everything going dark at once', () => {
+  const feed = (
+    state: DmxState,
+    universes: number[],
+    protocol: 'sacn' | 'artnet',
+    from: number,
+    to: number
+  ): void => {
+    for (let at = from; at <= to; at += 500) {
+      for (const u of universes) {
+        state.apply(
+          frame({
+            protocol,
+            wireUniverse: u,
+            sourceId: protocol === 'sacn' ? `desk-${u}` : `2.0.0.${u}`,
+            sequenced: false,
+            sequence: 0,
+          }),
+          at
+        )
+      }
+    }
+  }
+
+  it('correlates every sACN universe dying together into one outage', () => {
+    const state = new DmxState({ artnetBase: 100 })
+    feed(state, [1, 2, 3], 'sacn', 1000, 10_000)
+    feed(state, [1], 'artnet', 1000, 10_000)
+    state.sweep(10_000)
+    expect(state.outages()).toHaveLength(0)
+
+    // The multicast path dies at 10 s; Art-Net broadcast keeps arriving.
+    feed(state, [1], 'artnet', 10_500, 14_000)
+    state.sweep(11_000)
+    state.sweep(12_000)
+    state.sweep(13_000) // sACN's 2.5 s timeout has now passed for all three
+    const [outage] = state.outages()
+    expect(outage).toBeDefined()
+    expect(outage.protocol).toBe('sacn')
+    expect(outage.universes).toEqual([1, 2, 3])
+    expect(outage.otherProtocolAlive).toBe(true)
+  })
+
+  it('does not blame the network while any universe survives', () => {
+    const state = new DmxState()
+    feed(state, [1, 2, 3], 'sacn', 1000, 10_000)
+    // Universe 3's desk keeps talking; 1 and 2 stop.
+    feed(state, [3], 'sacn', 10_000, 20_000)
+    state.sweep(13_000)
+    state.sweep(14_000)
+    expect(state.outages()).toHaveLength(0)
+  })
+
+  it('needs at least two universes to implicate the path', () => {
+    const state = new DmxState()
+    feed(state, [1], 'sacn', 1000, 10_000)
+    state.sweep(13_000)
+    expect(state.outages()).toHaveLength(0)
+  })
+
+  it('clears the outage the moment data returns', () => {
+    const state = new DmxState()
+    feed(state, [1, 2], 'sacn', 1000, 10_000)
+    state.sweep(13_000)
+    expect(state.outages()).toHaveLength(1)
+    feed(state, [1], 'sacn', 60_000, 60_500)
+    expect(state.outages()).toHaveLength(0)
+  })
+
+  it('does not correlate silences that happened minutes apart', () => {
+    const state = new DmxState()
+    feed(state, [1], 'sacn', 1000, 10_000)
+    feed(state, [2], 'sacn', 1000, 60_000)
+    state.sweep(13_000) // universe 1 dies alone
+    state.sweep(63_000) // universe 2 dies alone, 50 s later
+    expect(state.outages()).toHaveLength(0)
+  })
+})
+
+describe('the node inventory', () => {
+  it('keeps every node that ever announced itself, with first and last seen', () => {
+    const state = new DmxState()
+    state.noteNode({ ip: '2.0.0.7', shortName: 'SL', longName: 'Stage Left' }, 1000)
+    state.noteNode({ ip: '2.0.0.8', shortName: 'FOH', longName: '' }, 2000)
+    state.noteNode({ ip: '2.0.0.7', shortName: 'SL', longName: 'Stage Left' }, 9000)
+    const nodes = state.nodes()
+    expect(nodes).toHaveLength(2)
+    const sl = nodes.find((n) => n.ip === '2.0.0.7')!
+    expect(sl.firstSeen).toBe(1000)
+    expect(sl.lastSeen).toBe(9000)
+    expect(sl.name).toBe('SL')
+    expect(sl.longName).toBe('Stage Left')
+  })
+
+  it('records a nameless node — presence is the point, the name is a bonus', () => {
+    const state = new DmxState()
+    state.noteNode({ ip: '2.0.0.9', shortName: '', longName: '' }, 1000)
+    expect(state.nodes()).toHaveLength(1)
+    expect(state.nodes()[0].ip).toBe('2.0.0.9')
+  })
+
+  it('a vanished node stays listed — that is the news the inventory carries', () => {
+    const state = new DmxState()
+    state.noteNode({ ip: '2.0.0.7', shortName: 'SL', longName: '' }, 1000)
+    state.sweep(600_000) // ten minutes of sweeps later
+    expect(state.nodes()).toHaveLength(1)
+    expect(state.nodes()[0].lastSeen).toBe(1000)
   })
 })
 

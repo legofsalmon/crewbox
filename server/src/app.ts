@@ -1146,7 +1146,14 @@ export function buildApp({
       // network is a separate thing that can be fine while the box is not,
       // and the other way round.
       lighting: dmx
-        ? dmxReadiness(dmx.snapshot(), dmx.state.health(), Date.now(), dmx.state.discovered())
+        ? dmxReadiness(
+            dmx.snapshot(),
+            dmx.state.health(),
+            Date.now(),
+            dmx.state.discovered(),
+            dmx.state.nodes(),
+            dmx.state.outages()
+          )
         : dmxReadiness(
             {
               mode: 'off',

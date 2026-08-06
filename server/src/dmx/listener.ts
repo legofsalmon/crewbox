@@ -163,7 +163,7 @@ export class DmxListener {
       }
       this.status.packets++
       if (packet.kind === 'pollReply') {
-        this.state.noteNode(packet.reply.ip, packet.reply.longName || packet.reply.shortName)
+        this.state.noteNode(packet.reply, Date.now())
         return
       }
       if (packet.kind === 'sync') {

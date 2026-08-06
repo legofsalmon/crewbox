@@ -350,6 +350,33 @@ priority conflicts; and, when Art-Net is on but silent, the plain statement
 that a unicast-only controller will not be seen because crewbox never
 announces itself.
 
+### Health beyond presence
+
+Three further checks are derived entirely from traffic already being
+received — nothing new is joined and nothing is ever sent:
+
+- **Frame loss per source** (`dmx-loss`). Both protocols carry sequence
+  numbers; gaps are loss, measured over a 10-second window. A straggler that
+  arrives late is refunded (reordered, not lost), a forward jump past 40 is
+  read as the source restarting its sequence, and a window nothing arrived
+  in reports `null` — both protocols suppress unchanged frames, so absence
+  is silence by design, and 0% would be invented evidence. Art-Net with
+  sequencing disabled (sequence 0) is also `null` for the same reason. The
+  panel reports loss at 1% and above.
+- **Correlated outage** (`dmx-outage-*`). Two or more universes of one
+  protocol losing their last source within a 4-second window, with none of
+  that protocol surviving, is reported as one event about the path rather
+  than N events about desks. The sharpest form: sACN (multicast) collapsing
+  while Art-Net (broadcast) still arrives points at IGMP snooping or the
+  switch, and the check says so. Cleared the moment any packet of that
+  protocol arrives again.
+- **Node inventory** (`dmx-nodes`). Every ArtPollReply overheard — consoles
+  poll their nodes constantly, and replies are broadcast — is kept for the
+  session with first/last-seen times. A node that stopped replying stays
+  listed with how long ago it was last heard, because the vanishing is the
+  news. Crewbox itself never sends ArtPoll; the inventory is entirely
+  overheard.
+
 ## Deployment note for the runbook
 
 Art-Net conventionally lives on `2.x.x.x` or `10.x.x.x`, usually on its own
