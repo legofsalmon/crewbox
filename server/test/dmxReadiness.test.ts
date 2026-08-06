@@ -112,6 +112,49 @@ describe('faults worth shouting about', () => {
     expect(find(dmxReadiness(status(), [universe()], NOW), 'dmx-conflict')).toBeUndefined()
   })
 
+  it('does not accuse a lower-priority backup that loses the universe cleanly', () => {
+    // Two desks tie at 100 (the real fight); a third sits at 50 and loses
+    // outright, so it is no part of the conflict. Naming it — and calling it
+    // "priority 100" — would put an innocent console on the fault.
+    const conflicted = universe({
+      conflict: true,
+      sources: [
+        {
+          id: 'a',
+          name: 'grandMA3',
+          protocol: 'sacn',
+          priority: 100,
+          lastSeen: NOW,
+          rateHz: 44,
+          lossPct: null,
+        },
+        {
+          id: 'b',
+          name: 'Spare Desk',
+          protocol: 'sacn',
+          priority: 100,
+          lastSeen: NOW,
+          rateHz: 44,
+          lossPct: null,
+        },
+        {
+          id: 'c',
+          name: 'Backup',
+          protocol: 'sacn',
+          priority: 50,
+          lastSeen: NOW,
+          rateHz: 44,
+          lossPct: null,
+        },
+      ],
+    })
+    const check = find(dmxReadiness(status(), [conflicted], NOW), 'dmx-conflict')
+    expect(check?.detail).toContain('grandMA3')
+    expect(check?.detail).toContain('Spare Desk')
+    expect(check?.detail).not.toContain('Backup')
+    expect(check?.detail).toContain('priority 100')
+  })
+
   it('explains which universes could not be joined and why', () => {
     const checks = dmxReadiness(
       status({

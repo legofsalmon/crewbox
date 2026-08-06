@@ -10,11 +10,16 @@ import { escapeHtml, PAGE_CSS } from './html.ts'
  * all. An admin double-clicking a downloaded binary met a QR code and no way
  * to say what event it was for.
  *
- * The window is open only while nobody has joined. That isn't a weaker rule
- * than the admin panel's — before the first join, anyone who can reach the
- * box can join and become admin anyway (see /api/join), so a setup form on
- * the same network grants nothing new. The moment someone joins, this page
- * stops working and the admin panel is the only way in.
+ * The window is open only while nobody has joined, and closes for good the
+ * moment someone does. That isn't a weaker rule than the admin panel's: an
+ * un-set-up box has nothing to protect yet, and before first join it trusts
+ * its own LAN exactly as the printed QR and the console-printed admin password
+ * already do — whoever can reach the box to fill this form could read that
+ * console. (First join no longer makes anyone admin — admin is the password
+ * now — so the older "you could just join and become admin anyway" reasoning
+ * no longer holds; the justification is the trust boundary, not that rule.)
+ * Once someone has joined, this page stops working and the password-gated
+ * admin panel is the only way in.
  */
 
 export interface SetupValues {
