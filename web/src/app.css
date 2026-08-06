@@ -2257,6 +2257,10 @@ ul {
     position: relative;
     width: 40px;
     height: 40px;
+    /* Hold the size in a crowded flex row (the chat top bar): a touch
+       target that silently compresses is the bug this block exists to fix.
+       Neighbouring text truncates instead. */
+    flex-shrink: 0;
   }
 
   .icon-btn::after {

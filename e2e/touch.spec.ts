@@ -23,20 +23,30 @@ test('icon buttons grow to fingertip size on a touch device', async ({ browser }
   await page.getByRole('button', { name: 'Join' }).click()
   await expect(page.getByPlaceholder(/Message/)).toBeVisible()
 
+  // Computed style, not boundingBox: with isMobile emulation the page can be
+  // auto-zoomed out a few percent to fit content (long messages left by
+  // earlier specs against the shared server), and boundingBox reports the
+  // visually scaled size. The property under test is the CSS size the media
+  // query sets, which computed style reads unscaled.
+  const cssSize = (locator: ReturnType<typeof page.getByRole>) =>
+    locator.evaluate((el) => {
+      const style = getComputedStyle(el)
+      return { width: parseFloat(style.width), height: parseFloat(style.height) }
+    })
+
   const hamburger = page.getByRole('button', { name: 'Open channels' }).first()
   await expect(hamburger).toBeVisible()
-  const box = await hamburger.boundingBox()
-  expect(box).not.toBeNull()
-  expect(box!.width).toBeGreaterThanOrEqual(40)
-  expect(box!.height).toBeGreaterThanOrEqual(40)
+  const box = await cssSize(hamburger)
+  expect(box.width).toBeGreaterThanOrEqual(40)
+  expect(box.height).toBeGreaterThanOrEqual(40)
 
   // And the drawer it opens still works end to end under touch emulation.
   await hamburger.tap()
   const newChannel = page.getByRole('button', { name: 'New channel' })
   await expect(newChannel).toBeVisible()
-  const plusBox = await newChannel.boundingBox()
-  expect(plusBox!.width).toBeGreaterThanOrEqual(40)
-  expect(plusBox!.height).toBeGreaterThanOrEqual(40)
+  const plusBox = await cssSize(newChannel)
+  expect(plusBox.width).toBeGreaterThanOrEqual(40)
+  expect(plusBox.height).toBeGreaterThanOrEqual(40)
 
   await context.close()
 })
