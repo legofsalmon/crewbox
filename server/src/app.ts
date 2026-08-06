@@ -622,7 +622,8 @@ export function buildApp({
   // Live onboarding page: big QR of the join URL (PIN prefilled), the PIN in
   // print, Wi-Fi guidance, and the APK when installed. Always current — a
   // PIN change from the admin panel is reflected on the next load, unlike a
-  // printed poster.
+  // printed poster. The URL under the QR is itself the join link: on a phone
+  // this page was shared to, tapping it is scanning it.
   fastify.get('/connect', (req, reply) => {
     const config = publicConfig()
     const pin = effectiveEventPin()
@@ -641,7 +642,7 @@ export function buildApp({
   <p class="meta">Crew chat, voice &amp; patch sheets — on the event network</p>
   ${config.wifiSsid ? `<p class="meta">1. Join Wi-Fi: <strong>${escapeHtml(config.wifiSsid)}</strong>&nbsp;&nbsp;2. Scan&nbsp;&nbsp;3. Pick a name</p>` : ''}
   <div class="qr">${qr}</div>
-  <p class="url">${escapeHtml(base.replace(/^https?:\/\//, ''))}</p>
+  <p class="url"><a href="${escapeHtml(joinUrl)}">${escapeHtml(base.replace(/^https?:\/\//, ''))}</a></p>
   <p class="pin">Event PIN: <strong>${escapeHtml(pin)}</strong></p>
   ${apkAvailable() ? `<p class="meta">Android lock-screen alerts: <a href="${base}/crewbox.apk">download the Crewbox app</a></p>` : ''}
 </div></body></html>`
