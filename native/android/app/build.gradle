@@ -24,7 +24,14 @@ android {
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+             //
+             // .gz/.br: the web build writes precompressed siblings beside each
+             // asset for the box's HTTP serving (scripts/compress-dist.mjs).
+             // Inside the webview they are dead weight — assets load from disk,
+             // no content negotiation — and worse, Android's asset merger
+             // strips the .gz extension and then fails the build on the
+             // "duplicate" of the original. Excluded on both counts.
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~:!*.gz:!*.br'
         }
     }
     // The release keystore arrives via the environment (CI decodes it from a
