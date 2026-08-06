@@ -2241,6 +2241,36 @@ ul {
   }
 }
 
+/* ---------------------------------------------------------- touch sizes */
+/*
+ * Fingers, not cursors. The 28px icon buttons are fine under a mouse but
+ * well under the ~44–48px a fingertip needs — and one of them is the
+ * hamburger, the single control a phone user cannot do without. Keyed on
+ * pointer type rather than viewport width: a tablet in landscape is wider
+ * than 900px and still driven by fingers. The buttons grow to 40px, and a
+ * pseudo-element quietly extends the hit area to 48px without moving
+ * anything around them (a tap on the pseudo-element is a tap on the
+ * button).
+ */
+@media (pointer: coarse) {
+  .icon-btn {
+    position: relative;
+    width: 40px;
+    height: 40px;
+  }
+
+  .icon-btn::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+  }
+
+  /* The tappable pill inside messages ("Open sheet …") — fingertip padding. */
+  .msg-applink {
+    padding: 6px 14px;
+  }
+}
+
 /* -------------------------------------------------------- reduced motion */
 @media (prefers-reduced-motion: reduce) {
   * {
