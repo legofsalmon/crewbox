@@ -263,10 +263,15 @@ export function dmxReadiness(
       label: 'Two sources on one universe',
       state: 'limited',
       detail: conflicts
-        .map(
-          (u) =>
-            `Universe ${u.universe}: ${u.sources.map((s) => s.name || s.id.slice(0, 8)).join(' and ')} all at priority ${Math.max(...u.sources.map((s) => s.priority))}`
-        )
+        .map((u) => {
+          // Only the sources tied at the top priority are actually fighting.
+          // A lower-priority backup on the same universe loses cleanly and is
+          // no part of the conflict, so naming it — and mislabelling it as
+          // being at the top priority — would accuse an innocent console.
+          const top = Math.max(...u.sources.map((s) => s.priority))
+          const fighting = u.sources.filter((s) => s.priority === top)
+          return `Universe ${u.universe}: ${fighting.map((s) => s.name || s.id.slice(0, 8)).join(' and ')} all at priority ${top}`
+        })
         .join('; '),
       fix:
         'Crewbox shows one of them and cannot merge, so the rig may look fine here and behave oddly on stage. Unpatch one, or give them different priorities.' +
