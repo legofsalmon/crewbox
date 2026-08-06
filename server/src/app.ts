@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, mkdirSync, readFileSync } from 'node:fs'
+import {
+  createReadStream,
+  createWriteStream,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs'
 import { createServer } from 'node:http'
 import { rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -156,6 +163,33 @@ export function parseByteRange(
   const end = endStr === '' ? size - 1 : Math.min(Number(endStr), size - 1)
   if (end < start) return 'unsatisfiable'
   return { start, end }
+}
+
+/**
+ * Content types a browser may render inline from a crew-uploaded file.
+ *
+ * The file route serves attacker-controlled bytes from the app's own origin,
+ * so anything a browser will *execute* — HTML, or SVG, which carries script —
+ * is a stored-XSS vector against the session token in localStorage. This is
+ * the allowlist of what crew genuinely share and view in place; a type not on
+ * it is served as `application/octet-stream`, which downloads rather than
+ * runs. `image/svg+xml` is deliberately excluded: it is an image to a human
+ * and a script host to a browser.
+ */
+export function safeContentType(mime: string): string {
+  const m = mime.toLowerCase()
+  const inlineOk =
+    (m.startsWith('image/') && m !== 'image/svg+xml') ||
+    m.startsWith('video/') ||
+    m.startsWith('audio/') ||
+    m === 'application/pdf'
+  return inlineOk ? mime : 'application/octet-stream'
+}
+
+/** A filename safe to drop in a Content-Disposition header: no quotes, no
+ *  control characters, no path separators that could confuse a client. */
+function attachmentName(name: string): string {
+  return name.replace(/[^\w.\- ]/g, '_').slice(0, 200) || 'file'
 }
 
 export interface AppDeps {
@@ -363,7 +397,22 @@ export function buildApp({
   }, 5 * 60_000)
   limiterSweep.unref()
   fastify.addHook('onClose', () => clearInterval(limiterSweep))
-  if (filesDir) mkdirSync(filesDir, { recursive: true })
+  if (filesDir) {
+    mkdirSync(filesDir, { recursive: true })
+    // Sweep half-written uploads left by a client that dropped mid-transfer
+    // (a phone leaving the AP during a 100 MB video). Each is a tmp-* file
+    // the upload handler's finally could not reach because the process had
+    // already moved on; unchecked they accrete over a multi-day event until
+    // the disk fills and appendMessage throws SQLITE_FULL — comms down.
+    try {
+      for (const name of readdirSync(filesDir)) {
+        if (name.startsWith('tmp-')) rmSync(join(filesDir, name), { force: true })
+      }
+    } catch {
+      // A sweep that fails is not worth blocking startup — the box still
+      // serves crew, and the next clean shutdown or sweep tidies up.
+    }
+  }
   // Native wrappers load the bundle from the app package, so their requests
   // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
   // no CSRF surface on the crew LAN.
@@ -744,84 +793,99 @@ export function buildApp({
       mime: string
       truncated: boolean
     } | null = null
+    // A tmp file that is on disk and not yet renamed or deleted. Tracked at
+    // handler scope so the finally can remove it however this handler exits —
+    // a client abort mid-pipeline throws before `main` is even assigned, and
+    // without this that half-written file would be orphaned forever.
+    let pendingTmp: string | null = null
 
-    for await (const part of req.parts()) {
-      if (part.type === 'field') {
-        if (typeof part.value === 'string') fields[part.fieldname] = part.value
-        continue
-      }
-      if (part.fieldname === 'thumb' && !thumb) {
-        const chunks: Buffer[] = []
-        let bytes = 0
-        let over = false
-        // Consume the WHOLE part — busboy won't emit the next part until this
-        // stream ends. `break` here would call the iterator's return() and
-        // destroy the stream, stalling the following `file` part; instead we
-        // read to completion and just stop retaining bytes once over the cap.
-        for await (const chunk of part.file) {
-          bytes += (chunk as Buffer).length
-          if (bytes > MAX_THUMB_BYTES) over = true
-          if (!over) chunks.push(chunk as Buffer)
+    try {
+      for await (const part of req.parts()) {
+        if (part.type === 'field') {
+          if (typeof part.value === 'string') fields[part.fieldname] = part.value
+          continue
         }
-        if (!over) thumb = Buffer.concat(chunks)
-        continue
-      }
-      if (part.fieldname === 'file' && !main) {
-        const tmpPath = join(filesDir, `tmp-${newId()}`)
-        const hash = createHash('sha256')
-        part.file.on('data', (chunk: Buffer) => hash.update(chunk))
-        await pipeline(part.file, createWriteStream(tmpPath))
-        main = {
-          tmpPath,
-          sha256: hash.digest('hex'),
-          // 'thumb' is reserved by the preview route below.
-          name: (part.filename === 'thumb' ? '_thumb' : part.filename || 'file').slice(0, 200),
-          mime: part.mimetype || 'application/octet-stream',
-          truncated: part.file.truncated,
+        if (part.fieldname === 'thumb' && !thumb) {
+          const chunks: Buffer[] = []
+          let bytes = 0
+          let over = false
+          // Consume the WHOLE part — busboy won't emit the next part until this
+          // stream ends. `break` here would call the iterator's return() and
+          // destroy the stream, stalling the following `file` part; instead we
+          // read to completion and just stop retaining bytes once over the cap.
+          for await (const chunk of part.file) {
+            bytes += (chunk as Buffer).length
+            if (bytes > MAX_THUMB_BYTES) over = true
+            if (!over) chunks.push(chunk as Buffer)
+          }
+          if (!over) thumb = Buffer.concat(chunks)
+          continue
         }
-        continue
+        if (part.fieldname === 'file' && !main) {
+          const tmpPath = join(filesDir, `tmp-${newId()}`)
+          pendingTmp = tmpPath
+          const hash = createHash('sha256')
+          part.file.on('data', (chunk: Buffer) => hash.update(chunk))
+          await pipeline(part.file, createWriteStream(tmpPath))
+          main = {
+            tmpPath,
+            sha256: hash.digest('hex'),
+            // 'thumb' is reserved by the preview route below.
+            name: (part.filename === 'thumb' ? '_thumb' : part.filename || 'file').slice(0, 200),
+            mime: part.mimetype || 'application/octet-stream',
+            truncated: part.file.truncated,
+          }
+          continue
+        }
+        part.file.resume() // unknown part — drain and ignore
       }
-      part.file.resume() // unknown part — drain and ignore
-    }
 
-    if (!main) return reply.code(400).send({ error: 'no file' })
-    if (main.truncated) {
-      await unlink(main.tmpPath)
-      return reply.code(413).send({ error: 'file too large' })
-    }
+      if (!main) return reply.code(400).send({ error: 'no file' })
+      if (main.truncated) {
+        await unlink(main.tmpPath)
+        pendingTmp = null
+        return reply.code(413).send({ error: 'file too large' })
+      }
 
-    const { size } = await stat(main.tmpPath)
-    const existingPath = store.findPathBySha(main.sha256)
-    let path: string
-    if (existingPath) {
-      await unlink(main.tmpPath)
-      path = existingPath
-    } else {
-      path = join(filesDir, main.sha256)
-      await rename(main.tmpPath, path)
-    }
+      const { size } = await stat(main.tmpPath)
+      const existingPath = store.findPathBySha(main.sha256)
+      let path: string
+      if (existingPath) {
+        await unlink(main.tmpPath)
+        pendingTmp = null
+        path = existingPath
+      } else {
+        path = join(filesDir, main.sha256)
+        await rename(main.tmpPath, path)
+        pendingTmp = null
+      }
 
-    // Dimensions and thumbnails only make sense for images; ignore otherwise.
-    const isImage = main.mime.startsWith('image/')
-    const width = isImage ? parseImageDim(fields.width) : undefined
-    const height = isImage ? parseImageDim(fields.height) : undefined
-    let thumbPath: string | undefined
-    if (isImage && thumb && width && height) {
-      thumbPath = `${path}.thumb`
-      await writeFile(thumbPath, thumb)
-    }
+      // Dimensions and thumbnails only make sense for images; ignore otherwise.
+      const isImage = main.mime.startsWith('image/')
+      const width = isImage ? parseImageDim(fields.width) : undefined
+      const height = isImage ? parseImageDim(fields.height) : undefined
+      let thumbPath: string | undefined
+      if (isImage && thumb && width && height) {
+        thumbPath = `${path}.thumb`
+        await writeFile(thumbPath, thumb)
+      }
 
-    const file = store.createFile({
-      name: main.name,
-      mime: main.mime,
-      size,
-      sha256: main.sha256,
-      path,
-      width,
-      height,
-      thumbPath,
-    })
-    return { file }
+      const file = store.createFile({
+        name: main.name,
+        mime: main.mime,
+        size,
+        sha256: main.sha256,
+        path,
+        width,
+        height,
+        thumbPath,
+      })
+      return { file }
+    } finally {
+      // Whatever went wrong — a dropped connection, a throw after the write —
+      // never leave the half-written upload behind.
+      if (pendingTmp) await unlink(pendingTmp).catch(() => {})
+    }
   })
 
   // Small JPEG preview generated by the uploading client (images only).
@@ -829,10 +893,15 @@ export function buildApp({
     const { id } = req.params as { id: string }
     const row = store.getFileRow(id)
     if (!row?.thumb_path) return reply.code(404).send({ error: 'not found' })
-    return reply
-      .header('content-type', 'image/jpeg')
-      .header('cache-control', 'public, max-age=31536000, immutable')
-      .send(createReadStream(row.thumb_path))
+    return (
+      reply
+        .header('content-type', 'image/jpeg')
+        .header('cache-control', 'public, max-age=31536000, immutable')
+        // The thumb bytes are the client's JPEG, but nosniff costs nothing and
+        // keeps the whole file surface consistent.
+        .header('x-content-type-options', 'nosniff')
+        .send(createReadStream(row.thumb_path))
+    )
   })
 
   // Files are addressed by unguessable ids (capability URLs) so <img> tags
@@ -842,8 +911,21 @@ export function buildApp({
     const { id } = req.params as { id: string; name: string }
     const row = store.getFileRow(id)
     if (!row) return reply.code(404).send({ error: 'not found' })
+    // The mime came from the uploader and the file lives on the app's own
+    // origin, so a crew member (anyone with the poster PIN) could upload an
+    // HTML page or a scripted SVG and, when another phone opens the link,
+    // run JS where the session token lives. Two guards close that:
+    // browsers may only render the media types crew actually share inline;
+    // everything else downloads as an opaque attachment, and nosniff stops
+    // the browser second-guessing either decision.
+    const type = safeContentType(row.mime)
     void reply
-      .header('content-type', row.mime)
+      .header('content-type', type)
+      .header('x-content-type-options', 'nosniff')
+      .header(
+        'content-disposition',
+        `${type === row.mime ? 'inline' : 'attachment'}; filename="${attachmentName(row.name)}"`
+      )
       .header('cache-control', 'public, max-age=31536000, immutable')
       .header('accept-ranges', 'bytes')
 

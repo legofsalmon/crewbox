@@ -31,6 +31,9 @@ class FakeRoom {
     isSpeaking: false,
     audioTrackPublications: new Map(),
     setMicrophoneEnabled: vi.fn(),
+    // No published track in the fake, so the level meter is a no-op — the
+    // control flow under test is the mic enable/disable, not metering.
+    getTrackPublication: vi.fn(() => undefined),
   }
 
   on(event: string, handler: Handler): this {
@@ -73,7 +76,7 @@ vi.mock('livekit-client', () => ({
   },
   ConnectionQuality: { Excellent: 'excellent', Good: 'good', Poor: 'poor', Lost: 'lost' },
   ConnectionState: { Connected: 'connected', Disconnected: 'disconnected' },
-  Track: { Kind: { Audio: 'audio' } },
+  Track: { Kind: { Audio: 'audio' }, Source: { Microphone: 'microphone' } },
 }))
 
 const { VoiceManager } = await import('./voice.ts')
@@ -167,5 +170,37 @@ describe('being dropped off comms has to say so too', () => {
 
     first.emit('disconnected')
     expect(notices).toEqual([])
+  })
+})
+
+describe('a push-to-talk release is never lost to a reconnect', () => {
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+  })
+
+  it('closes the mic even when the release lands mid-reconnect', async () => {
+    // The hot-mic bug: the old setTalking returned early unless the room was
+    // Connected, so a release arriving while the room was Reconnecting was
+    // dropped — and LiveKit re-publishes the last enabled track on
+    // reconnection, leaving a live mic the crew member believes they closed.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    const room = (manager as unknown as { room: FakeRoom }).room
+    const mic = room.localParticipant.setMicrophoneEnabled
+
+    await manager.setTalking(true)
+    expect(mic).toHaveBeenLastCalledWith(true)
+
+    // The network wobbles and LiveKit refuses the change mid-reconnect.
+    room.state = 'reconnecting'
+    room.emit('reconnecting')
+    mic.mockRejectedValueOnce(new Error('cannot publish while reconnecting'))
+    await manager.setTalking(false) // the release the old code silently dropped
+
+    // On reconnection the intent is reconciled: the mic ends closed, not hot.
+    room.state = 'connected'
+    room.emit('reconnected')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mic).toHaveBeenLastCalledWith(false)
   })
 })

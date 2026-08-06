@@ -468,6 +468,45 @@ describe('files and search', () => {
     expect(store.getFileRow(first.id)!.path).toBe(store.getFileRow(second.id)!.path)
   })
 
+  it('serves crew-uploaded files hardened against the stored-XSS path', async () => {
+    const token = await join('Alex')
+
+    const upload = async (blob: Blob, name: string) => {
+      const form = new FormData()
+      form.append('file', blob, name)
+      const res = await fetch(`${baseUrl}/api/files`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      })
+      return ((await res.json()) as { file: { id: string; name: string } }).file
+    }
+
+    // An HTML upload — the attack — must download as an opaque octet-stream,
+    // never render as a page on the app origin where the session token lives.
+    const html = await upload(
+      new Blob(['<script>steal()</script>'], { type: 'text/html' }),
+      'evil.html'
+    )
+    const htmlRes = await fetch(`${baseUrl}/api/files/${html.id}/evil.html`)
+    expect(htmlRes.headers.get('content-type')).toBe('application/octet-stream')
+    expect(htmlRes.headers.get('content-disposition')).toContain('attachment')
+    expect(htmlRes.headers.get('x-content-type-options')).toBe('nosniff')
+
+    // SVG is an image to a human and a script host to a browser: also downloaded.
+    const svg = await upload(new Blob(['<svg/>'], { type: 'image/svg+xml' }), 'x.svg')
+    const svgRes = await fetch(`${baseUrl}/api/files/${svg.id}/x.svg`)
+    expect(svgRes.headers.get('content-type')).toBe('application/octet-stream')
+    expect(svgRes.headers.get('content-disposition')).toContain('attachment')
+
+    // A real photo still renders inline, so <img> and previews keep working.
+    const png = await upload(new Blob(['pngbytes'], { type: 'image/png' }), 'map.png')
+    const pngRes = await fetch(`${baseUrl}/api/files/${png.id}/map.png`)
+    expect(pngRes.headers.get('content-type')).toBe('image/png')
+    expect(pngRes.headers.get('content-disposition')).toContain('inline')
+    expect(pngRes.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
   it('serves a context window around a seq for search jumps', async () => {
     const token = await join('Alex')
     const { client, welcome } = await connect(token)
