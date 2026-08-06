@@ -505,7 +505,18 @@ export class DmxState {
       // LOSS_RESTART_GAP read as the source restarting its sequence — a real
       // gap that size is over a second of silence at show rates, which the
       // data-loss timeout reports as its own fault.
-      if (diff > 1 && diff <= LOSS_RESTART_GAP) source.lossMissed += diff - 1
+      if (diff > 1 && diff <= LOSS_RESTART_GAP) {
+        let missed = diff - 1
+        // Art-Net skips sequence 0 (0 means "sequencing disabled"), so a
+        // healthy stream wraps 255 → 1. That one step reads as diff 2, and
+        // without this correction it is charged as a lost frame every
+        // 255-frame cycle — a steady ~0.4% phantom loss on every sequencing
+        // Art-Net source. When the skipped-over span crosses 0
+        // (lastSequence + diff >= 257), one of those numbers is 0 and was
+        // never going to arrive.
+        if (frame.protocol === 'artnet' && source.lastSequence + diff >= 257) missed -= 1
+        source.lossMissed += missed
+      }
     }
 
     if (frame.sourceName) source.name = frame.sourceName

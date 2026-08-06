@@ -102,6 +102,21 @@ describe('parsing mDNS', () => {
     ])
     expect(parseMdns(good.subarray(0, good.length - 3))).toEqual([])
   })
+
+  it('refuses a name past the 255-octet DNS limit, killing amplification', () => {
+    // Five 63-byte labels = 320 octets, over the RFC 1035 §3.1 limit. Without
+    // the octet cap a small junk packet could inflate into a large decoded
+    // string; readName must bail, so the whole record is dropped.
+    const oversized = label([
+      'a'.repeat(63),
+      'b'.repeat(63),
+      'c'.repeat(63),
+      'd'.repeat(63),
+      'e'.repeat(63),
+    ])
+    const pkt = packet([{ name: oversized, type: 12, ttl: 1, rdata: label(['x']) }])
+    expect(parseMdns(pkt)).toEqual([])
+  })
 })
 
 describe('which services matter', () => {

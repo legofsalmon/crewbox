@@ -45,6 +45,12 @@ function readName(buf: Buffer, offset: number): { name: string; next: number } |
   let at = offset
   let next = -1
   let hops = 0
+  // A DNS name is at most 255 octets (RFC 1035 §3.1). Enforcing it bounds the
+  // work per datagram: the hop guard alone still lets each of 16 pointer
+  // follows read a long label run out of the buffer, so a small junk packet
+  // could otherwise inflate into a large decoded string. Tallying the octets
+  // and bailing at the spec limit removes that amplification entirely.
+  let octets = 0
   while (true) {
     if (at >= buf.length) return null
     const len = buf[at]!
@@ -63,6 +69,8 @@ function readName(buf: Buffer, offset: number): { name: string; next: number } |
     }
     if ((len & 0xc0) !== 0) return null
     if (at + 1 + len > buf.length) return null
+    octets += len + 1
+    if (octets > 255) return null
     labels.push(buf.toString('utf8', at + 1, at + 1 + len))
     at += 1 + len
   }

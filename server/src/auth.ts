@@ -1,5 +1,21 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
 
+const scryptAsync = promisify(scrypt)
+
+/**
+ * scrypt is ~50 ms on a NUC and up to ~200 ms on an ARM box — deliberately, it
+ * is a password hash. Run synchronously it blocks the one event loop the whole
+ * box shares, so a crew rush (a hundred phones joining after a briefing) would
+ * serialise into seconds of frozen chat, dropped WS heartbeats and stalled DMX
+ * ticks. The async variants below move that CPU to the libuv threadpool.
+ *
+ * Both forms exist on purpose: the sync ones are for startup and single-admin
+ * credential work (the env-password hash, the first-boot mint, an admin
+ * changing their password) where one blocking call is harmless and the callers
+ * are synchronous. The **crew-join hot path uses the async variants** — that is
+ * the only place a hundred requests land in the same second.
+ */
 export function hashPin(pin: string): string {
   const salt = randomBytes(16)
   const hash = scryptSync(pin, salt, 32)
@@ -10,6 +26,22 @@ export function verifyPin(pin: string, stored: string): boolean {
   const [saltHex, hashHex] = stored.split(':')
   if (!saltHex || !hashHex) return false
   const hash = scryptSync(pin, Buffer.from(saltHex, 'hex'), 32)
+  const expected = Buffer.from(hashHex, 'hex')
+  return hash.length === expected.length && timingSafeEqual(hash, expected)
+}
+
+/** Async `hashPin` — CPU runs on the threadpool, not the event loop. */
+export async function hashPinAsync(pin: string): Promise<string> {
+  const salt = randomBytes(16)
+  const hash = (await scryptAsync(pin, salt, 32)) as Buffer
+  return `${salt.toString('hex')}:${hash.toString('hex')}`
+}
+
+/** Async `verifyPin` — same threadpool offload for the crew-join path. */
+export async function verifyPinAsync(pin: string, stored: string): Promise<boolean> {
+  const [saltHex, hashHex] = stored.split(':')
+  if (!saltHex || !hashHex) return false
+  const hash = (await scryptAsync(pin, Buffer.from(saltHex, 'hex'), 32)) as Buffer
   const expected = Buffer.from(hashHex, 'hex')
   return hash.length === expected.length && timingSafeEqual(hash, expected)
 }

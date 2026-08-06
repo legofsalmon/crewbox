@@ -402,6 +402,29 @@ describe('reconnect resync', () => {
     // The replay is the newest tail, ending at the true last message.
     expect(replayed.at(-1)!.body).toBe('m249')
   })
+
+  it('bounds the whole welcome, not just each channel', async () => {
+    // A fresh client on a box with several busy channels would otherwise get
+    // 200 × every channel in one frame, stringified on the event loop. The
+    // global budget caps the total; the rest is flagged for the client to
+    // backfill over REST.
+    const token = await join('Alex')
+    for (let c = 0; c < 5; c++) {
+      const channel = store.createChannel(`busy-${c}`, 'public', '')
+      for (let i = 0; i < 200; i++) {
+        store.appendMessage({
+          channelId: channel.id,
+          authorId: null,
+          kind: 'text',
+          body: `c${c}m${i}`,
+        })
+      }
+    }
+    const { welcome } = await connect(token) // empty cursors — wants everything
+    expect(welcome.missed.length).toBeLessThanOrEqual(500)
+    // Channels that didn't fit the budget are flagged rather than dropped.
+    expect(welcome.truncated.length).toBeGreaterThanOrEqual(1)
+  })
 })
 
 describe('DMs', () => {
@@ -429,6 +452,30 @@ describe('DMs', () => {
     ).toBe(false)
     // C's welcome/receives never list the DM channel either.
     expect(c.welcome.channels.some((ch) => ch.id === dm.channel.id)).toBe(false)
+  })
+
+  it('a markRead for a DM you are not in cannot make you a member', async () => {
+    const [tokenA, , tokenC] = [await join('Alex'), await join('Sam'), await join('Kit')]
+    const a = await connect(tokenA)
+    const samId = a.welcome.users.find((u) => u.name === 'Sam')!.id
+
+    a.client.send({ type: 'openDm', userId: samId })
+    const dm = await a.client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'channel' }> =>
+        m.type === 'channel' && m.channel.kind === 'dm'
+    )
+
+    // Kit, who is not in the DM, replays a markRead for it — exactly what a
+    // stale client cache does after a delete/re-register. setReadState upserts
+    // channel_members, so without the membership gate this would silently make
+    // Kit a member and start feeding them the DM.
+    const c = await connect(tokenC)
+    c.client.send({ type: 'markRead', channelId: dm.channel.id, seq: 1 })
+    await new Promise((r) => setTimeout(r, 50)) // let the message be handled
+
+    expect(store.isMember(dm.channel.id, c.welcome.me.id)).toBe(false)
+    const c2 = await connect(tokenC)
+    expect(c2.welcome.channels.some((ch) => ch.id === dm.channel.id)).toBe(false)
   })
 })
 
