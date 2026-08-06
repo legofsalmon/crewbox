@@ -145,6 +145,29 @@ export function lanUrls(port: number, secure = false, prefer = ''): string[] {
   return lanIps(prefer).map((ip) => `${scheme}://${ip}:${port}`)
 }
 
+/**
+ * The URLs this box should advertise — banner, QR, auto-opened browser, and
+ * the status file the menu-bar/tray helpers read. One function so they can
+ * never disagree.
+ *
+ * With a certificate, its name leads: once TLS is on, every localhost and
+ * raw-IP URL fails the browser's name check and warns — the name on the
+ * certificate is the one address a browser trusts, so it is what the QR
+ * must encode and what the operator's browser must open. The IP URLs stay
+ * listed after it, because the name only resolves once the network's DNS
+ * override exists (Admin → This network says when it doesn't), and a banner
+ * that hides its working addresses behind an unresolvable name helps nobody.
+ */
+export function advertisedUrls(
+  port: number,
+  secure = false,
+  { hostname = '', iface = '' }: { hostname?: string; iface?: string } = {}
+): string[] {
+  const ips = lanUrls(port, secure, iface)
+  if (!hostname) return ips
+  return [`${secure ? 'https' : 'http'}://${hostname}:${port}`, ...ips]
+}
+
 /** What the menu-bar and tray helpers need to draw their menu. */
 export interface BoxStatus {
   pid: number
@@ -335,9 +358,10 @@ export function printBoxBanner(
     eventName = '',
     firstRun = false,
     iface = '',
-  }: { eventName?: string; firstRun?: boolean; iface?: string } = {}
+    hostname = '',
+  }: { eventName?: string; firstRun?: boolean; iface?: string; hostname?: string } = {}
 ): void {
-  const urls = lanUrls(port, secure, iface)
+  const urls = advertisedUrls(port, secure, { hostname, iface })
   const joinUrl = urls[0] ?? `${secure ? 'https' : 'http'}://localhost:${port}`
   const lines = [
     '',

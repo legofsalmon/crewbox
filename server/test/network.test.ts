@@ -4,7 +4,7 @@ import { join as pathJoin } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { lanIps } from '../src/box.ts'
+import { advertisedUrls, lanIps, printBoxBanner } from '../src/box.ts'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
 import { attachWs, buildApp, mirrorOnLoopback, type App } from '../src/app.ts'
@@ -57,6 +57,41 @@ describe('which address the crew are pointed at', () => {
       ],
     }
     expect(lanIps('', nics)).toEqual(['10.1.2.3'])
+  })
+
+  it('leads with the certificate name once TLS is on', () => {
+    // Once a certificate is installed, localhost and raw-IP URLs all fail
+    // the browser's name check — the box opened https://localhost on its own
+    // screen and got the full "not private" interstitial. The cert's name is
+    // the one address a browser trusts, so it goes first everywhere the box
+    // speaks: banner, QR, auto-open, status file.
+    const urls = advertisedUrls(8787, true, { hostname: 'chat.example.com' })
+    expect(urls[0]).toBe('https://chat.example.com:8787')
+    // The IP URLs stay visible behind it: the name only works once the
+    // router's DNS override exists, and hiding working addresses behind an
+    // unresolvable name strands the operator who hasn't set that up yet.
+    expect(urls.slice(1)).toEqual(lanIps().map((ip) => `https://${ip}:8787`))
+    // No certificate: exactly the old behaviour.
+    expect(advertisedUrls(8787, false)).toEqual(lanIps().map((ip) => `http://${ip}:8787`))
+  })
+
+  it('banner and QR advertise the certificate name', () => {
+    const lines: string[] = []
+    const original = console.log
+    console.log = (msg: string) => void lines.push(String(msg))
+    try {
+      printBoxBanner(8787, '1234', true, { hostname: 'chat.example.com' })
+    } finally {
+      console.log = original
+    }
+    const banner = lines.join('\n')
+    expect(banner).toContain('https://chat.example.com:8787')
+    // The name is the join URL — first, where the QR points — not an also-ran.
+    const nameAt = banner.indexOf('https://chat.example.com:8787')
+    for (const ip of lanIps()) {
+      const ipAt = banner.indexOf(`https://${ip}:8787`)
+      if (ipAt !== -1) expect(nameAt).toBeLessThan(ipAt)
+    }
   })
 })
 

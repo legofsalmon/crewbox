@@ -6,12 +6,12 @@ import { config, dmxMode, warnOnDefaults } from './config.ts'
 import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
 import { DmxListener, parseUniverseList } from './dmx/listener.ts'
 import {
+  advertisedUrls,
   boxDataDir,
   lanIps,
   clearBoxStatus,
   extractWebDist,
   isBox,
-  lanUrls,
   openBrowser,
   printBoxBanner,
   printBoxStatus,
@@ -19,6 +19,7 @@ import {
   stopRunningBox,
   writeBoxStatus,
 } from './box.ts'
+import { certNames } from './environment.ts'
 import {
   hasEmbeddedLiveKit,
   livekitCredentials,
@@ -229,7 +230,16 @@ async function main(): Promise<void> {
   app.log.info(
     `crewbox server listening on ${config.host}:${config.port} (${tls ? 'https' : 'http'})`
   )
-  const origin = `${tls ? 'https' : 'http'}://localhost:${config.port}`
+  // Where to send a browser. Plain HTTP: localhost, which always works on
+  // the box itself. With a certificate, localhost stops being an option —
+  // it fails the browser's name check against the certificate and gets the
+  // full "not private" interstitial on the box's own screen — so the
+  // certificate's name is the origin, everywhere the box speaks. Whether
+  // that name resolves here yet is the environment panel's job to say.
+  const certName = tls ? certNames(tls.cert.toString())[0] : undefined
+  const origin = certName
+    ? `https://${certName}:${config.port}`
+    : `${tls ? 'https' : 'http'}://localhost:${config.port}`
   app.log.info(`crew onboarding page: ${origin}/connect (QR, PIN, APK)`)
   if (box) {
     // Nobody has joined yet means nobody has set this box up yet, so send the
@@ -245,12 +255,16 @@ async function main(): Promise<void> {
       eventName,
       firstRun,
       iface: boot.iface,
+      ...(certName ? { hostname: certName } : {}),
     })
 
     // Tell the menu-bar/tray helper what to show and, crucially, which
     // process to stop. Written after listen() so its presence means the box
     // is actually answering, not merely starting.
-    const urls = lanUrls(config.port, Boolean(tls), boot.iface)
+    const urls = advertisedUrls(config.port, Boolean(tls), {
+      ...(certName ? { hostname: certName } : {}),
+      iface: boot.iface,
+    })
     writeBoxStatus(dataDir, {
       pid: process.pid,
       port: config.port,
