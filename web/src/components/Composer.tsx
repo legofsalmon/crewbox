@@ -11,6 +11,19 @@ import { useStore } from '../store.ts'
 const coarsePointer =
   typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
 
+/**
+ * Unsent text, per channel, for the length of the session.
+ *
+ * Switching channel used to wipe whatever was half-typed — a crew member who
+ * flicked to another channel to check something, then came back, found their
+ * message gone. Keyed by channel id and held here (module scope, not state)
+ * so it survives the switch and any remount, and cleared when the message is
+ * actually sent. In memory only: a reload starts clean, which is fine — the
+ * loss this fixes is the channel flick, which happens constantly, not the
+ * reload, which doesn't.
+ */
+const drafts = new Map<string, string>()
+
 interface MentionState {
   query: string
   start: number
@@ -34,10 +47,20 @@ export default function Composer({
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Track the value in the per-channel draft store so it survives a switch,
+  // and clear the entry once nothing is left to keep.
+  function commitValue(next: string) {
+    setValue(next)
+    if (next) drafts.set(channelId, next)
+    else drafts.delete(channelId)
+  }
+
   useEffect(() => {
-    setValue('')
+    // Restore this channel's draft rather than blanking the box.
+    setValue(drafts.get(channelId) ?? '')
     setMention(null)
     ref.current?.focus()
+    requestAnimationFrame(autogrow)
   }, [channelId])
 
   const mentionMatches = useMemo(() => {
@@ -79,7 +102,7 @@ export default function Composer({
     const el = ref.current
     const caret = el?.selectionStart ?? value.length
     const next = `${value.slice(0, mention.start)}@${name} ${value.slice(caret)}`
-    setValue(next)
+    commitValue(next)
     setMention(null)
     requestAnimationFrame(() => {
       el?.focus()
@@ -92,7 +115,7 @@ export default function Composer({
   function submit() {
     if (!value.trim()) return
     sendMessage(channelId, value)
-    setValue('')
+    commitValue('')
     setMention(null)
     requestAnimationFrame(autogrow)
     ref.current?.focus()
@@ -174,7 +197,7 @@ export default function Composer({
           value={value}
           placeholder={placeholder}
           onChange={(e) => {
-            setValue(e.target.value)
+            commitValue(e.target.value)
             autogrow()
             detectMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
             if (e.target.value.trim()) sendTyping(channelId)

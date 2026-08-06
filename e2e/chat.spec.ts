@@ -21,6 +21,38 @@ test('two crew members chat in #general and deep-link back into the channel', as
   await expect(deviceA.getByText(message)).toBeVisible()
 })
 
+/**
+ * A half-typed message must survive a channel switch.
+ *
+ * Crew flick between channels constantly — check the stage channel, glance at
+ * FOH — and losing an in-progress message every time you do is the kind of
+ * small betrayal that makes a tool feel untrustworthy. Drafts are per-channel
+ * and kept for the session.
+ */
+test('an unsent draft survives switching channels and comes back', async ({ browser }) => {
+  const page = await newDevice(browser)
+
+  // A second channel to switch to.
+  await page.getByRole('button', { name: 'New channel' }).click()
+  await page.getByPlaceholder('channel-name').fill('stage')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '#stage' })).toBeVisible()
+
+  // Type a draft in #general without sending it.
+  await page.getByRole('button', { name: '#general' }).click()
+  const draft = uniqueName('cue stack is —')
+  const composer = page.getByPlaceholder(/Message/)
+  await composer.fill(draft)
+
+  // #stage has its own (empty) draft.
+  await page.getByRole('button', { name: '#stage' }).click()
+  await expect(composer).toHaveValue('')
+
+  // Back in #general, the half-typed message is exactly as it was left.
+  await page.getByRole('button', { name: '#general' }).click()
+  await expect(composer).toHaveValue(draft)
+})
+
 /** The /connect QR carries ?pin= — scanning prefills the join form. */
 test('a ?pin= deep link prefills the event PIN on the join screen', async ({ browser }) => {
   const context = await browser.newContext()
