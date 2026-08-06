@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { dmxReadiness } from '../src/dmx/readiness.ts'
 import type { DmxListenerStatus } from '../src/dmx/listener.ts'
-import type { DiscoveredSource, UniverseHealth } from '../src/dmx/state.ts'
+import type { ArtNode, DiscoveredSource, DmxOutage, UniverseHealth } from '../src/dmx/state.ts'
 
 const NOW = 1_000_000
 
@@ -20,7 +20,15 @@ const universe = (over: Partial<UniverseHealth> = {}): UniverseHealth => ({
   wireUniverse: 1,
   protocol: 'sacn',
   sources: [
-    { id: 'a', name: 'grandMA3', protocol: 'sacn', priority: 100, lastSeen: NOW - 200, rateHz: 44 },
+    {
+      id: 'a',
+      name: 'grandMA3',
+      protocol: 'sacn',
+      priority: 100,
+      lastSeen: NOW - 200,
+      rateHz: 44,
+      lossPct: null,
+    },
   ],
   winnerId: 'a',
   conflict: false,
@@ -73,8 +81,24 @@ describe('faults worth shouting about', () => {
     const conflicted = universe({
       conflict: true,
       sources: [
-        { id: 'a', name: 'grandMA3', protocol: 'sacn', priority: 100, lastSeen: NOW, rateHz: 44 },
-        { id: 'b', name: 'Spare Desk', protocol: 'sacn', priority: 100, lastSeen: NOW, rateHz: 44 },
+        {
+          id: 'a',
+          name: 'grandMA3',
+          protocol: 'sacn',
+          priority: 100,
+          lastSeen: NOW,
+          rateHz: 44,
+          lossPct: null,
+        },
+        {
+          id: 'b',
+          name: 'Spare Desk',
+          protocol: 'sacn',
+          priority: 100,
+          lastSeen: NOW,
+          rateHz: 44,
+          lossPct: null,
+        },
       ],
     })
     const check = find(dmxReadiness(status(), [conflicted], NOW), 'dmx-conflict')
@@ -199,6 +223,7 @@ describe('more sources than a node will merge', () => {
       priority: 100,
       lastSeen: NOW,
       rateHz: 44,
+      lossPct: null,
     },
     {
       id: 'b',
@@ -207,6 +232,7 @@ describe('more sources than a node will merge', () => {
       priority: 100,
       lastSeen: NOW,
       rateHz: 44,
+      lossPct: null,
     },
   ]
 
@@ -231,6 +257,7 @@ describe('more sources than a node will merge', () => {
         priority: 100,
         lastSeen: NOW,
         rateHz: 44,
+        lossPct: null,
       },
     ]
     const check = find(
@@ -246,9 +273,33 @@ describe('more sources than a node will merge', () => {
 
   it('does not claim the limit applies to sACN', () => {
     const three = [
-      { id: 'a', name: 'A', protocol: 'sacn' as const, priority: 100, lastSeen: NOW, rateHz: 44 },
-      { id: 'b', name: 'B', protocol: 'sacn' as const, priority: 100, lastSeen: NOW, rateHz: 44 },
-      { id: 'c', name: 'C', protocol: 'sacn' as const, priority: 100, lastSeen: NOW, rateHz: 44 },
+      {
+        id: 'a',
+        name: 'A',
+        protocol: 'sacn' as const,
+        priority: 100,
+        lastSeen: NOW,
+        rateHz: 44,
+        lossPct: null,
+      },
+      {
+        id: 'b',
+        name: 'B',
+        protocol: 'sacn' as const,
+        priority: 100,
+        lastSeen: NOW,
+        rateHz: 44,
+        lossPct: null,
+      },
+      {
+        id: 'c',
+        name: 'C',
+        protocol: 'sacn' as const,
+        priority: 100,
+        lastSeen: NOW,
+        rateHz: 44,
+        lossPct: null,
+      },
     ]
     const check = find(
       dmxReadiness(status(), [universe({ conflict: true, sources: three })], NOW),
@@ -328,5 +379,113 @@ describe('what the desks say they are sending', () => {
       'dmx-discovery'
     )
     expect(check?.detail).toContain('1-32')
+  })
+})
+
+describe('everything going dark at once', () => {
+  const outage = (over: Partial<DmxOutage> = {}): DmxOutage => ({
+    protocol: 'sacn',
+    at: NOW - 30_000,
+    universes: [1, 2, 3],
+    otherProtocolAlive: false,
+    ...over,
+  })
+
+  it('names the collapse as one network fault, not many desk faults', () => {
+    const checks = dmxReadiness(status(), [universe({ sources: [] })], NOW, [], [], [outage()])
+    const check = find(checks, 'dmx-outage-sacn')
+    expect(check?.state).toBe('limited')
+    expect(check?.detail).toContain('1-3')
+    expect(check?.detail).toContain('within moments of each other')
+    expect(check?.detail).toContain('network fault')
+    // ...alongside, not instead of, the plain nothing-arriving report.
+    expect(find(checks, 'dmx-traffic')?.state).toBe('limited')
+  })
+
+  it('points at the switch when broadcast survived what multicast did not', () => {
+    const check = find(
+      dmxReadiness(status(), [], NOW, [], [], [outage({ otherProtocolAlive: true })]),
+      'dmx-outage-sacn'
+    )
+    expect(check?.detail).toContain('Art-Net broadcast is still arriving')
+    expect(check?.detail).toContain('not at the desk')
+    expect(check?.fix).toContain('IGMP')
+  })
+
+  it('says when it happened, in wall-clock time someone can act on', () => {
+    const at = new Date('2026-08-06T14:32:00').getTime()
+    const check = find(dmxReadiness(status(), [], NOW, [], [], [outage({ at })]), 'dmx-outage-sacn')
+    expect(check?.detail).toContain('14:32')
+  })
+
+  it('stays silent when there is no outage', () => {
+    expect(find(dmxReadiness(status(), [universe()], NOW), 'dmx-outage-sacn')).toBeUndefined()
+  })
+})
+
+describe('frames going missing', () => {
+  const lossy = (lossPct: number | null) =>
+    universe({
+      sources: [
+        {
+          id: 'a',
+          name: 'grandMA3',
+          protocol: 'sacn',
+          priority: 100,
+          lastSeen: NOW,
+          rateHz: 44,
+          lossPct,
+        },
+      ],
+    })
+
+  it('names the universe, the source and the number', () => {
+    const check = find(dmxReadiness(status(), [lossy(0.03)], NOW), 'dmx-loss')
+    expect(check?.state).toBe('limited')
+    expect(check?.detail).toContain('Universe 1')
+    expect(check?.detail).toContain('3%')
+    expect(check?.detail).toContain('grandMA3')
+    expect(check?.fix).toContain('path')
+  })
+
+  it('keeps rounding noise off the panel', () => {
+    expect(find(dmxReadiness(status(), [lossy(0.004)], NOW), 'dmx-loss')).toBeUndefined()
+  })
+
+  it('treats "cannot say" as nothing to report, not as zero-and-fine', () => {
+    expect(find(dmxReadiness(status(), [lossy(null)], NOW), 'dmx-loss')).toBeUndefined()
+  })
+})
+
+describe('the node inventory', () => {
+  const node = (over: Partial<ArtNode> = {}): ArtNode => ({
+    ip: '2.0.0.7',
+    name: 'SL Node',
+    longName: 'Stage Left Node',
+    firstSeen: NOW - 3_600_000,
+    lastSeen: NOW - 1000,
+    ...over,
+  })
+
+  it('lists who has announced themselves, and how it knows', () => {
+    const check = find(dmxReadiness(status(), [universe()], NOW, [], [node()]), 'dmx-nodes')
+    expect(check?.state).toBe('ok')
+    expect(check?.detail).toContain('SL Node')
+    expect(check?.detail).toContain('2.0.0.7')
+    expect(check?.detail).toContain('never polls')
+  })
+
+  it('marks a node that has stopped announcing itself', () => {
+    const check = find(
+      dmxReadiness(status(), [universe()], NOW, [], [node({ lastSeen: NOW - 12 * 60_000 })]),
+      'dmx-nodes'
+    )
+    expect(check?.detail).toContain('last seen 12 min ago')
+  })
+
+  it('survives the nothing-arriving early return, where it matters most', () => {
+    const checks = dmxReadiness(status(), [], NOW, [], [node()])
+    expect(find(checks, 'dmx-nodes')).toBeDefined()
+    expect(find(checks, 'dmx-traffic')?.state).toBe('limited')
   })
 })

@@ -3,6 +3,7 @@ import {
   ARTSYNC_TIMEOUT_MS,
   DATA_LOSS_MS,
   UNIVERSE_SIZE,
+  type ArtPollReply,
   type DmxFrame,
   type DmxProtocol,
 } from './types.ts'
@@ -66,6 +67,18 @@ export interface DmxSource {
   lastSeen: number
   /** Packets per second, over the last completed second. */
   rateHz: number
+  /**
+   * Fraction of this source's frames that never arrived, over the last
+   * completed `LOSS_WINDOW_MS` — measured from gaps in the sequence numbers
+   * both protocols already carry, so it costs nothing and transmits nothing.
+   *
+   * `null` is "cannot say", and it is load-bearing: an Art-Net source with
+   * sequencing disabled (sequence 0) has no gaps to count, and a window in
+   * which nothing arrived proves nothing — both protocols suppress unchanged
+   * frames, so absence is normal, not loss. Reporting 0% in either case
+   * would be the panel inventing evidence.
+   */
+  lossPct: number | null
 }
 
 export interface UniverseHealth {
@@ -141,6 +154,11 @@ interface SourceRecord extends DmxSource {
   windowStart: number
   lastSequence: number
   hasSequence: boolean
+  /** Sequenced frames that arrived in the loss window being counted. */
+  lossReceived: number
+  /** Frames the sequence numbers say were skipped over in that window. */
+  lossMissed: number
+  lossWindowStart: number
 }
 
 interface UniverseRecord {
@@ -167,6 +185,67 @@ interface UniverseRecord {
   everLit: Uint8Array
 }
 
+/**
+ * Loss is judged over this window. Long enough that one dropped frame at
+ * 30 Hz reads as a third of a percent rather than a spike, short enough that
+ * "losing frames" means now, not ten minutes ago.
+ */
+export const LOSS_WINDOW_MS = 10_000
+
+/**
+ * A forward sequence jump bigger than this is read as the source restarting
+ * its sequence (console reboot, stream restart), not as that many frames
+ * lost in one gulp. A real gap this size at show rates is over a second of
+ * silence, which the data-loss timeout reports as its own, louder fault.
+ */
+const LOSS_RESTART_GAP = 40
+
+/**
+ * How close together universes must fall silent to be read as one event.
+ * Both protocols spread their keep-alives over at most a second, so a cable
+ * pull kills every universe within roughly one keep-alive interval plus one
+ * sweep — 4 s covers that with slack without capturing coincidences.
+ */
+const OUTAGE_CORRELATION_MS = 4000
+
+/** How long a silence stays eligible for correlation before it is history. */
+const SILENCE_MEMORY_MS = 15_000
+
+/**
+ * Several universes going dark together, which no desk does.
+ *
+ * One universe going quiet is a fault about its source. Every universe of a
+ * protocol going quiet within moments of each other is a fault about the
+ * *path* — a pulled cable, a dead switch, IGMP snooping losing its querier —
+ * and reporting it as N separate silences sends someone to check N desks
+ * that are all fine. This is the check that turns the RUNBOOK's IGMP
+ * folklore into a named diagnosis.
+ */
+export interface DmxOutage {
+  protocol: DmxProtocol
+  /** When the collapse completed — the moment the last universe went dark. */
+  at: number
+  /** Plot universes that went silent together. */
+  universes: number[]
+  /**
+   * Whether the other protocol was still arriving when this one collapsed.
+   * The sharpest version of the diagnosis: sACN is multicast and Art-Net is
+   * broadcast, so "multicast died while broadcast lives" is IGMP/switch
+   * behaviour to a first approximation, not a desk and not a cable.
+   */
+  otherProtocolAlive: boolean
+}
+
+/** An Art-Net node that has announced itself. Overheard, never solicited. */
+export interface ArtNode {
+  ip: string
+  /** The node's short name, as configured on the node itself. */
+  name: string
+  longName: string
+  firstSeen: number
+  lastSeen: number
+}
+
 export interface DmxStateOptions {
   /** Plot universe that Art-Net universe 0 corresponds to. */
   artnetBase?: number
@@ -175,8 +254,17 @@ export interface DmxStateOptions {
 export class DmxState {
   private readonly universes = new Map<number, UniverseRecord>()
   private readonly artnetBase: number
-  /** Art-Net sender IP → name, learned from any ArtPollReply it volunteered. */
-  private readonly nodeNames = new Map<string, string>()
+  /**
+   * Every Art-Net node that has announced itself, kept for the session.
+   * Never aged out: a node that stopped replying is exactly the news an
+   * inventory exists to carry, and `lastSeen` is how it carries it.
+   */
+  private readonly artNodes = new Map<string, ArtNode>()
+  /** Universes that recently lost their last source, for outage correlation. */
+  private readonly recentSilences: Array<{ universe: number; protocol: DmxProtocol; at: number }> =
+    []
+  /** Protocol → the collapse currently in effect. Cleared when data returns. */
+  private readonly activeOutages = new Map<DmxProtocol, DmxOutage>()
   /**
    * sACN sync universe → when a synchronization packet was last seen on it.
    *
@@ -218,14 +306,38 @@ export class DmxState {
     return frame.protocol === 'artnet' ? frame.wireUniverse + this.artnetBase : frame.wireUniverse
   }
 
-  /** Name an Art-Net sender from a reply it volunteered. */
-  noteNode(ip: string, name: string): void {
-    if (!name) return
-    this.nodeNames.set(ip, name)
-    for (const record of this.universes.values()) {
-      const source = record.sources.get(ip)
-      if (source) source.name = name
+  /**
+   * An Art-Net node announced itself (in a reply to somebody else's poll —
+   * crewbox never polls). Recorded for the inventory whether or not it has a
+   * name; used to label sources when it does.
+   */
+  noteNode(reply: ArtPollReply, now: number): void {
+    let node = this.artNodes.get(reply.ip)
+    if (!node) {
+      node = { ip: reply.ip, name: '', longName: '', firstSeen: now, lastSeen: now }
+      this.artNodes.set(reply.ip, node)
     }
+    node.lastSeen = now
+    if (reply.shortName) node.name = reply.shortName
+    if (reply.longName) node.longName = reply.longName
+    const label = reply.longName || reply.shortName
+    if (!label) return
+    for (const record of this.universes.values()) {
+      const source = record.sources.get(reply.ip)
+      if (source) source.name = label
+    }
+  }
+
+  /** Every node that has announced itself this session, stalest last. */
+  nodes(): ArtNode[] {
+    return [...this.artNodes.values()].sort(
+      (a, b) => b.lastSeen - a.lastSeen || (a.name || a.ip).localeCompare(b.name || b.ip)
+    )
+  }
+
+  /** Collapses currently in effect — see DmxOutage. */
+  outages(): DmxOutage[] {
+    return [...this.activeOutages.values()]
   }
 
   /** Which sACN groups are actually joined, so `lost` can be told from unheard. */
@@ -310,6 +422,10 @@ export class DmxState {
     // it would light up a plot for a rig that is dark.
     if (frame.preview) return
 
+    // Anything arriving at all — data, even a termination — proves the path
+    // for this protocol delivers again, which is the end of an outage.
+    this.activeOutages.delete(frame.protocol)
+
     const universe = this.plotUniverse(frame)
     let record = this.universes.get(universe)
 
@@ -339,31 +455,53 @@ export class DmxState {
 
     let source = record.sources.get(frame.sourceId)
     if (!source) {
+      const node = this.artNodes.get(frame.sourceId)
       source = {
         id: frame.sourceId,
-        name: frame.sourceName || this.nodeNames.get(frame.sourceId) || '',
+        name: frame.sourceName || (node ? node.longName || node.name : ''),
         protocol: frame.protocol,
         priority: frame.priority,
         lastSeen: now,
         rateHz: 0,
+        lossPct: null,
         packets: 0,
         windowStart: now,
         lastSequence: frame.sequence,
         hasSequence: false,
+        lossReceived: 0,
+        lossMissed: 0,
+        lossWindowStart: now,
       }
       record.sources.set(frame.sourceId, source)
     } else if (frame.sequenced && source.hasSequence) {
-      // A packet that has fallen behind is a straggler the network reordered,
-      // not the next frame. Applying it would flick levels backwards.
       const diff = signedByteDiff(frame.sequence, source.lastSequence)
-      if (diff <= 0 && diff > -SEQUENCE_DISCARD_WINDOW) return
+      if (diff <= 0 && diff > -SEQUENCE_DISCARD_WINDOW) {
+        // A packet that has fallen behind is a straggler the network
+        // reordered, not the next frame. Applying it would flick levels
+        // backwards — but its arrival is still evidence: the frame counted
+        // missing when it was skipped over did exist, so it was reordered,
+        // not lost. The loss figure should not carry it.
+        if (source.lossMissed > 0) {
+          source.lossMissed--
+          source.lossReceived++
+        }
+        return
+      }
+      // The frames a forward jump skipped over never arrived. Jumps past
+      // LOSS_RESTART_GAP read as the source restarting its sequence — a real
+      // gap that size is over a second of silence at show rates, which the
+      // data-loss timeout reports as its own fault.
+      if (diff > 1 && diff <= LOSS_RESTART_GAP) source.lossMissed += diff - 1
     }
 
     if (frame.sourceName) source.name = frame.sourceName
     source.priority = frame.priority
     source.lastSeen = now
     source.lastSequence = frame.sequence
-    if (frame.sequenced) source.hasSequence = true
+    if (frame.sequenced) {
+      source.hasSequence = true
+      source.lossReceived++
+    }
 
     source.packets++
     if (now - source.windowStart >= 1000) {
@@ -371,6 +509,7 @@ export class DmxState {
       source.packets = 0
       source.windowStart = now
     }
+    this.rollLoss(source, now)
 
     record.lastSeen = now
     this.pickWinner(record)
@@ -425,10 +564,44 @@ export class DmxState {
    */
   sweep(now: number): void {
     for (const record of this.universes.values()) {
+      const hadSources = record.sources.size > 0
       for (const [id, source] of record.sources) {
         if (now - source.lastSeen > DATA_LOSS_MS[source.protocol]) record.sources.delete(id)
+        // Windows close on the clock, not only on arrival, so a source that
+        // slowed to keep-alives still gets a verdict — and one that stopped
+        // entirely decays to "cannot say" rather than freezing its last
+        // number on screen.
+        else this.rollLoss(source, now)
       }
       this.pickWinner(record)
+      if (hadSources && record.sources.size === 0) {
+        this.recentSilences.push({ universe: record.universe, protocol: record.protocol, at: now })
+      }
+    }
+
+    // Correlate the silences: every universe of a protocol going dark within
+    // one window is one event about the path, not many about the desks.
+    while (this.recentSilences.length > 0 && now - this.recentSilences[0]!.at > SILENCE_MEMORY_MS) {
+      this.recentSilences.shift()
+    }
+    for (const protocol of ['sacn', 'artnet'] as const) {
+      if (this.activeOutages.has(protocol)) continue
+      const together = this.recentSilences.filter(
+        (s) => s.protocol === protocol && now - s.at <= OUTAGE_CORRELATION_MS
+      )
+      // One universe going quiet is a fact about its source. Two is the
+      // smallest number that can implicate the path instead — and only if
+      // nothing of this protocol survived: a partial collapse still has a
+      // working path to this box, so the survivors exonerate the network.
+      if (together.length < 2) continue
+      const records = [...this.universes.values()]
+      if (records.some((r) => r.protocol === protocol && r.sources.size > 0)) continue
+      this.activeOutages.set(protocol, {
+        protocol,
+        at: Math.max(...together.map((s) => s.at)),
+        universes: [...new Set(together.map((s) => s.universe))].sort((a, b) => a - b),
+        otherProtocolAlive: records.some((r) => r.protocol !== protocol && r.sources.size > 0),
+      })
     }
 
     // Sync streams age out here too, for the same reason and on the same
@@ -516,6 +689,7 @@ export class DmxState {
             priority: source.priority,
             lastSeen: source.lastSeen,
             rateHz: source.rateHz,
+            lossPct: source.lossPct,
           })),
           winnerId: record.winnerId,
           conflict: sources.filter((s) => s.priority === top).length > 1,
@@ -575,13 +749,31 @@ export class DmxState {
     return 'silent'
   }
 
+  /**
+   * Close a source's loss window when it is due, and publish the verdict.
+   *
+   * A window nothing arrived in publishes `null`, not 0% and not 100%: both
+   * protocols stop repeating themselves when nothing changes, so an empty
+   * window is silence by design and proves nothing about the path.
+   */
+  private rollLoss(source: SourceRecord, now: number): void {
+    if (now - source.lossWindowStart < LOSS_WINDOW_MS) return
+    const total = source.lossReceived + source.lossMissed
+    source.lossPct = total > 0 ? source.lossMissed / total : null
+    source.lossReceived = 0
+    source.lossMissed = 0
+    source.lossWindowStart = now
+  }
+
   /** Forget everything. Used when listening is turned off. */
   clear(): void {
     this.universes.clear()
-    this.nodeNames.clear()
+    this.artNodes.clear()
     this.sacnSync.clear()
     this.joinedUniverses.clear()
     this.discovery.clear()
+    this.recentSilences.length = 0
+    this.activeOutages.clear()
     this.artSyncAt = null
   }
 }
