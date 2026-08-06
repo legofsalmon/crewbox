@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// Release version, from the tag CI passes in (CREWBOX_VERSION=v0.10.1).
+// versionCode must strictly increase for Android to allow an in-place
+// upgrade, so it is derived from the semver: 0.10.1 -> 1001. Local builds
+// without the variable keep the old constants.
+def crewboxVersion = (System.getenv('CREWBOX_VERSION') ?: '').replaceFirst('^v', '')
+def crewboxParts = crewboxVersion.tokenize('.')
+def crewboxCode = 1
+if (crewboxParts.size() == 3 && crewboxParts.every { it.isInteger() }) {
+    crewboxCode = crewboxParts[0].toInteger() * 10000 + crewboxParts[1].toInteger() * 100 + crewboxParts[2].toInteger()
+}
+
 android {
     namespace = "com.colmhewson.crewbox"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "com.colmhewson.crewbox"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode crewboxCode
+        versionName crewboxVersion ?: "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +27,30 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // The release keystore arrives via the environment (CI decodes it from a
+    // repo secret — see docs/ANDROID_SIGNING.md). One persistent key matters
+    // more than anything else here: Android only installs an update over an
+    // existing app when the signatures match, so a fresh key per build means
+    // every phone in the field must uninstall (losing its local data) to
+    // upgrade. Without the variable, builds behave exactly as before.
+    signingConfigs {
+        release {
+            def ksPath = System.getenv('CREWBOX_KEYSTORE')
+            if (ksPath) {
+                storeFile file(ksPath)
+                storePassword System.getenv('CREWBOX_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('CREWBOX_KEY_ALIAS')
+                keyPassword System.getenv('CREWBOX_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (System.getenv('CREWBOX_KEYSTORE')) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
