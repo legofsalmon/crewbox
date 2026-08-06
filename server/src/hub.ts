@@ -17,6 +17,8 @@ import { APP_VERSION } from './version.ts'
 
 /** Max missed messages replayed per channel in the welcome payload. */
 const MISSED_LIMIT = 200
+/** Cap on total replayed messages across all channels in one welcome. */
+const MISSED_TOTAL_LIMIT = 500
 /** How far back welcome replays deletions so returning clients reconcile. */
 const DELETION_REPLAY_MS = 7 * 24 * 60 * 60 * 1000
 const HEARTBEAT_MS = 15_000
@@ -29,6 +31,9 @@ interface Conn {
   remote: boolean
   /** Recent `send` timestamps, for the per-connection flood limit. */
   sends: number[]
+  /** Recent state-changing/fan-out action timestamps (typing, markRead,
+   *  createChannel, openDm), for a second, looser flood limit. */
+  actions: number[]
   /** Lighting universes this socket is watching; empty when it isn't. */
   dmxUniverses: number[]
   /** Whether it also wants live levels, which are the expensive part. */
@@ -44,6 +49,27 @@ interface Conn {
 /** Max `send` messages one socket may emit per window before being throttled. */
 const SEND_LIMIT = 30
 const SEND_WINDOW_MS = 10_000
+
+/**
+ * Second, looser limit for the other state-changing / fan-out message types.
+ *
+ * The `send` guard above stops a socket flooding chat, but `typing` (two
+ * channel-audience lookups plus a broadcast to every socket), `markRead` (a DB
+ * write), `createChannel` (a permanent row, a broadcast to everyone, a system
+ * message) and `openDm` were all unthrottled — one stuck or hostile client
+ * looping any of them at wire speed multiplied by every connected phone
+ * saturates the box. 60/10 s is far above any human cadence (a fast typist
+ * emits a typing ping a few times a second at most) and well below abuse.
+ */
+const ACTION_LIMIT = 60
+
+/**
+ * Backstop on public-channel creation for the whole box. createChannel has no
+ * admin gate by design — crew make channels — but nothing bounded the total,
+ * so a loop could fill the database with rows that broadcast to everyone. No
+ * real event needs more than this many named channels.
+ */
+const MAX_PUBLIC_CHANNELS = 500
 
 /**
  * How often watching clients hear about the lighting network.
@@ -169,6 +195,7 @@ export class Hub {
       alive: true,
       remote: isRemoteConnection(req, this.trustProxy),
       sends: [],
+      actions: [],
       dmxUniverses: [],
       dmxLevels: false,
       dmxSent: new Map(),
@@ -233,15 +260,28 @@ export class Hub {
         break
       }
       case 'typing':
+        // Cosmetic and high-frequency: over the limit, drop it silently.
+        if (this.overActionLimit(conn)) break
         this.onTyping(conn, conn.user, msg.channelId)
         break
       case 'markRead':
+        // Read state re-syncs on the next welcome, so a dropped one is
+        // harmless — drop silently rather than error.
+        if (this.overActionLimit(conn)) break
         this.onMarkRead(conn, conn.user, msg.channelId, msg.seq)
         break
       case 'createChannel':
+        if (this.overActionLimit(conn)) {
+          this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+          break
+        }
         this.onCreateChannel(conn, conn.user, msg.name, msg.topic)
         break
       case 'openDm':
+        if (this.overActionLimit(conn)) {
+          this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+          break
+        }
         this.onOpenDm(conn, conn.user, msg.userId)
         break
       case 'dmxWatch':
@@ -274,14 +314,33 @@ export class Hub {
     const channels = this.store.listChannelsFor(user.id)
     const missed: Message[] = []
     const truncated: string[] = []
+    // The per-channel cap alone is unbounded overall: a fresh client (empty
+    // cursors) on a box with twenty channels would get 200 × 20 messages in
+    // one JSON frame, stringified on the event loop and pushed over festival
+    // Wi-Fi — and an AP blip re-hellos a hundred phones in the same second.
+    // A global budget bounds the whole welcome; anything past it is marked
+    // truncated, and the client backfills those channels over REST on demand.
+    let budget = MISSED_TOTAL_LIMIT
     for (const channel of channels) {
       const afterSeq = msg.cursors[channel.id] ?? 0
       if (channel.lastSeq <= afterSeq) continue
-      if (this.store.countAfter(channel.id, afterSeq) > MISSED_LIMIT) {
+      const perChannel = Math.min(MISSED_LIMIT, budget)
+      if (perChannel <= 0) {
+        // Out of budget, but this channel has unseen messages: let the client
+        // fetch them itself rather than omitting them silently.
         truncated.push(channel.id)
-        missed.push(...this.store.listLatestAfter(channel.id, afterSeq, MISSED_LIMIT))
+        continue
+      }
+      // One more than we'll keep, so a full page signals truncation in the
+      // same query — no separate COUNT probe.
+      const batch = this.store.listLatestAfter(channel.id, afterSeq, perChannel + 1)
+      if (batch.length > perChannel) {
+        truncated.push(channel.id)
+        missed.push(...batch.slice(batch.length - perChannel))
+        budget -= perChannel
       } else {
-        missed.push(...this.store.listAfter(channel.id, afterSeq, MISSED_LIMIT))
+        missed.push(...batch)
+        budget -= batch.length
       }
     }
 
@@ -354,12 +413,28 @@ export class Hub {
     }
   }
 
+  /** True (and records the attempt) once a socket is over its action limit. */
+  private overActionLimit(conn: Conn): boolean {
+    const now = Date.now()
+    conn.actions = conn.actions.filter((t) => now - t < SEND_WINDOW_MS)
+    if (conn.actions.length >= ACTION_LIMIT) return true
+    conn.actions.push(now)
+    return false
+  }
+
   private onTyping(conn: Conn, user: User, channelId: string): void {
     if (!this.store.isMember(channelId, user.id)) return
     this.broadcastToChannel(channelId, { type: 'typing', channelId, userId: user.id }, conn.ws)
   }
 
   private onMarkRead(conn: Conn, user: User, channelId: string, seq: number): void {
+    // Gate on membership like onSend/onTyping. setReadState upserts a
+    // channel_members row, and those rows *define* DM membership — so an
+    // unguarded markRead carrying a DM channel id the sender isn't in would
+    // quietly make them a member and start feeding them that DM's history and
+    // live traffic. A stale client cache replaying a markRead after the user
+    // was deleted and re-registered hits this with no ill intent at all.
+    if (!this.store.isMember(channelId, user.id)) return
     this.store.setReadState(user.id, channelId, seq)
     // Sync unread state to the same user's other devices.
     this.sendToUser(user.id, { type: 'readState', channelId, seq }, conn.ws)
@@ -368,6 +443,14 @@ export class Hub {
   private onCreateChannel(conn: Conn, user: User, name: string, topic: string): void {
     if (this.store.getChannelByName(name)) {
       this.send(conn.ws, { type: 'error', code: 'bad_request', message: `#${name} already exists` })
+      return
+    }
+    if (this.store.countPublicChannels() >= MAX_PUBLIC_CHANNELS) {
+      this.send(conn.ws, {
+        type: 'error',
+        code: 'bad_request',
+        message: 'too many channels on this box — retire some first',
+      })
       return
     }
     const channel = this.store.createChannel(name, 'public', topic)

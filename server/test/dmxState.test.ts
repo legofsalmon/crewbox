@@ -365,6 +365,23 @@ describe('frames going missing', () => {
     expect(state.health()[0].sources[0].lossPct).toBe(0)
   })
 
+  it('does not charge Art-Net for its sequence wrap, which skips 0', () => {
+    // Art-Net treats sequence 0 as "sequencing disabled", so a healthy stream
+    // counts 1..255 then wraps straight to 1. That step reads as diff 2 and
+    // was charged as a lost frame every 255-frame cycle — a steady phantom
+    // ~0.4% loss on every sequencing Art-Net desk.
+    const state = new DmxState()
+    let at = 1000
+    // ~400 clean frames across two wraps, 0 always skipped.
+    for (let i = 0; i < 400; i++) {
+      let seq = ((i % 255) + 1) & 0xff // 1..255, 1..255, ...
+      if (seq === 0) seq = 1
+      state.apply(frame({ protocol: 'artnet', sourceId: '2.0.0.9', sequence: seq }), at)
+      at += 33
+    }
+    expect(state.health()[0].sources[0].lossPct).toBe(0)
+  })
+
   it('cannot say anything about an unsequenced source', () => {
     const state = new DmxState()
     for (let i = 0; i < 400; i++) {

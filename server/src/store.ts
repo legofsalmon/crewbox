@@ -250,6 +250,14 @@ export class Store {
     return rows.map((row) => this.toChannel(row))
   }
 
+  /** How many public (non-DM) channels exist — the backstop on createChannel. */
+  countPublicChannels(): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM channels WHERE kind = 'public'`)
+      .get() as { n: number }
+    return row.n
+  }
+
   /** Every channel including retired ones and DMs, for the admin export. */
   listAllChannels(): Channel[] {
     const rows = this.db

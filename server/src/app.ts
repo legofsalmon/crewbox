@@ -38,7 +38,16 @@ import {
   VOICE_PROXY_PATH,
 } from './voiceProxy.ts'
 import { APP_VERSION } from './version.ts'
-import { AdminTokens, hashPin, newAdminPassword, newToken, RateLimiter, verifyPin } from './auth.ts'
+import {
+  AdminTokens,
+  hashPin,
+  hashPinAsync,
+  newAdminPassword,
+  newToken,
+  RateLimiter,
+  verifyPin,
+  verifyPinAsync,
+} from './auth.ts'
 import { Hub } from './hub.ts'
 import type { Store } from './store.ts'
 
@@ -708,7 +717,7 @@ export function buildApp({
 
   // Join doubles as login: a known name + matching personal PIN gets a new
   // session; an unknown name + correct event PIN creates the user.
-  fastify.post('/api/join', (req, reply) => {
+  fastify.post('/api/join', async (req, reply) => {
     if (!joinLimiter.allow(req.ip)) {
       return reply.code(429).send({ error: 'Too many attempts — wait a minute and try again' })
     }
@@ -726,7 +735,7 @@ export function buildApp({
           .code(429)
           .send({ error: 'Too many wrong PINs for that name — wait a few minutes and try again.' })
       }
-      if (!verifyPin(personalPin, existing.pinHash)) {
+      if (!(await verifyPinAsync(personalPin, existing.pinHash))) {
         pinLimiter.record(accountKey)
         return reply.code(401).send({
           error:
@@ -747,7 +756,7 @@ export function buildApp({
     // something you unlock with the password — because the old rule handed
     // the box permanently to whoever happened to scan the poster first, and
     // took it away for good if they ever deleted their account.
-    const user = store.createUser(name, hashPin(personalPin), 'member')
+    const user = store.createUser(name, await hashPinAsync(personalPin), 'member')
     const token = newToken()
     store.createSession(token, user.id)
 
