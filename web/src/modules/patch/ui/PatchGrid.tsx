@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef } from 'react'
+import { Fragment, memo, useCallback, useRef } from 'react'
 import type * as Y from 'yjs'
 import {
   addChannel,
@@ -35,7 +35,7 @@ const DATALIST_IDS: Record<string, string> = {
   stand: 'dl-stand',
 }
 
-function ChannelHeader({
+function ChannelHeaderRow({
   doc,
   channel,
   removable,
@@ -105,6 +105,23 @@ function ChannelHeader({
   )
 }
 
+/**
+ * Memoized by value for the same reason as PatchCell: the snapshot rebuilds
+ * `channel` as a fresh object on every doc update, so reference equality
+ * alone would re-render every row header on every remote edit.
+ */
+const ChannelHeader = memo(
+  ChannelHeaderRow,
+  (prev, next) =>
+    prev.doc === next.doc &&
+    prev.channel.id === next.channel.id &&
+    prev.channel.label === next.channel.label &&
+    prev.channel.input === next.channel.input &&
+    prev.removable === next.removable &&
+    prev.hasContent === next.hasContent &&
+    prev.isMatch === next.isMatch
+)
+
 export default function PatchGrid({
   doc,
   sheetId,
@@ -130,8 +147,16 @@ export default function PatchGrid({
 
   // A rectangular block pasted from Google Sheets (TSV on the clipboard):
   // fill right/down from the focused cell, appending channels as needed.
+  //
+  // The changing inputs live behind a ref so the callback itself is
+  // referentially stable — it is a prop of every memoized PatchCell, and a
+  // fresh function here would defeat the memo for the whole grid on every
+  // snapshot.
+  const pasteContext = useRef({ channels, artists, addToast })
+  pasteContext.current = { channels, artists, addToast }
   const handlePasteRange = useCallback(
     (gridPos: string, text: string) => {
+      const { channels, artists, addToast } = pasteContext.current
       const rows = parseTsv(text)
       if (rows.length === 0) return
       const [rowIndex, colIndex] = gridPos.split(':').map(Number)
@@ -148,7 +173,7 @@ export default function PatchGrid({
       if (widest > columns.length) parts.push(`${widest - columns.length} column(s) didn't fit`)
       addToast('Paste', parts.join(' · '), widest > columns.length ? 'warning' : 'success')
     },
-    [doc, channels, artists, addToast]
+    [doc]
   )
 
   const remoteEditors: Record<string, { name: string; color: string }> = {}

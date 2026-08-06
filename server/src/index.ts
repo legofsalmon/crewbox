@@ -224,7 +224,10 @@ async function main(): Promise<void> {
   const webIndex = join(webDist, 'index.html')
   if (existsSync(webIndex)) {
     const fastifyStatic = (await import('@fastify/static')).default
-    await app.register(fastifyStatic, { root: webDist })
+    // preCompressed: the web build writes .gz/.br siblings beside each asset
+    // (scripts/compress-dist.mjs), so a phone downloads ~a quarter of the
+    // bytes and the box's one event loop compresses nothing at request time.
+    await app.register(fastifyStatic, { root: webDist, preCompressed: true })
     app.setNotFoundHandler((req, reply) => {
       if (req.method === 'GET' && !req.url.startsWith('/api')) {
         return reply.sendFile('index.html')
