@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync }
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
 
 /**
  * Single-binary "box" support. scripts/build-box.mjs packages the server and
@@ -280,6 +281,30 @@ export async function stopRunningBox(dataDir: string): Promise<number> {
   }
   console.error(`${label} (pid ${status.pid}) did not stop within 10s.`)
   return 1
+}
+
+/**
+ * Whether something is already listening on host:port.
+ *
+ * Used as a startup pre-flight: a second box launched against the same data
+ * directory (a stray double-click of a box that is already running) must not
+ * reach the destructive parts of boot — the SFU reap in `startEmbeddedLiveKit`
+ * would kill the *running* box's live voice server before this doomed start
+ * died on the port bind anyway. Checking the port first is the most direct
+ * "another box is actively serving" signal there is: it needs no status file
+ * and survives pid reuse.
+ *
+ * The probe binds and closes immediately; the real `app.listen` re-binds a
+ * moment later. Only EADDRINUSE counts as in-use — every other bind error is
+ * left for `app.listen` to surface with its own diagnostics.
+ */
+export function portInUse(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.once('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'EADDRINUSE'))
+    server.once('listening', () => server.close(() => resolve(false)))
+    server.listen(port, host)
+  })
 }
 
 /** `crewbox --status`: say whether a box is running, and where. */
