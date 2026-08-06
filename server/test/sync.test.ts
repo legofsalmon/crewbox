@@ -135,6 +135,17 @@ async function connect(
   return { client, welcome }
 }
 
+/** Poll the online tally until it reaches `expected` (or a timeout); returns
+ *  whatever it settled on, so a mismatch fails the assertion with the real
+ *  number. Presence updates on connection close are processed asynchronously. */
+async function waitForOnline(expected: number, timeoutMs = 2000): Promise<number> {
+  const deadline = Date.now() + timeoutMs
+  while (app.hub.stats().onlineUsers !== expected && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  return app.hub.stats().onlineUsers
+}
+
 beforeEach(async () => {
   sockets = []
   filesDir = mkdtempSync(pathJoin(tmpdir(), 'crewbox-test-'))
@@ -929,6 +940,24 @@ describe('remote access', () => {
         m.type === 'presence' && m.userId === office.welcome.me.id && m.remote === false
     )
     expect(update.online).toBe(true)
+  })
+
+  it('a repeated hello on one socket does not leak the user online after it closes', async () => {
+    // The bug: onHello marked the user online every time, but close decrements
+    // once — so a client re-sending hello on the same socket inflated the
+    // online tally, and the user stayed "online" with no socket after closing.
+    const token = await join('Echo')
+    const { client } = await connect(token)
+    expect(await waitForOnline(1)).toBe(1)
+
+    // Second hello on the same socket (a retrying or misbehaving client).
+    // Messages and the close frame are ordered, so the server processes this
+    // hello before the close below.
+    client.send({ type: 'hello', token })
+    client.close()
+
+    // With the leak, onlineUsers never returns to 0; the fix balances it.
+    expect(await waitForOnline(0)).toBe(0)
   })
 })
 
