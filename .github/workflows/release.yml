@@ -303,9 +303,33 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run build:native
-      - run: ./gradlew assembleDebug
+      # Signed with the persistent release key when the keystore secrets
+      # exist (docs/ANDROID_SIGNING.md). This is what lets a phone upgrade
+      # in place: Android refuses to install over an app whose signature
+      # differs, and the debug fallback mints a different key every build —
+      # so without the secrets, every release forces an uninstall (and the
+      # phone loses its local data) to update. The fallback keeps releases
+      # working before the keystore exists, but says so out loud.
+      - name: Build the APK
         working-directory: native/android
-      - run: cp native/android/app/build/outputs/apk/debug/app-debug.apk crewbox.apk
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          CREWBOX_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CREWBOX_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CREWBOX_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CREWBOX_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/crewbox.keystore"
+            export CREWBOX_KEYSTORE="$RUNNER_TEMP/crewbox.keystore"
+            ./gradlew assembleRelease
+            cp app/build/outputs/apk/release/app-release.apk ../../crewbox.apk
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — building a debug-signed APK. Its signature changes every build, so phones with an earlier release must uninstall (losing local data) to update. See docs/ANDROID_SIGNING.md."
+            ./gradlew assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk ../../crewbox.apk
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: apk
