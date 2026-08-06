@@ -221,6 +221,14 @@ export interface AppState {
 }
 
 let ws: WsClient | null = null
+/**
+ * The lighting-network watch this client currently wants, so it can be
+ * re-established after a websocket reconnect. The subscription lives on the
+ * server *connection*; a reconnect is a fresh connection with no watch, and
+ * without re-sending it the live bar keeps painting the last levels it saw —
+ * a desk that has actually stopped reaching this phone shown as live.
+ */
+let dmxWatch: { universes: number[]; levels: boolean } = { universes: [], levels: false }
 /** Lazily constructed — importing it pulls the LiveKit SDK chunk. */
 let voiceManager: VoiceManager | null = null
 /** Reloads into the new service worker; set once PWA registration runs. */
@@ -416,6 +424,14 @@ export const useStore = create<AppState>()((set, get) => {
       void alerts
         .start({ serverUrl: serverOrigin(), token: getToken() ?? '', myName: msg.me.name })
         .catch(() => {})
+    }
+
+    // Re-establish the lighting-network watch on this fresh connection. The
+    // server tracks the subscription per connection, so a reconnect starts
+    // with none; without this the live bar keeps showing the levels from
+    // before the drop as though the desk were still reaching us.
+    if (dmxWatch.universes.length > 0) {
+      ws?.send({ type: 'dmxWatch', universes: dmxWatch.universes, levels: dmxWatch.levels })
     }
 
     if (!get().activeChannelId) {
@@ -1013,6 +1029,8 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     watchDmx(universes, levels = false) {
+      // Remembered so handleWelcome can re-arm it after a reconnect.
+      dmxWatch = { universes, levels }
       ws?.send({ type: 'dmxWatch', universes, levels })
       if (universes.length === 0) {
         set({ dmx: { listening: false, universes: [], everLit: new Map(), levels: new Map() } })

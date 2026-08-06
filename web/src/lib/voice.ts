@@ -1,6 +1,5 @@
 import {
   ConnectionQuality,
-  ConnectionState,
   Room,
   RoomEvent,
   Track,
@@ -128,7 +127,15 @@ export class VoiceManager {
         }
       })
       .on(RoomEvent.Reconnecting, () => this.publish({ status: 'reconnecting' }))
-      .on(RoomEvent.Reconnected, () => this.publish({ status: 'connected' }))
+      .on(RoomEvent.Reconnected, () => {
+        this.publish({ status: 'connected' })
+        // Reconcile the mic to the intent captured during the outage. If a
+        // release was dropped while reconnecting, this is what finally closes
+        // the mic; if a press was, it opens it. Without this the mic state
+        // after a reconnect is whatever LiveKit last published, not what the
+        // crew member is actually asking for.
+        void this.applyMic()
+      })
       .on(RoomEvent.Disconnected, () => {
         // Only an *unexpected* drop reaches this: `leave()` nulls `this.room`
         // before disconnecting, so a deliberate exit fails this guard and
@@ -224,7 +231,13 @@ export class VoiceManager {
 
   /** Open/close the mic. Mute-based, so open latency is near-zero. */
   async setTalking(on: boolean): Promise<void> {
-    if (!this.room || this.room.state !== ConnectionState.Connected) return
+    if (!this.room) return
+    // Record the *intent* first, unconditionally. The old code returned early
+    // when the room was not Connected — but a release (on=false) arriving
+    // while the room is Reconnecting would then be dropped, and LiveKit
+    // re-publishes the last enabled track on reconnection: a hot mic the crew
+    // member believes they closed. Intent is recorded here and reconciled to
+    // the real mic in `applyMic`, which also runs again on Reconnected.
     this.talking = on
     this.publish({ talking: on })
     // Meter the send track while transmitting so the UI can show the mic is
@@ -237,12 +250,31 @@ export class VoiceManager {
         this.publish({ micLevel: null })
       }
     }
+    await this.applyMic()
+  }
+
+  /**
+   * Push the desired talking state onto the actual microphone.
+   *
+   * Called on every press and release, and again from the Reconnected
+   * handler, so the mic can never lag the intent. A failed *open* falls back
+   * to listen-only; a failed *close* keeps the intent false so the next
+   * reconnect retries it rather than leaving the mic hot.
+   */
+  private async applyMic(): Promise<void> {
+    const room = this.room
+    if (!room) return
+    const wanted = this.talking
     try {
-      await this.room.localParticipant.setMicrophoneEnabled(on)
-      if (on) this.publish({ micReady: true })
+      await room.localParticipant.setMicrophoneEnabled(wanted)
+      if (wanted && this.room === room) this.publish({ micReady: true })
     } catch {
-      this.talking = false
-      this.publish({ talking: false, error: 'Microphone unavailable — listen-only' })
+      if (wanted && this.room === room) {
+        this.talking = false
+        this.publish({ talking: false, error: 'Microphone unavailable — listen-only' })
+      }
+      // A failed close leaves this.talking === false, so the Reconnected
+      // reconcile will try again; the mic is never silently left open.
     }
   }
 

@@ -166,6 +166,28 @@ describe('who is sending', () => {
     state.noteNode({ ip: '2.0.0.7', shortName: 'SL Node', longName: 'Stage Left Node' }, 1500)
     expect(state.health()[0].sources[0].name).toBe('Stage Left Node')
   })
+
+  it('keeps a recently-dark universe but forgets one dark for an hour', () => {
+    // The record survives the source going away so the panel can say "was
+    // live, now nothing" — but a box on a busy or hostile network would
+    // otherwise accrete a 1 KB record per wire universe for the whole event.
+    const state = new DmxState()
+    state.apply(frame({ wireUniverse: 1 }), 1000)
+    state.sweep(9000) // source aged out; record kept
+    expect(state.health()).toHaveLength(1)
+
+    // Half an hour of silence: still remembered.
+    state.sweep(1000 + 30 * 60_000)
+    expect(state.health()).toHaveLength(1)
+
+    // Past an hour: forgotten, so the map cannot grow without bound.
+    state.sweep(1000 + 61 * 60_000)
+    expect(state.health()).toHaveLength(0)
+
+    // And it comes back for free if the universe ever returns.
+    state.apply(frame({ wireUniverse: 1 }), 1000 + 62 * 60_000)
+    expect(state.health()).toHaveLength(1)
+  })
 })
 
 describe('what gets believed', () => {

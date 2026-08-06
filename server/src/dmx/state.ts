@@ -212,6 +212,20 @@ const OUTAGE_CORRELATION_MS = 4000
 const SILENCE_MEMORY_MS = 15_000
 
 /**
+ * How long a universe with no sources is kept before it is forgotten.
+ *
+ * A universe record is deliberately kept after its last source goes, so the
+ * panel can say "this was live, now nothing" rather than forgetting a fault.
+ * But each record holds two 512-byte arrays, and Art-Net's 15-bit
+ * Port-Address plus sACN's 16-bit universe mean a misconfigured — or
+ * hostile — sender can name tens of thousands of them. Over a five-day box
+ * that is unbounded growth. An hour of silence is far longer than any real
+ * "just went dark" needs, and shorter than the event; past it, the record is
+ * dropped and re-created for free if the universe ever comes back.
+ */
+const UNIVERSE_RETENTION_MS = 60 * 60_000
+
+/**
  * Several universes going dark together, which no desk does.
  *
  * One universe going quiet is a fault about its source. Every universe of a
@@ -576,6 +590,14 @@ export class DmxState {
       this.pickWinner(record)
       if (hadSources && record.sources.size === 0) {
         this.recentSilences.push({ universe: record.universe, protocol: record.protocol, at: now })
+      }
+      // Forget a universe nothing has sent to for an hour. Keeping it is what
+      // lets the panel say "was live, now nothing"; keeping it forever is how
+      // a box on a busy or hostile network accretes tens of thousands of
+      // 1 KB records over a multi-day event. The record costs nothing to
+      // rebuild if the universe ever returns.
+      if (record.sources.size === 0 && now - record.lastSeen > UNIVERSE_RETENTION_MS) {
+        this.universes.delete(record.universe)
       }
     }
 
