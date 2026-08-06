@@ -87,6 +87,32 @@ deployment choice.
    picture. It prints the expiry; **Admin → This box** confirms it took.
    The name here is the box's own (`chat.<yourdomain>`, resolving to its LAN
    IP), not the public download site.
+
+   **On a Mac box** (the laptop-that-travels setup): `deploy/cert-renew-mac.sh`
+   instead — lego with Vercel DNS, no sudo, everything under `$HOME`. It only
+   acts inside 30 days of expiry, so schedule it weekly and forget it. Use
+   launchd, not cron: a laptop asleep at the scheduled minute gets the run on
+   wake instead of a silent skip. `~/Library/LaunchAgents/com.crewbox.cert-renew.plist`:
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+     <key>Label</key><string>com.crewbox.cert-renew</string>
+     <key>ProgramArguments</key>
+     <array><string>/Users/YOU/certs/cert-renew.sh</string></array>
+     <key>StartCalendarInterval</key>
+     <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+     <key>StandardOutPath</key><string>/Users/YOU/certs/renew.log</string>
+     <key>StandardErrorPath</key><string>/Users/YOU/certs/renew.log</string>
+   </dict>
+   </plist>
+   ```
+
+   then `launchctl load` that file once. A renewal lands at the box's next
+   start — per-gig, that's the next gig; a running event is never touched.
+
 2. **Software up to date.** Which of these you do depends on how the box was
    installed:
    - **A release binary or `Crewbox.dmg`** (the normal case): download the new
