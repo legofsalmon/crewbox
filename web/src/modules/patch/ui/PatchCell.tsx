@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type * as Y from 'yjs'
 import { patchSubBoxDisplay, setPatchField, setPatchSubBox } from '../model/sheetDoc'
 import { emptyPatchEntry, type PatchEntry, type PatchField, type SubBox } from '../model/types'
@@ -6,7 +7,7 @@ import { sheetRoom } from '../store/docManager'
 import { useDraft } from '../../_shared/ui/useDraft'
 import styles from './PatchGrid.module.scss'
 
-export default function PatchCell({
+function PatchCell({
   doc,
   sheetId,
   artistId,
@@ -137,3 +138,63 @@ export default function PatchCell({
     </td>
   )
 }
+
+/**
+ * The grid renders channels × artists × fields of these — a festival master
+ * patch is easily ~2,000 — and every Yjs update rebuilds the snapshot from
+ * scratch, so every object prop arrives as a fresh reference. Without a
+ * value-comparing memo, one remote peer committing one cell re-rendered the
+ * entire grid on every phone watching the sheet; during a two-desk
+ * changeover that is a full-grid reconcile per edit. Compare by value so
+ * only the cells whose data actually changed re-render.
+ */
+const entryEqual = (a: PatchEntry | undefined, b: PatchEntry | undefined): boolean =>
+  a === b ||
+  (!!a &&
+    !!b &&
+    a.subBoxId === b.subBoxId &&
+    a.subBoxText === b.subBoxText &&
+    a.subBoxTail === b.subBoxTail &&
+    a.input === b.input &&
+    a.description === b.description &&
+    a.micDi === b.micDi &&
+    a.stand === b.stand)
+
+const subBoxesEqual = (a: SubBox[], b: SubBox[]): boolean =>
+  a === b ||
+  (a.length === b.length &&
+    a.every((box, i) => {
+      const other = b[i]
+      return (
+        box.id === other.id &&
+        box.name === other.name &&
+        box.inputs === other.inputs &&
+        box.color === other.color &&
+        box.stagePosition === other.stagePosition
+      )
+    }))
+
+type CellProps = Parameters<typeof PatchCell>[0]
+
+const cellPropsEqual = (prev: CellProps, next: CellProps): boolean =>
+  prev.doc === next.doc &&
+  prev.sheetId === next.sheetId &&
+  prev.artistId === next.artistId &&
+  prev.channelId === next.channelId &&
+  prev.field === next.field &&
+  entryEqual(prev.entry, next.entry) &&
+  subBoxesEqual(prev.subBoxes, next.subBoxes) &&
+  prev.datalistId === next.datalistId &&
+  prev.label === next.label &&
+  (prev.remoteEditor === next.remoteEditor ||
+    (!!prev.remoteEditor &&
+      !!next.remoteEditor &&
+      prev.remoteEditor.name === next.remoteEditor.name &&
+      prev.remoteEditor.color === next.remoteEditor.color)) &&
+  prev.gridPos === next.gridPos &&
+  prev.onNavigate === next.onNavigate &&
+  prev.onPasteRange === next.onPasteRange &&
+  prev.valueAbove === next.valueAbove &&
+  prev.isMatch === next.isMatch
+
+export default memo(PatchCell, cellPropsEqual)
