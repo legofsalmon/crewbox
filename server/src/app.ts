@@ -29,6 +29,8 @@ import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
+import { Collector } from './audit/collector.ts'
+import type { MetricsStore } from './audit/metrics.ts'
 import { setupPage } from './setup.ts'
 import {
   isVoiceUpgrade,
@@ -265,6 +267,12 @@ export interface AppDeps {
   dmx?: DmxListener
   /** Media-network watchers (PTP/mDNS/SAP), when this box was asked to watch. */
   netwatch?: NetWatch
+  /**
+   * Persistent audit history (rollups/events/probe runs). Omit and the
+   * network-audit collector still runs in memory but writes nothing —
+   * tests and the e2e box work without a metrics store.
+   */
+  metrics?: MetricsStore
   logger?: boolean
 }
 
@@ -297,6 +305,7 @@ export function buildApp({
   probes,
   dmx,
   netwatch,
+  metrics,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -377,6 +386,33 @@ export function buildApp({
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
   const docs = new DocsRelay()
   fastify.addHook('onClose', () => docs.close())
+
+  // The network audit's collector: strictly a reader over the state the
+  // passive listeners already keep — it opens no sockets and sends nothing.
+  // Runs whenever the module is enabled; without a metrics store (tests,
+  // e2e) it samples in memory and writes nothing.
+  let collector: Collector | undefined
+  if (modules.includes('network')) {
+    collector = new Collector(metrics, {
+      hubStats: () => hub.stats(),
+      ...(dmx
+        ? {
+            dmxHealth: () => dmx.state.health(),
+            dmxOutages: () => dmx.state.outages(),
+          }
+        : {}),
+      ...(netwatch
+        ? {
+            ptpStatus: (now: number) => netwatch.ptp.status(now),
+            netwatchStatus: () => netwatch.snapshot(),
+            mdnsRoster: () => netwatch.mdns.roster(),
+            sapRoster: () => netwatch.sap.roster(),
+          }
+        : {}),
+    })
+    collector.start()
+    fastify.addHook('onClose', () => collector?.stop())
+  }
   if (sessionTtlMs) {
     const pruned = store.pruneSessions(sessionTtlMs)
     if (pruned > 0) fastify.log.info(`pruned ${pruned} expired session(s)`)

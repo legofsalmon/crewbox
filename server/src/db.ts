@@ -116,6 +116,43 @@ const MIGRATIONS: string[] = [
   ALTER TABLE files ADD COLUMN height INTEGER;
   ALTER TABLE files ADD COLUMN thumb_path TEXT;
   `,
+  // v7: network-audit history — minute rollups, discrete events, probe runs.
+  // Bounded by the collector (key caps, event throttling, 7-day prune), so
+  // a five-day festival's audit trail survives restarts and power cuts
+  // without the database growing past tens of megabytes.
+  `
+  CREATE TABLE IF NOT EXISTS audit_metrics (
+    ts     INTEGER NOT NULL,
+    metric TEXT    NOT NULL,
+    key    TEXT    NOT NULL DEFAULT '',
+    min    REAL    NOT NULL,
+    avg    REAL    NOT NULL,
+    max    REAL    NOT NULL,
+    count  INTEGER NOT NULL,
+    PRIMARY KEY (metric, key, ts)
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_metrics_ts ON audit_metrics(ts);
+
+  CREATE TABLE IF NOT EXISTS audit_events (
+    id      TEXT PRIMARY KEY,
+    at      INTEGER NOT NULL,
+    network TEXT NOT NULL,
+    kind    TEXT NOT NULL,
+    key     TEXT NOT NULL DEFAULT '',
+    detail  TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_events_at ON audit_events(at);
+
+  CREATE TABLE IF NOT EXISTS audit_probe_runs (
+    id          TEXT PRIMARY KEY,
+    started_at  INTEGER NOT NULL,
+    finished_at INTEGER,
+    by_name     TEXT NOT NULL,
+    report      TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_probe_runs_started
+    ON audit_probe_runs(started_at);
+  `,
 ]
 
 export function openDb(path: string): DatabaseSync {
