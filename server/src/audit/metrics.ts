@@ -35,6 +35,24 @@ export const MAX_KEYS_PER_METRIC = 64
 /** Most events recorded per hour before throttling kicks in. */
 export const MAX_EVENTS_PER_HOUR = 500
 
+/**
+ * Every metric the collector writes. The series endpoint validates against
+ * this list, so a request can't turn arbitrary strings into table scans.
+ */
+export const AUDIT_METRICS = [
+  'crew.connections',
+  'crew.onlineUsers',
+  'crew.rtt',
+  'dmx.rateHz',
+  'dmx.lossPct',
+  'dmx.sources',
+  'media.ptpAnnouncers',
+  'media.ptpV1RateHz',
+  'media.mdnsDevices',
+  'media.sapStreams',
+  'watch.packets',
+] as const
+
 export interface RollupRow {
   ts: number
   metric: string

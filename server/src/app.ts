@@ -30,7 +30,8 @@ import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
 import { Collector } from './audit/collector.ts'
-import type { MetricsStore } from './audit/metrics.ts'
+import { AUDIT_METRICS, type MetricsStore } from './audit/metrics.ts'
+import { scoreAudit } from './audit/score.ts'
 import { setupPage } from './setup.ts'
 import {
   isVoiceUpgrade,
@@ -1049,6 +1050,89 @@ export function buildApp({
       .slice(0, 25)
     return { messages: results }
   })
+
+  // -- network audit ---------------------------------------------------------
+  //
+  // Session-authed, not admin: the audit is for the whole crew (only
+  // *triggering* active probes is an admin action, added with the prober).
+  // Registered only when the network module is on, like the pane it feeds.
+  if (modules.includes('network')) {
+    const SCORE_WINDOW_MS = 15 * 60_000
+    const EVENTS_WINDOW_MS = 60 * 60_000
+
+    fastify.get('/api/audit', (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      const now = Date.now()
+      const report = scoreAudit({
+        now,
+        configured: { dmx: Boolean(dmx), watch: Boolean(netwatch) },
+        hub: hub.stats(),
+        ...(dmx
+          ? {
+              dmx: {
+                health: dmx.state.health(),
+                outages: dmx.state.outages(),
+                discovered: dmx.state.discovered(),
+                nodes: dmx.state.nodes(),
+              },
+            }
+          : {}),
+        ...(netwatch
+          ? {
+              ptp: netwatch.ptp.status(now),
+              watch: netwatch.snapshot(),
+              mdns: netwatch.mdns.roster(),
+              sap: netwatch.sap.roster(),
+            }
+          : {}),
+        recentSeries: (metric, key) =>
+          metrics ? metrics.series(metric, key, now - SCORE_WINDOW_MS, now) : [],
+        events: metrics ? metrics.events(now - EVENTS_WINDOW_MS, 500) : [],
+        probe: metrics?.latestProbeRun() ?? null,
+      })
+      return {
+        report,
+        events: metrics ? metrics.events(now - 24 * 60 * 60_000, 200) : [],
+        probe: metrics?.latestProbeRun() ?? null,
+        probeRunning: false,
+      }
+    })
+
+    const seriesQuerySchema = z.object({
+      metric: z.enum(AUDIT_METRICS),
+      key: z.string().max(32).default(''),
+      from: z.coerce.number().int().min(0),
+      to: z.coerce.number().int().min(0),
+    })
+
+    fastify.get('/api/audit/series', (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      const parsed = seriesQuerySchema.safeParse(req.query)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid query' })
+      const { metric, key, from, to } = parsed.data
+      // Clamp to a day of minutes so one request can't drag the whole table.
+      const clampedFrom = Math.max(from, to - 24 * 60 * 60_000)
+      const rows = metrics ? metrics.series(metric, key, clampedFrom, to) : []
+      return { points: rows.map((r) => [r.ts, r.min, r.avg, r.max, r.count]) }
+    })
+
+    const bundleQuerySchema = z.object({
+      from: z.coerce.number().int().min(0),
+      to: z.coerce.number().int().min(0),
+    })
+
+    fastify.get('/api/audit/bundle', (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      const parsed = bundleQuerySchema.safeParse(req.query)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid query' })
+      const { from, to } = parsed.data
+      const clampedFrom = Math.max(from, to - 7 * 24 * 60 * 60_000)
+      return { rows: metrics ? metrics.bundle(clampedFrom, to) : [] }
+    })
+  }
 
   // Scrollback history, oldest → newest, for messages before beforeSeq.
   fastify.get('/api/channels/:id/messages', (req, reply) => {
