@@ -14,6 +14,7 @@ import { buildApp, type App } from '../src/app.ts'
  */
 
 const EVENT_PIN = '4242'
+const ADMIN_PASSWORD = 'audit-admin-pass'
 let app: App
 let metrics: MetricsStore
 let filesDir: string
@@ -40,6 +41,7 @@ beforeEach(async () => {
     filesDir,
     dataDir: filesDir,
     metrics,
+    adminPassword: ADMIN_PASSWORD,
     modules: ['chat', 'network'],
     logger: false,
   })
@@ -151,6 +153,51 @@ describe('/api/audit/bundle', () => {
     const body = res.json() as { rows: Array<{ metric: string }> }
     expect(body.rows.map((r) => r.metric).sort()).toEqual(['crew.connections', 'dmx.rateHz'])
   })
+})
+
+describe('POST /api/audit/probe', () => {
+  it('is admin-gated: a plain crew session cannot start a sweep', async () => {
+    const token = await join_('Crewbie')
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/audit/probe',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect([401, 403]).toContain(res.statusCode)
+  })
+
+  it('starts for an unlocked admin and reports running via GET', async () => {
+    const token = await join_('Boss')
+    const unlock = await app.inject({
+      method: 'POST',
+      url: '/api/admin/unlock',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { password: ADMIN_PASSWORD },
+    })
+    expect(unlock.statusCode).toBe(200)
+    const { adminToken } = unlock.json() as { adminToken: string }
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/audit/probe',
+      headers: { authorization: `Bearer ${token}`, 'x-admin-token': adminToken },
+    })
+    expect(res.statusCode).toBe(202)
+    // The sweep runs with real (failing, sandboxed) probes; what matters
+    // here is that it eventually lands as a finished run in the payload.
+    for (let i = 0; i < 100; i++) {
+      const audit = await app.inject({
+        method: 'GET',
+        url: '/api/audit',
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const body = audit.json() as { probe: { finishedAt: number | null } | null }
+      if (body.probe?.finishedAt) {
+        return // finished — probes fail-soft into info/skipped states
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    throw new Error('probe run never finished')
+  }, 20_000)
 })
 
 describe('module gating', () => {

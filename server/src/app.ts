@@ -29,8 +29,10 @@ import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
+import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, type MetricsStore } from './audit/metrics.ts'
+import { Prober } from './audit/probes.ts'
 import { scoreAudit } from './audit/score.ts'
 import { setupPage } from './setup.ts'
 import {
@@ -381,7 +383,8 @@ export function buildApp({
 
   // Warmed at startup so the admin panel reads a result rather than waiting
   // on one; see the route below.
-  const environment = createEnvironmentCache(probes ?? boxProbes(dataDir))
+  const envProbes = probes ?? boxProbes(dataDir)
+  const environment = createEnvironmentCache(envProbes)
   void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
@@ -393,6 +396,7 @@ export function buildApp({
   // Runs whenever the module is enabled; without a metrics store (tests,
   // e2e) it samples in memory and writes nothing.
   let collector: Collector | undefined
+  let prober: Prober | undefined
   if (modules.includes('network')) {
     collector = new Collector(metrics, {
       hubStats: () => hub.stats(),
@@ -413,6 +417,27 @@ export function buildApp({
     })
     collector.start()
     fastify.addHook('onClose', () => collector?.stop())
+
+    // The deep probe — the audit's one admin-push exception to "never
+    // transmit". Sockets are created per sweep and closed with it; replies
+    // land on the existing passive listeners (see audit/probes.ts).
+    prober = new Prober(
+      {
+        createSocket: (options) => createDgramSocket(options),
+        env: envProbes,
+        now: Date.now,
+        wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      },
+      {
+        dmxIface: () => network?.boot.dmxIface ?? '',
+        watchIface: () => netwatch?.snapshot().interfaceIp ?? '',
+        ...(dmx ? { nodeCount: () => dmx.state.nodes().length } : {}),
+        ...(netwatch ? { mdnsCount: () => netwatch.mdns.roster().length } : {}),
+        certHostname: () => (tls ? certNames(tls.cert.toString())[0] : undefined),
+        watching: () => Boolean(netwatch),
+      },
+      metrics
+    )
   }
   if (sessionTtlMs) {
     const pruned = store.pruneSessions(sessionTtlMs)
@@ -1095,8 +1120,22 @@ export function buildApp({
         report,
         events: metrics ? metrics.events(now - 24 * 60 * 60_000, 200) : [],
         probe: metrics?.latestProbeRun() ?? null,
-        probeRunning: false,
+        probeRunning: prober?.running ?? false,
       }
+    })
+
+    // Starting a sweep is the admin's call — it is the one time the audit
+    // transmits. Fire-and-forget: progress and results surface through the
+    // ordinary GET above, which every open pane is already polling.
+    fastify.post('/api/audit/probe', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      if (!prober) return reply.code(404).send({ error: 'not available' })
+      if (prober.running) return reply.code(409).send({ error: 'a probe is already running' })
+      prober.run(admin.name).catch((err) => {
+        fastify.log.warn(`audit probe failed: ${String(err)}`)
+      })
+      return reply.code(202).send({ started: true })
     })
 
     const seriesQuerySchema = z.object({
