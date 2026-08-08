@@ -32,6 +32,13 @@ test('the audit pane grades the three networks for any crew member', async ({ br
 
   // The event strip renders (quiet is a valid, stated answer).
   await expect(page.getByRole('region', { name: 'Events, last 24 hours' })).toBeVisible()
+
+  // The report downloads as one self-contained HTML file.
+  const download = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Download HTML report' }).click(),
+  ]).then(([d]) => d)
+  expect(download.suggestedFilename()).toMatch(/^crewbox-network-audit-\d{4}-\d{2}-\d{2}\.html$/)
 })
 
 test('a phone can get into and back out of the audit pane', async ({ browser }) => {

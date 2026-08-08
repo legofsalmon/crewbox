@@ -4,6 +4,7 @@ import { fetchAudit, fetchSeries } from './model/api.ts'
 import { GRADE_LABELS, overallGrade } from './model/grade.ts'
 import type { AuditPayload, SeriesPoint } from './model/types.ts'
 import EventStrip from './ui/EventStrip.tsx'
+import ExportBar from './ui/ExportBar.tsx'
 import NetworkCard from './ui/NetworkCard.tsx'
 import ProbePanel from './ui/ProbePanel.tsx'
 import styles from './NetworkMain.module.scss'
@@ -89,6 +90,7 @@ export default function NetworkMain(_props: { subpath: string }) {
 
       {payload && (
         <div className={styles.body}>
+          <ExportBar payload={payload} series={series} />
           <div className={styles.cards}>
             {payload.report.networks.map((network) => (
               <NetworkCard key={network.id} network={network} series={series} />
