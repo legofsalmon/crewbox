@@ -172,4 +172,33 @@ for (const scheme of ['light', 'dark'] as const) {
 
     await context.close()
   })
+
+  test(`network audit text stays readable in ${scheme} theme`, async ({ browser }) => {
+    const context = await browser.newContext({ colorScheme: scheme })
+    const page = await context.newPage()
+    page.on('pageerror', (e) => {
+      throw new Error(`Page error: ${e.message}`)
+    })
+
+    await page.goto('/?pin=4242')
+    await page.getByLabel('Your name').fill(`Audit ${scheme}`)
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join' }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+    await page.getByRole('button', { name: 'Open network audit' }).click()
+    await expect(page.getByRole('heading', { name: 'Network', exact: true })).toBeVisible()
+
+    // The verdict chips are coloured-on-tinted — every grade class shares
+    // this construction, so one visible instance guards the pattern.
+    expect(await textContrast(page, 'h1')).toBeGreaterThan(4.5)
+    await expect(page.getByText('Not watched').first()).toBeVisible()
+    expect(await textContrast(page, 'text=Not watched')).toBeGreaterThan(4.5)
+
+    // A finding's detail and its fix line, on the row background.
+    expect(await textContrast(page, 'text=/connection/')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, 'text=/CREWBOX_WATCH/')).toBeGreaterThan(4.5)
+
+    await context.close()
+  })
 }

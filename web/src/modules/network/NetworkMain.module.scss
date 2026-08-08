@@ -1,0 +1,71 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-raised);
+  z-index: 2;
+}
+
+.title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-right: auto;
+}
+
+.verdict {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.verdictOk {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, var(--bg-raised));
+}
+
+.verdictLimited {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-raised));
+}
+
+.verdictOff {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-raised));
+}
+
+.verdictUnknown {
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.note {
+  padding: 14px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.cards {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}

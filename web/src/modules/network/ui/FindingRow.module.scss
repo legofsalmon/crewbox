@@ -1,0 +1,72 @@
+/* The readiness-row idiom, module-scoped. Colours are theme tokens only;
+   `info` must never read as a fault. */
+
+.row {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.state {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ok .state {
+  color: var(--ok);
+}
+
+.limited .state {
+  color: var(--accent);
+}
+
+.off .state {
+  color: var(--danger);
+}
+
+.off {
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg));
+}
+
+.info .state {
+  color: var(--text-muted);
+}
+
+.body {
+  min-width: 0;
+  flex: 1;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.detail {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.fix {
+  color: var(--accent-strong);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.info .fix {
+  color: var(--text-muted);
+}
