@@ -5,6 +5,7 @@ import { GRADE_LABELS, overallGrade } from './model/grade.ts'
 import type { AuditPayload, SeriesPoint } from './model/types.ts'
 import EventStrip from './ui/EventStrip.tsx'
 import NetworkCard from './ui/NetworkCard.tsx'
+import ProbePanel from './ui/ProbePanel.tsx'
 import styles from './NetworkMain.module.scss'
 
 /**
@@ -94,6 +95,11 @@ export default function NetworkMain(_props: { subpath: string }) {
             ))}
           </div>
           <EventStrip events={payload.events} now={payload.report.generatedAt} />
+          <ProbePanel
+            probe={payload.probe}
+            probeRunning={payload.probeRunning}
+            onStarted={() => void load()}
+          />
         </div>
       )}
     </div>
