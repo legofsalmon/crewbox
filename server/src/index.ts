@@ -57,10 +57,13 @@ async function main(): Promise<void> {
   // three lines of noise beside a command whose whole output is one.
   const { openDb } = await import('./db.ts')
   const { Store } = await import('./store.ts')
+  const { MetricsStore } = await import('./audit/metrics.ts')
   const webDist = box ? extractWebDist(dataDir) : config.webDist
 
   const db = openDb(join(dataDir, 'crewbox.db'))
   const store = new Store(db)
+  // Audit history (network module). index owns db; Store keeps its own.
+  const metrics = new MetricsStore(db)
 
   // First boot of a box: mint a random event PIN instead of shipping "1234"
   // everywhere. It prints below, shows on /connect, and the admin can change
@@ -198,6 +201,7 @@ async function main(): Promise<void> {
     sessionTtlMs: config.sessionTtlMs,
     trustProxy: config.trustProxy,
     modules: config.modules,
+    metrics,
     dataDir,
     ...(config.iface ? { iface: config.iface } : {}),
     network: {
