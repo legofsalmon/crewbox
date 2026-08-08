@@ -1,0 +1,64 @@
+.strip {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.track {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.tick {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+}
+
+.fault {
+  background: var(--danger);
+}
+
+.change {
+  background: var(--accent);
+}
+
+.axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  list-style: none;
+}
+
+.time {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.more,
+.quiet {
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+
+.quiet {
+  margin-top: 10px;
+}

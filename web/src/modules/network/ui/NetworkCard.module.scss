@@ -1,0 +1,57 @@
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.grade {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.gradeOk {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, var(--bg-raised));
+}
+
+.gradeLimited {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-raised));
+}
+
+.gradeOff {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-raised));
+}
+
+.gradeUnknown {
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.findings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+}
