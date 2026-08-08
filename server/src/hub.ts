@@ -143,6 +143,14 @@ export class Hub {
   private localSockets = new Map<string, number>()
   private heartbeat: NodeJS.Timeout | null = null
   private dmxTimer: NodeJS.Timeout | null = null
+  /**
+   * Where client-reported round trips go, when the audit module is on.
+   *
+   * Set after construction rather than injected, because the collector reads
+   * this hub's stats — constructor injection either way would be circular.
+   * Typed structurally so hub.ts stays free of audit imports.
+   */
+  private collector: { noteRtt: (ms: number) => void } | undefined
 
   constructor(
     private readonly store: Store,
@@ -153,6 +161,11 @@ export class Hub {
     /** Lighting network, when this box was asked to listen to one. */
     private readonly dmx?: DmxListener
   ) {}
+
+  /** Hand the audit collector the crowd-Wi-Fi reports. Off by default. */
+  setCollector(collector: { noteRtt: (ms: number) => void } | undefined): void {
+    this.collector = collector
+  }
 
   attach(wss: WebSocketServer): void {
     wss.on('connection', (ws, req) => this.onConnection(ws, req))
@@ -295,6 +308,12 @@ export class Hub {
         break
       case 'ping':
         this.send(conn.ws, { type: 'pong', t: msg.t })
+        break
+      case 'rttReport':
+        // Advisory only — it feeds a graph, never a decision. Dropped
+        // silently when the audit module is off or the socket is chatty.
+        if (this.overActionLimit(conn)) break
+        this.collector?.noteRtt(msg.ms)
         break
     }
   }

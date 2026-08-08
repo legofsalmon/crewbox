@@ -416,6 +416,9 @@ export function buildApp({
         : {}),
     })
     collector.start()
+    // Crew phones report their own WS round trip once a minute; that is the
+    // only honest source for "how bad is the Wi-Fi where the crew are".
+    hub.setCollector(collector)
     fastify.addHook('onClose', () => collector?.stop())
 
     // The deep probe — the audit's one admin-push exception to "never
