@@ -39,7 +39,7 @@ export default tseslint.config(
   },
   { ...reactRefresh.configs.vite, files: ['web/src/**/*.{ts,tsx}'] },
   {
-    files: ['deploy/**/*.mjs', 'scripts/**/*.mjs', 'web/scripts/**/*.mjs'],
+    files: ['deploy/**/*.mjs', 'scripts/**/*.mjs', 'web/scripts/**/*.mjs', 'site/**/*.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',
@@ -54,6 +54,16 @@ export default tseslint.config(
         clearTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+      },
+    },
+  },
+  {
+    // The docs pages' client script runs in the browser, not Node.
+    files: ['site/docs/docs.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        fetch: 'readonly',
       },
     },
   },

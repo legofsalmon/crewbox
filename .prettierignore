@@ -11,3 +11,6 @@ deploy/poster.html
 web/public/
 playwright-report/
 test-results/
+site/docs/*.html
+site/docs/search-index.json
+site/sitemap.xml

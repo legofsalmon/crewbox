@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Getting connected — Crewbox docs</title>
+    <meta name="description" content="Scan the QR, pick a name, set a PIN — and how to get back in later." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected" aria-current="page">Getting connected</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/glossary">Glossary</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="getting-connected"><a class="anchor" href="#getting-connected">Getting connected</a></h1>
+<p>Joining takes one scan and three fields. You make up your own name and PIN on the spot — there are no accounts to create in advance and no email involved.</p>
+<h2 id="join-for-the-first-time"><a class="anchor" href="#join-for-the-first-time">Join for the first time</a></h2>
+<ol><li>Join the event Wi-Fi named on the poster (if your phone isn't on it already).</li><li>Scan the QR code — it's on the join poster, on the box's screen, or on the <code>/connect</code> page someone may have sent you.</li><li>You'll land on the join screen. Fill in:<ol></li><li><strong>Your name</strong> — what the rest of the crew will see. Adding your role or stage helps: &quot;Alex (Stage 2)&quot;.</li><li><strong>Event PIN</strong> — the 4-digit code printed next to the QR. If you scanned the QR it's usually filled in for you.</li><li><strong>Your PIN</strong> — 4 to 8 digits <strong>you invent right now</strong>. This is yours; remember it. It's how you sign back in on any device.</li></ol></li><li>Tap <strong>Join</strong>. You're in <code>#general</code> with the rest of the crew.</li></ol>
+<div class="callout callout-note"><p><strong>Remember Your PIN.</strong> Your name plus Your PIN is the whole of your
+identity here. There's no email reset — if you forget it, an admin has to
+reset it for you from the admin panel.</p></div>
+<h2 id="the-three-codes-untangled"><a class="anchor" href="#the-three-codes-untangled">The three codes, untangled</a></h2>
+<p>Crewbox has three different secrets, and every crew ever assembled has mixed them up at least once:</p>
+<div class="table-scroll"><table><thead><tr><th>Code</th><th>Who uses it</th><th>What it's for</th></tr></thead><tbody><tr><td><strong>Event PIN</strong></td><td>Everyone, once</td><td>Lets a new person join this event. It's on the poster — it's not meant to be very secret.</td></tr><tr><td><strong>Your PIN</strong></td><td>Just you</td><td>Signs you back in as you, on any device. Made up by you when you first join.</td></tr><tr><td><strong>Admin password</strong></td><td>The box's operator</td><td>Unlocks the admin panel — settings, crew management, exports. The box printed it when it was first set up. It is <strong>not</strong> the event PIN.</td></tr></tbody></table></div>
+<h2 id="signing-back-in"><a class="anchor" href="#signing-back-in">Signing back in</a></h2>
+<p>Joining and signing in are the same screen. Type the <strong>same name</strong> you used before and <strong>Your PIN</strong>, and you're back — with your channels and unread state. You don't need the event PIN again.</p>
+<p>This also means you can move between devices freely: same name, same PIN, on a phone at the barricade and a laptop at front of house.</p>
+<p>If you type a name that's already taken and the PIN doesn't match, crewbox says so — either you've misremembered your PIN, or someone else got to that name first. Pick another name, or ask an admin to reset your PIN.</p>
+<h2 id="when-it-wont-connect"><a class="anchor" href="#when-it-wont-connect">When it won't connect</a></h2>
+<p>The app tells you what it's doing rather than spinning forever:</p>
+<ul><li><strong>&quot;Can't reach the crew server&quot;</strong> — your phone can't see the box. Check you're on the event Wi-Fi (the screen names it), then tap <strong>Retry now</strong>. It also keeps retrying by itself.</li><li><strong>Yellow &quot;Connecting…&quot; banner</strong> — you were connected and it dropped. Anything you send is queued on your device and delivered when the connection returns; nothing is lost.</li><li><strong>&quot;Offline&quot; banner</strong> — same story, longer gap. Everything you already loaded stays readable, and the app catches up the moment the box is back in reach.</li></ul>
+<p>There's more in the <strong>Troubleshooting</strong> page as these docs grow.</p>
+        <footer class="prevnext"><a class="prev" href="/docs"><span>Previous</span>Overview</a><a class="next" href="/docs/glossary"><span>Next</span>Glossary</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

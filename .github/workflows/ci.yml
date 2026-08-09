@@ -25,6 +25,15 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      - run: npm run docs:test
+      - name: Docs output is fresh
+        # The generated docs are committed (the site deploys with no build
+        # step), so regenerating must be a no-op. -N stages untracked new
+        # files so a page added without its output also fails.
+        run: |
+          npm run docs:build
+          git add -N site
+          git diff --exit-code -- site/docs site/sitemap.xml
 
   e2e:
     name: End-to-end (two-device sheet sync, chat, undo)

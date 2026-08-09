@@ -24,7 +24,11 @@
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
     "build:box": "node scripts/fetch-livekit.mjs && node scripts/build-box.mjs",
-    "fetch:livekit": "node scripts/fetch-livekit.mjs"
+    "fetch:livekit": "node scripts/fetch-livekit.mjs",
+    "docs:build": "node site/build-docs.mjs",
+    "docs:test": "node --test site/build-docs.test.mjs",
+    "docs:shots": "npm run build -w web && playwright test --config playwright.screenshots.config.ts",
+    "docs:preview": "node site/preview.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

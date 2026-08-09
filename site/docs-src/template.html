@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{{title}} — Crewbox docs</title>
+    <meta name="description" content="{{blurb}}" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages">{{sidebar}}</nav>
+      </aside>
+      <main class="content">
+        {{content}}
+        <footer class="prevnext">{{prevnext}}</footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>
