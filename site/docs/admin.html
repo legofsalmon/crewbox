@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>The admin panel — Crewbox docs</title>
+    <meta name="description" content="Unlocking it, the five sections, resetting PINs, readiness lists and the post-event export." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin" aria-current="page">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="the-admin-panel"><a class="anchor" href="#the-admin-panel">The admin panel</a></h1>
+<p>The <strong>cog</strong> in the sidebar's identity row opens the admin panel. Everyone can see the cog — a hidden control is how a box loses its admin — but it opens with the <strong>admin password</strong>, which is not the event PIN and not anyone's personal PIN (<a href="/docs/getting-connected#the-three-codes-untangled">the three codes</a>).</p>
+<p>The unlock lives in memory only: closing the app re-locks it, and the <strong>Lock</strong> button does it on the spot — use it before handing your phone to someone.</p>
+<h2 id="crew"><a class="anchor" href="#crew">Crew</a></h2>
+<p>Every account on the box, with presence and role. The one action you'll actually use mid-event is <strong>Reset PIN</strong> — for the crew member who invented a PIN at 9am and lost it by noon. Type a new one, tell them, done.</p>
+<h2 id="channels"><a class="anchor" href="#channels">Channels</a></h2>
+<p>Rename a channel, fix its topic, or <strong>Retire</strong> it (two-step confirm) when a stage wraps. <code>#general</code> can't be retired — there's always somewhere everyone is.</p>
+<h2 id="this-box"><a class="anchor" href="#this-box">This box</a></h2>
+<p>The health of the machine you're running on, as a readiness list — crew network, voice, modules, install/offline support, the Android app download, disk space — each row with a plain verdict and, when it isn't fine, the fix. Below it, the settings:</p>
+<ul><li><strong>Event name</strong>, <strong>Event PIN</strong>, <strong>Wi-Fi network</strong> — the setup-page answers, editable live. Changing the PIN notes that the poster and <code>/connect</code> need re-checking.</li><li><strong>Networks</strong> — the crew-side adapter, lighting-network listening (off / sACN / Art-Net / both) and its adapter, and the sACN universes. Join links update immediately; <strong>socket changes apply when the box restarts</strong>, and a banner reminds you while saved settings differ from what the box started with. There's no restart button — stop and start the box (<a href="/docs/run-the-box#day-to-day">how</a>).</li><li><strong>Admin password</strong> — changeable here; doing so locks every other device that had the panel open.</li></ul>
+<p>Settings pinned by environment variables show a note instead of a field — the environment always outranks the panel, which is also the recovery path.</p>
+<h2 id="this-network"><a class="anchor" href="#this-network">This network</a></h2>
+<p>What the venue's network is actually providing, probed on demand (<strong>Check again</strong>): the box's address, internet (a captive portal is flagged; plain &quot;no internet&quot; is just information — the box doesn't need it), whether crew can reach the box by its name, certificate expiry, and clock sanity.</p>
+<p>When the name check fails, a <strong>Download DNS config</strong> button appears with a ready-made <code>crewbox-dns.conf</code> for the venue router — hand it to whoever runs the router instead of explaining DNS at the production desk.</p>
+<h2 id="export"><a class="anchor" href="#export">Export</a></h2>
+<p><strong>Download chat logs</strong> — every user, channel and message as one JSON file for the post-event archive. Patch sheets and plots export from their own modules as CSV.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/run-the-box"><span>Previous</span>Running the box</a><a class="next" href="/docs/https-and-voice"><span>Next</span>HTTPS, names and certificates</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

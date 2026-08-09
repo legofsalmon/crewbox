@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>HTTPS, names and certificates — Crewbox docs</title>
+    <meta name="description" content="Why the box wants a name and a certificate, and how the pieces fit on a network with no internet." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice" aria-current="page">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="https-names-and-certificates"><a class="anchor" href="#https-names-and-certificates">HTTPS, names and certificates</a></h1>
+<p>The box works over plain HTTP. Two things need more: <strong>browser microphones</strong> (voice beyond listen-only) and <strong>installing the web app to a home screen</strong>. Both are browser security rules tied to HTTPS — so if you want them, the box needs a certificate, and a certificate needs a name.</p>
+<p>If your crew uses the Android/iOS apps for voice and nobody installs the web app, you can skip this whole page.</p>
+<h2 id="the-two-names-idea"><a class="anchor" href="#the-two-names-idea">The two-names idea</a></h2>
+<p>One hostname can't serve both worlds, so crewbox's reference setup uses two:</p>
+<div class="table-scroll"><table><thead><tr><th>Name</th><th>Points at</th><th>Job</th></tr></thead><tbody><tr><td>A public name (like <code>crewbox.example.com</code>)</td><td>the internet</td><td>the download page — where you got the box</td></tr><tr><td>A box name (like <code>chat.example.com</code>)</td><td>the box's LAN IP</td><td>what crew type; what the certificate is issued for</td></tr></tbody></table></div>
+<p>The box name resolves to a <strong>private address on the event network</strong> — which is exactly why the venue's DNS has to be taught about it.</p>
+<h2 id="getting-the-certificate-on-the-box"><a class="anchor" href="#getting-the-certificate-on-the-box">Getting the certificate on the box</a></h2>
+<p>Get a certificate for the box's name (a normal Let's Encrypt DNS-01 issuance works — it never needs the box reachable from the internet), then drop <code>cert.pem</code> and <code>key.pem</code> into the box's data directory and restart. The box serves TLS itself — no reverse proxy, nothing else to install.</p>
+<p>Two forgiving behaviours worth knowing:</p>
+<ul><li><strong>Broken or expired material never stops the box.</strong> It logs why, serves plain HTTP, and the readiness list says what's wrong. A certificate problem on show day costs you browser mic, not comms.</li><li>With a certificate installed, the box <strong>advertises its name first</strong> — the QR and join links lead with <code>https://chat.example.com</code> (raw IPs fail the browser's name check) with the plain addresses still listed after.</li></ul>
+<h2 id="making-the-name-resolve-on-site"><a class="anchor" href="#making-the-name-resolve-on-site">Making the name resolve on site</a></h2>
+<p>Crew phones must resolve the box name to the box's LAN IP with no internet. In order of preference:</p>
+<ol><li><strong>The venue router speaks dnsmasq</strong> (most do): add one line mapping the name to the box's IP. <strong>Admin → This network</strong> generates exactly this file when it detects the name isn't resolving — download, hand to whoever runs the router.</li><li><strong>Your own event router</strong>: same line, your own kit, no venue conversation.</li><li><strong>No DNS control at all</strong>: crew use the IP over plain HTTP — everything works except browser mic and install, and the readiness list says so honestly.</li></ol>
+<h2 id="checking-it-worked"><a class="anchor" href="#checking-it-worked">Checking it worked</a></h2>
+<p><strong>Admin → This network</strong> is the scoreboard: the name check goes green when phones can resolve the box, the certificate row shows expiry, and <strong>Admin → This box</strong> shows voice fully working once browsers can get a microphone. Certificate expiring mid-run? Renew before the event — the readiness list starts warning as expiry approaches.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/admin"><span>Previous</span>The admin panel</a><a class="next" href="/docs/phones-and-platforms"><span>Next</span>Phones and platforms</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

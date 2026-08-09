@@ -50,8 +50,9 @@ Ways around it:
 
 - The **Android and iOS apps** are exempt — they use the phone's own mic
   permission and work over plain HTTP.
-- The box's operator can give the box a certificate — that's covered in the
-  operator docs, and it also unlocks installing the web app to home screens.
+- The box's operator can give the box a certificate —
+  [HTTPS, names and certificates](/docs/https-and-voice) is the recipe —
+  which also unlocks installing the web app to home screens.
 - The machine **running** the box is always fine at `localhost`.
 
 > [!NOTE]

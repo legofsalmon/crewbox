@@ -44,8 +44,9 @@ at me" is fast.
 Mentions and DMs chirp and vibrate; the bell button in the sidebar mutes the
 sounds when you're next to the stage. If the app is in the background, you
 get a notification. For alerts that reach a **locked phone with no
-internet**, use the Android app — the **Phones and platforms** page covers
-what each platform can and can't do.
+internet**, use the Android app —
+[Phones and platforms](/docs/phones-and-platforms) covers what each
+platform can and can't do.
 
 ## Writing messages
 

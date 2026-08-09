@@ -19,8 +19,8 @@ Start with whichever of these is you:
 - **Someone showed you a QR code.** You're crew. Read
   [Getting connected](/docs/getting-connected) — it takes about a minute —
   then skim the guide for whichever module you'll live in.
-- **You're setting up the box for an event.** Start with the
-  **Running the box** section in the sidebar.
+- **You're setting up the box for an event.** Start at
+  [Running the box](/docs/run-the-box), then [the admin panel](/docs/admin).
 
 ## What's in the app
 

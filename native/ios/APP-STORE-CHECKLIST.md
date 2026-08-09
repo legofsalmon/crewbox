@@ -13,7 +13,7 @@ Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
   are set in `Info.plist`.
 - [x] **iPhone-only target** — `TARGETED_DEVICE_FAMILY = 1`, so you only need
   iPhone screenshots, not iPad.
-- [x] **Privacy policy** — `docs/privacy-policy.html` (host it, see below).
+- [x] **Privacy policy** — `site/docs/privacy-policy.html` (deployed at https://crewbox.letissier.ie/docs/privacy-policy).
 
 ## Before you archive (Xcode)
 
@@ -28,8 +28,8 @@ Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
 ## Host the privacy policy (need a public URL)
 
 - Repo Settings → Pages → deploy from `main` / `/docs`. That serves
-  `https://legofsalmon.github.io/crewbox/privacy-policy.html`.
-- Edit `docs/privacy-policy.html`: replace **[YOUR SUPPORT EMAIL]** with a real
+  `https://crewbox.letissier.ie/docs/privacy-policy`.
+- Edit `site/docs/privacy-policy.html`: replace **[YOUR SUPPORT EMAIL]** with a real
   contact address before publishing.
 
 ## In App Store Connect (manual)

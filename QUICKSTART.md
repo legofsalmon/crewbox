@@ -3,6 +3,9 @@
 One box, everything on. Download it, run it, crew scan a QR. No accounts, no
 app store, nothing to install on anyone's phone unless they want it.
 
+Full guides — for crew and for whoever runs the box — live at
+<https://crewbox.letissier.ie/docs>.
+
 ## Run it
 
 **macOS** — download the `.dmg` from the download page, open it, drag

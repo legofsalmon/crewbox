@@ -68,4 +68,4 @@ The app tells you what it's doing rather than spinning forever:
   loaded stays readable, and the app catches up the moment the box is back
   in reach.
 
-There's more in the **Troubleshooting** page as these docs grow.
+There's more in [Troubleshooting](/docs/troubleshooting).

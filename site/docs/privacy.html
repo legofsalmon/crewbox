@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Privacy and your data — Crewbox docs</title>
+    <meta name="description" content="What the box stores, what leaves the venue (nothing), and what the network module listens to." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy" aria-current="page">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="privacy-and-your-data"><a class="anchor" href="#privacy-and-your-data">Privacy and your data</a></h1>
+<p>Crewbox's privacy story is architectural, not promised: there is no company server. Everything runs on the box the event's organiser operates, on the event's own network.</p>
+<h2 id="where-your-data-lives"><a class="anchor" href="#where-your-data-lives">Where your data lives</a></h2>
+<p>Everything you type, send or upload is stored <strong>on the box</strong> — messages, files, patch sheets, plots, your name and PIN (the PIN as a hash, not the number). Your own device keeps a working copy so the app opens offline.</p>
+<p>The makers of crewbox operate no server, receive nothing, and track nothing. When the event ends, the data is wherever the box's operator put it — typically an export in the production archive — and deleting your account removes your identity from the box.</p>
+<h2 id="what-leaves-the-venue"><a class="anchor" href="#what-leaves-the-venue">What leaves the venue</a></h2>
+<p>Nothing, in normal operation. The box needs no internet and the app phones nobody home. The one optional exception: if the operator sets up a remote support tunnel, connections through it are marked — that's the <code>office</code> badge in the DM list.</p>
+<h2 id="what-the-network-module-listens-to"><a class="anchor" href="#what-the-network-module-listens-to">What the network module listens to</a></h2>
+<p>The <a href="/docs/network">Network audit</a> grades networks by <strong>passive listening</strong> — it reads what's already broadcast on the wire (DMX frames, clock announcements, device advertisements) and transmits nothing. The one exception, the admin-triggered deep probe, prints every packet it sent, verbatim, in its results. Two numbers involve crew devices:</p>
+<ul><li>Each phone reports its own Wi-Fi round trip to the box, once a minute: one number, no identity attached beyond the connection it rode in on, kept as minute-averages for about seven days.</li><li>Connection counts — how many devices are on, not who.</li></ul>
+<h2 id="the-formal-bit"><a class="anchor" href="#the-formal-bit">The formal bit</a></h2>
+<p>The full privacy policy — written for the app stores, covering the same facts in their language — is at <a href="/docs/privacy-policy">/docs/privacy-policy</a>.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/troubleshooting"><span>Previous</span>Troubleshooting</a><span></span></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

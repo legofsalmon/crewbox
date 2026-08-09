@@ -19,6 +19,10 @@ and sACN listener, and [docs/NETWATCH.md](docs/NETWATCH.md) for the
 audio/media-network watchers (PTP clock health, Dante/NDI rosters, AES67
 streams — same read-only guarantee).
 
+User documentation — how crew and operators actually use the thing —
+lives at <https://crewbox.letissier.ie/docs>, built from
+`site/docs-src/` (see `site/README.md`).
+
 ## Modules
 
 Crewbox is a shell (identity, chat, offline storage, routing) plus department
