@@ -13,6 +13,13 @@ const MAX_BACKOFF_MS = 10_000
  * button included, into a no-op. This bounds the wait.
  */
 const CONNECT_TIMEOUT_MS = 10_000
+/**
+ * How often this device tells the box what its round trip looks like, for the
+ * network audit's crowd-Wi-Fi graph. One report a minute per phone is enough
+ * to see an access point sag during doors, and cheap enough that a full crew
+ * costs the box nothing. The server rate-limits it independently.
+ */
+const RTT_REPORT_MS = 60_000
 
 export interface WsHandlers {
   /** Called before hello is sent; supplies auth + resume cursors. */
@@ -37,6 +44,12 @@ export class WsClient {
   private lastActivity = 0
   private stopped = false
   private rttSamples: number[] = []
+  /**
+   * When this device last reported its round trip. Deliberately NOT reset on
+   * reconnect: a phone flapping at the edge of coverage would otherwise
+   * report on every reconnect, which is exactly when it reconnects most.
+   */
+  private lastRttReport = 0
 
   constructor(private readonly handlers: WsHandlers) {
     window.addEventListener('online', this.wake)
@@ -140,7 +153,9 @@ export class WsClient {
       }
       if (msg.type === 'pong') {
         this.rttSamples = pushSample(this.rttSamples, Date.now() - msg.t)
-        this.handlers.onLatency?.(rollingMedian(this.rttSamples))
+        const median = rollingMedian(this.rttSamples)
+        this.handlers.onLatency?.(median)
+        this.reportRtt(median)
       }
       this.handlers.onMessage(msg)
     }
@@ -156,6 +171,22 @@ export class WsClient {
       }
     }
     ws.onerror = () => ws.close()
+  }
+
+  /**
+   * Hand the box this device's median round trip, at most once a minute.
+   *
+   * Rides the existing pong rather than a timer of its own: a pong is proof
+   * the socket is alive and the median is fresh, so there is nothing to
+   * schedule and nothing to tear down. Clamped to the protocol's range so a
+   * phone that slept through a 10-minute set can't post a nonsense sample.
+   */
+  private reportRtt(median: number | null): void {
+    if (median === null) return
+    const now = Date.now()
+    if (now - this.lastRttReport < RTT_REPORT_MS) return
+    this.lastRttReport = now
+    this.send({ type: 'rttReport', ms: Math.min(60_000, Math.max(0, Math.round(median))) })
   }
 
   private scheduleReconnect(): void {

@@ -26,6 +26,8 @@ class FakeWs {
   onmessage: ((e: { data: string }) => void) | null = null
   onerror: (() => void) | null = null
   closeCalls = 0
+  /** Frames this socket was asked to send, for the RTT-report assertions. */
+  sent: string[] = []
 
   constructor(readonly url: string) {
     FakeWs.instances.push(this)
@@ -46,7 +48,9 @@ class FakeWs {
     this.onopen?.()
   }
 
-  send(): void {}
+  send(data: string): void {
+    this.sent.push(data)
+  }
 }
 
 function makeHandlers(): WsHandlers {
@@ -133,6 +137,99 @@ describe('WsClient connect timeout', () => {
     // Backoff is 500ms * jitter (0.7–1.3) for the first attempt; well within 2s.
     vi.advanceTimersByTime(2_000)
     expect(FakeWs.instances.length).toBeGreaterThanOrEqual(2)
+
+    client.stop()
+  })
+})
+
+/**
+ * The crowd-Wi-Fi half of the network audit: every phone hands the box its own
+ * median round trip once a minute, so the audit can say the Wi-Fi is slow
+ * rather than inferring it from server-side numbers that always look fine.
+ */
+describe('WsClient RTT reporting', () => {
+  beforeEach(() => {
+    FakeWs.instances = []
+    vi.stubGlobal('WebSocket', FakeWs)
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  /** Connect, and answer every ping the client sends with a pong `rtt` ms later. */
+  function connected(): { client: WsClient; socket: FakeWs; pong: (rtt: number) => void } {
+    const client = new WsClient(makeHandlers())
+    client.start()
+    const socket = FakeWs.instances[0]!
+    socket.open()
+    const pong = (rtt: number): void => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'pong', t: Date.now() - rtt }) })
+    }
+    return { client, socket, pong }
+  }
+
+  const reports = (socket: FakeWs): Array<{ type: string; ms: number }> =>
+    socket.sent
+      .map((s) => JSON.parse(s) as { type: string; ms: number })
+      .filter((m) => m.type === 'rttReport')
+
+  it('reports the median round trip, at most once a minute', () => {
+    const { client, socket, pong } = connected()
+
+    pong(120)
+    expect(reports(socket)).toEqual([{ type: 'rttReport', ms: 120 }])
+
+    // Pongs keep arriving through the minute (they must — 25 s of silence
+    // would trip the half-open check and close the socket), and none of them
+    // produces a second report.
+    for (const step of [20_000, 20_000]) {
+      vi.advanceTimersByTime(step)
+      pong(130)
+    }
+    expect(reports(socket)).toHaveLength(1)
+
+    // Past the minute, the next pong reports again — the median of the
+    // samples, not the latest single spike.
+    vi.advanceTimersByTime(22_000)
+    pong(130)
+    expect(reports(socket)).toHaveLength(2)
+    expect(reports(socket)[1]!.ms).toBe(130)
+
+    client.stop()
+  })
+
+  it('says nothing until it has actually measured something', () => {
+    const { client, socket } = connected()
+    // Connected, pings sent, but no pong has come back yet.
+    vi.advanceTimersByTime(120_000)
+    expect(reports(socket)).toEqual([])
+    client.stop()
+  })
+
+  it('clamps a nonsense sample into the protocol range', () => {
+    const { client, socket, pong } = connected()
+    // A phone that slept through a set wakes with an enormous delta.
+    pong(9_000_000)
+    expect(reports(socket)).toEqual([{ type: 'rttReport', ms: 60_000 }])
+    client.stop()
+  })
+
+  it('does not report again just because a flapping phone reconnected', () => {
+    const { client, socket, pong } = connected()
+    pong(200)
+    expect(reports(socket)).toHaveLength(1)
+
+    // Socket drops and comes back inside the minute — the reconnect itself
+    // must not become a reporting trigger.
+    socket.close()
+    vi.advanceTimersByTime(2_000)
+    const second = FakeWs.instances[FakeWs.instances.length - 1]!
+    second.open()
+    second.onmessage?.({ data: JSON.stringify({ type: 'pong', t: Date.now() - 200 }) })
+    expect(reports(second)).toEqual([])
 
     client.stop()
   })

@@ -69,6 +69,24 @@ export const pingSchema = z.object({
 })
 
 /**
+ * A phone telling the box how far away it feels, for the network audit.
+ *
+ * The client already measures its own ping/pong round trip to draw the signal
+ * bars; this hands the same median to the box once a minute so the audit can
+ * say "crew Wi-Fi averages 380 ms in the last 15 minutes" instead of guessing
+ * from server-side numbers that only ever look healthy.
+ *
+ * Purely additive and advisory: the box ignores it when the audit module is
+ * off, and an older box that doesn't know the type simply drops it — so this
+ * needs no PROTOCOL_VERSION bump. The 60 s cap keeps one bad phone from
+ * dragging the average into nonsense.
+ */
+export const rttReportSchema = z.object({
+  type: z.literal('rttReport'),
+  ms: z.number().int().min(0).max(60_000),
+})
+
+/**
  * Watch what the lighting network is doing.
  *
  * Universes are named by the client because only the client knows which ones
@@ -94,6 +112,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   openDmSchema,
   pingSchema,
   dmxWatchSchema,
+  rttReportSchema,
 ])
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>

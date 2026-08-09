@@ -14,6 +14,7 @@ no sockets and sends nothing. Every five seconds it reads:
 | Series                                                    | Source                                      |
 | --------------------------------------------------------- | ------------------------------------------- |
 | `crew.connections`, `crew.onlineUsers`                    | the chat hub                                |
+| `crew.rtt`                                                | crew phones, reported (see below)           |
 | `dmx.rateHz`, `dmx.lossPct`, `dmx.sources` (per universe) | the DMX listener (`docs/DMX_MONITORING.md`) |
 | `media.ptpAnnouncers`, `media.ptpV1RateHz`                | the PTP watcher (`docs/NETWATCH.md`)        |
 | `media.mdnsDevices`, `media.sapStreams`                   | the mDNS/SAP watchers                       |
@@ -22,6 +23,21 @@ no sockets and sends nothing. Every five seconds it reads:
 Samples roll up to **one row per minute** (min/avg/max/count). Discrete
 events — a grandmaster change, an outage, a conflict starting or ending, a
 device saying goodbye — are recorded as they transition, once each.
+
+### The one number the crew's phones supply
+
+`crew.rtt` is the exception to "the box reads its own state": the box
+cannot measure the crew's Wi-Fi from where it sits — server-side timings
+only ever prove the box is fast. So each connected device sends the median
+of the round trips it already measures for its own signal-bars indicator,
+**once a minute**, as `{ type: 'rttReport', ms }`.
+
+That is the whole payload: one integer, 0–60000, no identity beyond the
+socket it arrived on and nothing stored per person. It is advisory — the
+box never answers it, never acts on it, and drops it entirely when the
+network module is off or a socket exceeds its action budget. Older clients
+that don't send it simply leave the "Wi-Fi round trip" finding absent
+rather than showing a wrong one.
 
 **Retention: 7 days**, pruned hourly. Bounds are structural: one small
 write transaction a minute, at most 64 keys per metric, at most 500 events
