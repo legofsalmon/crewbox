@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Chat — Crewbox docs</title>
+    <meta name="description" content="Channels, DMs, mentions, alerts — and what &quot;sending…&quot; really means." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat" aria-current="page">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="chat"><a class="anchor" href="#chat">Chat</a></h1>
+<p>Chat is the spine of crewbox: channels for departments, DMs for everything else, and alerts that reach a phone in a pocket. It's always on, whatever modules the box runs.</p>
+<h2 id="channels"><a class="anchor" href="#channels">Channels</a></h2>
+<p>Channels are open rooms — every crew member can read and join any of them. The box starts with <code>#general</code>; anyone can add more with the <strong>+</strong> next to &quot;Channels&quot; (names come out lowercase, spaces become hyphens: &quot;Stage 2&quot; → <code>#stage-2</code>). Make channels for departments or stages, not for moments — a festival needs <code>#stage</code>, <code>#foh</code>, <code>#site</code>, not <code>#friday-issue-3</code>.</p>
+<p>Unread messages show as a count on the channel row; if someone mentioned you, the badge changes to an <code>@</code> style so you can see at a glance which unreads actually need you.</p>
+<h2 id="direct-messages"><a class="anchor" href="#direct-messages">Direct messages</a></h2>
+<p>Every crew member on the box is listed under <strong>Direct messages</strong> — online people first, each with a presence dot. A DM is private between the two of you. An <code>office</code> tag beside a name means they're connected from off the event network (from the production office over a tunnel, say) — useful to know before you ask them to physically go and look at something.</p>
+<h2 id="mentions"><a class="anchor" href="#mentions">Mentions</a></h2>
+<p>Type <code>@</code> and pick a name — <code>@Maya</code> lights the message up for Maya and makes her unread badge urgent. <code>@all</code>, <code>@everyone</code> and <code>@channel</code> flag everyone in the channel; use them like a PA announcement, sparingly. Your own mentions are highlighted more strongly, so skimming a busy channel for &quot;things aimed at me&quot; is fast.</p>
+<h2 id="alerts"><a class="anchor" href="#alerts">Alerts</a></h2>
+<p>Mentions and DMs chirp and vibrate; the bell button in the sidebar mutes the sounds when you're next to the stage. If the app is in the background, you get a notification. For alerts that reach a <strong>locked phone with no internet</strong>, use the Android app — the <strong>Phones and platforms</strong> page covers what each platform can and can't do.</p>
+<h2 id="writing-messages"><a class="anchor" href="#writing-messages">Writing messages</a></h2>
+<ul><li><strong>Enter</strong> sends on a computer; on a phone, Enter makes a new line and the send button sends.</li><li>A half-typed message survives switching channels — it's waiting when you come back. (It doesn't survive reloading the app.)</li><li>Links become clickable automatically. A crewbox link someone shares — a patch sheet, a plot, the network audit — appears as an <strong>Open ↗</strong> chip that jumps straight there.</li><li>&quot;X is typing…&quot; under the messages means an answer may already be on its way.</li></ul>
+<h2 id="what-sending-means"><a class="anchor" href="#what-sending-means">What &quot;sending…&quot; means</a></h2>
+<p>A message marked <strong>sending…</strong> is safely stored on your device and will be delivered — once, in order — when the box is reachable. It is not lost, and resending it by hand will only make a duplicate. This is the offline-first design doing its job; there's more in <a href="/docs/around-the-app#offline-is-normal-here">Around the app</a>.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/around-the-app"><span>Previous</span>Around the app</a><a class="next" href="/docs/chat-files-and-search"><span>Next</span>Files, filtering and search</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

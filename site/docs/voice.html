@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Voice intercom — Crewbox docs</title>
+    <meta name="description" content="Push-to-talk in any channel — hold to speak, latch for gloves, and the one HTTPS rule." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice" aria-current="page">Voice intercom</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="voice-intercom"><a class="anchor" href="#voice-intercom">Voice intercom</a></h1>
+<p>Every channel can be a party-line intercom: join voice, hold the button, talk. The voice server runs inside the box, so it works with no internet — but browsers have one rule about microphones that you should know before show day.</p>
+<h2 id="join-and-leave"><a class="anchor" href="#join-and-leave">Join and leave</a></h2>
+<p>The <strong>headset</strong> button in a channel's header joins that channel's voice. A bar appears above the app — it stays with you while you move around channels and modules — showing who's on the line, with a dot per person that lights while they speak. The <strong>Leave</strong> button on the bar hangs up.</p>
+<p>If the headset button isn't there at all, this box doesn't have voice configured.</p>
+<h2 id="push-to-talk"><a class="anchor" href="#push-to-talk">Push-to-talk</a></h2>
+<ul><li><strong>Hold</strong> the big button to talk; release to go quiet. It reads <strong>HOLD</strong> when idle and <strong>LIVE</strong> with a level halo while you're transmitting — if the halo doesn't move, your mic isn't picking you up.</li><li>The <strong>lock</strong> button latches your mic open — for gloved hands or a long explanation. Tap again to release. The bar shows everyone whose mic is open, so a stuck latch is visible to the whole line.</li><li>A &quot;🔊&quot; pill names whoever is speaking right now.</li></ul>
+<h2 id="audio-settings"><a class="anchor" href="#audio-settings">Audio settings</a></h2>
+<p>The <strong>gear</strong> on the voice bar picks your microphone and speaker. The mic picker has a live level meter — &quot;say something, the bar should move; if not, pick another mic&quot;. On iPhones the speaker is routed by the system: switch outputs in Control Centre or your Bluetooth settings.</p>
+<h2 id="the-https-rule-read-before-show-day"><a class="anchor" href="#the-https-rule-read-before-show-day">The HTTPS rule (read before show day)</a></h2>
+<p>Browsers refuse to hand a microphone to a page served over plain <code>http://</code> — a browser security rule, not a crewbox choice. On a plain-HTTP box you can still <strong>join voice and hear everything</strong>, but you'll be <strong>listen-only</strong>: the bar says so, and the talk button won't transmit.</p>
+<p>Ways around it:</p>
+<ul><li>The <strong>Android and iOS apps</strong> are exempt — they use the phone's own mic permission and work over plain HTTP.</li><li>The box's operator can give the box a certificate — that's covered in the operator docs, and it also unlocks installing the web app to home screens.</li><li>The machine <strong>running</strong> the box is always fine at <code>localhost</code>.</li></ul>
+<div class="callout callout-note"><p>If you joined and can hear but not speak, look for the &quot;listen-only&quot; note
+on the voice bar — that's this rule in action, not a broken mic.</p></div>
+<h2 id="reconnection"><a class="anchor" href="#reconnection">Reconnection</a></h2>
+<p>Voice rides the same weather as everything else: if the connection drops, the bar shows &quot;Voice reconnecting…&quot; and rejoins by itself. If you were transmitting when it dropped, the mic is released — nobody gets stuck live without knowing it.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/chat-files-and-search"><span>Previous</span>Files, filtering and search</a><a class="next" href="/docs/shortcuts"><span>Next</span>Keyboard shortcuts</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>
