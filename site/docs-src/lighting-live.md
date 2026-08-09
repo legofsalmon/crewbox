@@ -46,6 +46,8 @@ dimmer"; without one it falls back to any activity in the footprint.
 
 ## The Levels toggle
 
+![Levels on: the live bar counting fixtures, the plan lit by the desk](shot:lighting-livebar)
+
 The drawings don't show desk output until you switch **Levels** on in the
 live bar — levels are the expensive half of watching, so they're opt-in per
 device. With it on:
@@ -58,6 +60,8 @@ device. With it on:
   and a monitor second; live data changes the drawing, not your checklist.
 
 ## The channel readout
+
+![The GDTF channel readout for a selected fixture](shot:lighting-gdtf)
 
 Select a fixture whose type has a GDTF profile and a channel-by-channel
 table appears under the drawing: address, channel name, value, raw DMX.

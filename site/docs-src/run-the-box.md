@@ -31,6 +31,8 @@ Downloads the right binary, clears the macOS quarantine flag, starts it.
 
 ## First run: four questions
 
+![The /setup page and its four questions](shot:setup-page)
+
 The box opens a browser on `/setup`:
 
 1. **Event name** — what crew see when they join. Changeable any time.

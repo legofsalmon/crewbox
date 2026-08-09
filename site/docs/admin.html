@@ -28,13 +28,16 @@
       </aside>
       <main class="content">
         <h1 id="the-admin-panel"><a class="anchor" href="#the-admin-panel">The admin panel</a></h1>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/admin-unlock-light.png" /><img src="/docs/img/admin-unlock-dark.png" alt="The unlock: the admin password, not the event PIN" width="1280" height="720" loading="lazy" /></picture>
 <p>The <strong>cog</strong> in the sidebar's identity row opens the admin panel. Everyone can see the cog — a hidden control is how a box loses its admin — but it opens with the <strong>admin password</strong>, which is not the event PIN and not anyone's personal PIN (<a href="/docs/getting-connected#the-three-codes-untangled">the three codes</a>).</p>
 <p>The unlock lives in memory only: closing the app re-locks it, and the <strong>Lock</strong> button does it on the spot — use it before handing your phone to someone.</p>
 <h2 id="crew"><a class="anchor" href="#crew">Crew</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/admin-crew-light.png" /><img src="/docs/img/admin-crew-dark.png" alt="The crew list with Reset PIN" width="1280" height="720" loading="lazy" /></picture>
 <p>Every account on the box, with presence and role. The one action you'll actually use mid-event is <strong>Reset PIN</strong> — for the crew member who invented a PIN at 9am and lost it by noon. Type a new one, tell them, done.</p>
 <h2 id="channels"><a class="anchor" href="#channels">Channels</a></h2>
 <p>Rename a channel, fix its topic, or <strong>Retire</strong> it (two-step confirm) when a stage wraps. <code>#general</code> can't be retired — there's always somewhere everyone is.</p>
 <h2 id="this-box"><a class="anchor" href="#this-box">This box</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/admin-this-box-light.png" /><img src="/docs/img/admin-this-box-dark.png" alt="The This box section: readiness list and settings" width="1280" height="720" loading="lazy" /></picture>
 <p>The health of the machine you're running on, as a readiness list — crew network, voice, modules, install/offline support, the Android app download, disk space — each row with a plain verdict and, when it isn't fine, the fix. Below it, the settings:</p>
 <ul><li><strong>Event name</strong>, <strong>Event PIN</strong>, <strong>Wi-Fi network</strong> — the setup-page answers, editable live. Changing the PIN notes that the poster and <code>/connect</code> need re-checking.</li><li><strong>Networks</strong> — the crew-side adapter, lighting-network listening (off / sACN / Art-Net / both) and its adapter, and the sACN universes. Join links update immediately; <strong>socket changes apply when the box restarts</strong>, and a banner reminds you while saved settings differ from what the box started with. There's no restart button — stop and start the box (<a href="/docs/run-the-box#day-to-day">how</a>).</li><li><strong>Admin password</strong> — changeable here; doing so locks every other device that had the panel open.</li></ul>
 <p>Settings pinned by environment variables show a note instead of a field — the environment always outranks the panel, which is also the recovery path.</p>

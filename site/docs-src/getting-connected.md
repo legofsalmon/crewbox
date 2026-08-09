@@ -10,19 +10,24 @@ blurb: Scan the QR, pick a name, set a PIN — and how to get back in later.
 Joining takes one scan and three fields. You make up your own name and PIN on
 the spot — there are no accounts to create in advance and no email involved.
 
+![The join screen: name, event PIN, your PIN](shot:join-screen)
+
 ## Join for the first time
 
 1. Join the event Wi-Fi named on the poster (if your phone isn't on it
    already).
 2. Scan the QR code — it's on the join poster, on the box's screen, or on
    the `/connect` page someone may have sent you.
-3. You'll land on the join screen. Fill in:
-   - **Your name** — what the rest of the crew will see. Adding your role or
-     stage helps: "Alex (Stage 2)".
-   - **Event PIN** — the 4-digit code printed next to the QR. If you scanned
-     the QR it's usually filled in for you.
-   - **Your PIN** — 4 to 8 digits **you invent right now**. This is yours;
-     remember it. It's how you sign back in on any device.
+
+![The /connect page: QR code, join link and event PIN](shot:connect-page) 3. You'll land on the join screen. Fill in:
+
+- **Your name** — what the rest of the crew will see. Adding your role or
+  stage helps: "Alex (Stage 2)".
+- **Event PIN** — the 4-digit code printed next to the QR. If you scanned
+  the QR it's usually filled in for you.
+- **Your PIN** — 4 to 8 digits **you invent right now**. This is yours;
+  remember it. It's how you sign back in on any device.
+
 4. Tap **Join**. You're in `#general` with the rest of the crew.
 
 > [!NOTE]

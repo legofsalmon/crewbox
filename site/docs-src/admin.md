@@ -7,6 +7,8 @@ blurb: Unlocking it, the five sections, resetting PINs, readiness lists and the 
 
 # The admin panel
 
+![The unlock: the admin password, not the event PIN](shot:admin-unlock)
+
 The **cog** in the sidebar's identity row opens the admin panel. Everyone
 can see the cog — a hidden control is how a box loses its admin — but it
 opens with the **admin password**, which is not the event PIN and not
@@ -17,6 +19,8 @@ The unlock lives in memory only: closing the app re-locks it, and the
 someone.
 
 ## Crew
+
+![The crew list with Reset PIN](shot:admin-crew)
 
 Every account on the box, with presence and role. The one action you'll
 actually use mid-event is **Reset PIN** — for the crew member who invented
@@ -29,6 +33,8 @@ stage wraps. `#general` can't be retired — there's always somewhere
 everyone is.
 
 ## This box
+
+![The This box section: readiness list and settings](shot:admin-this-box)
 
 The health of the machine you're running on, as a readiness list — crew
 network, voice, modules, install/offline support, the Android app download,

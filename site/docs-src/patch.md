@@ -14,6 +14,8 @@ never makes you pick who has "the real copy" — the sheet is the real copy.
 
 ## Sheets
 
+![The sheet list, with a festival master patch imported](shot:patch-sheets)
+
 The **Patch Sheets** section of the sidebar lists your recent sheets;
 **All sheets…** opens the full list. From there:
 
@@ -32,6 +34,8 @@ dialogs — **Boxes**, **Stage Patch**, **Lineup**, **Versions**, **Share**,
 **Export**.
 
 ## The grid
+
+![The master patch grid: channels down, acts across](shot:patch-grid)
 
 Rows are desk channels; each act gets a column group of five fields:
 **Sub-box · Input · Description · Mic/DI · Stand**.
@@ -62,6 +66,8 @@ Everyone edits at once, and it converges — that's the point:
   the field.
 
 ## Versions
+
+![Named versions of a sheet, ready to restore](shot:patch-versions)
 
 **Versions** saves named snapshots — "After soundcheck", "As advanced" —
 with a timestamp and size. **Restore** replaces the sheet's current content

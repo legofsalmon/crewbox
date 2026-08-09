@@ -11,6 +11,8 @@ Everything lives off one sidebar: chat channels at the top, then a section
 for each module the box has switched on. On a phone the sidebar becomes a
 drawer — and every screen has a way back to it.
 
+![Crewbox on a phone: a channel with the composer](shot:chat-phone)
+
 ## The sidebar
 
 From top to bottom:
@@ -25,6 +27,8 @@ From top to bottom:
   (the bell), **light/dark theme** (sun/moon), and **sign out**.
 
 ## On a phone: the drawer
+
+![The drawer open over chat on a phone](shot:drawer)
 
 Below tablet width the sidebar tucks away and a **☰** button (top left,
 "Open channels") brings it back. Opening a channel or a module closes the

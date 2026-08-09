@@ -14,6 +14,8 @@ years-old FOH machine both keep up.
 
 ## Plan
 
+![The plan view: top-down in metres](shot:lighting-plan)
+
 Top-down, in metres, with the centre line and the downstage edge marked.
 
 - **Drag a position to move it** — it snaps to 0.25 m and syncs live to
@@ -24,11 +26,15 @@ Top-down, in metres, with the centre line and the downstage edge marked.
 
 ## Front
 
+![The front elevation at trim height](shot:lighting-front)
+
 The audience's view: width across, height up, everything drawn at its
 position's trim. Upstage positions draw dimmer and slightly smaller so
 depth stays readable in 2D.
 
 ## 3D
+
+![The 3D view of the rig over the stage deck](shot:lighting-3d)
 
 An orbitable view of the rig over a stage deck — **drag to orbit**, and
 **Reset view** brings back the default angle. When the box is receiving

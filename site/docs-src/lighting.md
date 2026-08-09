@@ -15,6 +15,8 @@ arriving — that's [the live page](/docs/lighting-live).
 
 ## Plots
 
+![The plot list](shot:lighting-plots)
+
 The **Lighting** sidebar section lists recent plots; **All plots…** shows
 everything. **+ New Plot** asks for a name and an optional venue. Open a
 plot and you get four tabs — **Fixtures · Plan · Front · 3D** — plus the
@@ -25,6 +27,8 @@ per-universe usage ("U1: 64/512"), and "⚠ 2 addressing problems" when
 something clashes.
 
 ## Fixtures
+
+![Fixtures grouped by position, with live dots and totals](shot:lighting-fixtures)
 
 The **Fixtures** tab lists every unit, grouped by the position it hangs on.
 Each group header shows the position's totals — count, watts, kilograms —
@@ -47,6 +51,8 @@ Things the list does for you:
   a dark stage with gloves you'll tap it hundreds of times.
 
 ## Positions
+
+![The positions manager with a truss-length estimate](shot:lighting-positions)
 
 **Positions** manages where things hang: name, kind (truss, bar, boom,
 floor…), length, angle, and **trim** height (the drawings use it). Two

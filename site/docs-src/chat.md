@@ -11,6 +11,8 @@ Chat is the spine of crewbox: channels for departments, DMs for everything
 else, and alerts that reach a phone in a pocket. It's always on, whatever
 modules the box runs.
 
+![A changeover conversation in #stage, with a mention highlighted](shot:chat-overview)
+
 ## Channels
 
 Channels are open rooms — every crew member can read and join any of them.
@@ -32,6 +34,8 @@ event network (from the production office over a tunnel, say) — useful to
 know before you ask them to physically go and look at something.
 
 ## Mentions
+
+![The @ mention picker open in the composer](shot:chat-mention)
 
 Type `@` and pick a name — `@Maya` lights the message up for Maya and makes
 her unread badge urgent. `@all`, `@everyone` and `@channel` flag everyone in

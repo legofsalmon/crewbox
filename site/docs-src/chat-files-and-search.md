@@ -32,6 +32,8 @@ noon is still there for the night crew, whoever's phone took it.
 
 ## The filter bar
 
+![The filter bar narrowing #stage to one person](shot:chat-filter-bar)
+
 The **funnel** button in the channel header narrows what's in front of you:
 
 - Chips: **All · Photos · Files · Links · Mentions** — one tap to see just
@@ -48,6 +50,8 @@ The filter clears itself when you switch channels or close the bar, so a
 forgotten filter can never make a channel look silently empty.
 
 ## Search
+
+![Search results for "changeover" across every channel](shot:chat-search)
 
 The **magnifier** in the header — or **⌘K** / **Ctrl+K** anywhere — opens
 search. It asks the box, not your device, so it covers **the whole history

@@ -14,6 +14,8 @@ passively hears, and it never transmits on a show network.
 
 ## The three cards
 
+![The three network cards, graded](shot:network-cards)
+
 - **Crew network** — the Wi-Fi the crew's phones are on: connections, and
   the round trip crew phones actually experience (each phone reports its
   own median once a minute — the box can't measure your Wi-Fi from where

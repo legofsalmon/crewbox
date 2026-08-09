@@ -30,13 +30,16 @@
         <h1 id="stage-patch-and-lineup"><a class="anchor" href="#stage-patch-and-lineup">Stage patch and lineup</a></h1>
 <p>The grid holds the master patch; two dialogs turn it into the other paperwork a stage runs on. The <strong>stage patch</strong> — what's plugged into which box on stage — is <em>derived</em> from the grid, never typed twice. The <strong>lineup</strong> holds the acts, their times, and the changeovers between them.</p>
 <h2 id="sub-boxes"><a class="anchor" href="#sub-boxes">Sub-boxes</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/patch-subbox-light.png" /><img src="/docs/img/patch-subbox-dark.png" alt="The sub-box manager: names, inputs, colours, stage positions" width="1280" height="720" loading="lazy" /></picture>
 <p><strong>Boxes</strong> declares the stage's sub-boxes (sub-snakes): a name, how many inputs it has, a colour, and where it sits on stage (USC, DSR…). Colours show up as stripes in the grid's Sub-box column, so a glance tells you which box a channel lands on.</p>
 <h2 id="the-pink-3-syntax"><a class="anchor" href="#the-pink-3-syntax">The &quot;PINK 3&quot; syntax</a></h2>
 <p>Here's the trick that makes the stage patch free: in an act's <strong>Sub-box</strong> cell, type the box name and a tail number — <code>PINK 3</code>. That one cell says &quot;this channel arrives on tail 3 of the PINK box&quot;. Do that as you patch, and the stage patch writes itself.</p>
 <h2 id="the-stage-patch"><a class="anchor" href="#the-stage-patch">The stage patch</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/patch-stage-light.png" /><img src="/docs/img/patch-stage-dark.png" alt="The derived stage patch, box by box" width="1280" height="720" loading="lazy" /></picture>
 <p><strong>Stage Patch</strong> shows, per act, each sub-box as its own table: tail number, channel, input, mic/DI — including empty tails, because &quot;tail 4 is free&quot; is information. It warns loudly when two channels claim one tail (&quot;⚠ Two channels on one tail: BSNAKE 4&quot;), and unused boxes collapse out of the way.</p>
 <p>It's read-only on purpose. Fix anything by fixing the grid cell it came from — there is exactly one source of truth.</p>
 <h2 id="the-lineup"><a class="anchor" href="#the-lineup">The lineup</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/patch-lineup-light.png" /><img src="/docs/img/patch-lineup-dark.png" alt="The lineup: acts, set times and changeovers" width="1280" height="720" loading="lazy" /></picture>
 <p><strong>Lineup</strong> manages the acts:</p>
 <ul><li><strong>+ Add Artist</strong>, then name, <strong>start and end times</strong>, a <strong>Spec</strong> field (backline, band size, what they bring) and an <strong>Additional info</strong> field for what came up on the day.</li><li><strong>Files</strong> — drop an act's rider or stage plot straight onto their row. Attachments live on the box, so they need a connection to add or open.</li><li>Acts appear as the column groups of the grid, in running order.</li></ul>
 <h2 id="changeovers"><a class="anchor" href="#changeovers">Changeovers</a></h2>

@@ -14,6 +14,8 @@ box on stage — is _derived_ from the grid, never typed twice. The
 
 ## Sub-boxes
 
+![The sub-box manager: names, inputs, colours, stage positions](shot:patch-subbox)
+
 **Boxes** declares the stage's sub-boxes (sub-snakes): a name, how many
 inputs it has, a colour, and where it sits on stage (USC, DSR…). Colours
 show up as stripes in the grid's Sub-box column, so a glance tells you
@@ -28,6 +30,8 @@ the stage patch writes itself.
 
 ## The stage patch
 
+![The derived stage patch, box by box](shot:patch-stage)
+
 **Stage Patch** shows, per act, each sub-box as its own table: tail number,
 channel, input, mic/DI — including empty tails, because "tail 4 is free" is
 information. It warns loudly when two channels claim one tail
@@ -38,6 +42,8 @@ It's read-only on purpose. Fix anything by fixing the grid cell it came
 from — there is exactly one source of truth.
 
 ## The lineup
+
+![The lineup: acts, set times and changeovers](shot:patch-lineup)
 
 **Lineup** manages the acts:
 
