@@ -82,3 +82,11 @@
   margin-top: 5px;
   font-family: ui-monospace, monospace;
 }
+
+.who {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0;
+  align-self: center;
+  flex-shrink: 0;
+}

@@ -22,15 +22,13 @@ export default function PatchSidebar() {
     <>
       <div className="section-head">
         <span>Patch Sheets</span>
-        {/* Not "All sheets": the row below the list already carries that
-            name, and a screen reader announcing two different controls
-            identically gives someone no way to tell them apart. The glyph is
-            a +, so say what pressing it gets you. */}
+        {/* The + does what a + looks like it does: starts a new sheet
+            (the "All sheets…" row below is the navigation). */}
         <button
           className="icon-btn"
-          aria-label="Open patch sheets"
-          title="Open patch sheets"
-          onClick={() => setActiveModule('patch')}
+          aria-label="New patch sheet"
+          title="New patch sheet"
+          onClick={() => setActiveModule('patch', 'new')}
         >
           +
         </button>

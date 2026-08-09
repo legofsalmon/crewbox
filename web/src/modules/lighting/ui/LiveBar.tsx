@@ -118,6 +118,12 @@ export default function LiveBar({
       {sync && (
         <span className={sync.tone === 'warn' ? styles.conflict : styles.basis}>{sync.text}</span>
       )}
+      {/* The drawings stay plain paperwork until Levels is on, so without
+          this line a live rig looks dead and nothing hints the toggle
+          exists. Shown only when there is actually something to see. */}
+      {!levels && summary.live > 0 && (
+        <span className={styles.basis}>Desk is sending — Levels shows it on the drawings</span>
+      )}
       <button
         type="button"
         className={`${styles.toggle} ${levels ? styles.toggleOn : ''}`}

@@ -34,6 +34,7 @@ function PositionGroup({
   subtitle,
   selectedId,
   onSelect,
+  onNotice,
 }: {
   doc: Y.Doc
   snapshot: PlotSnapshot
@@ -43,6 +44,7 @@ function PositionGroup({
   subtitle?: string
   selectedId: string | null
   onSelect: (id: string) => void
+  onNotice: (message: string) => void
 }) {
   const fixtures = useMemo(() => fixturesOnPosition(snapshot, positionId), [snapshot, positionId])
   // Read straight from the store rather than threaded through the list: the
@@ -78,7 +80,9 @@ function PositionGroup({
     )
     const start = nextFreeAddress(others, universe, needed)
     if (start === null) {
-      window.alert(
+      // The plot's flash line, not window.alert — the one native alert the
+      // app ever had, and it read like a crash.
+      onNotice(
         `Universe ${universe} doesn't have ${needed} free channels in a row for this position.`
       )
       return
@@ -192,12 +196,14 @@ export default function FixtureList({
   issues,
   selectedId,
   onSelect,
+  onNotice,
 }: {
   doc: Y.Doc
   snapshot: PlotSnapshot
   issues: PlotIssues
   selectedId: string | null
   onSelect: (id: string) => void
+  onNotice: (message: string) => void
 }) {
   const unassigned = snapshot.fixtures.filter((fixture) => fixture.positionId === '')
 
@@ -214,6 +220,7 @@ export default function FixtureList({
           subtitle={POSITION_KIND_LABELS[position.kind]}
           selectedId={selectedId}
           onSelect={onSelect}
+          onNotice={onNotice}
         />
       ))}
 
@@ -226,6 +233,7 @@ export default function FixtureList({
           title="No position"
           selectedId={selectedId}
           onSelect={onSelect}
+          onNotice={onNotice}
         />
       )}
     </div>

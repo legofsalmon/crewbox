@@ -289,7 +289,9 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
       {showLineup && (
         <LineupManager doc={doc} snapshot={snapshot} onClose={() => setShowLineup(false)} />
       )}
-      {showVersions && <VersionManager doc={doc} onClose={() => setShowVersions(false)} />}
+      {showVersions && (
+        <VersionManager doc={doc} onUndo={undo} onClose={() => setShowVersions(false)} />
+      )}
       {showShare && (
         <ShareMenu
           sheetId={sheetId}

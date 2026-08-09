@@ -70,10 +70,16 @@ export default function StagePatch({
 
         <div className={styles.runs}>
           {visible.length === 0 && (
-            <p className={styles.empty}>
-              Nothing patched to a numbered tail yet. Write the tail into a sub-box cell — “PINK 3”,
-              “BSNAKE 7” — and it lands here.
-            </p>
+            <div className={styles.empty}>
+              <p>Nothing patched to a numbered tail yet. Two steps make this page write itself:</p>
+              <p>
+                1. Declare the stage’s sub-boxes in <strong>Boxes</strong> — name, inputs, colour.
+              </p>
+              <p>
+                2. In the grid, write box and tail into an act’s Sub-box cell: “PINK 3” means this
+                channel arrives on tail 3 of PINK.
+              </p>
+            </div>
           )}
           {visible.map((run) => (
             <section key={`${run.subBox?.id ?? 'text'}-${run.name}`} className={styles.run}>

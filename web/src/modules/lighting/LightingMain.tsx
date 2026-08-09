@@ -23,5 +23,10 @@ export default function LightingMain({ subpath }: { subpath: string }) {
   if (plotId) {
     return <PlotView plotId={plotId} onClose={() => setActiveModule('lighting')} />
   }
-  return <PlotSelector onOpen={(id) => setActiveModule('lighting', `plot/${id}`)} />
+  return (
+    <PlotSelector
+      startCreating={subpath === 'new'}
+      onOpen={(id) => setActiveModule('lighting', `plot/${id}`)}
+    />
+  )
 }
