@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Running the box — Crewbox docs</title>
+    <meta name="description" content="Download, first run, the setup questions, the QR noticeboard, and stopping it properly." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box" aria-current="page">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="running-the-box"><a class="anchor" href="#running-the-box">Running the box</a></h1>
+<p>The box is one program on one machine — a laptop is fine — serving everything: the app, the files, the history, the voice server. This page takes you from download to crew scanning the QR; nothing here needs internet at the venue.</p>
+<h2 id="install-and-run"><a class="anchor" href="#install-and-run">Install and run</a></h2>
+<ul><li><strong>macOS</strong> — download the <code>.dmg</code> from <a href="/">the front page</a>, open, drag to Applications, launch. Signed and notarised, so it opens without warnings — including with no internet. It keeps the Mac awake while running, lid shut included.</li><li><strong>Windows</strong> — download the <code>.exe</code>, double-click. SmartScreen will warn about an unsigned app: <strong>More info → Run anyway</strong>. That means Windows hasn't seen the file before, not that something is wrong.</li><li><strong>Linux, or macOS by one line</strong>:</li></ul>
+<pre><code>curl -fsSL https://crewbox.letissier.ie/install.sh | sh</code></pre>
+<p>Downloads the right binary, clears the macOS quarantine flag, starts it.</p>
+<h2 id="first-run-four-questions"><a class="anchor" href="#first-run-four-questions">First run: four questions</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/setup-page-light.png" /><img src="/docs/img/setup-page-dark.png" alt="The /setup page and its four questions" width="1280" height="720" loading="lazy" /></picture>
+<p>The box opens a browser on <code>/setup</code>:</p>
+<ol><li><strong>Event name</strong> — what crew see when they join. Changeable any time.</li><li><strong>Wi-Fi network</strong> — the network crew join to reach the box, shown as join guidance. Leave blank if you don't know yet.</li><li><strong>Event PIN</strong> — pre-filled with a freshly minted one; keep or change.</li><li><strong>Admin password</strong> — also minted for you, shown <strong>this once</strong>.</li></ol>
+<div class="callout callout-warning"><p><strong>Write the admin password down now.</strong> It is never shown again, and the
+setup page closes forever the moment the first person joins. If it's
+lost, the supported way back in is setting the <code>ADMIN_PASSWORD</code>
+environment variable and restarting the box.</p></div>
+<p>A <strong>Networks</strong> section appears when the machine has more than one network adapter — pick which side the crew are on, and whether to listen to a lighting network (<a href="/docs/lighting-live">why you'd want to</a>). Everything else on the setup page is editable later in <a href="/docs/admin">the admin panel</a>; the network choices apply on the next start.</p>
+<h2 id="the-noticeboard-connect"><a class="anchor" href="#the-noticeboard-connect">The noticeboard: /connect</a></h2>
+<p>Saving setup lands on <code>/connect</code>: the join QR (with the PIN already in it), the join URL as a tappable link, the PIN in print, and — once you've put the Android app on the box — a download link for it. Leave it on a spare screen, or print poster versions. Crew scan, pick a name, done.</p>
+<p>The box's own terminal prints the same thing, QR included, for headless machines.</p>
+<h2 id="day-to-day"><a class="anchor" href="#day-to-day">Day to day</a></h2>
+<pre><code>crewbox --status   # is it running, on what address, with which PIN
+crewbox --stop     # stop it — works over SSH, works headless</code></pre>
+<ul><li><strong>macOS</strong>: a menu-bar item beside the clock — the event, the join link, copy-the-PIN, and <strong>Stop Crewbox and quit</strong>. No Dock icon; it's a server.</li><li><strong>Windows</strong>: the same menu in the system tray.</li><li><strong>Linux</strong>: Ctrl-C in its terminal, or <code>crewbox --stop</code>.</li></ul>
+<p>A second copy of the box refuses to start while one is running — it can't steal the port or hurt the live one. Stop the old one first (<code>--stop</code>), including when upgrading: running programs can't be overwritten.</p>
+<h2 id="serving-the-android-app"><a class="anchor" href="#serving-the-android-app">Serving the Android app</a></h2>
+<p>Drop the <code>crewbox-*.apk</code> file into the box's data directory (<code>~/.crewbox/ data</code>) and it's served at <code>/crewbox.apk</code> — the <code>/connect</code> page starts offering it automatically. The URL never changes, so printed posters stay valid across versions.</p>
+<h2 id="data-backup-updates"><a class="anchor" href="#data-backup-updates">Data, backup, updates</a></h2>
+<p>Everything lives in <code>~/.crewbox/data</code> — one directory to back up, one to restore. Updating the box is: stop it, replace the binary (or app), start it. Crew phones notice the new version and offer a <strong>Reload</strong> pill; nothing they had queued is lost.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/network"><span>Previous</span>Network audit</a><a class="next" href="/docs/admin"><span>Next</span>The admin panel</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

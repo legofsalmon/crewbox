@@ -24,5 +24,10 @@ export default function PatchMain({ subpath }: { subpath: string }) {
   if (sheetId) {
     return <SheetView sheetId={sheetId} onClose={() => setActiveModule('patch')} />
   }
-  return <SheetSelector onOpen={(id) => setActiveModule('patch', `sheet/${id}`)} />
+  return (
+    <SheetSelector
+      startCreating={subpath === 'new'}
+      onOpen={(id) => setActiveModule('patch', `sheet/${id}`)}
+    />
+  )
 }

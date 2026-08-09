@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Troubleshooting — Crewbox docs</title>
+    <meta name="description" content="Symptom first — can't join, can't talk, no alerts, and friends." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting" aria-current="page">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="troubleshooting"><a class="anchor" href="#troubleshooting">Troubleshooting</a></h1>
+<p>Symptom-first. Crew problems first, box problems at the end.</p>
+<h2 id="i-cant-join"><a class="anchor" href="#i-cant-join">&quot;I can't join&quot;</a></h2>
+<ul><li><strong>The join page never loads</strong> — you're not on the event network. Join the Wi-Fi named on the poster, then scan again. Some phones cling to mobile data; turning it off for a minute forces them onto the venue Wi-Fi.</li><li><strong>&quot;That name is taken and the PIN doesn't match&quot;</strong> — the name you typed exists and the PIN isn't its PIN. If it's yours, you've misremembered your PIN: ask an admin to reset it. If it isn't yours, pick another name.</li><li><strong>The event PIN is rejected</strong> — PINs change occasionally; read it off the current poster or the <code>/connect</code> screen, not a photo from yesterday.</li><li><strong>&quot;Too many attempts&quot;</strong> — the box rate-limits guessing. Wait a minute.</li></ul>
+<h2 id="i-can-hear-voice-but-nobody-hears-me"><a class="anchor" href="#i-can-hear-voice-but-nobody-hears-me">&quot;I can hear voice but nobody hears me&quot;</a></h2>
+<p>That's the HTTPS microphone rule — the voice bar will say <strong>listen-only</strong>. See <a href="/docs/voice#the-https-rule-read-before-show-day">the voice page</a>. Quick fixes: use the Android/iOS app, or ask whoever runs the box whether HTTPS is set up.</p>
+<p>If you're <strong>not</strong> listen-only but still silent: open the voice bar's gear and watch the mic meter while you speak. Flat bar → wrong mic selected, or the browser was denied mic permission (check the padlock icon in the address bar).</p>
+<h2 id="im-not-getting-alerts"><a class="anchor" href="#im-not-getting-alerts">&quot;I'm not getting alerts&quot;</a></h2>
+<ul><li>Check the <strong>bell</strong> in the sidebar isn't muted.</li><li>Backgrounded browser alerts need notification permission — the browser asks once; if it was refused, re-enable it in site settings.</li><li><strong>iPhone, locked, no internet: alerts cannot work.</strong> Apple's push servers are unreachable from an offline event network and no app can work around it. Give Android phones to roles that must not miss a call — the Android app holds its own connection to the box and buzzes on the lock screen, entirely on the LAN.</li></ul>
+<h2 id="my-message-says-sending-forever"><a class="anchor" href="#my-message-says-sending-forever">&quot;My message says sending… forever&quot;</a></h2>
+<p>The box is unreachable from your device. The message is safe and will deliver when the connection returns — don't retype it. If everyone nearby has the same problem, the box or the Wi-Fi is down; if it's just you, walk closer to an access point and watch the banner.</p>
+<h2 id="a-channel-looks-empty-someones-messages-are-missing"><a class="anchor" href="#a-channel-looks-empty-someones-messages-are-missing">&quot;A channel looks empty&quot; / &quot;someone's messages are missing&quot;</a></h2>
+<p>If the filter bar is open, close it — a filter narrows the view to what's loaded on your device, and it clears itself when you switch channels precisely so this state can't linger. For history beyond what's loaded, use search (<code>⌘K</code>), which asks the box for everything.</p>
+<h2 id="the-reload-pill-does-nothing"><a class="anchor" href="#the-reload-pill-does-nothing">&quot;The reload pill does nothing&quot;</a></h2>
+<p><strong>New version available — Reload</strong> occasionally needs a few seconds while the new version finishes downloading. Tap it again. If it persists, close and reopen the app — nothing unsent is lost either way.</p>
+<h2 id="the-lighting-plot-shows-no-levels"><a class="anchor" href="#the-lighting-plot-shows-no-levels">&quot;The lighting plot shows no levels&quot;</a></h2>
+<p>The drawings only colour by desk output when <strong>Levels</strong> is switched on in the live bar — it's off by default because levels are the expensive part. No live bar at all means this box isn't listening to a lighting network — that's an operator setting (<strong>Admin → Lighting network</strong>).</p>
+<h2 id="the-network-module-says-not-watched"><a class="anchor" href="#the-network-module-says-not-watched">&quot;The Network module says Not watched&quot;</a></h2>
+<p>Honest reporting, not a fault: the box wasn't told to watch that network. The card says what to change; it's an operator switch, not something in the app.</p>
+<h2 id="for-the-boxs-operator"><a class="anchor" href="#for-the-boxs-operator">For the box's operator</a></h2>
+<ul><li><strong>The box won't start / port already in use</strong> — a box is already running on that machine; <code>crewbox --status</code> shows it, <code>crewbox --stop</code> stops it.</li><li><strong>Crew can't reach the box by name</strong> — the venue DNS doesn't answer for your hostname. <strong>Admin → This network</strong> flags this and offers a ready-made <code>crewbox-dns.conf</code> download for the router.</li><li><strong>Setup page gone</strong> — <code>/setup</code> closes forever once the first person joins. Everything on it lives on in the admin panel; the admin password, if lost, can be overridden with the <code>ADMIN_PASSWORD</code> environment variable and a restart.</li><li><strong>Everything else</strong> — the readiness list in <strong>Admin → This box</strong> exists precisely for &quot;what's wrong and what do I do&quot;: every red or amber row carries its own fix.</li></ul>
+        <footer class="prevnext"><a class="prev" href="/docs/glossary"><span>Previous</span>Glossary</a><a class="next" href="/docs/privacy"><span>Next</span>Privacy and your data</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

@@ -27,7 +27,6 @@ function VersionRow({
   version: SheetVersion
   onRestored: () => void
 }) {
-  const { addToast } = useToasts()
   const summary = (() => {
     const snap = versionSnapshot(version)
     return `${snap.channels.length} channels · ${snap.artists.length} artist${
@@ -38,13 +37,12 @@ function VersionRow({
   const handleRestore = () => {
     if (
       !window.confirm(
-        `Restore "${version.name}"? The sheet's current content will be replaced — Ctrl/Cmd+Z undoes the restore.`
+        `Restore "${version.name}"? The sheet's current content will be replaced — you can undo straight after.`
       )
     ) {
       return
     }
     restoreVersion(doc, version.id)
-    addToast('Version restored', `Back to "${version.name}" — undo to return`, 'success')
     onRestored()
   }
 
@@ -79,9 +77,21 @@ function VersionRow({
   )
 }
 
-export default function VersionManager({ doc, onClose }: { doc: Y.Doc; onClose: () => void }) {
+export default function VersionManager({
+  doc,
+  onUndo,
+  onClose,
+}: {
+  doc: Y.Doc
+  /** The sheet's undo — a restore must be reversible by a visible button,
+   *  because the confirm's old advice (Ctrl/Cmd+Z) doesn't exist on the
+   *  phones most of the crew are holding. */
+  onUndo: () => void
+  onClose: () => void
+}) {
   const { addToast } = useToasts()
   const [name, setName] = useState('')
+  const [restored, setRestored] = useState<string | null>(null)
   const versions = listVersions(doc)
 
   useEffect(() => {
@@ -135,6 +145,22 @@ export default function VersionManager({ doc, onClose }: { doc: Y.Doc; onClose: 
               Save current version
             </button>
           </div>
+          {restored && (
+            <div className={styles.restoredBar}>
+              <span>Restored “{restored}” — the sheet now matches that snapshot.</span>
+              <button
+                type="button"
+                className={styles.addButton}
+                onClick={() => {
+                  onUndo()
+                  setRestored(null)
+                  addToast('Restore undone', 'The sheet is back as it was', 'info')
+                }}
+              >
+                Undo restore
+              </button>
+            </div>
+          )}
           {versions.length === 0 ? (
             <div className={styles.empty}>
               <p>No versions saved yet.</p>
@@ -142,7 +168,12 @@ export default function VersionManager({ doc, onClose }: { doc: Y.Doc; onClose: 
             </div>
           ) : (
             versions.map((version) => (
-              <VersionRow key={version.id} doc={doc} version={version} onRestored={onClose} />
+              <VersionRow
+                key={version.id}
+                doc={doc}
+                version={version}
+                onRestored={() => setRestored(version.name)}
+              />
             ))
           )}
         </div>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Around the app — Crewbox docs</title>
+    <meta name="description" content="The sidebar and drawer, themes, installing to your home screen, and what offline looks like." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app" aria-current="page">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="around-the-app"><a class="anchor" href="#around-the-app">Around the app</a></h1>
+<p>Everything lives off one sidebar: chat channels at the top, then a section for each module the box has switched on. On a phone the sidebar becomes a drawer — and every screen has a way back to it.</p>
+<picture class="phone"><source media="(prefers-color-scheme: light)" srcset="/docs/img/chat-phone-light.png" /><img src="/docs/img/chat-phone-dark.png" alt="Crewbox on a phone: a channel with the composer" width="780" height="1688" loading="lazy" /></picture>
+<h2 id="the-sidebar"><a class="anchor" href="#the-sidebar">The sidebar</a></h2>
+<p>From top to bottom:</p>
+<ul><li>A <strong>connection dot</strong> and the event's name.</li><li><strong>Channels</strong> and <strong>Direct messages</strong> — chat, which is always on.</li><li>A section per module — <strong>Patch Sheets</strong>, <strong>Lighting</strong>, <strong>Network</strong> — whichever this box has enabled.</li><li>Your <strong>identity row</strong>: your avatar and name, your connection (&quot;Online ·</li></ul>
+<p>42 ms&quot;), and four buttons — <strong>admin panel</strong> (the cog — visible to everyone, but it wants the admin password), <strong>mute/unmute alert sounds</strong> (the bell), <strong>light/dark theme</strong> (sun/moon), and <strong>sign out</strong>.</p>
+<h2 id="on-a-phone-the-drawer"><a class="anchor" href="#on-a-phone-the-drawer">On a phone: the drawer</a></h2>
+<picture class="phone"><source media="(prefers-color-scheme: light)" srcset="/docs/img/drawer-light.png" /><img src="/docs/img/drawer-dark.png" alt="The drawer open over chat on a phone" width="780" height="1688" loading="lazy" /></picture>
+<p>Below tablet width the sidebar tucks away and a <strong>☰</strong> button (top left, &quot;Open channels&quot;) brings it back. Opening a channel or a module closes the drawer so the content gets the whole screen; the ☰ is always there to get back. Every module's screens carry it too — you can't get stranded.</p>
+<h2 id="light-and-dark"><a class="anchor" href="#light-and-dark">Light and dark</a></h2>
+<p>The sun/moon button in the identity row switches theme, and the choice sticks on that device. Dark is the default and follows your system setting until you choose. Both themes are maintained deliberately: dark for a FOH tent at night, light for reading a patch sheet outdoors in daylight.</p>
+<h2 id="install-it-like-an-app"><a class="anchor" href="#install-it-like-an-app">Install it like an app</a></h2>
+<p>Crewbox is a web app that installs to your home screen and keeps working offline:</p>
+<ul><li><strong>Android</strong>: the browser offers &quot;Install app&quot; / &quot;Add to home screen&quot; — or use the Android app from the box's <code>/connect</code> page, which adds lock-screen alerts.</li><li><strong>iPhone/iPad</strong>: Share → <strong>Add to Home Screen</strong>. (The app shows this tip once; it's worth doing — you get a real icon and full-screen.)</li><li><strong>Desktop</strong>: the install icon in the address bar, if you want it.</li></ul>
+<div class="callout callout-note"><p>Installing from the browser needs the box to be on HTTPS. If the install
+option doesn't appear, the box is running plain HTTP — everything still
+works in the browser tab.</p></div>
+<h2 id="offline-is-normal-here"><a class="anchor" href="#offline-is-normal-here">Offline is normal here</a></h2>
+<p>The app treats a dropped connection as expected weather, not an error:</p>
+<ul><li>Everything you've already loaded stays readable.</li><li>Anything you send while offline is queued on your device — marked &quot;sending…&quot; — and delivered, once, when the box is back in reach.</li><li>A banner says <strong>Offline</strong> or <strong>Connecting…</strong> so you always know which state you're in. When the connection is up but slow, signal bars appear in the channel header instead.</li><li>On reconnect the app fetches only what it missed, so catching up is quick even on bad Wi-Fi.</li></ul>
+<h2 id="when-a-new-version-arrives"><a class="anchor" href="#when-a-new-version-arrives">When a new version arrives</a></h2>
+<p>If the box has been updated, a pill appears: <strong>New version available — Reload</strong>. Tap it when convenient; anything unsent survives the reload. If the pill seems to do nothing for a moment, it's still fetching the new version — give it a few seconds and tap again.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/getting-connected"><span>Previous</span>Getting connected</a><a class="next" href="/docs/chat"><span>Next</span>Chat</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

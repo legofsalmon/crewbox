@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Keyboard shortcuts — Crewbox docs</title>
+    <meta name="description" content="Every keyboard shortcut, by where it works." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts" aria-current="page">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="keyboard-shortcuts"><a class="anchor" href="#keyboard-shortcuts">Keyboard shortcuts</a></h1>
+<p><code>⌘</code> on a Mac, <code>Ctrl</code> everywhere else.</p>
+<h2 id="anywhere"><a class="anchor" href="#anywhere">Anywhere</a></h2>
+<div class="table-scroll"><table><thead><tr><th>Keys</th><th>Does</th></tr></thead><tbody><tr><td><code>⌘K</code></td><td>Open search</td></tr><tr><td><code>Enter</code></td><td>Send the message you're typing (computers; phones use the send button)</td></tr></tbody></table></div>
+<h2 id="patch-sheet"><a class="anchor" href="#patch-sheet">Patch sheet</a></h2>
+<div class="table-scroll"><table><thead><tr><th>Keys</th><th>Does</th></tr></thead><tbody><tr><td><code>⌘F</code></td><td>Jump to the sheet's Find box</td></tr><tr><td><code>Enter</code> in Find</td><td>Next match (scrolled into view)</td></tr><tr><td><code>⌘Z</code></td><td>Undo</td></tr><tr><td><code>⌘⇧Z</code> or <code>⌘Y</code></td><td>Redo</td></tr></tbody></table></div>
+<p>In the grid:</p>
+<div class="table-scroll"><table><thead><tr><th>Keys</th><th>Does</th></tr></thead><tbody><tr><td>Arrow keys</td><td>Move between cells</td></tr><tr><td><code>Enter</code> / <code>⇧Enter</code></td><td>Commit and move down / up</td></tr><tr><td><code>⌘D</code></td><td>Fill this cell from the one above</td></tr><tr><td><code>Escape</code></td><td>Throw away your edit to this cell</td></tr></tbody></table></div>
+<h2 id="lighting-plot"><a class="anchor" href="#lighting-plot">Lighting plot</a></h2>
+<div class="table-scroll"><table><thead><tr><th>Keys</th><th>Does</th></tr></thead><tbody><tr><td><code>⌘Z</code></td><td>Undo</td></tr><tr><td><code>⌘⇧Z</code></td><td>Redo</td></tr></tbody></table></div>
+<h2 id="docs-this-site"><a class="anchor" href="#docs-this-site">Docs (this site)</a></h2>
+<div class="table-scroll"><table><thead><tr><th>Keys</th><th>Does</th></tr></thead><tbody><tr><td><code>/</code> or <code>⌘K</code></td><td>Focus the docs search</td></tr><tr><td><code>↑</code> <code>↓</code> <code>Enter</code></td><td>Move through and open results</td></tr></tbody></table></div>
+<p>A note on undo: while you're typing in a text field, <code>⌘Z</code> is the normal text-editing undo; the sheet- and plot-level undo takes over once the edit is committed. Undo is per-device — your <code>⌘Z</code> never reverts something a colleague just did on their phone.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/phones-and-platforms"><span>Previous</span>Phones and platforms</a><a class="next" href="/docs/glossary"><span>Next</span>Glossary</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

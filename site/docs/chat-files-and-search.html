@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Files, filtering and search — Crewbox docs</title>
+    <meta name="description" content="Sharing files and photos, narrowing a channel with the filter bar, and searching everything." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search" aria-current="page">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="files-filtering-and-search"><a class="anchor" href="#files-filtering-and-search">Files, filtering and search</a></h1>
+<p>A festival channel fills up fast — stage plots, photos of a broken casing, fifty messages about lunch. Crewbox gives you three tools: share files properly, filter what's in front of you, and search everything ever said.</p>
+<h2 id="sharing-files-and-photos"><a class="anchor" href="#sharing-files-and-photos">Sharing files and photos</a></h2>
+<p>Three ways in:</p>
+<ol><li>The <strong>paperclip</strong> in the composer — pick a file or take a photo.</li><li><strong>Drag and drop</strong> anywhere onto the conversation — the overlay says &quot;Drop to share&quot;. Dropping several uploads them all.</li><li><strong>Paste</strong> — a screenshot on the clipboard pastes straight into the composer.</li></ol>
+<p>Images appear as previews in the conversation; other files as a card with name and size. Tap one for the detail view: open, download, copy a link, share it on (on phones), or delete it. You can always delete your own uploads; deleting anyone else's needs admin. Photos zoom with a pinch or a double-tap.</p>
+<p>Files live on the box, not on anyone's phone — so an attachment posted at noon is still there for the night crew, whoever's phone took it.</p>
+<h2 id="the-filter-bar"><a class="anchor" href="#the-filter-bar">The filter bar</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/chat-filter-bar-light.png" /><img src="/docs/img/chat-filter-bar-dark.png" alt="The filter bar narrowing #stage to one person" width="1280" height="720" loading="lazy" /></picture>
+<p>The <strong>funnel</strong> button in the channel header narrows what's in front of you:</p>
+<ul><li>Chips: <strong>All · Photos · Files · Links · Mentions</strong> — one tap to see just the photos in <code>#stage</code>.</li><li>A <strong>person picker</strong> listing everyone who has actually spoken in this channel — combine with a chip: &quot;photos from Dev&quot;.</li></ul>
+<p>The bar counts what it's looking through — &quot;34 of 210 loaded&quot; — because it <strong>only filters messages already loaded on this device</strong>. Tap <strong>Load older</strong> to widen it. An empty result means &quot;nothing in what's loaded&quot;, not &quot;nothing ever&quot; — for the whole history, use search.</p>
+<p>The filter clears itself when you switch channels or close the bar, so a forgotten filter can never make a channel look silently empty.</p>
+<h2 id="search"><a class="anchor" href="#search">Search</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/chat-search-light.png" /><img src="/docs/img/chat-search-dark.png" alt="Search results for &quot;changeover&quot; across every channel" width="1280" height="720" loading="lazy" /></picture>
+<p>The <strong>magnifier</strong> in the header — or <strong>⌘K</strong> / <strong>Ctrl+K</strong> anywhere — opens search. It asks the box, not your device, so it covers <strong>the whole history of every channel you can see</strong>, whether or not it's loaded on your phone. Results show author, channel and date; tapping one jumps to that message in place, highlighted.</p>
+<h2 id="which-tool-when"><a class="anchor" href="#which-tool-when">Which tool when</a></h2>
+<div class="table-scroll"><table><thead><tr><th>You want</th><th>Use</th></tr></thead><tbody><tr><td>The photos someone posted this afternoon</td><td>Filter bar, <strong>Photos</strong> chip</td></tr><tr><td>Everything one person said here today</td><td>Filter bar, person picker</td></tr><tr><td>&quot;Where did anyone mention the generator, ever?&quot;</td><td><strong>Search</strong> (⌘K)</td></tr><tr><td>The stage plot PDF from three days ago</td><td><strong>Search</strong>, or the <strong>Files</strong> chip after loading older</td></tr></tbody></table></div>
+        <footer class="prevnext"><a class="prev" href="/docs/chat"><span>Previous</span>Chat</a><a class="next" href="/docs/voice"><span>Next</span>Voice intercom</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

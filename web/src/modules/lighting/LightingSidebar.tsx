@@ -26,9 +26,9 @@ export default function LightingSidebar() {
             goes to the same place but is a different control. */}
         <button
           className="icon-btn"
-          aria-label="Open lighting plots"
-          title="Open lighting plots"
-          onClick={() => setActiveModule('lighting')}
+          aria-label="New lighting plot"
+          title="New lighting plot"
+          onClick={() => setActiveModule('lighting', 'new')}
         >
           +
         </button>

@@ -6,7 +6,7 @@ data/
 package-lock.json
 native/android/
 native/ios/
-docs/privacy-policy.html
+site/docs/privacy-policy.html
 deploy/poster.html
 web/public/
 playwright-report/

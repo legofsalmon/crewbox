@@ -11,6 +11,9 @@ const dataDir = `${process.env.RUNNER_TEMP ?? '/tmp'}/crewbox-e2e-data-${Date.no
 
 export default defineConfig({
   testDir: 'e2e',
+  // The docs screenshot run has its own config, server and seed — it must
+  // never ride along with the e2e suite.
+  testIgnore: 'screenshots/**',
   fullyParallel: false,
   workers: 1,
   timeout: 30_000,

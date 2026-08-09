@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { createSheet, createSheetFromImport, deleteSheet } from '../store/docManager'
 import { useSheetIndex } from '../store/hooks'
@@ -23,12 +23,23 @@ const formatLastEdited = (iso: string): string | null => {
   return `Edited ${new Date(iso).toLocaleDateString()}`
 }
 
-export default function SheetSelector({ onOpen }: { onOpen: (sheetId: string) => void }) {
+export default function SheetSelector({
+  onOpen,
+  startCreating = false,
+}: {
+  onOpen: (sheetId: string) => void
+  /** True when the sidebar's + brought us here: open the name form at once. */
+  startCreating?: boolean
+}) {
   const { entries, loaded } = useSheetIndex()
   const { addToast } = useToasts()
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState(startCreating)
   const [name, setName] = useState('')
   const importRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (startCreating) setCreating(true)
+  }, [startCreating])
 
   // Dropping a CSV anywhere on this page imports it, which is how someone
   // arrives here: with an export from Sheets or Excel already in a folder.

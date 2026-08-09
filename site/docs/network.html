@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Network audit — Crewbox docs</title>
+    <meta name="description" content="Three graded networks, the history behind every finding, the admin deep probe, and the report for venue IT." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network" aria-current="page">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="network-audit"><a class="anchor" href="#network-audit">Network audit</a></h1>
+<p>The <strong>Network</strong> module answers one question continuously: <em>is this site's networking good enough for A/V — and if not, what exactly is wrong and what is the fix?</em> Everyone on the crew can see it; it grades from what the box passively hears, and it never transmits on a show network.</p>
+<h2 id="the-three-cards"><a class="anchor" href="#the-three-cards">The three cards</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/network-cards-light.png" /><img src="/docs/img/network-cards-dark.png" alt="The three network cards, graded" width="1280" height="720" loading="lazy" /></picture>
+<ul><li><strong>Crew network</strong> — the Wi-Fi the crew's phones are on: connections, and the round trip crew phones actually experience (each phone reports its own median once a minute — the box can't measure your Wi-Fi from where it sits).</li><li><strong>Lighting network</strong> — what the DMX listener hears: frames arriving, loss, refresh rate, competing sources, sync health.</li><li><strong>Audio &amp; media network</strong> — PTP clocking, Dante/NDI rosters, stream announcements, when the box is watching them.</li></ul>
+<p>Each card wears a grade: <strong>Good for A/V · Usable — fixes below · Not suitable right now · Not watched</strong>. &quot;Not watched&quot; is an honest state, not a fault — the box wasn't told to listen to that network, and the card says what would change that. An unwatched network never drags the overall verdict down.</p>
+<h2 id="findings-and-sparklines"><a class="anchor" href="#findings-and-sparklines">Findings and sparklines</a></h2>
+<p>Inside each card, findings use the same vocabulary as the rest of crewbox (Working / Limited / Fault / For information), each with a plain sentence and — where it isn't fine — the fix: &quot;Slow Wi-Fi, not a slow box: add an access point near the stage, and get crew phones off the venue guest SSID.&quot;</p>
+<p>Where history backs a finding, a <strong>sparkline</strong> draws the last hour beside it — the shape (steady, sagging, spiky) is usually more diagnostic than the number. The box keeps about seven days of minute-by-minute history, so the picture survives restarts and power cuts.</p>
+<h2 id="the-event-strip"><a class="anchor" href="#the-event-strip">The event strip</a></h2>
+<p>A 24-hour tick strip: red marks for faults (an outage, a frozen rig, a device disappearing), amber for changes, with the most recent spelled out in words below. This is the &quot;it was fine until 17:40&quot; view — pair a complaint (&quot;comms dropped during changeover&quot;) with what the network was doing at that minute. A quiet strip says so: &quot;No events in the last 24 hours — a quiet network.&quot;</p>
+<h2 id="the-deep-probe"><a class="anchor" href="#the-deep-probe">The deep probe</a></h2>
+<p>Everything above is passive. The one exception is the <strong>deep probe</strong> — a single admin-triggered sweep that checks the internet uplink, venue DNS, sends <strong>one</strong> Art-Net poll and <strong>one</strong> mDNS query, and stops. Every packet it sends is listed in the results <strong>verbatim</strong>, so a strict venue can verify the claim against a capture. Only an unlocked admin device shows the <strong>Run deep probe</strong> button; the results are visible to everyone.</p>
+<p>If your venue forbids any transmission on the show networks: simply don't run it. Nothing else in the module transmits.</p>
+<h2 id="the-html-report"><a class="anchor" href="#the-html-report">The HTML report</a></h2>
+<p><strong>Download HTML report</strong> produces a single self-contained file — findings, grades, charts, the event log, the probe's verbatim send-list — that opens anywhere with no internet and prints cleanly. It's built to be handed to venue IT or attached to the post-event report: the good and the bad, with evidence.</p>
+<p><strong>Share to channel</strong> posts the audit into chat as an <strong>Open ↗</strong> chip, for &quot;have a look at this&quot; moments.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/lighting-import"><span>Previous</span>Importing rigs</a><a class="next" href="/docs/run-the-box"><span>Next</span>Running the box</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

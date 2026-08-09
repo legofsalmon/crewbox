@@ -506,3 +506,23 @@ test('a plot says when the levels it is showing are not what is on stage', async
     console_.stop()
   }
 })
+
+test('the plot list takes a rig file directly, and the sidebar + starts a plot', async ({
+  browser,
+}) => {
+  const page = await newDevice(browser, uniqueName('Rigger'))
+
+  // Importing from the landing page: no empty plot to create first. The
+  // file becomes a plot named after itself, opened, with the import summary
+  // shown — the same affordance the patch selector has always had.
+  await openLighting(page)
+  await page.getByLabel('Import CSV or MVR file').setInputFiles('e2e/fixtures/rig.mvr')
+  await expect(page.getByRole('tab', { name: 'Fixtures' })).toBeVisible()
+  await expect(page.getByText(/Imported 4 fixtures across/)).toBeVisible()
+  await expect(page.getByLabel('Plot title')).toHaveValue('rig')
+
+  // The sidebar's + reads as "create", so it creates: straight to the name
+  // form, not just the list.
+  await page.getByRole('button', { name: 'New lighting plot' }).click()
+  await expect(page.locator('#new-plot-name')).toBeVisible()
+})

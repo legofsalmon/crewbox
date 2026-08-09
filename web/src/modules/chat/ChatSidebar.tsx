@@ -129,8 +129,10 @@ export default function ChatSidebar() {
                 <span className={`presence-dot ${online[user.id] ? 'on' : ''}`} />
                 <span className="row-name">{user.name}</span>
                 {online[user.id] && remoteUsers[user.id] && (
-                  <span className="office-badge" title="Joining from off-site">
-                    office
+                  // "off-site" explains itself; "office" needed the tooltip,
+                  // and phones don't have one.
+                  <span className="office-badge" title="Connected from off the event network">
+                    off-site
                   </span>
                 )}
                 {/* A DM unread is always personal — mention styling. */}

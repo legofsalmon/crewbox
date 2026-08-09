@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Plan, Front and 3D — Crewbox docs</title>
+    <meta name="description" content="The three drawings — reading them, moving positions, and what needs real data to appear." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views" aria-current="page">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="plan-front-and-3d"><a class="anchor" href="#plan-front-and-3d">Plan, Front and 3D</a></h1>
+<p>Three drawings of the same rig, all live: change a trim in the Positions dialog and every open device redraws. None of them needs a gaming laptop — they're deliberately lightweight so a phone at the dimmer beach and a years-old FOH machine both keep up.</p>
+<h2 id="plan"><a class="anchor" href="#plan">Plan</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/lighting-plan-light.png" /><img src="/docs/img/lighting-plan-dark.png" alt="The plan view: top-down in metres" width="1280" height="720" loading="lazy" /></picture>
+<p>Top-down, in metres, with the centre line and the downstage edge marked.</p>
+<ul><li><strong>Drag a position to move it</strong> — it snaps to 0.25 m and syncs live to everyone.</li><li>Zoom with the −/+ buttons; unit numbers appear once you're in past 120%.</li><li>Click any fixture to select it — the app flips to the Fixtures tab with that unit highlighted.</li></ul>
+<h2 id="front"><a class="anchor" href="#front">Front</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/lighting-front-light.png" /><img src="/docs/img/lighting-front-dark.png" alt="The front elevation at trim height" width="1280" height="720" loading="lazy" /></picture>
+<p>The audience's view: width across, height up, everything drawn at its position's trim. Upstage positions draw dimmer and slightly smaller so depth stays readable in 2D.</p>
+<h2 id="3d"><a class="anchor" href="#3d">3D</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/lighting-3d-light.png" /><img src="/docs/img/lighting-3d-dark.png" alt="The 3D view of the rig over the stage deck" width="1280" height="720" loading="lazy" /></picture>
+<p>An orbitable view of the rig over a stage deck — <strong>drag to orbit</strong>, and <strong>Reset view</strong> brings back the default angle. When the box is receiving live DMX and a fixture's profile provides real pan/tilt ranges, moving heads grow faint beam cones pointing where the desk is pointing them — <a href="/docs/lighting-live">the live page</a> covers switching that on.</p>
+<h2 id="what-the-drawings-need-from-your-data"><a class="anchor" href="#what-the-drawings-need-from-your-data">What the drawings need from your data</a></h2>
+<p>The drawings are only as good as the plot's numbers:</p>
+<div class="table-scroll"><table><thead><tr><th>You see</th><th>Because</th></tr></thead><tbody><tr><td>Fixtures in a neat line</td><td>Their position has a length and they're spread along it</td></tr><tr><td>Sensible heights in Front/3D</td><td>Positions have real trim heights</td></tr><tr><td>Beam cones in 3D</td><td>Live levels are on <strong>and</strong> the fixture has a GDTF profile with pan/tilt ranges</td></tr><tr><td>A dot at stage centre</td><td>The fixture has no position — it's parked in &quot;No position&quot;</td></tr></tbody></table></div>
+<p>An MVR import fills nearly all of this in one go — positions, real coordinates along the truss, profiles. A CSV import gives you the list but not the geometry; see <a href="/docs/lighting-import">the import comparison</a>.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/lighting"><span>Previous</span>Lighting plots</a><a class="next" href="/docs/lighting-live"><span>Next</span>Live DMX on the plot</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

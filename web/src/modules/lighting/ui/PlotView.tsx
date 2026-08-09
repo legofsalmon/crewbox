@@ -3,22 +3,11 @@ import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import { registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
-import { parseCsv } from '../../_shared/csv'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { plotCsvFilename, plotSummary, plotToCsv } from '../model/csv'
-import { fixturesFromCsv } from '../model/importCsv'
-import { parseMvr, type MvrFixture } from '../model/mvr'
-import { fitPosition, isBar } from '../model/placement'
-import {
-  addFixture,
-  addFixtures,
-  upsertFixtureType,
-  addPosition,
-  removePosition,
-  setPlotMeta,
-  updatePosition,
-} from '../model/plotDoc'
+import { addFixture, setPlotMeta } from '../model/plotDoc'
 import { DMX_UNIVERSE_SIZE } from '../model/types'
+import { importPlotFile, takeImportFlash } from '../store/importFile'
 import {
   usePlot,
   usePlotIssues,
@@ -140,7 +129,9 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   const selected = snapshot?.fixtures.find((fixture) => fixture.id === selectedId) ?? null
   const [showPositions, setShowPositions] = useState(false)
   const [showShare, setShowShare] = useState(false)
-  const [flash, setFlash] = useState<string | null>(null)
+  // Seeded when the selector imported a file and navigated here — the
+  // import summary must survive the route change.
+  const [flash, setFlash] = useState<string | null>(() => takeImportFlash())
   const [importing, setImporting] = useState(false)
   // Levels are the expensive half and off by default: most of the value is in
   // "is it arriving and does the patch match", which needs none of them.
@@ -189,129 +180,6 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
     return <div className={styles.loading}>{loaded ? 'Plot not found.' : 'Opening plot…'}</div>
   }
 
-  const importCsv = async (file: File) => {
-    const result = fixturesFromCsv(parseCsv(await file.text()), snapshot.customTypes)
-    if (result.fixtures.length === 0) {
-      setFlash('Nothing imported — no recognisable columns in that file.')
-      return
-    }
-
-    // Create any positions the file mentions that the plot doesn't have, so
-    // fixtures land on the truss they name rather than in "No position".
-    const byName = new Map(snapshot.positions.map((p) => [p.name.toLowerCase(), p.id]))
-    for (const name of result.positionNames) {
-      if (!byName.has(name.toLowerCase())) {
-        byName.set(name.toLowerCase(), addPosition(doc, name))
-      }
-    }
-
-    addFixtures(
-      doc,
-      result.fixtures.map(({ positionName, typeName, ...fixture }) => ({
-        ...fixture,
-        positionId: positionName ? (byName.get(positionName.toLowerCase()) ?? '') : '',
-        // An unrecognised type name is kept as the mode text rather than
-        // dropped, so the information survives even without a library entry.
-        ...(typeName ? { mode: fixture.mode || typeName } : {}),
-      }))
-    )
-
-    const skipped = result.skippedColumns.length
-    setFlash(
-      `Imported ${result.fixtures.length} fixtures` +
-        (skipped > 0
-          ? ` · ${skipped} column${skipped === 1 ? '' : 's'} not recognised: ${result.skippedColumns.join(', ')}`
-          : '')
-    )
-  }
-
-  /**
-   * MVR carries far more than a CSV: the fixture's own GDTF profile (so the
-   * footprint is authoritative rather than guessed) and real coordinates,
-   * which get fitted onto positions so the plot arrives placed.
-   */
-  const importMvr = async (file: File) => {
-    const result = parseMvr(new Uint8Array(await file.arrayBuffer()))
-    if (result.fixtures.length === 0) {
-      setFlash('Nothing imported — that MVR has no fixtures in it.')
-      return
-    }
-
-    for (const type of result.types) upsertFixtureType(doc, type)
-
-    // A brand-new plot ships with one placeholder truss. Once a real rig
-    // lands it's just an empty row in the list and a stray label on the
-    // plan, so clear it — but only when it's demonstrably untouched.
-    const placeholder =
-      snapshot.positions.length === 1 && snapshot.fixtures.length === 0
-        ? snapshot.positions[0]!.id
-        : null
-
-    const byLayer = new Map<string, MvrFixture[]>()
-    for (const fixture of result.fixtures) {
-      const list = byLayer.get(fixture.layer)
-      if (list) list.push(fixture)
-      else byLayer.set(fixture.layer, [fixture])
-    }
-
-    const existing = new Map(snapshot.positions.map((p) => [p.name.toLowerCase(), p.id]))
-    const used = new Set<string>()
-
-    for (const [layer, group] of byLayer) {
-      // `order` and `residual` are placement output, not document state.
-      const { order, residual, ...geometry } = fitPosition(group)
-      let positionId = existing.get(layer.toLowerCase())
-      if (!positionId) {
-        positionId = addPosition(doc, layer)
-        existing.set(layer.toLowerCase(), positionId)
-      }
-      used.add(positionId)
-      // Real files group by role ("Spots", "Washes") as often as by bar, and
-      // those fixtures sit across several trusses. Drawing one long line
-      // through them would invent a truss that isn't there, so a scattered
-      // group becomes a grouping with no bar — its fixtures still land at
-      // their true coordinates.
-      updatePosition(doc, positionId, {
-        ...geometry,
-        length: isBar({ ...geometry, order, residual }, group.length) ? geometry.length : 0,
-      })
-
-      // Unit numbers follow the order along the bar, so the plot and the
-      // paperwork agree with what someone counting along the truss sees.
-      addFixtures(
-        doc,
-        order.map((index, along) => {
-          const fixture = group[index]!
-          return {
-            channel: fixture.channel,
-            universe: fixture.universe,
-            address: fixture.address,
-            typeId: fixture.typeId,
-            mode: fixture.mode,
-            footprint: fixture.footprint,
-            purpose: fixture.name,
-            positionId,
-            unit: fixture.unit || String(along + 1),
-            x: fixture.x,
-            y: fixture.y,
-            z: fixture.z,
-          }
-        })
-      )
-    }
-
-    // ...unless the import reused it, which happens whenever a layer is
-    // named the same as the placeholder. Deleting it then would take the
-    // fixtures' position out from under them.
-    if (placeholder && !used.has(placeholder)) removePosition(doc, placeholder)
-
-    setFlash(
-      `Imported ${result.fixtures.length} fixtures across ${byLayer.size} position${
-        byLayer.size === 1 ? '' : 's'
-      }` + (result.warnings.length > 0 ? ` · ${result.warnings.join(' · ')}` : '')
-    )
-  }
-
   const showInList = (id: string) => {
     setSelectedId(id)
     setTab('fixtures')
@@ -326,8 +194,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
     await new Promise((resolve) => setTimeout(resolve, 0))
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
     try {
-      if (file.name.toLowerCase().endsWith('.mvr')) await importMvr(file)
-      else await importCsv(file)
+      setFlash(await importPlotFile(doc, file))
     } catch (error) {
       setFlash(`Import failed: ${error instanceof Error ? error.message : 'unreadable file'}`)
     } finally {
@@ -441,6 +308,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
           issues={issues}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          onNotice={setFlash}
         />
       )}
       {tab === 'plan' && (
