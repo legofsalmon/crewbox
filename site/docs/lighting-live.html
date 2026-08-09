@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Live DMX on the plot — Crewbox docs</title>
+    <meta name="description" content="The live bar, the Levels toggle, and reading what the desk is actually sending." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live" aria-current="page">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="live-dmx-on-the-plot"><a class="anchor" href="#live-dmx-on-the-plot">Live DMX on the plot</a></h1>
+<p>When the box is listening on the lighting network, the plot stops being paperwork alone: every fixture's row shows whether data is reaching its address, and the drawings can dim and colour by what the desk is sending. The box only ever <strong>listens</strong> — it never transmits on a lighting network.</p>
+<h2 id="the-live-bar"><a class="anchor" href="#the-live-bar">The live bar</a></h2>
+<p>Above the tabs, the live bar reports plainly:</p>
+<ul><li><strong>&quot;Not watching a lighting network&quot;</strong> — the box isn't listening at all. That's an operator setting (<strong>Admin → Lighting network</strong>), not something in the plot.</li><li><strong>&quot;Listening, but none of this plot's universes has been heard&quot;</strong> — the box is on the network but this plot's addresses have seen nothing.</li><li>**&quot;● Live — 12 receiving · 4 nothing sent · 1 universe not heard, since</li></ul>
+<p>18:42&quot;** — the working state, counted fixture by fixture.</p>
+<p>It also warns when <strong>two sources</strong> are fighting over one universe, and when the rig is being <strong>held for sync</strong> or has <strong>frozen on its last look</strong> — each in those words.</p>
+<h2 id="fixture-dots"><a class="anchor" href="#fixture-dots">Fixture dots</a></h2>
+<p>In the fixtures list, each row's live dot answers one question — is anything being sent to this fixture's addresses?</p>
+<ul><li><strong>Receiving</strong> — data is arriving there.</li><li><strong>Nothing sent since the box started listening</strong> — the network is fine; the desk simply hasn't sent to those addresses.</li><li><strong>Universe not heard at all</strong> — that whole universe is silent.</li></ul>
+<p>The wording is deliberate: the box can see the network, not the rig. A fixture can be &quot;receiving&quot; and hang dead (lamp off, data cable unplugged after the node) — the dot narrows the search, it doesn't replace looking. Where a profile identifies the dimmer channel, the verdict sharpens to &quot;by dimmer&quot;; without one it falls back to any activity in the footprint.</p>
+<h2 id="the-levels-toggle"><a class="anchor" href="#the-levels-toggle">The Levels toggle</a></h2>
+<p>The drawings don't show desk output until you switch <strong>Levels</strong> on in the live bar — levels are the expensive half of watching, so they're opt-in per device. With it on:</p>
+<ul><li><strong>Plan/Front</strong>: each fixture dims with its real dimmer level and gets a halo in the colour the desk is asking for.</li><li><strong>3D</strong>: moving heads with profiles grow beam cones aimed by live pan/tilt.</li><li>The status dot <strong>keeps its rigging colour</strong> — a plot is paperwork first and a monitor second; live data changes the drawing, not your checklist.</li></ul>
+<h2 id="the-channel-readout"><a class="anchor" href="#the-channel-readout">The channel readout</a></h2>
+<p>Select a fixture whose type has a GDTF profile and a channel-by-channel table appears under the drawing: address, channel name, value, raw DMX. Values are translated by the profile — &quot;Dimmer 60%&quot;, &quot;Pan 135°&quot;, &quot;Colour: Congo&quot;, &quot;Strobe 18.1 Hz&quot; — with swatches for colours and per-cell names on multi-cell fixtures.</p>
+<p>No profile, no table: crewbox won't guess what channel 7 of an unknown fixture means. Profiles arrive with MVR import — <a href="/docs/lighting-import">the import page</a> shows exactly what each route unlocks.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/lighting-views"><span>Previous</span>Plan, Front and 3D</a><a class="next" href="/docs/lighting-import"><span>Next</span>Importing rigs</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

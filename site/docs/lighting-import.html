@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Importing rigs — Crewbox docs</title>
+    <meta name="description" content="CSV from Lightwright or a console, MVR with GDTF — and exactly what each route unlocks." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import" aria-current="page">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="importing-rigs"><a class="anchor" href="#importing-rigs">Importing rigs</a></h1>
+<p>Rigs arrive as files: a Lightwright export, a console patch dump, or an MVR from the designer's software. Drop any of them onto an open plot (or use <strong>Import</strong>) and crewbox reads what it can. The honest headline: <strong>CSV gets you the list; MVR gets you the rig.</strong></p>
+<h2 id="csv"><a class="anchor" href="#csv">CSV</a></h2>
+<p>Crewbox matches CSV headers <strong>by meaning</strong>, not by exact name — circuit / ckt / cct, universe / uni, address / addr / patch / dmx, channel / chan / ch, footprint / chancount, mode / dmxmode, and friends — so Lightwright, Eos, grandMA and Hog exports all come through without editing the file. Positions named in the file are created automatically. The import summary names any columns it didn't recognise, so nothing is silently dropped.</p>
+<h2 id="mvr-with-gdtf-inside"><a class="anchor" href="#mvr-with-gdtf-inside">MVR (with GDTF inside)</a></h2>
+<p>An MVR carries the rig's <em>geometry and identity</em>, not just its list. The import reads:</p>
+<ul><li><strong>Real 3D positions</strong> — layers become positions, and where fixtures actually line up, they're drawn along a fitted bar in true order. Group layers that aren't physical bars (&quot;Spots&quot;) become groupings without a drawn bar rather than fake trusses.</li><li><strong>GDTF profiles</strong> — the manufacturer's own description of each fixture: authoritative footprints, channel maps, watts, weight, physical size, beam angles.</li></ul>
+<p>Large MVRs take a moment; the UI says &quot;Reading…&quot; rather than freezing silently.</p>
+<h2 id="what-each-route-unlocks"><a class="anchor" href="#what-each-route-unlocks">What each route unlocks</a></h2>
+<div class="table-scroll"><table><thead><tr><th>Capability</th><th>CSV</th><th>MVR + GDTF</th></tr></thead><tbody><tr><td>Fixture list, addressing, clash warnings</td><td>yes</td><td>yes</td></tr><tr><td>Positions created</td><td>named only</td><td>with real geometry and order</td></tr><tr><td>Accurate footprints per mode</td><td>if the file has them</td><td>from the profile</td></tr><tr><td>Watts / weight placeholders</td><td>if the file has them</td><td>from the profile</td></tr><tr><td>Truss-length estimates</td><td>widths assumed</td><td>widths from profiles</td></tr><tr><td>Live verdict &quot;by dimmer&quot;</td><td>no — falls back to footprint activity</td><td>yes</td></tr><tr><td>Channel-by-channel readout</td><td>no</td><td>yes</td></tr><tr><td>Colour haloes and 3D beams</td><td>no</td><td>yes</td></tr></tbody></table></div>
+<p>This table is the answer to &quot;why does that plot show more than mine&quot;: the difference is never a setting, it's whether the fixtures carry profiles.</p>
+<div class="callout callout-note"><p>You can have both: import the MVR for geometry and profiles, then paste
+or type the day-to-day changes. Re-importing a file always makes new
+fixtures — it doesn't merge.</p></div>
+<h2 id="out-again"><a class="anchor" href="#out-again">Out again</a></h2>
+<p><strong>Export</strong> downloads the plot as CSV — the list, addressing, positions and notes — readable by the same tools the rig came from.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/lighting-live"><span>Previous</span>Live DMX on the plot</a><a class="next" href="/docs/network"><span>Next</span>Network audit</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

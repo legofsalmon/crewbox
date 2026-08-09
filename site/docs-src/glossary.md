@@ -78,8 +78,8 @@ position; the Front and 3D views draw with it.
 **GDTF / MVR** — fixture-description and rig-exchange file formats. An MVR
 import brings real profiles (GDTF) with it, which is what unlocks the
 channel-by-channel readout, beam drawing and accurate footprints. A CSV
-import brings none of that — the lighting import guide has the honest
-comparison.
+import brings none of that — [the import guide](/docs/lighting-import) has
+the honest comparison.
 
 **sACN / Art-Net** — the two protocols desks use to send DMX over a
 network. The box can listen to either (listen only — it never transmits on a

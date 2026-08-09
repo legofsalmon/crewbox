@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Lighting plots — Crewbox docs</title>
+    <meta name="description" content="Plots, fixtures grouped by position, addressing with clash warnings, and the rigging status cycle." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting" aria-current="page">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="lighting-plots"><a class="anchor" href="#lighting-plots">Lighting plots</a></h1>
+<p>A plot is one rig's paperwork made live: every fixture, where it hangs, how it's addressed, its wattage and weight — shared and editable by the whole crew, with warnings where the numbers don't add up. When the box is listening to the lighting network, the plot also shows what's actually arriving — that's <a href="/docs/lighting-live">the live page</a>.</p>
+<h2 id="plots"><a class="anchor" href="#plots">Plots</a></h2>
+<p>The <strong>Lighting</strong> sidebar section lists recent plots; <strong>All plots…</strong> shows everything. <strong>+ New Plot</strong> asks for a name and an optional venue. Open a plot and you get four tabs — <strong>Fixtures · Plan · Front · 3D</strong> — plus the actions row: <strong>Positions · + Fixture · Import · Export · Share</strong>.</p>
+<p>The summary line above the tabs keeps the totals honest: fixture count, per-universe usage (&quot;U1: 64/512&quot;), and &quot;⚠ 2 addressing problems&quot; when something clashes.</p>
+<h2 id="fixtures"><a class="anchor" href="#fixtures">Fixtures</a></h2>
+<p>The <strong>Fixtures</strong> tab lists every unit, grouped by the position it hangs on. Each group header shows the position's totals — count, watts, kilograms — and each row carries: unit number, desk channel, universe, address, type, mode, footprint, purpose, circuit, watts, weight, status, notes.</p>
+<p>Things the list does for you:</p>
+<ul><li><strong>Clash warnings.</strong> An address that collides with another fixture, or runs past channel 512, gets a ⚠ naming exactly what's wrong (&quot;DMX clash with Spot 3, Spot 4&quot;).</li><li><strong>Address run.</strong> Each position group can address its fixtures nose to tail from the first free block in one tap — and tells you if the universe has no room.</li><li><strong>Watts and weight from profiles.</strong> Fixtures imported with GDTF profiles show the manufacturer's figures as greyed placeholders until someone types a measured number over them.</li><li><strong>The status cycle.</strong> The status cell is a button that taps through <strong>To do → Rigged → Working → Fault</strong> — chosen over a dropdown because on a dark stage with gloves you'll tap it hundreds of times.</li></ul>
+<h2 id="positions"><a class="anchor" href="#positions">Positions</a></h2>
+<p><strong>Positions</strong> manages where things hang: name, kind (truss, bar, boom, floor…), length, angle, and <strong>trim</strong> height (the drawings use it). Two things worth knowing:</p>
+<ul><li>Each truss row estimates the length the fixtures on it actually need — &quot;Needs 8.4 m · 2 × 3 m + 1 × 2 m&quot; — with a one-tap <strong>Set</strong> button. The estimate allows ~250 mm between fixtures and doesn't know about motor points; treat it as a starting figure.</li><li>Deleting a position doesn't delete its fixtures — they collect under &quot;No position&quot; until rehomed.</li></ul>
+<h2 id="share-and-export"><a class="anchor" href="#share-and-export">Share and export</a></h2>
+<p>As everywhere: <strong>Share</strong> posts the plot to a chat channel as an <strong>Open ↗</strong> chip; <strong>Export</strong> downloads CSV. Getting rigs <em>in</em> — Lightwright, console exports, MVR with GDTF — is <a href="/docs/lighting-import">the import page</a>.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/patch-stage-and-lineup"><span>Previous</span>Stage patch and lineup</a><a class="next" href="/docs/lighting-views"><span>Next</span>Plan, Front and 3D</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

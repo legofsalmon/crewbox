@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Paste and import — Crewbox docs</title>
+    <meta name="description" content="Paste straight from Google Sheets, or import the whole festival master patch as a CSV." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import" aria-current="page">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="paste-and-import"><a class="anchor" href="#paste-and-import">Paste and import</a></h1>
+<p>Most patches already exist somewhere — a Google Sheet the festival has kept for years, a console export, last year's file. Crewbox meets them where they are: paste a block straight into the grid, or import a CSV whole.</p>
+<h2 id="paste-from-google-sheets"><a class="anchor" href="#paste-from-google-sheets">Paste from Google Sheets</a></h2>
+<p>Copy a rectangle of cells in Google Sheets (or Excel), click the crewbox grid cell where its top-left corner should land, and paste. The block fills right and down from there:</p>
+<ul><li>New channels are added automatically if the block runs past the bottom.</li><li>Columns that don't fit the sheet are dropped — the toast says so: &quot;Pasted 24 cells · added 3 channel(s) · 2 column(s) didn't fit&quot;.</li><li>The whole paste is <strong>one undo step</strong> — <code>⌘Z</code> takes it all back.</li></ul>
+<p>This is the workhorse for &quot;the stage manager just sent me three more rows&quot;.</p>
+<h2 id="import-a-csv"><a class="anchor" href="#import-a-csv">Import a CSV</a></h2>
+<p><strong>⇪ Import CSV</strong> on the sheet list (or just <strong>drop a <code>.csv</code> file onto the sheet list page</strong>) builds a new sheet from a spreadsheet export. Two shapes are understood:</p>
+<ol><li><strong>A plain grid</strong> — headers matched by meaning, one row per channel.</li><li><strong>A real festival master patch</strong> — the shape these sheets actually have in the wild: a title row, a colour legend for the sub-snakes, a two-tier header where act names span their column groups, house inputs down the side. Crewbox recognises this and pulls out the acts, their set times, the house inputs, the sub-boxes with their colours, and the changeovers.</li></ol>
+<p>The import toast is honest about what happened: how many channels and acts came through, which columns it didn't recognise, and any disagreement between the changeovers written in the sheet and the gaps the set times imply.</p>
+<div class="callout callout-note"><p>Import creates a <strong>new</strong> sheet — it never merges into an existing one. To
+bring late changes into a live sheet, use paste.</p></div>
+<h2 id="getting-data-back-out"><a class="anchor" href="#getting-data-back-out">Getting data back out</a></h2>
+<p><strong>Export</strong> on any sheet downloads it as CSV, readable by anything. What you export is the grid as it stands — including everything derived from it being live, so the file you send the PA company is never stale.</p>
+<h2 id="if-an-import-looks-wrong"><a class="anchor" href="#if-an-import-looks-wrong">If an import looks wrong</a></h2>
+<ul><li><strong>Columns missing</strong> — check the toast; unrecognised headers are named there. Rename the column in the spreadsheet (Input, Description, Mic/DI, Stand are all understood, with common variants) and re-import.</li><li><strong>Acts came in as one column</strong> — the file lost its two-tier header (single-sheet CSV exports flatten merged cells). Export the master patch tab specifically, not the whole workbook.</li><li><strong>Changeover warnings</strong> — not an error. The sheet's changeovers disagree with its set times, and crewbox refuses to guess which is right — <a href="/docs/patch-stage-and-lineup#changeovers">the lineup page</a> explains.</li></ul>
+        <footer class="prevnext"><a class="prev" href="/docs/patch"><span>Previous</span>Patch sheets</a><a class="next" href="/docs/patch-stage-and-lineup"><span>Next</span>Stage patch and lineup</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

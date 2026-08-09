@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Stage patch and lineup — Crewbox docs</title>
+    <meta name="description" content="Sub-boxes, the derived stage patch and its &quot;PINK 3&quot; syntax, acts, set times and changeovers." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup" aria-current="page">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="stage-patch-and-lineup"><a class="anchor" href="#stage-patch-and-lineup">Stage patch and lineup</a></h1>
+<p>The grid holds the master patch; two dialogs turn it into the other paperwork a stage runs on. The <strong>stage patch</strong> — what's plugged into which box on stage — is <em>derived</em> from the grid, never typed twice. The <strong>lineup</strong> holds the acts, their times, and the changeovers between them.</p>
+<h2 id="sub-boxes"><a class="anchor" href="#sub-boxes">Sub-boxes</a></h2>
+<p><strong>Boxes</strong> declares the stage's sub-boxes (sub-snakes): a name, how many inputs it has, a colour, and where it sits on stage (USC, DSR…). Colours show up as stripes in the grid's Sub-box column, so a glance tells you which box a channel lands on.</p>
+<h2 id="the-pink-3-syntax"><a class="anchor" href="#the-pink-3-syntax">The &quot;PINK 3&quot; syntax</a></h2>
+<p>Here's the trick that makes the stage patch free: in an act's <strong>Sub-box</strong> cell, type the box name and a tail number — <code>PINK 3</code>. That one cell says &quot;this channel arrives on tail 3 of the PINK box&quot;. Do that as you patch, and the stage patch writes itself.</p>
+<h2 id="the-stage-patch"><a class="anchor" href="#the-stage-patch">The stage patch</a></h2>
+<p><strong>Stage Patch</strong> shows, per act, each sub-box as its own table: tail number, channel, input, mic/DI — including empty tails, because &quot;tail 4 is free&quot; is information. It warns loudly when two channels claim one tail (&quot;⚠ Two channels on one tail: BSNAKE 4&quot;), and unused boxes collapse out of the way.</p>
+<p>It's read-only on purpose. Fix anything by fixing the grid cell it came from — there is exactly one source of truth.</p>
+<h2 id="the-lineup"><a class="anchor" href="#the-lineup">The lineup</a></h2>
+<p><strong>Lineup</strong> manages the acts:</p>
+<ul><li><strong>+ Add Artist</strong>, then name, <strong>start and end times</strong>, a <strong>Spec</strong> field (backline, band size, what they bring) and an <strong>Additional info</strong> field for what came up on the day.</li><li><strong>Files</strong> — drop an act's rider or stage plot straight onto their row. Attachments live on the box, so they need a connection to add or open.</li><li>Acts appear as the column groups of the grid, in running order.</li></ul>
+<h2 id="changeovers"><a class="anchor" href="#changeovers">Changeovers</a></h2>
+<p>Between each pair of acts the lineup shows a <strong>changeover</strong>:</p>
+<ul><li>The greyed-in number is the gap the set times imply.</li><li>Type the <em>agreed</em> changeover over it if it's different (&quot;45&quot;, &quot;1hr30&quot;, &quot;HR&quot; all parse).</li><li>If the two disagree, you get a warning — &quot;⚠ the set times leave 1 hr&quot; — and crewbox <strong>deliberately doesn't pick a side</strong>. The sheet doesn't know whether the running order moved or the changeover did; only the person holding the running order does. Fix whichever is wrong and the warning goes.</li></ul>
+<h2 id="day-sheets"><a class="anchor" href="#day-sheets">Day sheets</a></h2>
+<p>Nothing special to learn: a second-stage day sheet is just another sheet. Import it like any CSV — changeovers and per-act info boxes come through — and share it to that stage's channel.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/patch-paste-and-import"><span>Previous</span>Paste and import</a><a class="next" href="/docs/lighting"><span>Next</span>Lighting plots</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>
