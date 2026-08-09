@@ -1,6 +1,7 @@
-// Docs client script: search over the prebuilt index, and the phone menu.
-// No dependencies, no network beyond one fetch of search-index.json — the
-// same offline-first posture as the app the docs describe.
+// Docs client script: search over the prebuilt index, the phone menu, and
+// the screenshot lightbox. No dependencies, no network beyond one fetch of
+// search-index.json — the same offline-first posture as the app the docs
+// describe.
 ;(() => {
   const input = document.querySelector('.search input')
   const list = document.querySelector('.search .results')
@@ -123,4 +124,76 @@
     const open = document.body.classList.toggle('nav-open')
     menu.setAttribute('aria-expanded', String(open))
   })
+
+  // ------------------------------------------------------------ lightbox
+  //
+  // Screenshots are captured at 1280x720 (390x844 for the phone ones) and
+  // shown inside a 46em column, so a dense one — the patch grid, the
+  // fixtures list — reads as an illustration but not as a reference. Click
+  // to expand.
+  //
+  // Built here rather than in the generator on purpose: the markup stays a
+  // plain image, so a reader with no JavaScript gets a picture rather than
+  // a button that does nothing, and the committed HTML doesn't change.
+  const shots = document.querySelectorAll('.content picture')
+  const box = document.createElement('dialog')
+  if (shots.length > 0 && typeof box.showModal === 'function') {
+    box.className = 'lightbox'
+    // The expanded image, its caption, and a close button. innerHTML with
+    // no interpolation — every value below is set via textContent/setAttribute.
+    box.innerHTML =
+      '<button class="lightbox-close" aria-label="Close">✕</button>' +
+      '<div class="lightbox-frame"><img alt="" /></div>' +
+      '<p class="lightbox-caption"></p>'
+    document.body.appendChild(box)
+
+    const full = box.querySelector('img')
+    const frame = box.querySelector('.lightbox-frame')
+    const caption = box.querySelector('.lightbox-caption')
+
+    /** Fit-to-viewport is the default; actual size is for reading values. */
+    const setActual = (on) => {
+      full.classList.toggle('actual', on)
+      full.setAttribute('aria-label', on ? 'Shrink to fit' : 'Show at actual size')
+      caption.textContent = `${full.dataset.caption} · ${on ? 'Click to fit' : 'Click for actual size'} · Esc to close`
+    }
+
+    const open = (img) => {
+      // currentSrc, not src: it is the source the browser actually chose
+      // from the <picture>, so a light-theme reader expands the light
+      // capture and a dark-theme reader the dark one.
+      full.src = img.currentSrc || img.src
+      full.alt = img.alt
+      full.dataset.caption = img.alt
+      box.setAttribute('aria-label', img.alt)
+      setActual(false)
+      frame.scrollTop = 0
+      frame.scrollLeft = 0
+      box.showModal()
+    }
+
+    for (const picture of shots) {
+      const img = picture.querySelector('img')
+      if (!img) continue
+      // A real button, so focus, Enter and Space come from the platform
+      // rather than a hand-rolled role/tabindex pair.
+      const trigger = document.createElement('button')
+      trigger.type = 'button'
+      trigger.className = 'shot'
+      trigger.setAttribute('aria-label', `Expand: ${img.alt}`)
+      picture.parentNode.insertBefore(trigger, picture)
+      trigger.appendChild(picture)
+      trigger.addEventListener('click', () => open(img))
+    }
+
+    full.addEventListener('click', () => setActual(!full.classList.contains('actual')))
+    box.querySelector('.lightbox-close').addEventListener('click', () => box.close())
+    // A click that lands on the dialog itself is a click on the backdrop —
+    // anything on the image or the controls stops at them.
+    box.addEventListener('click', (e) => {
+      if (e.target === box) box.close()
+    })
+    // Free the memory a 1280px screenshot holds once it is off screen.
+    box.addEventListener('close', () => full.removeAttribute('src'))
+  }
 })()

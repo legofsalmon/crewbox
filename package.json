@@ -27,6 +27,7 @@
     "fetch:livekit": "node scripts/fetch-livekit.mjs",
     "docs:build": "node site/build-docs.mjs",
     "docs:test": "node --test site/build-docs.test.mjs",
+    "docs:test:ui": "playwright test --config playwright.docs.config.ts",
     "docs:shots": "npm run build -w web && rm -rf \"${RUNNER_TEMP:-/tmp}/crewbox-shots-data\" && playwright test --config playwright.screenshots.config.ts",
     "docs:preview": "node site/preview.mjs"
   },
