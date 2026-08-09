@@ -6,6 +6,44 @@
   margin: 0 auto;
   overflow-y: auto;
   height: 100%;
+  position: relative;
+}
+
+/* Drop target for a rig file dragged straight onto the landing page — same
+   affordance as the patch selector, because an MVR or a Lightwright CSV is
+   how most plots start life. */
+.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -10px;
+}
+
+.dropVeil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  /* The veil must never eat the drag events belonging to the page under it,
+     or the drop lands on nothing and the highlight sticks. */
+  pointer-events: none;
+}
+
+.importButton {
+  @include c.secondary-button;
+}
+
+.hiddenFile {
+  display: none;
+}
+
+.importError {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0 0 12px;
 }
 
 .hero {

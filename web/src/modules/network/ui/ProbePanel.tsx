@@ -42,8 +42,6 @@ export default function ProbePanel({
   const adminToken = useStore((s) => s.adminToken)
   const [note, setNote] = useState('')
 
-  if (!adminToken && !probe) return null
-
   const results: ProbeResultRow[] = (() => {
     const report = probe?.report as { probes?: ProbeResultRow[] } | undefined
     return Array.isArray(report?.probes) ? report.probes : []
@@ -77,10 +75,14 @@ export default function ProbePanel({
             Everything sent is listed below, verbatim.
           </p>
         </div>
-        {adminToken && (
+        {adminToken ? (
           <button className={styles.run} onClick={() => void start()} disabled={probeRunning}>
             {probeRunning ? 'Probing…' : 'Run deep probe'}
           </button>
+        ) : (
+          // Present for everyone, so the section doesn't appear and vanish
+          // with other people's actions — only the button is privileged.
+          <p className={styles.who}>An admin can run one from their device.</p>
         )}
       </header>
       {note && <p className={styles.note}>{note}</p>}

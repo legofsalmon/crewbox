@@ -368,3 +368,16 @@
   color: $color-danger;
   font-weight: 600;
 }
+
+.restoredBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: color-mix(in srgb, var(--ok) 12%, var(--bg-raised));
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--border));
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
