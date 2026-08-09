@@ -13,7 +13,7 @@ export default defineConfig({
   testDir: 'e2e',
   // The docs screenshot run has its own config, server and seed — it must
   // never ride along with the e2e suite.
-  testIgnore: 'screenshots/**',
+  testIgnore: ['screenshots/**', 'docs/**'],
   fullyParallel: false,
   workers: 1,
   timeout: 30_000,

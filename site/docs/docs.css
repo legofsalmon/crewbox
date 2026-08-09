@@ -325,6 +325,103 @@ picture img {
 picture.phone img {
   max-width: 320px;
 }
+
+/* The click-to-expand wrapper docs.js puts around each screenshot. It is a
+   real <button>, so strip the chrome and let the picture inside keep the
+   rules above. */
+.shot {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: zoom-in;
+}
+.shot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+.shot:hover img {
+  border-color: var(--accent);
+}
+
+dialog.lightbox {
+  width: 96vw;
+  max-width: 96vw;
+  height: 94vh;
+  max-height: 94vh;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  color: var(--text);
+  overflow: hidden;
+}
+/* Layout goes on [open], not on the element: a bare `display: flex` here
+   would beat the UA's `dialog:not([open]) { display: none }` and leave the
+   closed dialog on the page forever. */
+dialog.lightbox[open] {
+  display: flex;
+  flex-direction: column;
+}
+/* A dark scrim in both themes — this is a lens over the page, not a themed
+   surface (same reasoning as the search dropdown's shadow). */
+dialog.lightbox::backdrop {
+  background: rgba(0, 0, 0, 0.72);
+}
+.lightbox-frame {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+}
+.lightbox-frame img {
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+  border-radius: 8px;
+  cursor: zoom-in;
+}
+/* Actual size: the image stops fitting and the frame scrolls, which is the
+   only thing that helps on a phone — there, fit-to-viewport is no bigger
+   than the inline image. */
+.lightbox-frame img.actual {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+.lightbox-caption {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 10px 16px 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.lightbox-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.lightbox-close:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
 .prevnext {
   display: flex;
   justify-content: space-between;

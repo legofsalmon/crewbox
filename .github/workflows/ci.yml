@@ -49,6 +49,9 @@ jobs:
       - run: npm run build -w web
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      # The docs site's own interactive bits (lightbox, search) against the
+      # same clean-URL server Vercel mimics. No box involved.
+      - run: npm run docs:test:ui
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
