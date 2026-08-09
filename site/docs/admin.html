@@ -44,6 +44,7 @@
 <h2 id="this-network"><a class="anchor" href="#this-network">This network</a></h2>
 <p>What the venue's network is actually providing, probed on demand (<strong>Check again</strong>): the box's address, internet (a captive portal is flagged; plain &quot;no internet&quot; is just information — the box doesn't need it), whether crew can reach the box by its name, certificate expiry, and clock sanity.</p>
 <p>When the name check fails, a <strong>Download DNS config</strong> button appears with a ready-made <code>crewbox-dns.conf</code> for the venue router — hand it to whoever runs the router instead of explaining DNS at the production desk.</p>
+<p>That file carries a second, clearly-marked <strong>optional</strong> block: the addresses phones fetch to decide whether a network has internet. Adding it stops iPhones abandoning the crew Wi-Fi for mobile data — see <a href="/docs/phones-and-platforms#the-no-internet-problem">the &quot;no internet&quot; problem</a> for what that failure looks like and why it's worth doing.</p>
 <h2 id="export"><a class="anchor" href="#export">Export</a></h2>
 <p><strong>Download chat logs</strong> — every user, channel and message as one JSON file for the post-event archive. Patch sheets and plots export from their own modules as CSV.</p>
         <footer class="prevnext"><a class="prev" href="/docs/run-the-box"><span>Previous</span>Running the box</a><a class="next" href="/docs/https-and-voice"><span>Next</span>HTTPS, names and certificates</a></footer>

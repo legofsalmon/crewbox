@@ -128,6 +128,34 @@ export const config = {
      */
     interfaceIp: process.env.CREWBOX_WATCH_IFACE?.trim() || undefined,
   },
+  /**
+   * The OS connectivity-probe responder (server/src/captive.ts) — the thing
+   * that stops an iPhone declaring the crew Wi-Fi dead and moving to
+   * cellular, taking the box with it.
+   *
+   * `enabled` undefined means "on for a box, off from source": a packaged box
+   * is on a crew network and should answer, whereas `npm run dev` on a laptop
+   * has no business reaching for port 80. CREWBOX_CAPTIVE=1/0 decides
+   * explicitly either way.
+   *
+   * On its own this listener changes nothing — probes only arrive if the
+   * event router's DNS sends them here, which an admin pastes deliberately
+   * (see the file /api/admin/dns-config generates).
+   */
+  captive: {
+    enabled:
+      process.env.CREWBOX_CAPTIVE === '1'
+        ? true
+        : process.env.CREWBOX_CAPTIVE === '0'
+          ? false
+          : undefined,
+    /**
+     * Port 80 is where the probes go, and it is privileged. An admin who
+     * can't grant that can point this at a free port and have the router
+     * redirect 80 to it; the failure message says so.
+     */
+    port: Number(process.env.CREWBOX_CAPTIVE_PORT ?? 80) || 80,
+  },
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
     /**

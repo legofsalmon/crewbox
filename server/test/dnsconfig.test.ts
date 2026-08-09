@@ -38,4 +38,20 @@ describe('local DNS config', () => {
     // And a way to tell whether it worked.
     expect(file).toContain(`https://${plan.hostname}`)
   })
+
+  it('points the OS connectivity probes at the box too', () => {
+    // The other half of "phones stay on the crew Wi-Fi": without these the
+    // responder on port 80 never sees a request, because nothing resolves to
+    // it. Every hostname gets the box's address, not the certificate's name.
+    for (const host of plan.probes.hostnames) {
+      expect(plan.probes.dnsmasq).toContain(`address=/${host}/192.168.1.50`)
+      expect(plan.probes.hosts).toContain(`192.168.1.50\t${host}`)
+    }
+    const file = dnsConfigFile(plan)
+    expect(file).toContain('captive.apple.com')
+    // Marked optional and separate, because it changes what phones report
+    // about the network — an admin should choose it deliberately.
+    expect(file).toMatch(/OPTIONAL/)
+    expect(file).toMatch(/mobile network|mobile data/)
+  })
 })

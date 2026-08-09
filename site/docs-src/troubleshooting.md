@@ -20,6 +20,14 @@ Symptom-first. Crew problems first, box problems at the end.
 - **The event PIN is rejected** — PINs change occasionally; read it off the
   current poster or the `/connect` screen, not a photo from yesterday.
 - **"Too many attempts"** — the box rate-limits guessing. Wait a minute.
+- **The app opens, but the banner says "Connecting"** — crewbox is installed
+  on your phone, so it draws itself from your phone's own storage before it
+  has spoken to anything. That banner means the box isn't answering. On an
+  iPhone, glance at the Wi-Fi symbol in the status bar: **gone** means iOS
+  decided this network has no internet and quietly moved you to mobile data,
+  which cannot reach the box. Turn mobile data off for a minute and it comes
+  straight back — and tell whoever runs the box, because
+  [there's a proper fix](/docs/phones-and-platforms#the-no-internet-problem).
 
 ## "I can hear voice but nobody hears me"
 
@@ -84,6 +92,37 @@ app.
 - **Crew can't reach the box by name** — the venue DNS doesn't answer for
   your hostname. **Admin → This network** flags this and offers a
   ready-made `crewbox-dns.conf` download for the router.
+- **The name resolves, but to a public address** — you have a DNS override
+  somewhere and it's stale: it's still pointing at last event's IP, or at
+  the public website. Check from a machine on the crew network:
+
+  ```sh
+  curl -v https://chat.example.com:8787/     # what address did it try?
+  ```
+
+  A `216.` or any other public-looking address means the override lost.
+  Update the router's `address=/name/ip` line to the box's **current** IP —
+  it changes with the DHCP lease unless the box is reserved — and restart
+  dnsmasq. A box's IP is on its own terminal banner and in `crewbox --status`.
+
+- **The name resolves correctly on phones but not on the box's own laptop**
+  — that laptop is asking the wrong resolver. macOS picks its DNS server
+  from the **service order**, not from which network you're using: if a USB
+  tether or Wi-Fi sits above the crew Ethernet in **System Settings →
+  Network → … → Set Service Order**, every lookup goes to that one, which
+  has never heard of the box. Drag the crew adapter to the top, or add a
+  line to `/etc/hosts` — that beats DNS entirely and survives reordering:
+
+  ```sh
+  echo "192.168.200.77  chat.example.com" | sudo tee -a /etc/hosts
+  ```
+
+- **iPhones show the app but never connect; Androids are fine** — iOS has
+  judged the crew network internet-less and fallen back to mobile data. This
+  is the single most confusing failure in the product because the phone
+  still shows as joined. **Admin → This box** has a _Phones stay on this
+  Wi-Fi_ row; see
+  [the full explanation and fix](/docs/phones-and-platforms#the-no-internet-problem).
 - **Setup page gone** — `/setup` closes forever once the first person
   joins. Everything on it lives on in the admin panel; the admin password,
   if lost, can be overridden with the `ADMIN_PASSWORD` environment variable

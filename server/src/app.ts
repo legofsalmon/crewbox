@@ -229,6 +229,13 @@ export interface AppDeps {
    */
   voiceFailure?: SfuFailure
   /**
+   * How the OS-probe responder got on: whether it holds its port, and why
+   * not when it doesn't. Settled at startup and never changes afterwards, so
+   * a snapshot is honest. Omit and the readiness list leaves the row off —
+   * which is right for a box that was never asked to run one.
+   */
+  captive?: { listening: boolean; port?: number; reason?: string }
+  /**
    * IP of the crew-facing adapter (CREWBOX_IFACE). Governs every address the
    * box advertises — QR, /connect, DNS suggestions — on a machine that also
    * sits on a lighting VLAN. Binding is the caller's half (see index.ts).
@@ -298,6 +305,7 @@ export function buildApp({
   filesDir,
   livekit,
   voiceFailure,
+  captive,
   iface = '',
   network,
   sessionTtlMs,
@@ -1373,6 +1381,7 @@ export function buildApp({
       voice: livekit?.embedded ? 'embedded' : livekit?.url ? 'external' : 'off',
       ...(sfu ? { sfu } : {}),
       ...(voiceFailure ? { voiceFailure } : {}),
+      ...(captive ? { captive } : {}),
       // Live, not from startup: adapters come and go on site (a cable pulled,
       // Wi-Fi re-joined), and the panel exists to say what is true now.
       iface: effectiveIface(),

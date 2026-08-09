@@ -225,3 +225,35 @@ describe('the crew network line on a two-network box', () => {
     expect(check.fix).toMatch(/Connect/)
   })
 })
+
+describe('phones staying on the crew Wi-Fi', () => {
+  it('leaves the row off entirely when no responder was asked for', () => {
+    // Running from source, or a box explicitly told not to. Reporting a
+    // feature nobody enabled as broken is noise, not honesty.
+    expect(boxReadiness(input()).find((check) => check.id === 'captive')).toBeUndefined()
+  })
+
+  it('claims only its own half when the responder is up', () => {
+    // The box can prove it holds the port. It cannot see the router's DNS,
+    // so the fix line carries the half it cannot verify rather than the
+    // detail claiming a working end-to-end fix.
+    const check = find(boxReadiness(input({ captive: { listening: true, port: 80 } })), 'captive')
+    expect(check.state).toBe('ok')
+    expect(check.detail).toContain('80')
+    expect(check.fix).toMatch(/router/)
+  })
+
+  it('names the consequence, not the mechanism, when it could not listen', () => {
+    const check = find(
+      boxReadiness(
+        input({ captive: { listening: false, reason: 'Only root may bind port 80 on macOS.' } })
+      ),
+      'captive'
+    )
+    expect(check.state).toBe('limited')
+    // What an admin actually experiences: a phone that shows Wi-Fi and
+    // cannot reach the box.
+    expect(check.detail).toMatch(/mobile data/)
+    expect(check.fix).toMatch(/root/)
+  })
+})

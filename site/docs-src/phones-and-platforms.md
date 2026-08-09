@@ -51,6 +51,44 @@ the main reason it exists. But read the last row of the table again:
 > app is open. Don't promise lock-screen alerts on iOS; hand the on-call
 > radio roles an Android.
 
+## The "no internet" problem
+
+Every phone tests a Wi-Fi network the moment it joins: it fetches one fixed
+web address and checks the answer. An event network with no uplink fails
+that test, and each platform reacts differently.
+
+- **Android** shows an exclamation mark on the Wi-Fi icon and carries on.
+  Annoying, harmless.
+- **iOS** does not carry on. It drops the Wi-Fi symbol from the status bar
+  and **moves traffic to mobile data**. The box is on a private address
+  reachable only over the Wi-Fi the phone has just walked away from, so
+  crewbox sits on **Connecting** forever — on a phone that is still joined
+  to the network, showing full signal. It looks exactly like a broken box.
+
+The box can settle this by answering those tests itself. Two things have to
+be true, and the box's readiness list (**Admin → This box**, _Phones stay on
+this Wi-Fi_) tells you which half is missing:
+
+1. **The box holds port 80.** A packaged box tries automatically at start.
+   Port 80 is privileged, so on macOS it usually needs `sudo`, and on Linux
+   `sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox` once. Can't do
+   either? Set `CREWBOX_CAPTIVE_PORT` to a free port and have the router
+   redirect 80 to it.
+2. **The router's DNS points the test addresses at the box.** Download
+   `crewbox-dns.conf` from **Admin → This network** and paste its second,
+   clearly-marked optional block onto the router alongside the first.
+
+> [!NOTE]
+> Once both halves are in, phones stop warning that this network has no
+> internet — because as far as they can tell, it now has one. That's the
+> intent: crew on this network are talking to the box, not browsing. Nobody
+> should be relying on the crew Wi-Fi for internet anyway.
+
+Set `CREWBOX_CAPTIVE=0` to turn the responder off entirely. Without the DNS
+half it does nothing regardless, except one small courtesy: typing the box's
+name into Safari without `https://` lands on the app instead of a
+connection error.
+
 ## Native join: the server field
 
 Both phone apps show one extra field on the join screen — **Crew server** —
