@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Glossary — Crewbox docs</title>
+    <meta name="description" content="The words crewbox uses — especially the ones that mean two things." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/glossary" aria-current="page">Glossary</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="glossary"><a class="anchor" href="#glossary">Glossary</a></h1>
+<p>Sound, lighting and chat vocabulary collide constantly — &quot;channel&quot; alone means three different things in this app, all visible in one sidebar. When a page seems to be talking nonsense, check which meaning it's using.</p>
+<h2 id="the-collisions"><a class="anchor" href="#the-collisions">The collisions</a></h2>
+<p><strong>Channel</strong> — three meanings. In <strong>chat</strong>, a room: <code>#stage</code>, <code>#foh</code>. In a <strong>patch sheet</strong>, a numbered input on the desk: channel 1 is the kick mic. In <strong>lighting</strong>, a slice of DMX: a fixture &quot;needs 16 channels&quot;. Chat channels have a <code>#</code>; the other two are always numbers.</p>
+<p><strong>Input</strong> — in a patch sheet, both the <strong>house input</strong> (what lives on that channel all day, written in the channel row) and an <strong>act's input</strong> (what that act puts there instead, written in their column). An act's input overrides the house input for their set. In <strong>voice settings</strong>, your microphone.</p>
+<p><strong>Patch</strong> — the noun (&quot;the master patch&quot; — the whole channels × acts grid), the derived table (&quot;the stage patch&quot; — what's plugged where on stage), and lighting's meaning (which DMX address each fixture answers to). The module called <strong>Patch Sheets</strong> is the sound one.</p>
+<p><strong>Position</strong> — in <strong>lighting</strong>, a place fixtures hang: a truss, a boom, the floor. In a <strong>patch sheet's</strong> sub-box settings, where the box sits on stage (USC, DSR…). Same word, same stage, different modules.</p>
+<h2 id="patch-sheets"><a class="anchor" href="#patch-sheets">Patch sheets</a></h2>
+<p><strong>Sub-box / sub-snake</strong> — a small stage box (often colour-named: PINK, BLUE) whose tails carry a group of channels to one part of the stage. Declared in the Boxes dialog; referenced from grid cells.</p>
+<p><strong>&quot;PINK 3&quot;</strong> — the cell syntax that drives the stage patch: this channel arrives on <strong>tail 3</strong> of the sub-box named <strong>PINK</strong>. Type it in the Sub-box column of the grid.</p>
+<p><strong>Stage patch</strong> — the per-act, box-by-box view of what's plugged where. Derived entirely from the grid — nobody types it separately.</p>
+<p><strong>House input</strong> — what's on a channel all day regardless of act (the row's own input field). An act's column overrides it.</p>
+<p><strong>Changeover</strong> — the gap between two acts' sets. The lineup shows the gap the set times imply, and lets you write the <em>agreed</em> changeover next to it — and warns when the two disagree, because only the person holding the running order knows which is right.</p>
+<p><strong>Version</strong> — a named snapshot of a sheet (&quot;After soundcheck&quot;) you can restore later. Restoring replaces the sheet's content (and can itself be undone).</p>
+<h2 id="lighting"><a class="anchor" href="#lighting">Lighting</a></h2>
+<p><strong>Plot</strong> — one rig, drawn: its fixtures, their positions, and the paperwork around them. What the Lighting module edits.</p>
+<p><strong>Fixture</strong> — one light. A row in the fixtures list; a symbol on the drawings.</p>
+<p><strong>Universe</strong> — one run of DMX, 512 channels. Big rigs use several; a fixture's address is universe + channel (&quot;U2 @ 17&quot;).</p>
+<p><strong>Footprint</strong> — how many DMX channels a fixture occupies in its current mode. Determines whether two fixtures clash.</p>
+<p><strong>Trim</strong> — the height a truss or bar is flown to, in metres. Set per position; the Front and 3D views draw with it.</p>
+<p><strong>GDTF / MVR</strong> — fixture-description and rig-exchange file formats. An MVR import brings real profiles (GDTF) with it, which is what unlocks the channel-by-channel readout, beam drawing and accurate footprints. A CSV import brings none of that — the lighting import guide has the honest comparison.</p>
+<p><strong>sACN / Art-Net</strong> — the two protocols desks use to send DMX over a network. The box can listen to either (listen only — it never transmits on a lighting network).</p>
+<h2 id="the-rest"><a class="anchor" href="#the-rest">The rest</a></h2>
+<p><strong>The box</strong> — the crewbox program running on a machine at the event. Serves the app, stores everything, runs voice. When these docs say &quot;the box&quot;, they mean that machine.</p>
+<p><strong>Event PIN / Your PIN / Admin password</strong> — the three codes, explained in <a href="/docs/getting-connected#the-three-codes-untangled">Getting connected</a>.</p>
+<p><strong>On-site / office</strong> — someone joining from the event network is on-site; a name in the DM list marked <code>office</code> is connected from somewhere else (over a tunnel or from off the LAN).</p>
+<p><strong>PTT (push-to-talk)</strong> — hold to speak, release to stop. The voice intercom's normal mode; there's a latch for gloved hands.</p>
+<p><strong>PWA</strong> — the app installed to your home screen from the browser. Same app, own icon, works offline.</p>
+<p><strong>PTP / Dante / NDI / AES67</strong> — clocking and media-over-network systems the <strong>Network</strong> module can watch on the audio/media network. If none of that is on your network, that card simply says &quot;Not watched&quot;.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/getting-connected"><span>Previous</span>Getting connected</a><span></span></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>
