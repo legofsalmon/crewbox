@@ -67,6 +67,12 @@ When the name check fails, a **Download DNS config** button appears with a
 ready-made `crewbox-dns.conf` for the venue router — hand it to whoever
 runs the router instead of explaining DNS at the production desk.
 
+That file carries a second, clearly-marked **optional** block: the addresses
+phones fetch to decide whether a network has internet. Adding it stops
+iPhones abandoning the crew Wi-Fi for mobile data — see
+[the "no internet" problem](/docs/phones-and-platforms#the-no-internet-problem)
+for what that failure looks like and why it's worth doing.
+
 ## Export
 
 **Download chat logs** — every user, channel and message as one JSON file

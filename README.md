@@ -125,6 +125,16 @@ state this product exists for. Those rows carry an `info` state that never
 colours the summary. A captive portal is different and _is_ flagged: it looks
 exactly like a working uplink while silently breaking certificate renewal.
 
+**Phones, however, do not treat "no internet" as normal.** Each OS fetches one
+fixed URL on joining a network to judge it, and iOS answers a failure by
+dropping the Wi-Fi indicator and moving traffic to mobile data — which cannot
+reach a box on a private address, so crewbox sits on "Connecting" on a phone
+that is still joined. The box answers those checks itself
+(`server/src/captive.ts`, port 80, bound to the crew adapter only, failing
+soft when the port is privileged or held). It only sees them once the event
+router's DNS sends them there, which the generated `crewbox-dns.conf` carries
+as a clearly-marked optional block.
+
 For a dedicated festival rig — HTTPS on your own domain so browsers get the
 mic and the installable app, local DNS, UPS and spare-box discipline —
 `deploy/` carries the pieces and `deploy/RUNBOOK.md` is the day-of checklist.
@@ -132,7 +142,10 @@ mic and the installable app, local DNS, UPS and spare-box discipline —
 Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_URL`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`,
 `CREWBOX_MODULES` (module ids to enable beyond chat, comma-separated;
-defaults to every department module the build ships, and chat is always on).
+defaults to every department module the build ships, and chat is always on),
+`CREWBOX_CAPTIVE` (`0` turns the connectivity-probe responder off; it is on
+for a packaged box and off when running from source) and
+`CREWBOX_CAPTIVE_PORT` (default 80, for when the router redirects instead).
 Setting `LIVEKIT_URL` points voice at an SFU you run instead of the one
 inside the box.
 

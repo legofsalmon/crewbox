@@ -21,6 +21,7 @@ import {
   stopRunningBox,
   writeBoxStatus,
 } from './box.ts'
+import { startCaptive } from './captive.ts'
 import { certNames } from './environment.ts'
 import {
   hasEmbeddedLiveKit,
@@ -167,6 +168,33 @@ async function main(): Promise<void> {
   // is a working product minus those two things.
   const { tls, reason: tlsReason } = loadTls(dataDir)
 
+  // The name on the certificate, which is the origin everywhere the box
+  // speaks once TLS is on. Resolved here rather than at the banner because
+  // the probe responder below needs somewhere to send a browser.
+  const certName = tls ? certNames(tls.cert.toString())[0] : undefined
+
+  // Answer the checks phones make to decide whether this network has
+  // internet. Without them iOS quietly moves to cellular and the box — on a
+  // private address — becomes unreachable while the phone still shows the
+  // Wi-Fi as joined. Bound to the same address as the web server, so a box
+  // with a leg on the lighting VLAN answers nothing there.
+  //
+  // Port 80 is privileged and often already held, so this fails soft in
+  // exactly the way TLS does: one warning naming the fix, and a box that
+  // works otherwise.
+  const captiveOn = config.captive.enabled ?? box
+  const captive = captiveOn
+    ? await startCaptive({
+        host: bindHost,
+        port: config.captive.port,
+        // Computed here, from this box's own certificate and port — never
+        // from a request, so the responder cannot be pointed anywhere else.
+        origin: certName
+          ? `https://${certName}:${config.port}`
+          : `${tls ? 'https' : 'http'}://${ifaceUp ? boot.iface : (lanIps()[0] ?? 'localhost')}:${config.port}`,
+      })
+    : undefined
+
   // Listening to the lighting network, when this box was asked to. Off by
   // default, and read-only however it is configured: the sockets it opens
   // have had `send` taken off them (server/src/dmx/listener.ts).
@@ -198,6 +226,15 @@ async function main(): Promise<void> {
     filesDir: join(dataDir, 'files'),
     livekit,
     ...(voiceFailure ? { voiceFailure } : {}),
+    ...(captive
+      ? {
+          captive: {
+            listening: Boolean(captive.portal),
+            ...(captive.portal ? { port: captive.portal.port } : {}),
+            ...(captive.reason ? { reason: captive.reason } : {}),
+          },
+        }
+      : {}),
     sessionTtlMs: config.sessionTtlMs,
     trustProxy: config.trustProxy,
     modules: config.modules,
@@ -268,6 +305,14 @@ async function main(): Promise<void> {
   }
 
   if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
+  if (captive?.portal) {
+    app.log.info(
+      `phone connectivity checks: answering on port ${captive.portal.port} ` +
+        '(needs the router pointing the probe hostnames here — admin panel has the config)'
+    )
+  } else if (captive?.reason) {
+    app.log.warn(`phone connectivity checks: ${captive.reason}`)
+  }
   app.log.info(
     `crewbox server listening on ${config.host}:${config.port} (${tls ? 'https' : 'http'})`
   )
@@ -277,7 +322,6 @@ async function main(): Promise<void> {
   // full "not private" interstitial on the box's own screen — so the
   // certificate's name is the origin, everywhere the box speaks. Whether
   // that name resolves here yet is the environment panel's job to say.
-  const certName = tls ? certNames(tls.cert.toString())[0] : undefined
   const origin = certName
     ? `https://${certName}:${config.port}`
     : `${tls ? 'https' : 'http'}://localhost:${config.port}`
@@ -338,6 +382,7 @@ async function main(): Promise<void> {
       if (box) clearBoxStatus(dataDir)
       hub.close()
       netwatch?.stop()
+      await captive?.portal?.close()
       await closeLoopback?.()
       await app.close()
       await embedded?.stop()

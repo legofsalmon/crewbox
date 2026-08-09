@@ -54,6 +54,12 @@ export interface ReadinessInput {
   addresses?: string[]
   /** Saved network settings differ from what this process booted with. */
   restartNeeded?: boolean
+  /**
+   * The OS-probe responder: whether it got its port, and why not. Absent when
+   * the box was never asked to run one (running from source, tests), in which
+   * case the row is left off entirely rather than reported as broken.
+   */
+  captive?: { listening: boolean; port?: number; reason?: string }
   dataDir: string
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
@@ -158,6 +164,43 @@ function networkCheck(input: ReadinessInput): ReadinessCheck {
 }
 
 /**
+ * Whether phones will stay on the crew Wi-Fi.
+ *
+ * Every phone OS probes one plain-HTTP URL on joining to decide whether a
+ * network has internet, and iOS answers "no" by dropping to cellular — which
+ * puts the box, on a private address, out of reach while the phone still
+ * shows as connected. The box can answer those probes (captive.ts), but only
+ * if it holds port 80 and only if the router's DNS sends them here.
+ *
+ * It can prove the first half and not the second, so the line says exactly
+ * that rather than claiming a fix it cannot see.
+ */
+function captiveCheck(captive: NonNullable<ReadinessInput['captive']>): ReadinessCheck {
+  const base = { id: 'captive', label: 'Phones stay on this Wi-Fi' }
+  if (!captive.listening) {
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        'This box is not answering the checks phones make to decide whether a network has ' +
+        'internet. Without them an iPhone drops to mobile data and loses the box, showing ' +
+        '“Connecting” with the Wi-Fi still joined.',
+      fix: captive.reason,
+    }
+  }
+  return {
+    ...base,
+    state: 'ok',
+    detail:
+      `Answering connectivity checks on port ${captive.port ?? 80}, so phones treat this ` +
+      'network as usable instead of falling back to mobile data.',
+    fix:
+      'Only reaches the box if the event router points the probe hostnames here. Download ' +
+      'the DNS config below and paste its optional second block onto the router.',
+  }
+}
+
+/**
  * The voice line, which speaks from evidence where it has any.
  *
  * The cases are ordered by how badly the old copy would have lied about
@@ -249,6 +292,8 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
   })
 
   checks.push(networkCheck(input))
+
+  if (input.captive) checks.push(captiveCheck(input.captive))
 
   checks.push(voiceCheck(input))
 
