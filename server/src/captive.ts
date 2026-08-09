@@ -119,9 +119,32 @@ export function captiveResponse(url: string, origin: string): CaptiveReply {
   }
 }
 
+/**
+ * Where the responder goes when it may not have port 80.
+ *
+ * A double-clicked Crewbox.app runs as whoever launched it, and no ordinary
+ * user may bind a port below 1024 — so on macOS the privileged bind is the
+ * common case, not the exception. Giving up there would mean the feature
+ * never works on the platform most boxes actually run on.
+ *
+ * So it takes an unprivileged port instead and says so. One `pf` rule sends
+ * port 80 there, which the admin panel generates with the adapter and
+ * address already filled in. That keeps the privilege in a one-off rule
+ * rather than in a long-lived process: running the whole box as root — a
+ * process taking file uploads and untrusted crew traffic all event — to
+ * hold one socket is a bad trade.
+ */
+export const FALLBACK_PORT = 8880
+
 export interface CaptivePortal {
-  /** The port it actually got — 80 unless CREWBOX_CAPTIVE_PORT said otherwise. */
+  /** The port it actually got. */
   port: number
+  /**
+   * True when it could not have port 80 and took FALLBACK_PORT instead, so
+   * probes only arrive once something redirects. The readiness row has to
+   * say this: a responder nothing can reach is not a working one.
+   */
+  fallback: boolean
   close(): Promise<void>
 }
 
@@ -136,18 +159,51 @@ function privilegedPortFix(port: number): string {
   if (process.platform === 'linux') {
     return (
       `Only root may bind port ${port}. Either grant the binary the capability once ` +
-      "(sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox), or set " +
-      'CREWBOX_CAPTIVE_PORT to an unprivileged port and redirect 80 to it on the router.'
+      "(sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox), or unset " +
+      'CREWBOX_CAPTIVE_PORT and let the box take an unprivileged port to redirect to.'
     )
   }
-  if (process.platform === 'darwin') {
-    return (
-      `Only root may bind port ${port} on macOS. Set CREWBOX_CAPTIVE_PORT to an ` +
-      'unprivileged port (say 8080) and have the event router redirect port 80 to it, ' +
-      'or run the box with sudo.'
-    )
-  }
-  return `This account may not bind port ${port}. Set CREWBOX_CAPTIVE_PORT to an unprivileged port instead.`
+  return (
+    `This account may not bind port ${port}. Unset CREWBOX_CAPTIVE_PORT and the box ` +
+    `takes port ${FALLBACK_PORT} instead, which one redirect rule can feed — the admin ` +
+    'panel generates it.'
+  )
+}
+
+/**
+ * Whether a failed bind should be retried on the fallback port.
+ *
+ * Its own function because it is the one branch that matters and the one
+ * that cannot be provoked in a test: EACCES needs an unprivileged process,
+ * and CI runners are not consistent about that. Decided here, in the open.
+ */
+export function shouldFallBack(
+  code: string | undefined,
+  opts: { port: number; portFromEnv?: boolean }
+): boolean {
+  // Only a privilege failure. If something else legitimately holds port 80,
+  // stepping aside changes nothing: whatever is answering there will keep
+  // answering the probes, wrongly.
+  if (code !== 'EACCES') return false
+  // A named port is a promise the operator has already built around.
+  if (opts.portFromEnv) return false
+  return opts.port !== FALLBACK_PORT
+}
+
+/** One bind attempt. Resolves the server when it listened, or the error code. */
+function listen(
+  server: Server,
+  host: string,
+  port: number
+): Promise<{ ok: true } | { ok: false; error: NodeJS.ErrnoException }> {
+  return new Promise((resolve) => {
+    const fail = (error: NodeJS.ErrnoException) => resolve({ ok: false, error })
+    server.once('error', fail)
+    server.listen(port, host, () => {
+      server.removeListener('error', fail)
+      resolve({ ok: true })
+    })
+  })
 }
 
 /**
@@ -157,67 +213,86 @@ function privilegedPortFix(port: number): string {
  * network crewbox has always shipped, so the failure is a line in the admin
  * panel, exactly like a missing certificate.
  */
-export function startCaptive(opts: {
+export async function startCaptive(opts: {
   /** Same address the main server binds — the crew adapter, or 0.0.0.0. */
   host: string
   port: number
   /** Where a browser gets sent. Computed by the caller; never from a request. */
   origin: string
+  /**
+   * The port was named by CREWBOX_CAPTIVE_PORT, so honour it exactly. Someone
+   * who picked a port has already arranged for something to reach it, and
+   * quietly moving to another one would break that arrangement silently.
+   */
+  portFromEnv?: boolean
 }): Promise<CaptiveResult> {
-  const server: Server = createServer((req, res) => {
-    // GET and HEAD only. Nothing here has a side effect, and a responder that
-    // answered POST would be a slightly larger surface for no gain at all.
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, { allow: 'GET, HEAD' })
-      res.end()
-      return
-    }
-
-    const reply = captiveResponse(req.url ?? '/', opts.origin)
-    const headers: Record<string, string> = {
-      // Probes are re-run whenever the OS feels like it, and a cached
-      // Success would outlive the network it was true for.
-      'cache-control': 'no-store',
-    }
-    if (reply.type) headers['content-type'] = `${reply.type}; charset=utf-8`
-    if (reply.location) headers['location'] = reply.location
-    if (reply.body !== undefined) {
-      headers['content-length'] = String(Buffer.byteLength(reply.body))
-    }
-    res.writeHead(reply.status, headers)
-    res.end(req.method === 'HEAD' ? undefined : reply.body)
-  })
-
-  // A probe that arrives while the phone is deciding must not sit on a
-  // half-open socket; the OS gives up long before Node's default would.
-  server.keepAliveTimeout = 2000
-  server.headersTimeout = 5000
-
-  return new Promise<CaptiveResult>((resolve) => {
-    const fail = (err: NodeJS.ErrnoException) => {
-      server.close()
-      if (err.code === 'EACCES') {
-        resolve({ reason: privilegedPortFix(opts.port) })
-      } else if (err.code === 'EADDRINUSE') {
-        resolve({
-          reason:
-            `Something else is already listening on port ${opts.port}. Stop it, or set ` +
-            'CREWBOX_CAPTIVE_PORT to a free port and redirect 80 to it on the router.',
-        })
-      } else {
-        resolve({ reason: `Could not listen on port ${opts.port}: ${err.message}` })
+  const build = (): Server => {
+    const server = createServer((req, res) => {
+      // GET and HEAD only. Nothing here has a side effect, and a responder
+      // that answered POST would be a slightly larger surface for no gain.
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405, { allow: 'GET, HEAD' })
+        res.end()
+        return
       }
-    }
-    server.once('error', fail)
-    server.listen(opts.port, opts.host, () => {
-      server.removeListener('error', fail)
-      const address = server.address()
-      resolve({
-        portal: {
-          port: typeof address === 'object' && address ? address.port : opts.port,
-          close: () => new Promise<void>((done) => server.close(() => done())),
-        },
-      })
+
+      const reply = captiveResponse(req.url ?? '/', opts.origin)
+      const headers: Record<string, string> = {
+        // Probes are re-run whenever the OS feels like it, and a cached
+        // Success would outlive the network it was true for.
+        'cache-control': 'no-store',
+      }
+      if (reply.type) headers['content-type'] = `${reply.type}; charset=utf-8`
+      if (reply.location) headers['location'] = reply.location
+      if (reply.body !== undefined) {
+        headers['content-length'] = String(Buffer.byteLength(reply.body))
+      }
+      res.writeHead(reply.status, headers)
+      res.end(req.method === 'HEAD' ? undefined : reply.body)
     })
-  })
+    // A probe that arrives while the phone is deciding must not sit on a
+    // half-open socket; the OS gives up long before Node's default would.
+    server.keepAliveTimeout = 2000
+    server.headersTimeout = 5000
+    return server
+  }
+
+  const portal = (server: Server, port: number, fallback: boolean): CaptivePortal => {
+    const address = server.address()
+    return {
+      port: typeof address === 'object' && address ? address.port : port,
+      fallback,
+      close: () => new Promise<void>((done) => server.close(() => done())),
+    }
+  }
+
+  const first = build()
+  const attempt = await listen(first, opts.host, opts.port)
+  if (attempt.ok) return { portal: portal(first, opts.port, false) }
+  first.close()
+
+  // Privileged port, no privilege — the normal state of a double-clicked Mac
+  // app. Take an unprivileged one instead, so a single redirect rule is all
+  // that stands between here and working.
+  if (shouldFallBack(attempt.error.code, opts)) {
+    const second = build()
+    const retry = await listen(second, opts.host, FALLBACK_PORT)
+    if (retry.ok) return { portal: portal(second, FALLBACK_PORT, true) }
+    second.close()
+    return {
+      reason:
+        `Port ${opts.port} needs root, and the fallback port ${FALLBACK_PORT} would not ` +
+        `open either (${retry.error.code ?? retry.error.message}).`,
+    }
+  }
+
+  if (attempt.error.code === 'EACCES') return { reason: privilegedPortFix(opts.port) }
+  if (attempt.error.code === 'EADDRINUSE') {
+    return {
+      reason:
+        `Something else is already listening on port ${opts.port}. Stop it, or set ` +
+        'CREWBOX_CAPTIVE_PORT to a free port and redirect port 80 to it.',
+    }
+  }
+  return { reason: `Could not listen on port ${opts.port}: ${attempt.error.message}` }
 }

@@ -187,6 +187,7 @@ async function main(): Promise<void> {
     ? await startCaptive({
         host: bindHost,
         port: config.captive.port,
+        portFromEnv: config.captive.portFromEnv,
         // Computed here, from this box's own certificate and port — never
         // from a request, so the responder cannot be pointed anywhere else.
         origin: certName
@@ -230,7 +231,9 @@ async function main(): Promise<void> {
       ? {
           captive: {
             listening: Boolean(captive.portal),
-            ...(captive.portal ? { port: captive.portal.port } : {}),
+            ...(captive.portal
+              ? { port: captive.portal.port, fallback: captive.portal.fallback }
+              : {}),
             ...(captive.reason ? { reason: captive.reason } : {}),
           },
         }
@@ -307,8 +310,11 @@ async function main(): Promise<void> {
   if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
   if (captive?.portal) {
     app.log.info(
-      `phone connectivity checks: answering on port ${captive.portal.port} ` +
-        '(needs the router pointing the probe hostnames here — admin panel has the config)'
+      `phone connectivity checks: answering on port ${captive.portal.port}` +
+        (captive.portal.fallback
+          ? ' — port 80 needs root, so redirect 80 here (Admin → This box has the rule)'
+          : '') +
+        ' (needs the router pointing the probe hostnames here — admin panel has the config)'
     )
   } else if (captive?.reason) {
     app.log.warn(`phone connectivity checks: ${captive.reason}`)

@@ -69,11 +69,21 @@ The box can settle this by answering those tests itself. Two things have to
 be true, and the box's readiness list (**Admin → This box**, _Phones stay on
 this Wi-Fi_) tells you which half is missing:
 
-1. **The box holds port 80.** A packaged box tries automatically at start.
-   Port 80 is privileged, so on macOS it usually needs `sudo`, and on Linux
-   `sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox` once. Can't do
-   either? Set `CREWBOX_CAPTIVE_PORT` to a free port and have the router
-   redirect 80 to it.
+1. **Phones can reach the responder.** A packaged box tries port 80 at
+   startup. Only root may have that port, so on a double-clicked Mac app it
+   won't get it — and rather than give up, the box takes port 8880 and says
+   so. One redirect rule then feeds it, and **Admin → This box** offers a
+   **Download port 80 config** button with your adapter and address already
+   filled in. On Linux the neater answer is
+   `sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox` once, after
+   which it takes port 80 directly and no redirect is needed.
+
+   > [!NOTE]
+   > Running the whole box with `sudo` also works, and is the wrong fix: it
+   > leaves a process that accepts file uploads and serves untrusted crew
+   > traffic running as root for the entire event, to hold one socket. The
+   > redirect keeps the privilege in a one-off rule instead.
+
 2. **The router's DNS points the test addresses at the box.** Download
    `crewbox-dns.conf` from **Admin → This network** and paste its second,
    clearly-marked optional block onto the router alongside the first.
@@ -83,6 +93,10 @@ this Wi-Fi_) tells you which half is missing:
 > internet — because as far as they can tell, it now has one. That's the
 > intent: crew on this network are talking to the box, not browsing. Nobody
 > should be relying on the crew Wi-Fi for internet anyway.
+
+One gotcha worth knowing if you go the `pf` route on macOS: it doesn't
+redirect traffic the Mac sends to itself, so testing with `curl` on the box
+fails even when the rule is working. Test from a phone.
 
 Set `CREWBOX_CAPTIVE=0` to turn the responder off entirely. Without the DNS
 half it does nothing regardless, except one small courtesy: typing the box's

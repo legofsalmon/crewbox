@@ -243,6 +243,22 @@ describe('phones staying on the crew Wi-Fi', () => {
     expect(check.fix).toMatch(/router/)
   })
 
+  it('separates "on the wrong port" from "working"', () => {
+    // The ordinary state of a double-clicked Mac app: the responder is up,
+    // but phones only ask on port 80, so nothing reaches it. Calling that ok
+    // would be the panel lying about the one thing it exists to report.
+    const check = find(
+      boxReadiness(input({ captive: { listening: true, port: 8880, fallback: true } })),
+      'captive'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('8880')
+    expect(check.detail).toMatch(/nothing reaches it/)
+    expect(check.fix).toMatch(/port 80 config/)
+    // And it steers away from the fix everyone reaches for first.
+    expect(check.fix).toMatch(/root/)
+  })
+
   it('names the consequence, not the mechanism, when it could not listen', () => {
     const check = find(
       boxReadiness(

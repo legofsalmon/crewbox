@@ -117,6 +117,12 @@ app.
   echo "192.168.200.77  chat.example.com" | sudo tee -a /etc/hosts
   ```
 
+- **The readiness list says "Phones stay on this Wi-Fi" is on port 8880** —
+  working as designed. Port 80 needs root and the box hasn't got it, so it
+  took an unprivileged port; phones only ask on 80, so it needs one redirect
+  rule. **Admin → This box → Download port 80 config** has it, filled in for
+  this machine. Don't test the rule with `curl` from the box itself — macOS
+  won't redirect a machine's traffic to itself, so it fails while working.
 - **iPhones show the app but never connect; Androids are fine** — iOS has
   judged the crew network internet-less and fallen back to mobile data. This
   is the single most confusing failure in the product because the phone

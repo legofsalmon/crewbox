@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createServer } from 'node:http'
-import { captiveResponse, PROBE_HOSTS, startCaptive } from '../src/captive.ts'
+import {
+  captiveResponse,
+  FALLBACK_PORT,
+  PROBE_HOSTS,
+  shouldFallBack,
+  startCaptive,
+} from '../src/captive.ts'
 
 /**
  * The probe responder. The bodies here are not "a reasonable answer" — they
@@ -114,6 +120,12 @@ describe('the listener', () => {
     await portal?.close()
   })
 
+  it('reports the port it got, and that it was the one asked for', async () => {
+    const { portal } = await startCaptive({ host: '127.0.0.1', port: 0, origin: ORIGIN })
+    expect(portal?.fallback).toBe(false)
+    await portal?.close()
+  })
+
   it('fails soft when the port is taken, naming what to do', async () => {
     // The box must still serve crew when it cannot have port 80 — same
     // posture as a missing certificate.
@@ -128,5 +140,54 @@ describe('the listener', () => {
     expect(reason).toMatch(/CREWBOX_CAPTIVE_PORT/)
 
     await new Promise<void>((done) => squatter.close(() => done()))
+  })
+})
+
+describe('when port 80 needs a privilege the box has not got', () => {
+  /**
+   * A double-clicked Crewbox.app runs as whoever launched it, so this is the
+   * ordinary macOS outcome, not an edge case. Giving up would mean the
+   * feature never works on the platform most boxes run on.
+   *
+   * The decision is tested directly because the condition that triggers it —
+   * EACCES on a privileged bind — cannot be produced by a test that might be
+   * running as root, which CI containers frequently are.
+   */
+  it('steps aside for a privilege failure', () => {
+    expect(shouldFallBack('EACCES', { port: 80 })).toBe(true)
+  })
+
+  it('does not step aside when something else holds the port', () => {
+    // Moving to another port would not help: whatever is answering on 80
+    // will keep answering the probes, and answering them wrongly.
+    expect(shouldFallBack('EADDRINUSE', { port: 80 })).toBe(false)
+    expect(shouldFallBack(undefined, { port: 80 })).toBe(false)
+  })
+
+  it('honours a port the operator named', () => {
+    // CREWBOX_CAPTIVE_PORT is a promise something has already been built
+    // around — a router forward, a pf rule. Quietly using a different port
+    // would break that arrangement without saying so.
+    expect(shouldFallBack('EACCES', { port: 8080, portFromEnv: true })).toBe(false)
+  })
+
+  it('does not loop when the fallback port is the one that failed', () => {
+    expect(shouldFallBack('EACCES', { port: FALLBACK_PORT })).toBe(false)
+  })
+
+  // The real socket path, when the test process is unprivileged enough to
+  // produce EACCES. Skipped rather than silently passing as root, so the
+  // output says which of the two happened.
+  const asRoot = process.getuid?.() === 0
+  it.skipIf(asRoot)('really lands on the fallback port, answering', async () => {
+    // Port 1 is privileged everywhere crewbox runs, so an unprivileged run
+    // gets a genuine EACCES rather than a simulated one.
+    const { portal, reason } = await startCaptive({ host: '127.0.0.1', port: 1, origin: ORIGIN })
+    expect(reason).toBeUndefined()
+    expect(portal?.port).toBe(FALLBACK_PORT)
+    expect(portal?.fallback).toBe(true)
+    const res = await fetch(`http://127.0.0.1:${FALLBACK_PORT}/generate_204`)
+    expect(res.status).toBe(204)
+    await portal?.close()
   })
 })

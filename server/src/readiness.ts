@@ -59,7 +59,7 @@ export interface ReadinessInput {
    * the box was never asked to run one (running from source, tests), in which
    * case the row is left off entirely rather than reported as broken.
    */
-  captive?: { listening: boolean; port?: number; reason?: string }
+  captive?: { listening: boolean; port?: number; fallback?: boolean; reason?: string }
   dataDir: string
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
@@ -188,6 +188,24 @@ function captiveCheck(captive: NonNullable<ReadinessInput['captive']>): Readines
       fix: captive.reason,
     }
   }
+  // Listening, but not where the phones are looking. This is the ordinary
+  // state of a double-clicked Mac app — port 80 needs root — and it is a
+  // separate case from "not listening" because the fix is one rule rather
+  // than a rethink, and from "working" because right now nothing reaches it.
+  if (captive.fallback) {
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        `Port 80 needs root, which this box does not have, so it is answering on port ` +
+        `${captive.port ?? 80} instead. Phones only ask on port 80, so nothing reaches it yet.`,
+      fix:
+        'Send port 80 here with one rule — Download port 80 config below has it, with this ' +
+        'adapter and address already filled in. Running the box as root would also work and ' +
+        'is worse: it elevates the whole server to hold one socket.',
+    }
+  }
+
   return {
     ...base,
     state: 'ok',

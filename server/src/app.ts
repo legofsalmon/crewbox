@@ -21,6 +21,7 @@ import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shar
 import { DocsRelay, parseRoomName } from './docs.ts'
 import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
 import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
+import { redirectConfigFile, redirectPlan } from './portredirect.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
 import { lanAdapters, lanIps, latestApk } from './box.ts'
@@ -234,7 +235,7 @@ export interface AppDeps {
    * a snapshot is honest. Omit and the readiness list leaves the row off —
    * which is right for a box that was never asked to run one.
    */
-  captive?: { listening: boolean; port?: number; reason?: string }
+  captive?: { listening: boolean; port?: number; fallback?: boolean; reason?: string }
   /**
    * IP of the crew-facing adapter (CREWBOX_IFACE). Governs every address the
    * box advertises — QR, /connect, DNS suggestions — on a machine that also
@@ -1363,6 +1364,51 @@ export function buildApp({
       .send(dnsConfigFile(dnsPlan(hostname, address)))
   })
 
+  /**
+   * The rule that gets port 80 to the probe responder, when the box could
+   * not take that port itself.
+   *
+   * Offered only in that state — a box holding port 80 needs no redirect,
+   * and a box with no responder at all has a different problem. The adapter
+   * name is resolved here rather than typed by an admin: it is the one field
+   * nobody can guess (en6 on one Mac is en0 on the next), and getting it
+   * wrong loads a rule that silently does nothing.
+   */
+  fastify.get('/api/admin/port80-config', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    if (!captive?.listening || !captive.fallback) {
+      return reply.code(404).send({
+        error: captive?.listening
+          ? 'This box already answers on port 80, so nothing needs redirecting.'
+          : 'This box is not running a connectivity-check responder, so there is nothing to redirect to.',
+      })
+    }
+    const iface = effectiveIface()
+    const adapters = lanAdapters()
+    const chosen = iface
+      ? adapters.find((a) => a.address === iface)
+      : // No pinned crew adapter: the join QR points at the first address,
+        // so that is the network phones are on and the one to scope to.
+        adapters.find((a) => a.address === lanIps()[0])
+    if (!chosen) {
+      return reply
+        .code(404)
+        .send({ error: 'This box has no LAN adapter to attach a redirect rule to.' })
+    }
+    return reply
+      .header('content-type', 'text/plain; charset=utf-8')
+      .header('content-disposition', 'attachment; filename="crewbox-port80.conf"')
+      .send(
+        redirectConfigFile(
+          redirectPlan({
+            iface: chosen.name,
+            address: chosen.address,
+            port: captive.port ?? 80,
+          })
+        )
+      )
+  })
+
   fastify.get('/api/admin/settings', async (req, reply) => {
     if (!authAdmin(req, reply)) return reply
     const stats = hub.stats()
@@ -1405,6 +1451,10 @@ export function buildApp({
         // is no reason for anyone to read it off a screen. This only says
         // whether the panel is allowed to change it.
         adminPasswordFromEnv: envAdminHash !== undefined,
+        // Drives the "Download port 80 config" button. Sent as a flag rather
+        // than inferred from the readiness row's wording, so rephrasing that
+        // row can never silently remove the fix it points at.
+        portRedirect: Boolean(captive?.listening && captive.fallback),
       },
       readiness,
       readinessState: worstState(readiness),

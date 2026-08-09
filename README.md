@@ -130,10 +130,13 @@ fixed URL on joining a network to judge it, and iOS answers a failure by
 dropping the Wi-Fi indicator and moving traffic to mobile data — which cannot
 reach a box on a private address, so crewbox sits on "Connecting" on a phone
 that is still joined. The box answers those checks itself
-(`server/src/captive.ts`, port 80, bound to the crew adapter only, failing
-soft when the port is privileged or held). It only sees them once the event
-router's DNS sends them there, which the generated `crewbox-dns.conf` carries
-as a clearly-marked optional block.
+(`server/src/captive.ts`, bound to the crew adapter only). Port 80 is
+privileged and a double-clicked Mac app never gets it, so rather than give up
+the box takes port 8880 and the admin panel generates the one `pf` rule that
+feeds it (`server/src/portredirect.ts`) — the privilege stays in a one-off
+rule instead of running the whole server as root. Either way it only sees a
+probe once the event router's DNS sends one, which the generated
+`crewbox-dns.conf` carries as a clearly-marked optional block.
 
 For a dedicated festival rig — HTTPS on your own domain so browsers get the
 mic and the installable app, local DNS, UPS and spare-box discipline —
@@ -145,7 +148,8 @@ Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 defaults to every department module the build ships, and chat is always on),
 `CREWBOX_CAPTIVE` (`0` turns the connectivity-probe responder off; it is on
 for a packaged box and off when running from source) and
-`CREWBOX_CAPTIVE_PORT` (default 80, for when the router redirects instead).
+`CREWBOX_CAPTIVE_PORT` (pins the responder's port; left unset it tries 80 and
+drops to 8880 when it may not have it).
 Setting `LIVEKIT_URL` points voice at an SFU you run instead of the one
 inside the box.
 
