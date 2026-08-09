@@ -243,4 +243,56 @@ test('shots: admin', async () => {
   // One scrolling panel, not tabs: bring the box section into view.
   await maya.getByRole('heading', { name: 'This box' }).scrollIntoViewIfNeeded()
   await shoot(maya, 'admin-this-box')
+
+  // Leave the page usable for the tests after this one. The unlock itself
+  // survives in memory, which is what lets the extras test run the probe.
+  await maya.getByRole('button', { name: 'Close admin panel' }).click()
+})
+
+test('shots: extras — file detail, share, probe, phone modules', async ({ browser }) => {
+  test.setTimeout(150_000)
+
+  // A shared file and its detail view.
+  await maya.getByRole('button', { name: '#foh' }).click()
+  await maya.locator('input[type=file]').setInputFiles('e2e/fixtures/festival-day-sheet.csv')
+  const card = maya.getByRole('button', { name: /festival-day-sheet/ }).first()
+  await expect(card).toBeVisible({ timeout: 15_000 })
+  await card.click()
+  await expect(maya.getByRole('button', { name: 'Close file details' })).toBeVisible()
+  await shoot(maya, 'chat-file-detail')
+  await maya.getByRole('button', { name: 'Close file details' }).click()
+
+  // The share-to-channel picker on a sheet.
+  await maya.getByRole('button', { name: /Open sheet Riverside Weekender/ }).click()
+  await expect(maya.getByLabel('Sheet title')).toBeVisible()
+  await maya.getByRole('button', { name: 'Share', exact: true }).click()
+  await expect(maya.getByText('Share to channel')).toBeVisible()
+  await shoot(maya, 'patch-share')
+  // This dialog closes by clicking its overlay, not Escape.
+  await maya.mouse.click(20, 400)
+  await expect(maya.getByText('Share to channel')).toBeHidden()
+
+  // The deep probe, run and photographed with its verbatim send list. The
+  // sandbox has no internet, so the uplink/DNS rows show their fail-soft
+  // states — which is honest, and exactly what the docs say happens.
+  await maya.getByRole('button', { name: 'Open network audit' }).click()
+  await maya.getByRole('button', { name: 'Run deep probe' }).click()
+  await expect(maya.getByText(/Last run/)).toBeVisible({ timeout: 90_000 })
+  await expect(maya.getByText(/sent:/).first()).toBeVisible()
+  // The verbatim send list is the point of this scene — bring it into frame.
+  await maya.getByRole('heading', { name: 'Deep probe' }).scrollIntoViewIfNeeded()
+  await shoot(maya, 'network-probe')
+
+  // Phone-sized module views: the grid and the plan.
+  const phone = await phoneDevice(browser, CREW.prod)
+  await phone.getByRole('button', { name: 'Open channels' }).first().click()
+  await phone.getByRole('button', { name: /Open sheet Riverside Weekender/ }).click()
+  await expect(phone.getByLabel('Sheet title')).toBeVisible()
+  await shoot(phone, 'patch-grid-phone')
+
+  await phone.getByRole('button', { name: 'Open channels' }).first().click()
+  await phone.getByRole('button', { name: /Open plot Main Stage/ }).click()
+  await phone.getByRole('tab', { name: 'Plan' }).click()
+  await shoot(phone, 'lighting-plan-phone')
+  await phone.context().close()
 })

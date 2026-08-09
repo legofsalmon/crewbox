@@ -42,6 +42,8 @@ live DMX and a fixture's profile provides real pan/tilt ranges, moving
 heads grow faint beam cones pointing where the desk is pointing them —
 [the live page](/docs/lighting-live) covers switching that on.
 
+![The plan on a phone](shot:lighting-plan-phone)
+
 ## What the drawings need from your data
 
 The drawings are only as good as the plot's numbers:

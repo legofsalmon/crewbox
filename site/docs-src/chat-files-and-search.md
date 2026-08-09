@@ -13,6 +13,8 @@ properly, filter what's in front of you, and search everything ever said.
 
 ## Sharing files and photos
 
+![A shared file opened in the detail view](shot:chat-file-detail)
+
 Three ways in:
 
 1. The **paperclip** in the composer — pick a file or take a photo.
