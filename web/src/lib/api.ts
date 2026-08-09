@@ -53,6 +53,12 @@ export interface AdminSettings {
     eventPin: string
     /** True when ADMIN_PASSWORD is set, so the panel can't change it here. */
     adminPasswordFromEnv: boolean
+    /**
+     * The probe responder could not take port 80 and is on a fallback port,
+     * so a redirect rule is needed. Drives the download button; optional so
+     * an older box still parses.
+     */
+    portRedirect?: boolean
   }
   /** What this box can actually do right now — see server/src/readiness.ts. */
   readiness: ReadinessCheck[]
@@ -246,8 +252,18 @@ export function adminGetEnvironment(auth: AdminAuth, refresh = false): Promise<E
 }
 
 /** The local DNS config for this box, as a file to put on the venue router. */
-export async function adminDnsConfig(auth: AdminAuth): Promise<Blob> {
-  const res = await fetch(apiUrl('/api/admin/dns-config'), { headers: adminHeaders(auth) })
+export function adminDnsConfig(auth: AdminAuth): Promise<Blob> {
+  return adminFile('/api/admin/dns-config', auth)
+}
+
+/** The rule that sends port 80 to the probe responder on this machine. */
+export function adminPort80Config(auth: AdminAuth): Promise<Blob> {
+  return adminFile('/api/admin/port80-config', auth)
+}
+
+/** A generated config file. Errors arrive as JSON, so they are unwrapped here. */
+async function adminFile(path: string, auth: AdminAuth): Promise<Blob> {
+  const res = await fetch(apiUrl(path), { headers: adminHeaders(auth) })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string }
     throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)

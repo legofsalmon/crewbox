@@ -388,10 +388,36 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
     }
   }
 
+  /** The rule that gets port 80 to this box's probe responder. */
+  async function downloadPort80() {
+    try {
+      const blob = await api.adminPort80Config(auth())
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'crewbox-port80.conf'
+      a.click()
+      URL.revokeObjectURL(url)
+      onNote('Port 80 config downloaded — one rule, run it on this machine')
+    } catch (err) {
+      onNote(err instanceof api.ApiError ? err.message : 'Could not build the port 80 config')
+    }
+  }
+
   const info = data?.serverInfo
   return (
     <>
       {data && <Readiness checks={data.readiness} />}
+      {/* Only when the responder actually landed on a fallback port. A box
+          holding port 80 needs no rule, and offering one would suggest
+          something is wrong when nothing is. */}
+      {info?.portRedirect && (
+        <div className="admin-export">
+          <button className="admin-btn" onClick={() => void downloadPort80()}>
+            Download port 80 config
+          </button>
+        </div>
+      )}
       {data?.lighting && data.lighting.length > 0 && (
         <>
           <h3 className="admin-subhead">Lighting network</h3>

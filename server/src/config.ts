@@ -150,11 +150,14 @@ export const config = {
           ? false
           : undefined,
     /**
-     * Port 80 is where the probes go, and it is privileged. An admin who
-     * can't grant that can point this at a free port and have the router
-     * redirect 80 to it; the failure message says so.
+     * Port 80 is where the probes go, and it is privileged. Left unset, the
+     * box tries 80 and drops to an unprivileged port when it may not have it
+     * (see captive.ts) — the normal outcome on macOS. Set explicitly, it is
+     * honoured exactly: whoever named a port has arranged for something to
+     * reach it, and moving aside would break that silently.
      */
     port: Number(process.env.CREWBOX_CAPTIVE_PORT ?? 80) || 80,
+    portFromEnv: process.env.CREWBOX_CAPTIVE_PORT !== undefined,
   },
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
