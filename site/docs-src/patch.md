@@ -52,6 +52,8 @@ Rows are desk channels; each act gets a column group of five fields:
   fastest start for a shared backline.
 - **+ Add Channel** at the bottom grows the sheet.
 
+![The grid on a phone](shot:patch-grid-phone)
+
 ## Editing together
 
 Everyone edits at once, and it converges — that's the point:
@@ -79,5 +81,8 @@ Versions sync, so a snapshot taken at FOH is restorable from the stage.
 - **Share** posts the sheet to a chat channel — it arrives as an
   **Open ↗** chip anyone can tap. Note it posts immediately to the channel
   you pick.
+
+![The share-to-channel picker](shot:patch-share)
+
 - **Export** downloads the sheet as CSV, for mailing to an act's engineer
   or archiving with the show file.

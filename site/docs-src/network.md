@@ -54,6 +54,8 @@ network."
 
 ## The deep probe
 
+![Deep probe results, each with its verbatim sent line](shot:network-probe)
+
 Everything above is passive. The one exception is the **deep probe** — a
 single admin-triggered sweep that checks the internet uplink, venue DNS,
 sends **one** Art-Net poll and **one** mDNS query, and stops. Every packet
