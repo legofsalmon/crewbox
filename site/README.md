@@ -1,15 +1,19 @@
-# The crewbox download site
+# The crewbox download site and docs
 
-A static page and the installer, deployed to Vercel. It exists so admins have
-somewhere to be sent that isn't a source repository — and so the source repo
-can stay private while the binaries are public.
+A static page, the installer, and the user docs — deployed to Vercel. It
+exists so admins have somewhere to be sent that isn't a source repository —
+and so the source repo can stay private while the binaries are public.
 
 ## How the pieces fit
 
 ```
 crewbox (private)          this repo — source, and the release workflow
    │
-   ├── site/               → Vercel, on your domain: the download page + install.sh
+   ├── site/               → Vercel, on your domain:
+   │     index.html            the download page
+   │     install.sh            the curl | sh installer
+   │     docs/                 the user docs (generated, committed)
+   │     docs-src/             the docs sources (never deployed)
    │
    └── release workflow    → pushes built binaries to…
                               crewbox-dist (public) — releases only, no source
@@ -17,7 +21,36 @@ crewbox (private)          this repo — source, and the release workflow
 
 Nothing proxies the binaries. The page and `install.sh` both link straight at
 `crewbox-dist` release assets, so GitHub's CDN carries the 120 MB and Vercel
-serves two small files.
+serves small static files.
+
+## The docs pipeline
+
+`site/docs-src/*.md` → `node site/build-docs.mjs` → committed
+`site/docs/*.html` + `search-index.json` + `sitemap.xml`. There is still no
+build step on Vercel: the generated output is committed, and CI regenerates
+it and fails if the committed copy is stale. Day to day:
+
+```
+npm run docs:build      regenerate after editing a page
+npm run docs:test       the generator's unit tests
+npm run docs:shots      retake every screenshot (Playwright, both themes)
+npm run docs:preview    serve site/ locally with Vercel-style clean URLs
+```
+
+The generator is strict on purpose — unknown Markdown, dead links, dead
+anchors and missing screenshot files are build errors. Screenshots are
+referenced as `![alt](shot:scene)` and live in `site/docs/img/` as
+`scene-dark.png` + `scene-light.png` pairs; the page serves whichever
+matches the reader's theme.
+
+`site/.vercelignore` keeps `docs-src/`, the generator and this README out of
+the deployment. The generated files are in `.prettierignore` — Prettier
+reformatting them would break CI's byte-identical regeneration check.
+
+**Design tokens are hand-copied, not shared.** The canonical set is
+`web/src/app.css`; copies live in `site/index.html` and `site/docs/docs.css`.
+If the app's tokens change, update both copies — the docs embed screenshots
+of the app, so drift shows.
 
 ## Deploying it
 
@@ -32,8 +65,9 @@ fine) and set:
 | Output Directory | `.`     |
 
 Then point `crewbox.letissier.ie` at the project. That hostname is written
-into `index.html`, `install.sh` and `QUICKSTART.md`; change it in all three
-if the site ever moves.
+into `index.html`, `install.sh`, `QUICKSTART.md`, `robots.txt` and
+`build-docs.mjs` (which stamps it into the generated `sitemap.xml`); change
+it in all of them if the site ever moves.
 
 ## Two names, not one
 

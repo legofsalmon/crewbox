@@ -10,19 +10,20 @@
     />
     <style>
       /* Same tokens as the app (web/src/app.css) so the download page and the
-         thing it downloads look like one product. */
+         thing it downloads look like one product. Copies also live in
+         site/docs/docs.css — site/README.md keeps the list. */
       :root {
         color-scheme: dark;
-        --bg: #12100e;
-        --bg-raised: #1a1714;
-        --bg-hover: #242019;
+        --bg: #0d1117;
+        --bg-raised: #121820;
+        --bg-hover: #19212c;
         --border: rgba(255, 255, 255, 0.08);
-        --text: #f2eee7;
-        --text-muted: #a29a8c;
-        --text-faint: #6f695e;
+        --text: #eaeff7;
+        --text-muted: #9aa7ba;
+        --text-faint: #67748a;
         --accent: #f5b73e;
         --accent-strong: #ffcd66;
-        --accent-contrast: #1c1608;
+        --accent-contrast: #10151d;
         --ok: #58c98a;
       }
       @media (prefers-color-scheme: light) {
@@ -36,11 +37,11 @@
           --text-muted: #5f594c;
           --text-faint: #8d8574;
           /* Darker than the dark-theme amber: on a pale surface the bright
-             one drops under 4.5:1 against --accent-contrast. */
-          --accent: #9a6600;
+             one drops under 4.5:1 — same AA-nudged values as the app. */
+          --accent: #986400;
           --accent-strong: #7d5300;
           --accent-contrast: #fffaf0;
-          --ok: #1e8a54;
+          --ok: #1b7d4c;
         }
       }
       * {
@@ -166,10 +167,33 @@
         font-size: 13px;
         color: var(--text-faint);
       }
+      nav {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        margin-bottom: 40px;
+      }
+      nav .brand {
+        font-weight: 700;
+        color: var(--text);
+        text-decoration: none;
+      }
+      nav a:not(.brand) {
+        margin-left: auto;
+        font-size: 14px;
+        color: var(--text-muted);
+      }
+      nav a:not(.brand):hover {
+        color: var(--text);
+      }
     </style>
   </head>
   <body>
     <main>
+      <nav>
+        <a class="brand" href="/">Crewbox</a>
+        <a href="/docs">Docs</a>
+      </nav>
       <h1>Crewbox</h1>
       <p class="tagline">
         Crew comms for temporary events. Chat, push-to-talk voice, patch sheets and lighting plots —
@@ -230,6 +254,13 @@
         <li>
           <span class="dot">●</span
           ><span
+            ><b>Network audit</b> — the networks the box can see, graded for A/V use, with a report
+            for venue IT</span
+          >
+        </li>
+        <li>
+          <span class="dot">●</span
+          ><span
             ><b>Offline throughout</b> — the box needs no internet, and neither do the crew</span
           >
         </li>
@@ -242,8 +273,11 @@
         accounts, no app store.
       </p>
       <p>
-        The first person to join is the admin. <b>Admin → This box</b> shows what's actually working
-        on your machine and what to do about anything that isn't.
+        The box mints an admin password at setup — write it down. <b>Admin → This box</b> shows
+        what's actually working on your machine and what to do about anything that isn't.
+      </p>
+      <p>
+        Full guides — joining, every module, running the box — live in <a href="/docs">the docs</a>.
       </p>
 
       <h2>Two things worth knowing</h2>
