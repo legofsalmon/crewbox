@@ -53,6 +53,8 @@ const colorFor = (id: string): string => {
 class SyncManager {
   private docs = new Map<string, Y.Doc>()
   private providers = new Map<string, WebsocketProvider>()
+  /** Rooms this device is a *person* in, as opposed to merely syncing. */
+  private present = new Set<string>()
   private connected = new Map<string, boolean>()
   private listeners = new Set<() => void>()
   private peerCache = new Map<string, { key: string; value: RemotePeer[] }>()
@@ -62,15 +64,41 @@ class SyncManager {
     this.providers.get(room)?.awareness.setLocalStateField('editing', key)
   }
 
-  attach(room: string, doc: Y.Doc) {
-    if (this.docs.has(room)) return
+  /**
+   * Sync a document, optionally without announcing anybody.
+   *
+   * `present` is the difference between "this device is keeping this document
+   * up to date" and "somebody is looking at this document", and they are not
+   * the same thing. The running order reads every patch sheet on the box to
+   * work out what is on; without this it appeared in every sheet's presence
+   * as a third device, so a patch operator saw phantom company in a sheet
+   * nobody else had open.
+   *
+   * A room already attached silently can be promoted later — which is what
+   * happens the moment someone actually opens that sheet.
+   */
+  attach(room: string, doc: Y.Doc, { present = true }: { present?: boolean } = {}) {
+    if (this.docs.has(room)) {
+      if (present) this.announce(room)
+      return
+    }
     this.docs.set(room, doc)
+    if (present) this.present.add(room)
     this.connectDoc(room, doc)
+  }
+
+  /** Start appearing in a room this device was already syncing quietly. */
+  private announce(room: string) {
+    if (this.present.has(room)) return
+    this.present.add(room)
+    this.providers.get(room)?.awareness.setLocalStateField('user', this.userField())
+    this.emit()
   }
 
   detach(room: string) {
     this.disconnectDoc(room)
     this.docs.delete(room)
+    this.present.delete(room)
     this.emit()
   }
 
@@ -79,8 +107,11 @@ class SyncManager {
     for (const [room, doc] of this.docs) {
       if (!this.providers.has(room)) this.connectDoc(room, doc)
     }
-    for (const provider of this.providers.values()) {
-      provider.awareness.setLocalStateField('user', this.userField())
+    // Only rooms this device is actually present in. Refreshing every
+    // provider would announce the background readers too, undoing the whole
+    // point of attaching quietly.
+    for (const [room, provider] of this.providers) {
+      if (this.present.has(room)) provider.awareness.setLocalStateField('user', this.userField())
     }
   }
 
@@ -102,8 +133,10 @@ class SyncManager {
       this.emit()
     })
     // Peers only appear in each other's awareness once a local state is set —
-    // an untouched (empty) state is never broadcast on join.
-    provider.awareness.setLocalStateField('user', this.userField())
+    // an untouched (empty) state is never broadcast on join. That is exactly
+    // what keeps a background reader (see attach) invisible: it syncs the
+    // document and announces nobody.
+    if (this.present.has(room)) provider.awareness.setLocalStateField('user', this.userField())
     provider.awareness.on('change', () => this.emit())
     this.providers.set(room, provider)
   }

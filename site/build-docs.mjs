@@ -35,6 +35,7 @@ export const ORIGIN = 'https://crewbox.letissier.ie'
 export const SECTIONS = [
   'Start here',
   'Chat & voice',
+  'Running order',
   'Patch sheets',
   'Lighting',
   'Network',

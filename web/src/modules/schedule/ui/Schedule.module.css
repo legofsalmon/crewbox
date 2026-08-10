@@ -1,0 +1,128 @@
+/* Read standing up, on a phone, often in the dark. Every colour comes from
+   the theme tokens so the daylight and FOH-tent themes both work. */
+
+.schedule {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 0 32px;
+}
+
+.hero {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.heroTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.heroTop h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.sub {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.stages {
+  list-style: none;
+  margin: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stage {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.stageName {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: 68px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.slot + .slot {
+  border-top: 1px solid var(--border);
+}
+
+.label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.act {
+  font-size: 18px;
+  font-weight: 650;
+  /* A long act name must not push the countdown off a phone. */
+  overflow-wrap: anywhere;
+}
+
+.when {
+  font-size: 14px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The act actually playing is the one thing readable from arm's length. */
+.onNow .act {
+  font-size: 21px;
+}
+
+.onNow .label {
+  color: var(--accent);
+}
+
+.gap .act {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty p {
+  margin: 0 0 8px;
+}
+
+.emptyHint {
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 42ch;
+  margin-inline: auto;
+}
+
+.link {
+  margin-top: 8px;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
