@@ -39,7 +39,24 @@ everyone is.
 The health of the machine you're running on, as a readiness list — crew
 network, voice, modules, install/offline support, the Android app download,
 disk space — each row with a plain verdict and, when it isn't fine, the
-fix. Below it, the settings:
+fix.
+
+Two rows exist to warn you before something takes the box down rather than
+after:
+
+- **Power** — whether this machine is on mains, and if not, how long it has
+  left. A laptop nobody plugged in is the commonest crewbox, and it fails
+  with no warning at all: fine, then gone, discovered by crew phones sitting
+  on "Connecting" mid-set. It goes amber on battery and red under half an
+  hour. Machines with no battery don't show the row.
+- **Backup** — how long since `deploy/backup.sh` last finished, and where it
+  wrote to. The box can't go looking for backups (they're on a USB stick
+  that usually isn't plugged in), so the script leaves it a note. A backup
+  regime that quietly stopped three events ago looks identical from the
+  production desk to one that ran last night; this is the row that tells
+  them apart.
+
+Below the list, the settings:
 
 - **Event name**, **Event PIN**, **Wi-Fi network** — the setup-page
   answers, editable live. Changing the PIN notes that the poster and

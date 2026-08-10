@@ -26,6 +26,8 @@ import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
 import { lanAdapters, lanIps, latestApk } from './box.ts'
 import { boxReadiness, worstState } from './readiness.ts'
+import { lastBackup } from './backupmark.ts'
+import { readPower } from './power.ts'
 import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
@@ -1420,6 +1422,11 @@ export function buildApp({
     const sfu = livekit?.embedded
       ? await probeSfu(livekit.port ?? LIVEKIT_PORT, livekit.key, livekit.secret)
       : undefined
+    // Asked live, like the SFU probe: a box that was on mains at startup is
+    // exactly the one someone has since unplugged. Null on a machine with no
+    // battery, or where asking is not worth the cost — the row drops out
+    // rather than being guessed at.
+    const power = await readPower()
     const readiness = boxReadiness({
       // req.protocol is 'https' for a TLS connection, and honours
       // x-forwarded-proto only when this box is configured to trust a proxy.
@@ -1428,6 +1435,10 @@ export function buildApp({
       ...(sfu ? { sfu } : {}),
       ...(voiceFailure ? { voiceFailure } : {}),
       ...(captive ? { captive } : {}),
+      ...(power ? { power } : {}),
+      // null rather than undefined when there is no marker: the box looked,
+      // and "never backed up" is the answer worth printing.
+      ...(dataDir ? { backup: lastBackup(dataDir) } : {}),
       // Live, not from startup: adapters come and go on site (a cable pulled,
       // Wi-Fi re-joined), and the panel exists to say what is true now.
       iface: effectiveIface(),

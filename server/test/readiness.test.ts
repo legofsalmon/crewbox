@@ -273,3 +273,77 @@ describe('phones staying on the crew Wi-Fi', () => {
     expect(check.fix).toMatch(/root/)
   })
 })
+
+describe('power', () => {
+  it('stays quiet on mains, and says what the battery buys', () => {
+    const check = find(boxReadiness(input({ power: { onMains: true, percent: 92 } })), 'power')
+    expect(check.state).toBe('ok')
+    expect(check.detail).toMatch(/mains/)
+    expect(check.fix).toBeUndefined()
+  })
+
+  it('flags a box on battery before it is urgent', () => {
+    // Not a fault — someone is moving a desk. But nobody can tell that from
+    // four hours of nobody noticing, which is the failure this row prevents.
+    const check = find(
+      boxReadiness(input({ power: { onMains: false, percent: 64, minutesLeft: 130 } })),
+      'power'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('2h 10m')
+    expect(check.fix).toMatch(/Plug it in/)
+  })
+
+  it('escalates when the time left is short', () => {
+    const check = find(
+      boxReadiness(input({ power: { onMains: false, percent: 40, minutesLeft: 25 } })),
+      'power'
+    )
+    expect(check.state).toBe('off')
+    expect(check.fix).toMatch(/spare/)
+  })
+
+  it('escalates on a low charge even with no estimate', () => {
+    const check = find(boxReadiness(input({ power: { onMains: false, percent: 9 } })), 'power')
+    expect(check.state).toBe('off')
+  })
+
+  it('leaves the row off a machine with no battery', () => {
+    expect(boxReadiness(input()).find((c) => c.id === 'power')).toBeUndefined()
+  })
+})
+
+describe('backup', () => {
+  const now = 1_786_300_000_000
+
+  it('says plainly when there has never been one', () => {
+    // null means the box looked. That is worth printing; a silent gap is not.
+    const check = find(boxReadiness(input({ backup: null })), 'backup')
+    expect(check.state).toBe('limited')
+    expect(check.detail).toMatch(/No backup has ever been taken/)
+    expect(check.fix).toMatch(/backup\.sh/)
+  })
+
+  it('is content with a backup from last night', () => {
+    const check = find(
+      boxReadiness(input({ backup: { at: now - 6 * 3600_000, dest: '/media/usb/x' }, now })),
+      'backup'
+    )
+    expect(check.state).toBe('ok')
+    expect(check.detail).toContain('6h ago')
+    expect(check.detail).toContain('/media/usb/x')
+    expect(check.fix).toBeUndefined()
+  })
+
+  it('flags one that has gone stale', () => {
+    // backup.sh is meant to run nightly; past a day, an event has real work
+    // in it that exists nowhere but this box.
+    const check = find(boxReadiness(input({ backup: { at: now - 50 * 3600_000 }, now })), 'backup')
+    expect(check.state).toBe('limited')
+    expect(check.fix).toMatch(/backup\.sh/)
+  })
+
+  it('leaves the row off when nobody looked', () => {
+    expect(boxReadiness(input()).find((c) => c.id === 'backup')).toBeUndefined()
+  })
+})

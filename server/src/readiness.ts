@@ -1,5 +1,6 @@
 import { statfsSync } from 'node:fs'
 import { latestApk } from './box.ts'
+import type { PowerReading } from './power.ts'
 
 /**
  * What this box can actually do, right now, on this machine.
@@ -60,6 +61,16 @@ export interface ReadinessInput {
    * case the row is left off entirely rather than reported as broken.
    */
   captive?: { listening: boolean; port?: number; fallback?: boolean; reason?: string }
+  /**
+   * Mains or battery, when this machine has a battery to speak of. Absent on
+   * a desktop, and on Windows where asking costs more than the answer is
+   * worth — the row is simply left off rather than guessed at.
+   */
+  power?: PowerReading
+  /** When backup.sh last finished here, if it ever has. */
+  backup?: { at: number; dest?: string } | null
+  /** Clock for the backup age. Injected so the check stays pure. */
+  now?: number
   dataDir: string
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
@@ -218,6 +229,77 @@ function captiveCheck(captive: NonNullable<ReadinessInput['captive']>): Readines
   }
 }
 
+/** "2h 10m", "45 min" — for a line someone reads at a glance, in the dark. */
+function duration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
+}
+
+/**
+ * Mains or battery.
+ *
+ * The point of this row is that it appears *before* it matters. A laptop box
+ * running on battery is not a fault — it is a normal five minutes while
+ * someone moves a desk — but nobody notices the difference between that and
+ * four hours until the machine sleeps mid-set and takes every channel with
+ * it. So it escalates with what is actually left, and never shouts on mains.
+ */
+function powerCheck(power: PowerReading): ReadinessCheck {
+  const base = { id: 'power', label: 'Power' }
+  const charge = power.percent === undefined ? '' : ` Battery at ${power.percent}%`
+
+  if (power.onMains) {
+    return {
+      ...base,
+      state: 'ok',
+      detail: charge
+        ? `Running on mains.${charge}, which is the buffer if the power drops.`
+        : 'Running on mains.',
+    }
+  }
+
+  const left = power.minutesLeft
+  const remaining = left === undefined ? '' : `, about ${duration(left)} left`
+  const urgent = (left !== undefined && left <= 30) || (power.percent ?? 100) <= 15
+  return {
+    ...base,
+    state: urgent ? 'off' : 'limited',
+    detail:
+      `Running on battery${power.percent === undefined ? '' : ` — ${power.percent}%`}` +
+      `${remaining}. Every crew channel on this box goes with it.`,
+    fix: urgent
+      ? 'Plug it in now, or move crew to the spare before this machine sleeps.'
+      : 'Plug it in. A box on battery is fine while someone is moving a desk, and not fine for a show.',
+  }
+}
+
+/**
+ * Whether anyone has actually taken a backup.
+ *
+ * The scripts and the drill have existed for a while; what was missing was
+ * any way to notice that nobody has run them. A backup regime that quietly
+ * stopped three events ago looks exactly like a working one from here, right
+ * up until the box dies.
+ */
+function backupCheck(mark: { at: number; dest?: string }, now: number): ReadinessCheck {
+  const base = { id: 'backup', label: 'Backup' }
+  const ageMinutes = Math.max(0, Math.round((now - mark.at) / 60_000))
+  const where = mark.dest ? ` to ${mark.dest}` : ''
+  // A day is the right line: backup.sh is meant to run nightly, and an event
+  // that has been up longer than that with no backup has real work in it.
+  const stale = ageMinutes > 24 * 60
+  return {
+    ...base,
+    state: stale ? 'limited' : 'ok',
+    detail: `Last backup ${duration(ageMinutes)} ago${where}.`,
+    fix: stale
+      ? 'Run deploy/backup.sh. Chat history, accounts, uploads and the event PIN live only in this box until it has run.'
+      : undefined,
+  }
+}
+
 /**
  * The voice line, which speaks from evidence where it has any.
  *
@@ -313,6 +395,10 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
 
   if (input.captive) checks.push(captiveCheck(input.captive))
 
+  // Next to the network row: both describe this machine's physical situation
+  // rather than its configuration, and both fail the same way — suddenly.
+  if (input.power) checks.push(powerCheck(input.power))
+
   checks.push(voiceCheck(input))
 
   checks.push(
@@ -358,6 +444,23 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
         ? 'Under 2 GB. Clear space before the event — file uploads stop when it runs out.'
         : undefined,
     })
+  }
+
+  // `undefined` means nobody looked (tests, an older caller); `null` means
+  // the box looked and there has never been one, which is worth saying out
+  // loud rather than leaving as a silent gap in the list.
+  if (input.backup !== undefined) {
+    checks.push(
+      input.backup
+        ? backupCheck(input.backup, input.now ?? Date.now())
+        : {
+            id: 'backup',
+            label: 'Backup',
+            state: 'limited',
+            detail: 'No backup has ever been taken from this box.',
+            fix: 'Run deploy/backup.sh — onto a USB stick, before the event rather than during it. Chat history, accounts, uploads and the event PIN exist nowhere else.',
+          }
+    )
   }
 
   checks.push({

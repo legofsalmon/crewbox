@@ -89,6 +89,9 @@ valid across versions.
 ## Data, backup, updates
 
 Everything lives in `~/.crewbox/data` — one directory to back up, one to
-restore. Updating the box is: stop it, replace the binary (or app), start
+restore. `deploy/backup.sh` does it properly (a WAL-safe database snapshot,
+the uploads and the certificate); **Admin → This box** then shows a
+**Backup** row saying how long ago that last ran, so a regime that quietly
+stopped is visible rather than discovered. Updating the box is: stop it, replace the binary (or app), start
 it. Crew phones notice the new version and offer a **Reload** pill; nothing
 they had queued is lost.
