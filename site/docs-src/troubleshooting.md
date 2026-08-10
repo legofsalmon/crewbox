@@ -22,12 +22,19 @@ Symptom-first. Crew problems first, box problems at the end.
 - **"Too many attempts"** — the box rate-limits guessing. Wait a minute.
 - **The app opens, but the banner says "Connecting"** — crewbox is installed
   on your phone, so it draws itself from your phone's own storage before it
-  has spoken to anything. That banner means the box isn't answering. On an
-  iPhone, glance at the Wi-Fi symbol in the status bar: **gone** means iOS
-  decided this network has no internet and quietly moved you to mobile data,
-  which cannot reach the box. Turn mobile data off for a minute and it comes
-  straight back — and tell whoever runs the box, because
+  has spoken to anything. That banner means the box isn't answering. Give it
+  half a minute and the banner turns into **Still connecting… Why?** — tap
+  it and the app walks you through the likely causes for your phone.
+
+  The one worth knowing in advance, on an iPhone: glance at the Wi-Fi symbol
+  in the status bar. **Gone** means iOS decided this network has no internet
+  and quietly moved you to mobile data, which cannot reach the box. Turn
+  mobile data off for a minute and it comes straight back — and tell whoever
+  runs the box, because
   [there's a proper fix](/docs/phones-and-platforms#the-no-internet-problem).
+
+  Nothing is lost while this lasts. Everything you can see is on your device,
+  and anything you send is queued and delivers the moment the box is back.
 
 ## "I can hear voice but nobody hears me"
 

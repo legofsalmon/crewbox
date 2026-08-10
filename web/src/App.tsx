@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from './store.ts'
 import { guardStrayFileDrops } from './lib/useFileDrop.ts'
 import Join from './components/Join.tsx'
@@ -12,7 +12,8 @@ import AudioSettings from './components/AudioSettings.tsx'
 import FileDetail from './components/FileDetail.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
-import { connectionScreen } from './lib/connscreen.ts'
+import ConnectionHelp from './components/ConnectionHelp.tsx'
+import { connectionScreen, STUCK_AFTER_MS } from './lib/connscreen.ts'
 import { registerShortcut } from './shell/keys.ts'
 import { allModules } from './shell/registry.ts'
 import { enabledModules } from './shell/modules.ts'
@@ -68,6 +69,26 @@ function Shell() {
   const updateReady = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
 
+  // A returning user gets the app from cache and a thin banner, which is
+  // right for a roam or a box restart and useless when the box has genuinely
+  // gone. After a while the banner offers to explain itself.
+  //
+  // Keyed on `online` rather than on `connection`: a real outage flips
+  // repeatedly between connecting and offline as the socket retries, and a
+  // timer restarted on every one of those would never fire.
+  const online = connection === 'online'
+  const [stuck, setStuck] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  useEffect(() => {
+    if (online) {
+      setStuck(false)
+      setHelpOpen(false)
+      return
+    }
+    const timer = setTimeout(() => setStuck(true), STUCK_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [online])
+
   useEffect(
     () =>
       registerShortcut({
@@ -86,13 +107,27 @@ function Shell() {
 
   return (
     <div className="app">
-      {connection !== 'online' && (
-        <div className={`conn-banner conn-${connection}`}>
-          {connection === 'connecting'
-            ? 'Connecting…'
-            : 'Offline — messages you send will deliver when the connection returns'}
-        </div>
-      )}
+      {connection !== 'online' &&
+        (stuck ? (
+          // Once it stops being a blip the banner becomes the way in to an
+          // explanation, rather than repeating itself indefinitely. Still a
+          // banner: the app underneath keeps working from cache, and taking
+          // that away would treat offline as a fault.
+          <button
+            className={`conn-banner conn-${connection} conn-banner-stuck`}
+            onClick={() => setHelpOpen(true)}
+          >
+            {connection === 'connecting' ? 'Still connecting…' : 'Still offline…'}{' '}
+            <span className="conn-banner-why">Why?</span>
+          </button>
+        ) : (
+          <div className={`conn-banner conn-${connection}`}>
+            {connection === 'connecting'
+              ? 'Connecting…'
+              : 'Offline — messages you send will deliver when the connection returns'}
+          </div>
+        ))}
+      {helpOpen && <ConnectionHelp onClose={() => setHelpOpen(false)} />}
       {toasts.length > 0 && (
         <div className="toast-stack">
           {toasts.map((toast) => (
