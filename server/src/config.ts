@@ -72,7 +72,7 @@ export const config = {
    */
   modules: [
     ...new Set(
-      ('chat,' + (process.env.CREWBOX_MODULES ?? 'patch,lighting,network'))
+      ('chat,' + (process.env.CREWBOX_MODULES ?? 'schedule,patch,lighting,network'))
         .split(',')
         .map((m) => m.trim())
         .filter(Boolean)

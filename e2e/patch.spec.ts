@@ -167,9 +167,12 @@ test('a festival master patch imports with its acts, inputs and sub-snakes', asy
   await page.locator('input[type=file]').setInputFiles('e2e/fixtures/festival-master-patch.csv')
   await expect(page.locator('table')).toBeVisible()
 
-  // Seven acts across the top, not one called "Artist 1".
-  await expect(page.getByText('THE HARBOUR LIGHTS')).toBeVisible()
-  await expect(page.getByText('MARGOT DUNN')).toBeVisible()
+  // Seven acts across the top, not one called "Artist 1". Scoped to the main
+  // pane for the reason openSheetByName already documents: the sidebar shows
+  // the same names — the running order lists whoever is on each stage — and
+  // two matches trip Playwright's strict mode.
+  await expect(page.locator('main').getByText('THE HARBOUR LIGHTS')).toBeVisible()
+  await expect(page.locator('main').getByText('MARGOT DUNN')).toBeVisible()
 
   // The house input list came down the left, once, rather than per act.
   await expect(page.getByLabel('Input on channel 1', { exact: true })).toHaveValue('KICK IN')

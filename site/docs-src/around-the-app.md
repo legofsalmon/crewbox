@@ -19,8 +19,9 @@ From top to bottom:
 
 - A **connection dot** and the event's name.
 - **Channels** and **Direct messages** — chat, which is always on.
-- A section per module — **Patch Sheets**, **Lighting**, **Network** —
-  whichever this box has enabled.
+- A section per module — **Running order**, **Patch Sheets**, **Lighting**,
+  **Network** — whichever this box has enabled. Running order carries what's
+  on each stage right now, so the answer is there without opening anything.
 - Your **identity row**: your avatar and name, your connection ("Online ·
   42 ms"), and four buttons — **admin panel** (the cog — visible to
   everyone, but it wants the admin password), **mute/unmute alert sounds**

@@ -70,5 +70,15 @@ done
 # Keep the last 14 backups.
 ls -1dt "$BACKUP_DIR"/*/ | tail -n +15 | xargs -r rm -rf
 
+# Tell the box it was backed up, so the admin panel can say when. It cannot
+# work this out for itself: backups land on a USB stick that is usually not
+# plugged in, and a regime that quietly stopped three events ago looks
+# identical from the production desk to one that ran last night. Written last,
+# so the marker only ever claims a backup that actually finished. Failing to
+# write it must not fail the backup — the data is already safely on the stick.
+printf '{"at":%s,"dest":"%s"}\n' "$(date +%s)000" "$DEST" \
+  >"$DATA_DIR/last-backup.json" 2>/dev/null ||
+  echo "note: could not record the backup time in $DATA_DIR (backup itself is fine)" >&2
+
 echo "Backup written to $DEST"
 cat "$DEST/MANIFEST.txt"

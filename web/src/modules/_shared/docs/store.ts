@@ -62,7 +62,11 @@ export interface DocStore {
   /** Full relay room name — the identity the sync manager is keyed by. */
   room: (id: string) => string
   openIndex: () => DocHandle
-  open: (id: string) => DocHandle
+  /**
+   * `present: false` syncs the doc without announcing this device in it —
+   * for background readers. See the implementation's note.
+   */
+  open: (id: string, opts?: { present?: boolean }) => DocHandle
   /** Mint an id, open it, run `init`, and treat the result as the baseline. */
   create: (init: (doc: Y.Doc) => void) => { id: string; handle: DocHandle }
   remove: (id: string) => Promise<void>
@@ -99,14 +103,14 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     }
   }
 
-  const openRaw = (docName: string): DocHandle => {
+  const openRaw = (docName: string, present = true): DocHandle => {
     const doc = new Y.Doc()
     if (!hasIndexedDb) {
       return { doc, whenLoaded: Promise.resolve(), destroy: () => doc.destroy() }
     }
     const persistence = new IndexeddbPersistence(dbPrefix + docName, doc)
     const whenLoaded = persistence.whenSynced.then(() => undefined)
-    syncManager.attach(room(docName), doc)
+    syncManager.attach(room(docName), doc, { present })
     return {
       doc,
       whenLoaded,
@@ -126,11 +130,22 @@ export function createDocStore(config: DocStoreConfig): DocStore {
 
   const handles = new Map<string, DocHandle>()
 
-  const open = (id: string): DocHandle => {
+  /**
+   * `present: false` syncs the document without announcing this device in it.
+   * For a reader that opens documents nobody asked to see — the running order
+   * reads every patch sheet to work out what is on — so it does not show up
+   * as company in a sheet somebody else has open. Opening the same document
+   * normally afterwards promotes it, which is what happens the moment
+   * someone actually looks at it.
+   */
+  const open = (id: string, { present = true }: { present?: boolean } = {}): DocHandle => {
     const existing = handles.get(id)
-    if (existing) return existing
+    if (existing) {
+      if (present) syncManager.attach(room(config.docName(id)), existing.doc, { present })
+      return existing
+    }
 
-    const inner = openRaw(config.docName(id))
+    const inner = openRaw(config.docName(id), present)
     const { doc } = inner
     const undoManager = config.undoManager?.(doc)
 

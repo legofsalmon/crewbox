@@ -2369,3 +2369,70 @@ ul {
   color: var(--accent-strong);
   margin-top: 2px;
 }
+
+/* The connection banner, once an outage stops being a blip. A real button:
+   it opens the explanation, so it needs focus and keyboard activation. */
+.conn-banner-stuck {
+  display: block;
+  width: 100%;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.conn-banner-why {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* Why the box is unreachable. Same overlay as search/audio settings, so
+   there is one dismissal behaviour in the app rather than two. */
+.conn-help {
+  width: min(480px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  align-self: flex-start;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.conn-help h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.conn-help-lede {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.conn-help-causes {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.conn-help-causes strong {
+  display: block;
+}
+
+.conn-help-causes span {
+  color: var(--text-muted);
+}
+
+.conn-help-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
