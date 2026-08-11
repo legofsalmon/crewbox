@@ -1,15 +1,11 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import type * as Y from 'yjs'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
-import {
-  addArtist,
-  addArtistFile,
-  removeArtist,
-  removeArtistFile,
-  updateArtist,
-} from '../model/sheetDoc'
+import { addAct, removeAct, updateAct } from '../../../shell/timetable/model.ts'
+import { timetable } from '../../../shell/timetable/store.ts'
+import { addActFile, clearActFromSheet, removeActFile, setActExtra } from '../model/sheetDoc'
 import { formatChangeover, gapBetween } from '../model/changeover'
-import type { Artist, SheetSnapshot } from '../model/types'
+import { patchEntryHasContent, type SheetAct, type SheetSnapshot } from '../model/types'
 import {
   attachmentUrl,
   canUseAttachments,
@@ -17,14 +13,27 @@ import {
   uploadAttachment,
 } from '../store/files'
 import { formatBytes } from '../../../lib/files.ts'
-import { patchEntryHasContent } from '../model/types'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useToasts } from './toastContext'
 import styles from './Manager.module.scss'
 
+/**
+ * The lineup, over two documents.
+ *
+ * Who an act is and when they are on belongs to the event's running order —
+ * the same answer for audio, lighting, the stage manager and the countdown on
+ * every phone — so the name, the times and the changeover here write straight
+ * to it. The spec, the notes and the riders are this sheet's own business and
+ * stay in the sheet.
+ *
+ * Nothing says which is which, because from a crew's point of view there is
+ * one lineup and this is it. The difference only shows in the good way: a set
+ * time moved here has moved everywhere by the time the finger leaves the key.
+ */
+
 const ACCEPTED_TYPE = (type: string) => type.startsWith('image/') || type === 'application/pdf'
 
-function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
+function ActFiles({ doc, act }: { doc: Y.Doc; act: SheetAct }) {
   const { addToast } = useToasts()
   const [uploading, setUploading] = useState(false)
   const enabled = canUseAttachments()
@@ -47,7 +56,7 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
           continue
         }
         const meta = await uploadAttachment(file)
-        addArtistFile(doc, artist.id, meta)
+        addActFile(doc, act.id, meta)
       }
     } catch (error) {
       addToast('Upload failed', error instanceof Error ? error.message : 'Unknown error', 'error')
@@ -56,7 +65,7 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
     }
   }
 
-  // Dropping straight onto an artist's row: a stage plot or rider usually
+  // Dropping straight onto an act's row: a stage plot or rider usually
   // arrives as an email attachment already sitting in a folder.
   const onDropFiles = useCallback(
     (files: File[]) => void handleUpload(files),
@@ -66,18 +75,18 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
   const drop = useFileDrop(onDropFiles, { disabled: !enabled || uploading })
 
   const handleRemove = (fileId: string) => {
-    removeArtistFile(doc, artist.id, fileId)
+    removeActFile(doc, act.id, fileId)
     // The blob stays on the box (content-addressed, shared); only the
     // sheet's reference goes away.
   }
 
   return (
     <div className={`${styles.notes} ${drop.over ? styles.dropping : ''}`} {...drop.handlers}>
-      <label htmlFor={`artist-files-${artist.id}`}>
+      <label htmlFor={`act-files-${act.id}`}>
         Files (images &amp; PDFs){drop.over ? ' — drop to attach' : ':'}
       </label>
       <input
-        id={`artist-files-${artist.id}`}
+        id={`act-files-${act.id}`}
         type="file"
         accept="image/*,.pdf"
         multiple
@@ -92,9 +101,9 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
           Attachments are stored on the crew server — files need a connection.
         </p>
       )}
-      {artist.files.length > 0 && (
+      {act.files.length > 0 && (
         <ul className={styles.fileList}>
-          {artist.files.map((file) => (
+          {act.files.map((file) => (
             <li key={file.id} className={styles.fileItem}>
               {enabled ? (
                 <a href={attachmentUrl(file)} target="_blank" rel="noreferrer">
@@ -121,38 +130,31 @@ function ArtistFiles({ doc, artist }: { doc: Y.Doc; artist: Artist }) {
   )
 }
 
-function ArtistRow({
-  doc,
-  artist,
-  removable,
-  hasContent,
-}: {
-  doc: Y.Doc
-  artist: Artist
-  removable: boolean
-  hasContent: boolean
-}) {
-  const name = useDraft(artist.name, (next) =>
-    updateArtist(doc, artist.id, { name: next.trim() || artist.name })
+function ActRow({ doc, act, hasContent }: { doc: Y.Doc; act: SheetAct; hasContent: boolean }) {
+  const timetableDoc = timetable().doc
+  const name = useDraft(act.name, (next) =>
+    updateAct(timetableDoc, act.id, { name: next.trim() || act.name })
   )
-  const notes = useDraft(artist.notes, (next) => updateArtist(doc, artist.id, { notes: next }), {
+  const notes = useDraft(act.notes, (next) => setActExtra(doc, act.id, 'notes', next), {
     multiline: true,
   })
   // Two boxes, not one, because a paper sheet has two and they hold different
   // things: the spec is what the act brings and needs, and gets read before
   // the day; the notes are whatever came up, and get read on it.
-  const spec = useDraft(artist.spec, (next) => updateArtist(doc, artist.id, { spec: next }), {
+  const spec = useDraft(act.spec, (next) => setActExtra(doc, act.id, 'spec', next), {
     multiline: true,
   })
 
   const handleRemove = () => {
-    if (
-      hasContent &&
-      !window.confirm(`Remove "${artist.name}"? Their patch data and files will be deleted.`)
-    ) {
-      return
-    }
-    removeArtist(doc, artist.id)
+    // Taking an act off here takes it off the running order, which is a
+    // bigger thing than clearing a column used to be — the countdowns and
+    // every other department lose it too. Say so plainly.
+    const detail = hasContent
+      ? ' Its patch data and files on this sheet go with it.'
+      : ' It will disappear from the running order and every other module.'
+    if (!window.confirm(`Remove "${act.name || 'this act'}" from the event?${detail}`)) return
+    clearActFromSheet(doc, act.id)
+    removeAct(timetableDoc, act.id)
   }
 
   return (
@@ -161,60 +163,59 @@ function ArtistRow({
         <input
           className={styles.nameInput}
           type="text"
-          placeholder="Artist name"
-          aria-label="Artist name"
+          placeholder="Act name"
+          aria-label="Act name"
           {...name.inputProps}
         />
         <button
           type="button"
           className={styles.removeButton}
           onClick={handleRemove}
-          disabled={!removable}
-          aria-label={`Remove ${artist.name}`}
-          title={removable ? 'Remove artist' : 'At least one artist is required'}
+          aria-label={`Remove ${act.name}`}
+          title="Remove from the running order"
         >
           ×
         </button>
       </div>
       <div className={styles.fieldRow}>
         <div className={styles.fieldGroup}>
-          <label htmlFor={`artist-start-${artist.id}`}>Start:</label>
+          <label htmlFor={`act-start-${act.id}`}>Start:</label>
           <input
-            id={`artist-start-${artist.id}`}
+            id={`act-start-${act.id}`}
             type="time"
-            value={artist.startTime}
-            onChange={(e) => updateArtist(doc, artist.id, { startTime: e.target.value })}
+            value={act.start}
+            onChange={(e) => updateAct(timetableDoc, act.id, { start: e.target.value })}
           />
         </div>
         <div className={styles.fieldGroup}>
-          <label htmlFor={`artist-end-${artist.id}`}>End:</label>
+          <label htmlFor={`act-end-${act.id}`}>End:</label>
           <input
-            id={`artist-end-${artist.id}`}
+            id={`act-end-${act.id}`}
             type="time"
-            value={artist.endTime}
-            onChange={(e) => updateArtist(doc, artist.id, { endTime: e.target.value })}
+            value={act.end}
+            onChange={(e) => updateAct(timetableDoc, act.id, { end: e.target.value })}
           />
         </div>
       </div>
       <div className={styles.notes}>
-        <label htmlFor={`artist-spec-${artist.id}`}>Spec:</label>
+        <label htmlFor={`act-spec-${act.id}`}>Spec:</label>
         <textarea
-          id={`artist-spec-${artist.id}`}
+          id={`act-spec-${act.id}`}
           rows={2}
           placeholder="Backline, band size, what they bring…"
           {...spec.inputProps}
         />
       </div>
       <div className={styles.notes}>
-        <label htmlFor={`artist-notes-${artist.id}`}>Additional info:</label>
+        <label htmlFor={`act-notes-${act.id}`}>Additional info:</label>
         <textarea
-          id={`artist-notes-${artist.id}`}
+          id={`act-notes-${act.id}`}
           rows={2}
           placeholder="Anything that came up on the day"
           {...notes.inputProps}
         />
       </div>
-      <ArtistFiles doc={doc} artist={artist} />
+      <ActFiles doc={doc} act={act} />
     </div>
   )
 }
@@ -231,17 +232,18 @@ function ArtistRow({
  * person holding the running order knows — so this points at the
  * disagreement instead of resolving it.
  */
-function Changeover({ doc, artist, previous }: { doc: Y.Doc; artist: Artist; previous: Artist }) {
-  const derived = gapBetween(previous.endTime, artist.startTime)
-  const stated = artist.changeover
+function Changeover({ act, previous }: { act: SheetAct; previous: SheetAct }) {
+  const timetableDoc = timetable().doc
+  const derived = gapBetween(previous.end, act.start)
+  const stated = act.changeover
   const disagrees = stated > 0 && derived !== null && derived !== stated
 
   return (
     <div className={styles.changeover}>
       <span className={styles.changeoverRule} aria-hidden="true" />
-      <label htmlFor={`artist-changeover-${artist.id}`}>Changeover:</label>
+      <label htmlFor={`act-changeover-${act.id}`}>Changeover:</label>
       <input
-        id={`artist-changeover-${artist.id}`}
+        id={`act-changeover-${act.id}`}
         type="number"
         min={0}
         step={5}
@@ -250,7 +252,7 @@ function Changeover({ doc, artist, previous }: { doc: Y.Doc; artist: Artist; pre
         placeholder={derived === null ? '—' : String(derived)}
         onChange={(e) => {
           const value = Number(e.target.value)
-          updateArtist(doc, artist.id, {
+          updateAct(timetableDoc, act.id, {
             changeover: Number.isFinite(value) && value > 0 ? Math.round(value) : 0,
           })
         }}
@@ -273,10 +275,12 @@ function Changeover({ doc, artist, previous }: { doc: Y.Doc; artist: Artist; pre
 export default function LineupManager({
   doc,
   snapshot,
+  acts,
   onClose,
 }: {
   doc: Y.Doc
   snapshot: SheetSnapshot
+  acts: SheetAct[]
   onClose: () => void
 }) {
   useEffect(() => {
@@ -286,6 +290,12 @@ export default function LineupManager({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  // A new act inherits this sheet's stage and day, which is what makes it
+  // this sheet's act: that pair is how a sheet picks its columns out of the
+  // running order.
+  const handleAdd = () =>
+    addAct(timetable().doc, { stage: snapshot.meta.stage, date: snapshot.meta.date })
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -297,35 +307,42 @@ export default function LineupManager({
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>
-          <h2 id="lineup-manager-title">Lineup Manager</h2>
+          <h2 id="lineup-manager-title">Lineup</h2>
           <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
         <div className={styles.content}>
           <div className={styles.controls}>
-            <button type="button" className={styles.addButton} onClick={() => addArtist(doc)}>
-              + Add Artist
+            <button type="button" className={styles.addButton} onClick={handleAdd}>
+              + Add Act
             </button>
           </div>
-          {snapshot.artists.map((artist, index) => (
-            <Fragment key={artist.id}>
+          <p className={styles.lineupHint}>
+            Names and times are the event’s running order — edit them here and every department sees
+            it. The spec, notes and files belong to this sheet.
+          </p>
+          {acts.length === 0 && (
+            <p className={styles.lineupHint}>
+              Nothing on <strong>{snapshot.meta.stage || 'this sheet'}</strong>
+              {snapshot.meta.date ? ' that day' : ''} yet.
+            </p>
+          )}
+          {acts.map((act, index) => (
+            <Fragment key={act.id}>
               {/* The changeover sits *between* two acts, which is where the
                   sheet draws it and how a crew thinks about it — "we've
                   forty-five minutes after this one". Drawn as a divider
                   rather than as a field on either act, so there is never a
                   question about which of the two it belongs to. */}
-              {index > 0 && (
-                <Changeover doc={doc} artist={artist} previous={snapshot.artists[index - 1]!} />
-              )}
-              <ArtistRow
+              {index > 0 && <Changeover act={act} previous={acts[index - 1]!} />}
+              <ActRow
                 doc={doc}
-                artist={artist}
-                removable={snapshot.artists.length > 1}
+                act={act}
                 hasContent={
-                  artist.files.length > 0 ||
+                  act.files.length > 0 ||
                   Object.entries(snapshot.patches).some(
-                    ([key, entry]) => key.startsWith(`${artist.id}:`) && patchEntryHasContent(entry)
+                    ([key, entry]) => key.startsWith(`${act.id}:`) && patchEntryHasContent(entry)
                   )
                 }
               />

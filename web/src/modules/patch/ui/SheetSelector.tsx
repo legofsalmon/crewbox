@@ -78,7 +78,7 @@ export default function SheetSelector({
       }
       const title = file.name.replace(/\.csv$/i, '').trim() || 'Imported Sheet'
       const { sheetId } = createSheetFromImport(title, data)
-      const summary = [`${data.channels.length} channels, ${data.artists.length} artist(s)`]
+      const summary = [`${data.channels.length} channels, ${data.acts.length} act(s)`]
       if (skippedColumns.length > 0) {
         summary.push(`skipped columns: ${skippedColumns.join(', ')}`)
       }
@@ -117,9 +117,7 @@ export default function SheetSelector({
           <DrawerButton />
           <h1>Patch Sheets</h1>
         </div>
-        <p>
-          Input patch per artist, sub-boxes and a lineup — shared live with everyone on the box.
-        </p>
+        <p>Input patch per act, sub-boxes and a lineup — shared live with everyone on the box.</p>
       </header>
 
       {/* Buttons stay put and the form opens below them, the same way a

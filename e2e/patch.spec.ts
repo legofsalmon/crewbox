@@ -15,15 +15,15 @@ test('sheet edits persist across reload and the URL deep-links the sheet', async
   const name = uniqueName('Persist Fest')
   await createSheet(page, name)
 
-  await commitCell(page, 'Artist 1', '1', 'Input', 'Kick')
-  await commitCell(page, 'Artist 1', '2', 'Description', 'Snare top')
+  await commitCell(page, 'Act 1', '1', 'Input', 'Kick')
+  await commitCell(page, 'Act 1', '2', 'Description', 'Snare top')
   await expect(page).toHaveURL(/\/m\/patch\/sheet\//)
 
   await page.reload()
   // The route restores the same sheet without any navigation.
   await expect(page.locator('table')).toBeVisible()
-  await expect(cell(page, 'Artist 1', '1', 'Input')).toHaveValue('Kick')
-  await expect(cell(page, 'Artist 1', '2', 'Description')).toHaveValue('Snare top')
+  await expect(cell(page, 'Act 1', '1', 'Input')).toHaveValue('Kick')
+  await expect(cell(page, 'Act 1', '2', 'Description')).toHaveValue('Snare top')
 })
 
 test('two devices sync a sheet through the box, with crew identity presence', async ({
@@ -34,20 +34,20 @@ test('two devices sync a sheet through the box, with crew identity presence', as
   await openPatch(deviceA)
   const sheet = uniqueName('Main Stage')
   await createSheet(deviceA, sheet)
-  await commitCell(deviceA, 'Artist 1', '1', 'Input', 'Kick in')
+  await commitCell(deviceA, 'Act 1', '1', 'Input', 'Kick in')
 
   // Device B: a different crew member finds the sheet via the synced index.
   const deviceB = await newDevice(browser)
   await openPatch(deviceB)
   await openSheetByName(deviceB, sheet)
-  await expect(cell(deviceB, 'Artist 1', '1', 'Input')).toHaveValue('Kick in')
+  await expect(cell(deviceB, 'Act 1', '1', 'Input')).toHaveValue('Kick in')
 
   // Edits flow the other way too.
-  await commitCell(deviceB, 'Artist 1', '3', 'Mic/DI', 'SM57')
-  await expect(cell(deviceA, 'Artist 1', '3', 'Mic/DI')).toHaveValue('SM57')
+  await commitCell(deviceB, 'Act 1', '3', 'Mic/DI', 'SM57')
+  await expect(cell(deviceA, 'Act 1', '3', 'Mic/DI')).toHaveValue('SM57')
 
   // Presence carries the real crew name from the roster, not a self-typed one.
-  await cell(deviceA, 'Artist 1', '1', 'Input').click()
+  await cell(deviceA, 'Act 1', '1', 'Input').click()
   await expect(deviceB.locator('main').locator(`[title="${nameA}"]`).first()).toBeVisible()
 
   // The status chip reflects the shared room.
@@ -64,16 +64,16 @@ test('undo on one device never reverts the other device’s edit', async ({ brow
   await openPatch(deviceB)
   await openSheetByName(deviceB, sheet)
 
-  await commitCell(deviceA, 'Artist 1', '1', 'Input', 'A edit')
-  await commitCell(deviceB, 'Artist 1', '2', 'Input', 'B edit')
-  await expect(cell(deviceA, 'Artist 1', '2', 'Input')).toHaveValue('B edit')
-  await expect(cell(deviceB, 'Artist 1', '1', 'Input')).toHaveValue('A edit')
+  await commitCell(deviceA, 'Act 1', '1', 'Input', 'A edit')
+  await commitCell(deviceB, 'Act 1', '2', 'Input', 'B edit')
+  await expect(cell(deviceA, 'Act 1', '2', 'Input')).toHaveValue('B edit')
+  await expect(cell(deviceB, 'Act 1', '1', 'Input')).toHaveValue('A edit')
 
   // A's undo takes back only A's own edit — B's survives on both devices.
   await deviceA.keyboard.press('ControlOrMeta+z')
-  await expect(cell(deviceA, 'Artist 1', '1', 'Input')).toHaveValue('')
-  await expect(cell(deviceA, 'Artist 1', '2', 'Input')).toHaveValue('B edit')
-  await expect(cell(deviceB, 'Artist 1', '1', 'Input')).toHaveValue('')
+  await expect(cell(deviceA, 'Act 1', '1', 'Input')).toHaveValue('')
+  await expect(cell(deviceA, 'Act 1', '2', 'Input')).toHaveValue('B edit')
+  await expect(cell(deviceB, 'Act 1', '1', 'Input')).toHaveValue('')
 })
 
 test('pasting a Sheets-style block fills the grid and undoes as one step', async ({ browser }) => {
@@ -81,7 +81,7 @@ test('pasting a Sheets-style block fills the grid and undoes as one step', async
   await openPatch(page)
   await createSheet(page, uniqueName('Paste Fest'))
 
-  await cell(page, 'Artist 1', '1', 'Input').click()
+  await cell(page, 'Act 1', '1', 'Input').click()
   await page.evaluate(() => {
     const target = document.activeElement as HTMLInputElement
     const data = new DataTransfer()
@@ -90,14 +90,14 @@ test('pasting a Sheets-style block fills the grid and undoes as one step', async
       new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
     )
   })
-  await expect(cell(page, 'Artist 1', '1', 'Input')).toHaveValue('Kick')
-  await expect(cell(page, 'Artist 1', '2', 'Input')).toHaveValue('Snare')
-  await expect(cell(page, 'Artist 1', '3', 'Input')).toHaveValue('Hat')
-  await expect(cell(page, 'Artist 1', '2', 'Description')).toHaveValue('57')
+  await expect(cell(page, 'Act 1', '1', 'Input')).toHaveValue('Kick')
+  await expect(cell(page, 'Act 1', '2', 'Input')).toHaveValue('Snare')
+  await expect(cell(page, 'Act 1', '3', 'Input')).toHaveValue('Hat')
+  await expect(cell(page, 'Act 1', '2', 'Description')).toHaveValue('57')
 
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(cell(page, 'Artist 1', '1', 'Input')).toHaveValue('')
-  await expect(cell(page, 'Artist 1', '3', 'Input')).toHaveValue('')
+  await expect(cell(page, 'Act 1', '1', 'Input')).toHaveValue('')
+  await expect(cell(page, 'Act 1', '3', 'Input')).toHaveValue('')
 })
 
 test('sharing a sheet posts a chat link that opens the sheet on another device', async ({
@@ -107,7 +107,7 @@ test('sharing a sheet posts a chat link that opens the sheet on another device',
   await openPatch(deviceA)
   const sheet = uniqueName('Share Fest')
   await createSheet(deviceA, sheet)
-  await commitCell(deviceA, 'Artist 1', '1', 'Input', 'Kick')
+  await commitCell(deviceA, 'Act 1', '1', 'Input', 'Kick')
 
   await deviceA.getByRole('button', { name: 'Share', exact: true }).click()
   await deviceA
@@ -122,7 +122,7 @@ test('sharing a sheet posts a chat link that opens the sheet on another device',
   await expect(shareMsg.first()).toBeVisible()
   await shareMsg.first().getByRole('button', { name: 'Open ↗' }).click()
   await expect(deviceB).toHaveURL(/\/m\/patch\/sheet\//)
-  await expect(cell(deviceB, 'Artist 1', '1', 'Input')).toHaveValue('Kick')
+  await expect(cell(deviceB, 'Act 1', '1', 'Input')).toHaveValue('Kick')
 })
 
 test('the sheet title shares the nav row rather than taking one of its own', async ({
@@ -155,7 +155,7 @@ test('the sheet title shares the nav row rather than taking one of its own', asy
  *
  * Not a one-header-row CSV: a title, a colour legend for the sub-snakes, and
  * a two-tier header with act names spanning three columns each. The generic
- * importer read the title row as the header and produced one artist and a
+ * importer read the title row as the header and produced one act and a
  * hundred empty channels; this is the shape that has to survive.
  */
 test('a festival master patch imports with its acts, inputs and sub-snakes', async ({
@@ -167,7 +167,7 @@ test('a festival master patch imports with its acts, inputs and sub-snakes', asy
   await page.locator('input[type=file]').setInputFiles('e2e/fixtures/festival-master-patch.csv')
   await expect(page.locator('table')).toBeVisible()
 
-  // Seven acts across the top, not one called "Artist 1". Scoped to the main
+  // Seven acts across the top, not one called "Act 1". Scoped to the main
   // pane for the reason openSheetByName already documents: the sidebar shows
   // the same names — the running order lists whoever is on each stage — and
   // two matches trip Playwright's strict mode.

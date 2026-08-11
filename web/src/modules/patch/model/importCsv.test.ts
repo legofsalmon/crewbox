@@ -9,9 +9,10 @@ import {
   setPatchField,
   setPatchSubBox,
   snapshotSheet,
-  updateArtist,
 } from './sheetDoc'
+import { sheetActs } from './lineup'
 import { patchKey } from './types'
+import { snapshotTimetable, updateAct } from '../../../shell/timetable/model.ts'
 
 describe('parseDelimited', () => {
   it('parses plain CSV with CRLF and a BOM', () => {
@@ -37,22 +38,26 @@ describe('parseDelimited', () => {
 })
 
 describe('sheetFromCsv', () => {
-  it('round-trips Live Patch’s own export, including multiple artists', () => {
+  it('round-trips crewbox’s own export, act names and all', () => {
     const doc = new Y.Doc()
-    initSheet(doc, { title: 'RT', date: '2026-07-24', channelCount: 2 })
+    const events = new Y.Doc()
+    initSheet(doc, events, { title: 'RT', date: '2026-07-24', channelCount: 2 })
     const snap0 = snapshotSheet(doc)
-    const artist = snap0.artists[0].id
-    updateArtist(doc, artist, { name: 'Headliner' })
+    const act = snapshotTimetable(events).acts[0]!.id
+    updateAct(events, act, { name: 'Headliner' })
     addSubBox(doc, { name: 'Box 1', stagePosition: 'MSC' })
-    setPatchSubBox(doc, artist, snap0.channels[0].id, 'Box 1')
-    setPatchField(doc, artist, snap0.channels[0].id, 'input', 'Kick, low')
-    setPatchField(doc, artist, snap0.channels[1].id, 'micDi', 'SM57')
+    setPatchSubBox(doc, act, snap0.channels[0].id, 'Box 1')
+    setPatchField(doc, act, snap0.channels[0].id, 'input', 'Kick, low')
+    setPatchField(doc, act, snap0.channels[1].id, 'micDi', 'SM57')
 
-    const csv = sheetToCsv(snapshotSheet(doc))
+    const csv = sheetToCsv(
+      snapshotSheet(doc),
+      sheetActs(snapshotSheet(doc), snapshotTimetable(events).acts)
+    )
     const { data, skippedColumns } = sheetFromCsv(parseCsv(csv))
 
     expect(skippedColumns).toEqual([])
-    expect(data.artists.map((a) => a.name)).toEqual(['Headliner'])
+    expect(data.acts.map((a) => a.name)).toEqual(['Headliner'])
     expect(data.channels).toHaveLength(2)
     expect(data.patches[0][0]).toMatchObject({ subBox: 'Box 1 (MSC)', input: 'Kick, low' })
     expect(data.patches[0][1]).toMatchObject({ micDi: 'SM57' })
@@ -70,7 +75,7 @@ describe('sheetFromCsv', () => {
     const { data, skippedColumns } = sheetFromCsv(rows)
 
     expect(skippedColumns).toEqual(['48V'])
-    expect(data.artists).toHaveLength(1)
+    expect(data.acts).toHaveLength(1)
     expect(data.channels.map((c) => c.label)).toEqual(['1', '2'])
     expect(data.patches[0][0]).toMatchObject({
       input: 'Kick',
@@ -88,22 +93,33 @@ describe('sheetFromCsv', () => {
 })
 
 describe('buildImportedSheet', () => {
-  it('creates a working doc from imported data', () => {
+  it('creates a working doc, and puts the acts on the running order', () => {
     const doc = new Y.Doc()
+    const events = new Y.Doc()
     buildImportedSheet(
       doc,
+      events,
       {
         channels: [{ label: 'Kick' }, { label: '2' }],
-        artists: [{ name: 'Band A' }],
+        acts: [{ name: 'Band A', start: '19:00', spec: '5 piece' }],
         patches: [[{ input: 'Kick', micDi: 'Beta 91A' }, undefined]],
       },
-      { title: 'Imported', now: '2026-07-24T10:00:00.000Z' }
+      { title: 'Imported', date: '2026-07-24', now: '2026-07-24T10:00:00.000Z' }
     )
     const snap = snapshotSheet(doc)
     expect(snap.meta.title).toBe('Imported')
     expect(snap.channels.map((c) => c.label)).toEqual(['Kick', '2'])
-    expect(snap.artists[0].name).toBe('Band A')
-    const entry = snap.patches[patchKey(snap.artists[0].id, snap.channels[0].id)]
+
+    // Importing a patch sheet is how the box learns the day's running order.
+    const [act] = snapshotTimetable(events).acts
+    expect(act).toMatchObject({ name: 'Band A', start: '19:00', stage: 'Imported' })
+
+    // The spec stayed with the sheet; the patch is keyed by the act's id.
+    expect(snap.extras[act!.id]?.spec).toBe('5 piece')
+    const entry = snap.patches[patchKey(act!.id, snap.channels[0].id)]
     expect(entry).toMatchObject({ input: 'Kick', micDi: 'Beta 91A' })
+
+    // And the grid gets its columns back by asking the timetable.
+    expect(sheetActs(snap, snapshotTimetable(events).acts).map((a) => a.name)).toEqual(['Band A'])
   })
 })

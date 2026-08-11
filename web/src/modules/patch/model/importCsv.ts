@@ -55,11 +55,11 @@ const ownExportLead = (rows: string[][]): number | null => {
 }
 
 const fromOwnExport = (rows: string[][], lead: number): ImportResult => {
-  const artistCount = (rows[1].length - lead) / FIELD_LABELS.length
-  const artists = Array.from({ length: artistCount }, (_, i) => {
+  const actCount = (rows[1].length - lead) / FIELD_LABELS.length
+  const acts = Array.from({ length: actCount }, (_, i) => {
     const at = lead + i * FIELD_LABELS.length
     return {
-      name: rows[0]?.[at]?.trim() || `Artist ${i + 1}`,
+      name: rows[0]?.[at]?.trim() || `Act ${i + 1}`,
       // Written into the spare cell beside the name; blank on older exports.
       spec: rows[0]?.[at + 1]?.trim() ?? '',
     }
@@ -69,17 +69,17 @@ const fromOwnExport = (rows: string[][], lead: number): ImportResult => {
     label: row[0]?.trim() || String(i + 1),
     input: lead === 2 ? (row[1]?.trim() ?? '') : '',
   }))
-  const patches: ImportedSheetData['patches'] = artists.map((_, artistIndex) =>
+  const patches: ImportedSheetData['patches'] = acts.map((_, actIndex) =>
     dataRows.map((row) => {
       const entry: Partial<Record<PatchField, string>> = {}
       PATCH_FIELDS.forEach((field, fieldIndex) => {
-        const value = row[lead + artistIndex * FIELD_LABELS.length + fieldIndex]
+        const value = row[lead + actIndex * FIELD_LABELS.length + fieldIndex]
         if (value?.trim()) entry[field] = value.trim()
       })
       return Object.keys(entry).length > 0 ? entry : undefined
     })
   )
-  return { data: { channels, artists, patches }, skippedColumns: [] }
+  return { data: { channels, acts, patches }, skippedColumns: [] }
 }
 
 const fromGenericSheet = (rows: string[][]): ImportResult => {
@@ -104,7 +104,7 @@ const fromGenericSheet = (rows: string[][]): ImportResult => {
       return Object.keys(entry).length > 0 ? entry : undefined
     }),
   ]
-  return { data: { channels, artists: [{ name: 'Artist 1' }], patches }, skippedColumns }
+  return { data: { channels, acts: [{ name: 'Act 1' }], patches }, skippedColumns }
 }
 
 /**
@@ -113,7 +113,7 @@ const fromGenericSheet = (rows: string[][]): ImportResult => {
  * Three shapes, in order of how confidently they can be recognised: crewbox's
  * own export (a round trip), the festival master-patch layout crews keep in
  * Google Sheets (see importFestival.ts), and failing both, a generic
- * single-artist sheet with fuzzy header matching.
+ * single-act sheet with fuzzy header matching.
  *
  * The festival parser is given the rows *before* blanks are stripped, because
  * its layout is positional — the act names sit a fixed distance above the
@@ -122,7 +122,7 @@ const fromGenericSheet = (rows: string[][]): ImportResult => {
 export const sheetFromCsv = (rows: string[][]): ImportResult => {
   const nonEmpty = rows.filter((row) => !isBlankRow(row))
   if (nonEmpty.length === 0)
-    return { data: { channels: [], artists: [], patches: [] }, skippedColumns: [] }
+    return { data: { channels: [], acts: [], patches: [] }, skippedColumns: [] }
   const lead = ownExportLead(nonEmpty)
   if (lead !== null) return fromOwnExport(nonEmpty, lead)
   const festival = festivalSheetFromCsv(rows)

@@ -29,6 +29,32 @@ else.
 The rule of thumb: if two departments would both want to edit it, it is the
 event's and belongs to the shell. If only one would, it is that module's.
 
+### Consuming shell state from a module
+
+The patch module is the worked example, and the shape generalises. A patch
+sheet is a stage on a day, so it holds no act list at all: it stores its
+channels, sub-boxes, patch cells and — keyed by act id — the spec, notes and
+files that are _its_ answer about that act. `sheetActs()`
+(`modules/patch/model/lineup.ts`) filters the timetable by the sheet's stage
+and date, sorts with the shell's `inRunningOrder`, and merges the two halves
+into what the UI renders.
+
+Three things are worth copying:
+
+- **Store the id, never the copy.** A module that duplicated the name and
+  set times would be one edit away from disagreeing with the running order,
+  and nobody would know which was right.
+- **Keep your own half keyed by that id.** An audio sheet and a lighting
+  sheet ask the same band different questions; neither answer may overwrite
+  the other.
+- **Take the ordering from the shell.** `inRunningOrder` is exported from
+  `shell/timetable/agenda.ts` precisely so a module and the running order's
+  own board cannot put the same two acts in a different order.
+
+An importer that brings acts in should use `upsertAct` rather than `addAct`:
+the same file gets imported twice, and a box with the day listed twice has
+half its patch hanging off each copy.
+
 ## The two sync primitives
 
 Pick one before you write anything else, because everything downstream
@@ -51,7 +77,7 @@ assumes that.
 
 ## What the shared doc-store gives you
 
-`web/src/modules/_shared/docs/` is the lifecycle every doc-backed module
+`web/src/lib/docs/` is the lifecycle every doc-backed module
 needs, extracted so the second module isn't a copy of the first:
 
 | File          | What it handles                                                                              |
@@ -111,7 +137,7 @@ needed. See `modules/patch/model/sheetDoc.test.ts`.
 
 `modules/<id>/store/` — the `createDocStore` config above, plus any
 module-specific hooks wrapping the shared ones. Keep it thin. If you find
-yourself writing doc lifecycle here, it probably belongs in `_shared/docs`.
+yourself writing doc lifecycle here, it probably belongs in `lib/docs`.
 
 ### 3. UI
 

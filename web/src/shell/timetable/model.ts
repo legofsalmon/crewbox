@@ -87,6 +87,57 @@ export const addAct = (doc: Y.Doc, fields: Partial<Omit<Act, 'id'>> = {}): strin
   return act.id
 }
 
+/**
+ * The act already on the running order that `fields` describes, if any.
+ *
+ * Same name, same stage, same day is the test — which is the one a person
+ * applies holding two printouts side by side. A blank name matches nothing:
+ * two unnamed slots on a stage are two slots, not one.
+ */
+const matchingAct = (
+  acts: Y.Array<Y.Map<unknown>>,
+  fields: Partial<Omit<Act, 'id'>>
+): Y.Map<unknown> | null => {
+  const name = (fields.name ?? '').trim().toLowerCase()
+  if (!name) return null
+  const stage = (fields.stage ?? '').trim().toLowerCase()
+  const date = fields.date ?? ''
+  return (
+    acts.toArray().find(
+      (map) =>
+        String(map.get('name') ?? '')
+          .trim()
+          .toLowerCase() === name &&
+        String(map.get('stage') ?? '')
+          .trim()
+          .toLowerCase() === stage &&
+        (map.get('date') ?? '') === date
+    ) ?? null
+  )
+}
+
+/**
+ * Add an act, or update the one that is already there.
+ *
+ * For importers. A festival's running order arrives as a file, and the same
+ * file gets imported twice — a second sheet for the same stage, a re-import
+ * after a correction, two people doing it at once. Appending blindly gives a
+ * box a day listed twice, with half the patch hanging off each copy.
+ *
+ * Only the fields passed are written, so times somebody fixed by hand
+ * survive a file that says nothing about them.
+ */
+export const upsertAct = (doc: Y.Doc, fields: Partial<Omit<Act, 'id'>>): string => {
+  const { acts } = getTimetableRoots(doc)
+  const existing = matchingAct(acts, fields)
+  if (!existing) return addAct(doc, fields)
+  const id = existing.get('id') as string
+  doc.transact(() => {
+    for (const [key, value] of Object.entries(fields)) existing.set(key, value)
+  }, LOCAL_ORIGIN)
+  return id
+}
+
 export const updateAct = (doc: Y.Doc, actId: string, fields: Partial<Omit<Act, 'id'>>): void => {
   const { acts } = getTimetableRoots(doc)
   doc.transact(() => {

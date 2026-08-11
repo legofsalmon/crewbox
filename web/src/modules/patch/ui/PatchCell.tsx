@@ -10,7 +10,7 @@ import styles from './PatchGrid.module.scss'
 function PatchCell({
   doc,
   sheetId,
-  artistId,
+  actId,
   channelId,
   field,
   entry,
@@ -26,7 +26,7 @@ function PatchCell({
 }: {
   doc: Y.Doc
   sheetId: string
-  artistId: string
+  actId: string
   channelId: string
   field: PatchField
   entry: PatchEntry | undefined
@@ -48,15 +48,15 @@ function PatchCell({
 
   const commitValue = (next: string) => {
     if (field === 'subBox') {
-      setPatchSubBox(doc, artistId, channelId, next.trim())
+      setPatchSubBox(doc, actId, channelId, next.trim())
     } else {
-      setPatchField(doc, artistId, channelId, field, next)
+      setPatchField(doc, actId, channelId, field, next)
     }
   }
 
   const draft = useDraft(displayValue, commitValue)
 
-  const cellId = `${artistId}:${channelId}:${field}`
+  const cellId = `${actId}:${channelId}:${field}`
   const { onBlur, onKeyDown, ...inputProps } = draft.inputProps
 
   const stripeColor =
@@ -140,7 +140,7 @@ function PatchCell({
 }
 
 /**
- * The grid renders channels × artists × fields of these — a festival master
+ * The grid renders channels × acts × fields of these — a festival master
  * patch is easily ~2,000 — and every Yjs update rebuilds the snapshot from
  * scratch, so every object prop arrives as a fresh reference. Without a
  * value-comparing memo, one remote peer committing one cell re-rendered the
@@ -179,7 +179,7 @@ type CellProps = Parameters<typeof PatchCell>[0]
 const cellPropsEqual = (prev: CellProps, next: CellProps): boolean =>
   prev.doc === next.doc &&
   prev.sheetId === next.sheetId &&
-  prev.artistId === next.artistId &&
+  prev.actId === next.actId &&
   prev.channelId === next.channelId &&
   prev.field === next.field &&
   entryEqual(prev.entry, next.entry) &&

@@ -7,6 +7,7 @@ import {
   snapshotTimetable,
   stagesIn,
   updateAct,
+  upsertAct,
   type Act,
 } from '../src/shell/timetable/model.ts'
 
@@ -66,6 +67,60 @@ describe('keeping the running order', () => {
     addAct(d, { name: 'Two' })
     addAct(d, { name: 'Three' })
     expect(snapshotTimetable(d).acts.map((a) => a.name)).toEqual(['One', 'Two', 'Three'])
+  })
+})
+
+describe('importing a running order that is already here', () => {
+  /**
+   * A festival's running order arrives as a file, and the same file gets
+   * imported more than once — a second patch sheet for the same stage, a
+   * re-import after a correction, two people doing it at the same moment.
+   * Appending blindly gives a box the day listed twice, with half the patch
+   * hanging off each copy and no sign which is which.
+   */
+  const opener = { name: 'The Harbour Lights', stage: 'Main', date: '2026-08-09' }
+
+  it('reconciles with the act already there instead of listing it twice', () => {
+    const d = doc()
+    const first = upsertAct(d, { ...opener, start: '19:00' })
+    const second = upsertAct(d, { ...opener, start: '19:00' })
+    expect(second).toBe(first)
+    expect(snapshotTimetable(d).acts).toHaveLength(1)
+  })
+
+  it('takes the file’s corrections', () => {
+    const d = doc()
+    const id = upsertAct(d, { ...opener, start: '19:00' })
+    upsertAct(d, { ...opener, start: '19:30' })
+    expect(snapshotTimetable(d).acts[0]).toMatchObject({ id, start: '19:30' })
+  })
+
+  it('leaves alone what the file says nothing about', () => {
+    // Blank cells are not corrections. Someone fixed the end time on their
+    // phone; re-importing the file must not wipe it back out.
+    const d = doc()
+    const id = upsertAct(d, opener)
+    updateAct(d, id, { end: '19:45' })
+    upsertAct(d, { ...opener, start: '19:00' })
+    expect(snapshotTimetable(d).acts[0]).toMatchObject({ start: '19:00', end: '19:45' })
+  })
+
+  it('keeps the same name on two stages apart', () => {
+    // An act genuinely can play twice — a second stage, or the next day.
+    const d = doc()
+    upsertAct(d, opener)
+    upsertAct(d, { ...opener, stage: 'Barn' })
+    upsertAct(d, { ...opener, date: '2026-08-10' })
+    expect(snapshotTimetable(d).acts).toHaveLength(3)
+  })
+
+  it('never merges two unnamed slots', () => {
+    // Two blanks on a stage are two slots someone is about to fill in, not
+    // one slot written down twice.
+    const d = doc()
+    upsertAct(d, { stage: 'Main', date: '2026-08-09' })
+    upsertAct(d, { stage: 'Main', date: '2026-08-09' })
+    expect(snapshotTimetable(d).acts).toHaveLength(2)
   })
 })
 

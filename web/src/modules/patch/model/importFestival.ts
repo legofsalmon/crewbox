@@ -13,7 +13,7 @@ import type { PatchField } from './types'
  * side.
  *
  * The generic importer sees eight rows of preamble and gives up: it reads the
- * title row as the header and produces one artist called "Artist 1" and a
+ * title row as the header and produces one act called "Act 1" and a
  * hundred empty channels. This reads the real thing.
  *
  * Nothing here is specific to one festival. It looks for the structure — a
@@ -79,8 +79,8 @@ function readActHeaders(
 ): {
   acts: Array<{
     name: string
-    startTime?: string
-    endTime?: string
+    start?: string
+    end?: string
     changeover: number
     spec?: string
     notes?: string
@@ -112,10 +112,8 @@ function readActHeaders(
     const times = /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/.exec(raw)
     const spec = (specRow?.[c + 1] ?? '').trim()
     return {
-      name: (nameRow?.[c + 1] ?? '').trim() || `Artist ${i + 1}`,
-      ...(times
-        ? { startTime: times[1].replace('.', ':'), endTime: times[2].replace('.', ':') }
-        : {}),
+      name: (nameRow?.[c + 1] ?? '').trim() || `Act ${i + 1}`,
+      ...(times ? { start: times[1].replace('.', ':'), end: times[2].replace('.', ':') } : {}),
       ...(looksLikeSpec(spec) ? {} : { spec }),
       /**
        * The narrow column to the left of an act's name carries the
@@ -135,8 +133,8 @@ function readActHeaders(
   for (let i = 1; i < acts.length; i++) {
     const previous = acts[i - 1]!
     const act = acts[i]!
-    if (act.changeover > 0 || !previous.endTime || !act.startTime) continue
-    act.changeover = gapBetween(previous.endTime, act.startTime) ?? 0
+    if (act.changeover > 0 || !previous.end || !act.start) continue
+    act.changeover = gapBetween(previous.end, act.start) ?? 0
   }
 
   return { acts, written }
@@ -154,7 +152,7 @@ function readActHeaders(
  * the running order knows that.
  */
 export function changeoverWarnings(
-  acts: Array<{ name: string; startTime?: string; endTime?: string; changeover: number }>,
+  acts: Array<{ name: string; start?: string; end?: string; changeover: number }>,
   written: Array<number | null>
 ): string[] {
   const out: string[] = []
@@ -162,8 +160,8 @@ export function changeoverWarnings(
     const stated = written[i]
     const previous = acts[i - 1]!
     const act = acts[i]!
-    if (!stated || !previous.endTime || !act.startTime) continue
-    const derived = gapBetween(previous.endTime, act.startTime)
+    if (!stated || !previous.end || !act.start) continue
+    const derived = gapBetween(previous.end, act.start)
     if (derived === null || derived === stated) continue
     out.push(
       `${act.name}: sheet says a ${formatChangeover(stated)} changeover, ` +
@@ -242,8 +240,8 @@ function readSubBoxLegend(
  *
  * Both are real production information — "require 3 57s from house", "5 tall
  * stands" — and both were being read as "not a channel row" and dropped. The
- * artist already has a `notes` field with a textarea bound to it; this fills
- * it.
+ * sheet already keeps a `notes` field per act with a textarea bound to it;
+ * this fills it.
  */
 function readActFooters(rows: string[][], layout: Layout, firstRowBelowData: number): string[] {
   const info = layout.groups.map(() => '')
@@ -316,10 +314,10 @@ export interface FestivalImport {
 export function festivalSheetFromCsv(rows: string[][]): FestivalImport {
   const layout = findLayout(rows)
   if (!layout) {
-    return { data: { channels: [], artists: [], patches: [] }, matched: false, warnings: [] }
+    return { data: { channels: [], acts: [], patches: [] }, matched: false, warnings: [] }
   }
 
-  const { acts: artists, written } = readActHeaders(rows, layout)
+  const { acts, written } = readActHeaders(rows, layout)
   const subBoxes = readSubBoxLegend(rows, layout.headerRow)
 
   // Data runs until the channel numbers stop. Below them sit the "Additional
@@ -339,8 +337,8 @@ export function festivalSheetFromCsv(rows: string[][]): FestivalImport {
   }
 
   const footers = readActFooters(rows, layout, belowData)
-  for (const [i, artist] of artists.entries()) {
-    if (footers[i]) artist.notes = footers[i]!
+  for (const [i, act] of acts.entries()) {
+    if (footers[i]) act.notes = footers[i]!
   }
 
   const patches: ImportedSheetData['patches'] = layout.groups.map((c) =>
@@ -355,8 +353,8 @@ export function festivalSheetFromCsv(rows: string[][]): FestivalImport {
   )
 
   return {
-    data: { channels, artists, subBoxes, patches },
+    data: { channels, acts, subBoxes, patches },
     matched: channels.length > 0,
-    warnings: changeoverWarnings(artists, written),
+    warnings: changeoverWarnings(acts, written),
   }
 }

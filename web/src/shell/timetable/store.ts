@@ -38,7 +38,13 @@ export function timetable(): { doc: Y.Doc; undoManager: Y.UndoManager; whenLoade
     ? new IndexeddbPersistence(DB_NAME, doc).whenSynced.then(() => undefined)
     : Promise.resolve()
 
-  syncManager.attach(TIMETABLE_ROOM, doc)
+  // Synced, but not present. Every device on the box opens this document —
+  // the sidebar countdown needs it whether or not anyone has looked at the
+  // running order — and announcing all of them as *people* in the room would
+  // put every phone on site into one awareness channel to say nothing.
+  // Nothing displays presence here; the sheets and plots that do have their
+  // own rooms.
+  syncManager.attach(TIMETABLE_ROOM, doc, { present: false })
   handle = { doc, undoManager, whenLoaded }
   return handle
 }

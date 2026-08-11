@@ -11,7 +11,7 @@ export interface RemotePeer {
   color: string
   /**
    * Opaque key of whatever this peer is editing, as defined by the owning
-   * module — patch uses `${artistId}:${channelId}:${field}`. Null when the
+   * module — patch uses `${actId}:${channelId}:${field}`. Null when the
    * peer is present but not in a field.
    */
   editing: string | null

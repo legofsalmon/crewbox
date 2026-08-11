@@ -6,6 +6,21 @@ import { parseCsv } from '../../_shared/csv'
 import { sheetFromCsv } from './importCsv'
 import { festivalSheetFromCsv } from './importFestival'
 import { buildImportedSheet, snapshotSheet } from './sheetDoc'
+import { sheetActs } from './lineup'
+import { snapshotTimetable } from '../../../shell/timetable/model.ts'
+
+/**
+ * An import lands in two documents now: the acts on the event's running
+ * order, the patch on the sheet. `imported()` does both and hands back the
+ * columns exactly as the grid would ask for them.
+ */
+const imported = (data: Parameters<typeof buildImportedSheet>[2], title: string) => {
+  const doc = new Y.Doc()
+  const events = new Y.Doc()
+  buildImportedSheet(doc, events, data, { title })
+  const snapshot = snapshotSheet(doc)
+  return { doc, events, snapshot, acts: sheetActs(snapshot, snapshotTimetable(events).acts) }
+}
 import { stagePatchFor } from './stagePatch'
 
 /**
@@ -24,7 +39,7 @@ const rows = () => parseCsv(REAL_SHEET)
 describe('a festival master patch sheet', () => {
   it('finds every act under the two-tier header', () => {
     const { data } = festivalSheetFromCsv(rows())
-    expect(data.artists.map((a) => a.name)).toEqual([
+    expect(data.acts.map((a) => a.name)).toEqual([
       'THE HARBOUR LIGHTS',
       'MARGOT DUNN',
       'FALSE ECONOMY',
@@ -68,7 +83,7 @@ describe('a festival master patch sheet', () => {
     // The generic path used to read the title row as the header and produce
     // one artist and a hundred empty channels.
     const { data } = sheetFromCsv(rows())
-    expect(data.artists).toHaveLength(7)
+    expect(data.acts).toHaveLength(7)
     expect(data.channels).toHaveLength(56)
   })
 })
@@ -77,7 +92,7 @@ describe('not a festival sheet', () => {
   it('leaves an ordinary one-header CSV to the generic importer', () => {
     const csv = ['Channel,Input,Mic/DI', '1,Kick,D6', '2,Snare,SM57'].join('\n')
     expect(festivalSheetFromCsv(parseCsv(csv)).matched).toBe(false)
-    expect(sheetFromCsv(parseCsv(csv)).data.artists).toHaveLength(1)
+    expect(sheetFromCsv(parseCsv(csv)).data.acts).toHaveLength(1)
   })
 
   it('does not invent sub-boxes from one stray legend-shaped row', () => {
@@ -92,11 +107,9 @@ describe('not a festival sheet', () => {
 
 describe('the whole way through', () => {
   it('imports, stores, and reads back as a stage patch', () => {
-    const doc = new Y.Doc()
-    buildImportedSheet(doc, sheetFromCsv(rows()).data, { title: 'Riverside' })
-    const snapshot = snapshotSheet(doc)
+    const { snapshot, acts } = imported(sheetFromCsv(rows()).data, 'Riverside')
 
-    const act = snapshot.artists[1]!
+    const act = acts[1]!
     expect(act.name).toBe('MARGOT DUNN')
 
     const runs = stagePatchFor(snapshot, act.id)
@@ -118,13 +131,11 @@ describe('the whole way through', () => {
   })
 
   it('does not make every act retype the input list', () => {
-    const doc = new Y.Doc()
-    buildImportedSheet(doc, sheetFromCsv(rows()).data, { title: 'Riverside' })
-    const snapshot = snapshotSheet(doc)
+    const { snapshot, acts } = imported(sheetFromCsv(rows()).data, 'Riverside')
     // The house input lives once, on the channel.
     expect(snapshot.channels[0]!.input).toBe('KICK IN')
-    for (const artist of snapshot.artists) {
-      const entry = snapshot.patches[`${artist.id}:${snapshot.channels[0]!.id}`]
+    for (const act of acts) {
+      const entry = snapshot.patches[`${act.id}:${snapshot.channels[0]!.id}`]
       expect(entry?.input ?? '').toBe('')
     }
   })
@@ -159,8 +170,8 @@ describe('a second sheet, from a different stage', () => {
 
   it('separates the acts somebody booked from the empty template slots', () => {
     const { data } = festivalSheetFromCsv(dayRows())
-    expect(data.artists).toHaveLength(16)
-    expect(data.artists.slice(0, 4).map((a) => a.name)).toEqual([
+    expect(data.acts).toHaveLength(16)
+    expect(data.acts.slice(0, 4).map((a) => a.name)).toEqual([
       'Copper Wren',
       'Tin Chapel',
       'The Ledger',
@@ -168,15 +179,15 @@ describe('a second sheet, from a different stage', () => {
     ])
     // The rest are the sheet's own placeholders, kept so the columns line up
     // with the paper everyone is holding.
-    expect(data.artists[4]!.name).toBe('ACT 5')
-    expect(data.artists[4]!.startTime).toBeUndefined()
+    expect(data.acts[4]!.name).toBe('ACT 5')
+    expect(data.acts[4]!.start).toBeUndefined()
   })
 
   it('takes the set times off the acts that have them', () => {
     const { data } = festivalSheetFromCsv(dayRows())
-    expect(data.artists[0]).toMatchObject({ startTime: '17:00', endTime: '18:00' })
+    expect(data.acts[0]).toMatchObject({ start: '17:00', end: '18:00' })
     // A set running past midnight is a set, not a parse failure.
-    expect(data.artists[3]).toMatchObject({ startTime: '22:45', endTime: '00:15' })
+    expect(data.acts[3]).toMatchObject({ start: '22:45', end: '00:15' })
   })
 
   it('reads all five sub-snakes, with their colour and where they live', () => {
@@ -195,14 +206,14 @@ describe('a second sheet, from a different stage', () => {
     // and the channel reader stopped at it. It is where a crew writes the
     // things that decide the changeover.
     const { data } = festivalSheetFromCsv(dayRows())
-    expect(data.artists[0]!.notes).toBe('Pray for the end of the set')
-    expect(data.artists[1]!.notes).toBe('DL32 / ALL ON HOUSE BAR FOH')
-    expect(data.artists[2]!.notes).toContain('Require 3 57s from House')
+    expect(data.acts[0]!.notes).toBe('Pray for the end of the set')
+    expect(data.acts[1]!.notes).toBe('DL32 / ALL ON HOUSE BAR FOH')
+    expect(data.acts[2]!.notes).toContain('Require 3 57s from House')
   })
 
   it('picks up the kit an act wants from the house', () => {
     const { data } = festivalSheetFromCsv(dayRows())
-    expect(data.artists[2]!.notes).toContain('Kit from house: 5 × Tall Stands, 12 × Small Stands')
+    expect(data.acts[2]!.notes).toContain('Kit from house: 5 × Tall Stands, 12 × Small Stands')
   })
 
   it('does not copy the template prompt onto every unbooked act', () => {
@@ -211,10 +222,10 @@ describe('a second sheet, from a different stage', () => {
     // whoever fills the sheet in, and putting it on twelve acts would bury
     // the three notes that mean something.
     const { data } = festivalSheetFromCsv(dayRows())
-    for (const artist of data.artists.slice(4)) {
+    for (const artist of data.acts.slice(4)) {
       expect(artist.notes ?? '').toBe('')
     }
-    expect(data.artists[3]!.notes ?? '').toBe('')
+    expect(data.acts[3]!.notes ?? '').toBe('')
   })
 
   it('carries the sub-box letters the grid actually uses', () => {
@@ -234,12 +245,10 @@ describe('what actually lands in the document', () => {
     // The parse producing notes is only half of it: `buildImportedSheet` used
     // to write an empty string over them, so a crew importing this sheet got
     // a blank Additional info box on every act and no sign anything was lost.
-    const doc = new Y.Doc()
-    buildImportedSheet(doc, festivalSheetFromCsv(dayRows()).data, { title: 'Day 1' })
-    const snapshot = snapshotSheet(doc)
-    expect(snapshot.artists[0]!.notes).toBe('Pray for the end of the set')
-    expect(snapshot.artists[2]!.notes).toContain('Kit from house:')
-    expect(snapshot.artists[4]!.notes).toBe('')
+    const { acts } = imported(festivalSheetFromCsv(dayRows()).data, 'Day 1')
+    expect(acts[0]!.notes).toBe('Pray for the end of the set')
+    expect(acts[2]!.notes).toContain('Kit from house:')
+    expect(acts[4]!.notes).toBe('')
   })
 })
 
@@ -249,25 +258,25 @@ describe('the changeover between two acts', () => {
     // act's column is the gap *into* that act — it reads as sitting between
     // the two, and the sheet's own set times agree on all three.
     const { data } = festivalSheetFromCsv(dayRows())
-    expect(data.artists.slice(0, 4).map((a) => a.changeover)).toEqual([0, 45, 60, 60])
+    expect(data.acts.slice(0, 4).map((a) => a.changeover)).toEqual([0, 45, 60, 60])
   })
 
   it('leaves the first act of the day without one', () => {
     // There is no act before it to change over from.
-    expect(festivalSheetFromCsv(dayRows()).data.artists[0]!.changeover).toBe(0)
+    expect(festivalSheetFromCsv(dayRows()).data.acts[0]!.changeover).toBe(0)
   })
 
   it('works it out from the set times where nobody wrote one', () => {
     const rows = dayRows()
     // Blank the "45" cell: the times still say 18:00 → 18:45.
     rows[5]![5] = ''
-    expect(festivalSheetFromCsv(rows).data.artists[1]!.changeover).toBe(45)
+    expect(festivalSheetFromCsv(rows).data.acts[1]!.changeover).toBe(45)
   })
 
   it('says nothing rather than guessing when neither is there', () => {
     const { data } = festivalSheetFromCsv(dayRows())
     // The empty template slots have no times and no changeover cell.
-    expect(data.artists[6]!.changeover).toBe(0)
+    expect(data.acts[6]!.changeover).toBe(0)
   })
 
   it('flags a written changeover that disagrees with the running order', () => {
@@ -288,12 +297,7 @@ describe('the changeover between two acts', () => {
   })
 
   it('carries the changeover into the document', () => {
-    const doc = new Y.Doc()
-    buildImportedSheet(doc, festivalSheetFromCsv(dayRows()).data, { title: 'Day 1' })
-    expect(
-      snapshotSheet(doc)
-        .artists.slice(0, 4)
-        .map((a) => a.changeover)
-    ).toEqual([0, 45, 60, 60])
+    const { acts } = imported(festivalSheetFromCsv(dayRows()).data, 'Day 1')
+    expect(acts.slice(0, 4).map((a) => a.changeover)).toEqual([0, 45, 60, 60])
   })
 })

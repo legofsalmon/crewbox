@@ -37,6 +37,14 @@ are understood:
    side. Crewbox recognises this and pulls out the acts, their set times,
    the house inputs, the sub-boxes with their colours, and the changeovers.
 
+Importing a festival sheet is also how the box learns the day: the acts in
+the file land on the [running order](/docs/schedule), so lighting, stage
+management and the countdowns on every phone get them at the same moment
+audio does. Import the same file twice — a second sheet for the same stage,
+a re-import after a correction — and it reconciles with the day already
+there rather than listing it again. Blank cells in the file leave a time
+somebody fixed by hand alone.
+
 The import toast is honest about what happened: how many channels and acts
 came through, which columns it didn't recognise, and any disagreement
 between the changeovers written in the sheet and the gaps the set times

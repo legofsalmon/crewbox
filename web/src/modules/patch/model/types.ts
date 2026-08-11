@@ -1,4 +1,6 @@
-/** The five patch fields every artist has per channel. */
+import type { Act } from '../../../shell/timetable/model.ts'
+
+/** The five patch fields every act has per channel. */
 export const PATCH_FIELDS = ['subBox', 'input', 'description', 'micDi', 'stand'] as const
 export type PatchField = (typeof PATCH_FIELDS)[number]
 
@@ -16,9 +18,9 @@ export const PATCH_FIELD_LABELS: Record<PatchField, string> = {
  * `label` is the desk input number ("1", "12") or a name someone typed for a
  * row that isn't numbered ("SUB L", "Talkback"). `input` is the house input
  * on that channel — "KICK IN", "FRONT VOX 1" — and belongs to the sheet
- * rather than to any one artist, because a festival stage patches the same
+ * rather than to any one act, because a festival stage patches the same
  * inputs all day and only the sub-box and the mic change between acts. An
- * artist's own `input` overrides it for that act alone.
+ * act's own `input` overrides it for that act alone.
  */
 export interface Channel {
   id: string
@@ -27,31 +29,33 @@ export interface Channel {
 }
 
 /** Metadata for a file stored on the relay; the bytes live there, not in the doc. */
-export interface ArtistFile {
+export interface ActFile {
   id: string
   name: string
   type: string
   size: number
 }
 
-export interface Artist {
-  id: string
-  name: string
-  startTime: string
-  endTime: string
-  /**
-   * Minutes between the previous act coming down and this one going on.
-   *
-   * 0 when nothing says — including for the first act of the day, which has
-   * no act before it to change over from. See `changeover.ts`.
-   */
-  changeover: number
+/**
+ * What a sheet knows about an act that the event's timetable does not.
+ *
+ * Who an act is and when they are on belongs to the running order — it is the
+ * same answer for every department. What they need patched is this sheet's
+ * business, and a lighting sheet asking the same act a different question
+ * must not overwrite it. So the sheet keeps only its own half, keyed by the
+ * act's id.
+ */
+export interface ActExtras {
+  actId: string
   /** What the act brings and needs — the "SPEC:" line on a paper sheet. */
   spec: string
   /** Anything else. The "Additional info" box. */
   notes: string
-  files: ArtistFile[]
+  files: ActFile[]
 }
+
+/** An act as a patch sheet sees it: the event's row plus this sheet's own half. */
+export type SheetAct = Act & Omit<ActExtras, 'actId'>
 
 export interface SubBox {
   id: string
@@ -62,7 +66,7 @@ export interface SubBox {
 }
 
 /**
- * One artist's patch for one channel. The sub-box column either references a
+ * One act's patch for one channel. The sub-box column either references a
  * defined sub-box (subBoxId) or holds free text (subBoxText) — never both.
  *
  * `subBoxTail` is which numbered tail on that box — the 7 in "BSNAKE 7". It
@@ -82,19 +86,30 @@ export interface PatchEntry {
 
 export interface SheetMeta {
   title: string
+  /**
+   * Which stage this sheet is for. Load-bearing rather than decorative: it is
+   * how the sheet picks its acts out of the event's timetable.
+   */
   stage: string
   /** Plain YYYY-MM-DD string; never round-tripped through Date parsing. */
   date: string
   created: string
 }
 
-/** Plain-object view of a sheet document, for rendering, export, and tests. */
+/**
+ * Plain-object view of a sheet document, for rendering, export, and tests.
+ *
+ * There is no act list here, and that absence is the point: the acts come
+ * from the shell's timetable. `sheetActs()` in lineup.ts puts the two halves
+ * together.
+ */
 export interface SheetSnapshot {
   meta: SheetMeta
   channels: Channel[]
-  artists: Artist[]
   subBoxes: SubBox[]
-  /** Keyed `${artistId}:${channelId}`. */
+  /** This sheet's own half of each act it has anything to say about, by act id. */
+  extras: Record<string, ActExtras>
+  /** Keyed `${actId}:${channelId}`. */
   patches: Record<string, PatchEntry>
 }
 
@@ -106,7 +121,21 @@ export interface SheetIndexEntry {
   lastModified: string
 }
 
-export const patchKey = (artistId: string, channelId: string) => `${artistId}:${channelId}`
+export const patchKey = (actId: string, channelId: string) => `${actId}:${channelId}`
+
+/**
+ * Attachments are keyed rather than kept in a list per act, so two people
+ * dropping a rider on the same act at the same moment write two different
+ * keys and both files survive. A list would be one container written twice.
+ */
+export const fileKey = (actId: string, fileId: string) => `${actId}:${fileId}`
+
+export const emptyExtras = (actId: string): ActExtras => ({
+  actId,
+  spec: '',
+  notes: '',
+  files: [],
+})
 
 export const emptyPatchEntry = (): PatchEntry => ({
   subBoxId: null,

@@ -47,8 +47,14 @@ who never opens the module still sees who's on and how long they have.
 ## One place, many readers
 
 Nobody types the day twice. The running order is entered once and everything
-else reads it — the countdowns here, and the modules that need to know what's
-on. Adding a consumer doesn't mean adding a copy.
+else reads it. Adding a consumer doesn't mean adding a copy.
+
+**Patch sheets** are the worked example. A sheet is a stage on a day, so its
+columns _are_ that stage's slots here: the sheet keeps the channels, the
+sub-boxes, the patch and its own notes about each act, and asks the running
+order who the acts are. Correct a set time in either place and both are
+right, because there is only one copy. Importing a festival's master patch
+fills the running order in the same move.
 
 ## Sets that run past midnight
 

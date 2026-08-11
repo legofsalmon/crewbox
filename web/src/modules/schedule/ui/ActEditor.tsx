@@ -1,3 +1,4 @@
+import { inRunningOrder } from '../../../shell/timetable/agenda.ts'
 import { removeAct, updateAct, type Act } from '../../../shell/timetable/model.ts'
 import { timetable } from '../../../shell/timetable/store.ts'
 import styles from './Schedule.module.css'
@@ -13,16 +14,17 @@ import styles from './Schedule.module.css'
  *
  * Sorted by day and clock rather than by entry order, because the thing
  * being edited is a running order and a running order out of order is very
- * hard to check against the printed one.
+ * hard to check against the printed one. It is the same ordering the patch
+ * sheets lay their columns out in — one definition, so the two cannot
+ * disagree — which also puts a just-added, timeless act at the bottom, where
+ * the finger that added it already is.
  */
 export default function ActEditor({ acts, onAdd }: { acts: Act[]; onAdd: () => void }) {
   const doc = timetable().doc
   const set = (id: string, field: keyof Omit<Act, 'id'>, value: string | number) =>
     updateAct(doc, id, { [field]: value })
 
-  const ordered = [...acts].sort(
-    (a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start)
-  )
+  const ordered = inRunningOrder(acts)
 
   return (
     <div className={styles.editor}>

@@ -1,6 +1,6 @@
 @use '../styles/tokens' as *;
 
-$artist-row-height: 38px;
+$act-row-height: 38px;
 
 .wrapper {
   min-width: fit-content;
@@ -26,18 +26,18 @@ $artist-row-height: 38px;
   @extend %gridCell;
   background: $grid-header-bg;
   min-width: 72px;
-  height: $artist-row-height;
+  height: $act-row-height;
 }
 
 /* Reads as the header of a group rather than another row of the table: the
-   accent rule above it is the only thing separating one artist's block of
+   accent rule above it is the only thing separating one act's block of
    channels from the next. */
-.artistHeader {
+.actHeader {
   @extend %gridCell;
   position: sticky;
   top: 0;
   z-index: 3;
-  height: $artist-row-height;
+  height: $act-row-height;
   background: var(--bg-active);
   color: var(--text);
   padding: 0 10px;
@@ -45,18 +45,18 @@ $artist-row-height: 38px;
   border-top: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
-.artistHeaderInner {
+.actHeaderInner {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.artistName {
+.actName {
   font-weight: 600;
   font-size: 0.95rem;
 }
 
-.artistTime {
+.actTime {
   font-size: 0.78rem;
   opacity: 0.75;
 }
@@ -79,7 +79,7 @@ $artist-row-height: 38px;
 .fieldHeader {
   @extend %gridCell;
   position: sticky;
-  top: $artist-row-height;
+  top: $act-row-height;
   z-index: 3;
   background: $grid-header-bg;
   padding: 6px 8px;
@@ -118,7 +118,7 @@ $artist-row-height: 38px;
 }
 
 .fieldHeader.stickyCorner {
-  top: $artist-row-height;
+  top: $act-row-height;
 }
 
 .channelHeaderInner {
@@ -272,6 +272,34 @@ tbody tr:nth-child(even) {
 
 /* Shown only while a sheet is still blank — it says what to do with ten
    empty rows, then gets out of the way for good. */
+/* Shown in place of columns, so it has to be readable in a dark FOH tent and
+   in daylight — theme tokens only, never a literal colour. */
+.noActs {
+  margin: 10px 12px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border);
+  border-radius: $radius-small;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+
+  strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+}
+
+.inlineLink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .startHint {
   margin: 0;
   color: var(--text-muted);
@@ -288,14 +316,14 @@ tbody tr:nth-child(even) {
     box-shadow: none;
   }
 
-  .artistHeader,
+  .actHeader,
   .fieldHeader,
   .channelHeader,
   .stickyCorner {
     position: static;
   }
 
-  .artistHeader {
+  .actHeader {
     background: #fff;
     color: #000;
     border-bottom: 2px solid #000;

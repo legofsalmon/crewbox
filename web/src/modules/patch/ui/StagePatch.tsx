@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { stagePatchClashes, stagePatchFor } from '../model/stagePatch'
-import type { SheetSnapshot } from '../model/types'
+import type { SheetAct, SheetSnapshot } from '../model/types'
 import styles from './StagePatch.module.scss'
 
 /**
@@ -15,16 +15,18 @@ import styles from './StagePatch.module.scss'
  */
 export default function StagePatch({
   snapshot,
+  acts,
   onClose,
 }: {
   snapshot: SheetSnapshot
+  acts: SheetAct[]
   onClose: () => void
 }) {
-  // Opens on the first act: a festival sheet's lineup is in running order, so
-  // that is the one going on next.
-  const [artistId, setArtistId] = useState(snapshot.artists[0]?.id ?? '')
-  const artist = snapshot.artists.find((a) => a.id === artistId)
-  const runs = useMemo(() => stagePatchFor(snapshot, artistId), [snapshot, artistId])
+  // Opens on the first act: the acts arrive in running order, so that is the
+  // one going on next.
+  const [actId, setActId] = useState(acts[0]?.id ?? '')
+  const act = acts.find((a) => a.id === actId)
+  const runs = useMemo(() => stagePatchFor(snapshot, actId), [snapshot, actId])
   const clashes = useMemo(() => stagePatchClashes(runs), [runs])
   // A festival sheet declares every box it owns, and most acts use a few of
   // them. Showing five empty 12-ways above the three real ones buries the
@@ -40,18 +42,18 @@ export default function StagePatch({
       <div
         className={styles.panel}
         role="dialog"
-        aria-label={`Stage patch for ${artist?.name ?? 'artist'}`}
+        aria-label={`Stage patch for ${act?.name ?? 'act'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className={styles.head}>
           <h2>Stage patch</h2>
           <select
-            className={styles.artistPicker}
+            className={styles.actPicker}
             aria-label="Stage patch for"
-            value={artistId}
-            onChange={(e) => setArtistId(e.target.value)}
+            value={actId}
+            onChange={(e) => setActId(e.target.value)}
           >
-            {snapshot.artists.map((a) => (
+            {acts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
               </option>

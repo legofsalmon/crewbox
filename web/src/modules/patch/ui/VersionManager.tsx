@@ -29,9 +29,12 @@ function VersionRow({
 }) {
   const summary = (() => {
     const snap = versionSnapshot(version)
-    return `${snap.channels.length} channels · ${snap.artists.length} artist${
-      snap.artists.length === 1 ? '' : 's'
-    }`
+    // Counted from what the version actually holds rather than from a stored
+    // list: the acts themselves belong to the event's running order, and a
+    // version is a version of this sheet alone.
+    const acts = new Set(Object.keys(snap.patches).map((key) => key.slice(0, key.indexOf(':'))))
+    for (const actId of Object.keys(snap.extras)) acts.add(actId)
+    return `${snap.channels.length} channels · ${acts.size} act${acts.size === 1 ? '' : 's'}`
   })()
 
   const handleRestore = () => {

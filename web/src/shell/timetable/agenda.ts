@@ -32,6 +32,32 @@ const DAY = 24 * 60
  */
 export const showMinutes = (clock: number): number => (clock < DAY_ROLLS_AT ? clock + DAY : clock)
 
+/**
+ * Acts in the order the day runs: by date, then by the show clock.
+ *
+ * Shared by everything that draws a list of acts — the running order's own
+ * editor and every sheet that takes its columns from here — so a patch sheet
+ * and the board can never put the same two acts in a different order.
+ *
+ * Anything without a time yet goes last, in the order it was entered. A TBC
+ * slot at the head of a running order is the least certain thing in the most
+ * prominent place, and on a sheet it would be the first column. Ties keep
+ * their entry order, so nothing shuffles under a finger mid-edit.
+ */
+export const inRunningOrder = <T extends Act>(acts: T[]): T[] =>
+  acts
+    .map((act, index) => ({ act, index, start: toAgendaAct(act).start }))
+    .sort(
+      (a, b) => blankLast(a.act.date, b.act.date) || nullLast(a.start, b.start) || a.index - b.index
+    )
+    .map((entry) => entry.act)
+
+const blankLast = (a: string, b: string): number =>
+  a === b ? 0 : !a ? 1 : !b ? -1 : a.localeCompare(b)
+
+const nullLast = (a: number | null, b: number | null): number =>
+  a === null || b === null ? (a === b ? 0 : a === null ? 1 : -1) : a - b
+
 export interface AgendaAct {
   id: string
   name: string

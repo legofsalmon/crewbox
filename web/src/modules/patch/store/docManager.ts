@@ -1,5 +1,6 @@
 import type * as Y from 'yjs'
 import { createDocStore, type DocHandle } from '../../../lib/docs/store.ts'
+import { timetable } from '../../../shell/timetable/store.ts'
 import {
   buildImportedSheet,
   createSheetUndoManager,
@@ -49,18 +50,31 @@ export const openIndex = (): DocHandle => sheetStore.openIndex()
 
 export const openSheet = (sheetId: string): DocHandle => sheetStore.open(sheetId)
 
-/** Create a new sheet: fresh id, default structure, index entry. */
+/**
+ * Create a new sheet: fresh id, default structure, index entry — and its
+ * first act on the event's running order, which is where acts live now.
+ */
 export const createSheet = (title: string): { sheetId: string; handle: DocHandle } => {
-  const { id, handle } = sheetStore.create((doc: Y.Doc) => initSheet(doc, { title }))
+  const { id, handle } = sheetStore.create((doc: Y.Doc) =>
+    initSheet(doc, timetable().doc, { title })
+  )
   return { sheetId: id, handle }
 }
 
-/** Create a new sheet from imported CSV data (see model/importCsv.ts). */
+/**
+ * Create a new sheet from imported CSV data (see model/importCsv.ts).
+ *
+ * The acts in the file land on the running order, so importing a festival's
+ * master patch is also how the box learns the day's timetable — every other
+ * department gets it at the same moment audio does.
+ */
 export const createSheetFromImport = (
   title: string,
   data: ImportedSheetData
 ): { sheetId: string; handle: DocHandle } => {
-  const { id, handle } = sheetStore.create((doc: Y.Doc) => buildImportedSheet(doc, data, { title }))
+  const { id, handle } = sheetStore.create((doc: Y.Doc) =>
+    buildImportedSheet(doc, timetable().doc, data, { title })
+  )
   return { sheetId: id, handle }
 }
 
