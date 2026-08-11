@@ -51,6 +51,17 @@ const SEND_LIMIT = 30
 const SEND_WINDOW_MS = 10_000
 
 /**
+ * How far from the box's clock a show-log entry's time may be.
+ *
+ * A day either side. Back-dating by hours is ordinary — an entry written at
+ * the end of a shift about something at the start of it — and a phone that
+ * never reached NTP on an offline site is off by minutes, not months. What
+ * this stops is the wrong-by-years clock putting the headliner's show stop
+ * in 1970, where nobody would ever find it again.
+ */
+const INCIDENT_CLOCK_SLACK_MS = 24 * 60 * 60_000
+
+/**
  * Second, looser limit for the other state-changing / fan-out message types.
  *
  * The `send` guard above stops a socket flooding chat, but `typing` (two
@@ -364,6 +375,25 @@ export class Hub {
           concealedPct: msg.concealedPct,
         })
         break
+      case 'logIncident': {
+        // The same flood guard as `send`, and rejected the same way, because
+        // this ends in the same place: a durable row and a broadcast to every
+        // phone. Rejected rather than dropped — an entry somebody typed and
+        // believes is filed must never disappear quietly.
+        const now = Date.now()
+        conn.sends = conn.sends.filter((t) => now - t < SEND_WINDOW_MS)
+        if (conn.sends.length >= SEND_LIMIT) {
+          this.send(conn.ws, {
+            type: 'rejected',
+            clientMsgId: msg.clientMsgId,
+            reason: 'slow down — too many entries',
+          })
+          break
+        }
+        conn.sends.push(now)
+        this.onLogIncident(conn, conn.user, msg)
+        break
+      }
     }
   }
 
@@ -499,6 +529,51 @@ export class Hub {
     if (!deduped) {
       this.broadcastToChannel(channel.id, { type: 'msg', message }, conn.ws)
     }
+  }
+
+  /**
+   * File a show-log entry and tell everyone.
+   *
+   * Everyone, not a channel: there is one show and one log, and a box with
+   * the module on shows it to every crew member who opens the pane.
+   *
+   * The clock is the one thing not taken on trust. `at` decides where an
+   * entry sits in the night, and a phone with a wrong clock — the Android in
+   * somebody's pocket that never got NTP on an offline site — would file the
+   * headline act's show stop in 1970 or next Tuesday. A day either side is
+   * enough for any real back-dating and stops that cold.
+   */
+  private onLogIncident(
+    conn: Conn,
+    user: User,
+    msg: Extract<ClientMessage, { type: 'logIncident' }>
+  ): void {
+    const now = Date.now()
+    if (Math.abs(msg.at - now) > INCIDENT_CLOCK_SLACK_MS) {
+      this.send(conn.ws, {
+        type: 'rejected',
+        clientMsgId: msg.clientMsgId,
+        reason: "that time is more than a day from the box's clock — check the phone's date",
+      })
+      return
+    }
+    const { incident, deduped } = this.store.appendIncident({
+      authorId: user.id,
+      authorName: user.name,
+      kind: msg.kind,
+      severity: msg.severity,
+      body: msg.body,
+      at: msg.at,
+      stage: msg.stage,
+      actId: msg.actId,
+      actName: msg.actName,
+      ...(msg.amends ? { amends: msg.amends } : {}),
+      clientMsgId: msg.clientMsgId,
+    })
+    // Acked to the author either way, so a retry after a dropped
+    // acknowledgement clears their outbox rather than filing a second copy.
+    this.send(conn.ws, { type: 'incident', incident })
+    if (!deduped) this.broadcastAll({ type: 'incident', incident }, conn.ws)
   }
 
   /** True (and records the attempt) once a socket is over its action limit. */

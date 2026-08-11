@@ -6,12 +6,19 @@ import {
   type Channel,
   type DmxUniverseWire,
   type Message,
+  type Incident,
   type PublicConfig,
   type ServerMessage,
   type User,
   type WelcomeMessage,
 } from '@crewbox/shared'
 import { cache, type OutboxEntry } from './lib/db.ts'
+import {
+  queueIncident,
+  queuedIncidents,
+  unqueueIncident,
+  type QueuedIncident,
+} from './modules/incident/model/outbox.ts'
 import { WsClient } from './lib/ws.ts'
 import * as api from './lib/api.ts'
 import {
@@ -121,6 +128,13 @@ export interface AppState {
   /** Highest seq per channel that @-mentions me; unseen when > readState. */
   mentionSeqs: Record<string, number>
   messages: Record<string, Message[]>
+  /**
+   * The show log, as one flat list. Not per-channel like messages: there is
+   * one show and one log, and the pane arranges it (see modules/incident).
+   */
+  incidents: Incident[]
+  /** True once the scrollback has been fetched at least once. */
+  incidentsLoaded: boolean
   pending: Record<string, Pending[]>
   typing: Record<string, Record<string, number>>
   activeChannelId: string | null
@@ -191,6 +205,10 @@ export interface AppState {
   resumeVoiceAudio: () => void
   join: (name: string, eventPin: string, personalPin: string) => Promise<void>
   sendMessage: (channelId: string, body: string) => void
+  /** File a show-log entry. Queued locally first, so nothing is lost offline. */
+  logIncident: (entry: Omit<QueuedIncident, 'clientMsgId'>) => void
+  /** Fetch the log's scrollback. Idempotent; the pane calls it on open. */
+  loadIncidents: () => Promise<void>
   sendFile: (channelId: string, file: File, caption?: string) => Promise<void>
   sendTyping: (channelId: string) => void
   setActiveChannel: (channelId: string) => void
@@ -497,6 +515,11 @@ export const useStore = create<AppState>()((set, get) => {
       })
     }
 
+    // The show log's own queue: entries typed with no signal, kept in
+    // localStorage so they survive the phone giving up and reloading. The
+    // box dedupes on clientMsgId, so re-sending one it already has is free.
+    for (const entry of queuedIncidents()) ws?.send({ type: 'logIncident', ...entry })
+
     persistSnapshot()
     void cache.prune()
   }
@@ -532,6 +555,16 @@ export const useStore = create<AppState>()((set, get) => {
           levels.set(msg.universe, slots)
           return { dmx: { ...state.dmx, levels } }
         })
+        break
+      }
+      case 'incident': {
+        // Upsert by id: the author gets their own entry back as the
+        // acknowledgement, and a reconnect can replay one already held.
+        set((state) => {
+          const without = state.incidents.filter((e) => e.id !== msg.incident.id)
+          return { incidents: [...without, msg.incident] }
+        })
+        if (msg.incident.clientMsgId) unqueueIncident(msg.incident.clientMsgId)
         break
       }
       case 'msg': {
@@ -682,6 +715,8 @@ export const useStore = create<AppState>()((set, get) => {
     readState: {},
     mentionSeqs: {},
     messages: {},
+    incidents: [],
+    incidentsLoaded: false,
     pending: {},
     typing: {},
     activeChannelId: null,
@@ -858,6 +893,34 @@ export const useStore = create<AppState>()((set, get) => {
       pending[channelId] = [...(pending[channelId] ?? []), entry]
       set({ pending })
       ws?.send({ type: 'send', clientMsgId: entry.clientMsgId, channelId, body: trimmed })
+    },
+
+    logIncident(entry) {
+      const body = entry.body.trim()
+      if (!body) return
+      const queued = { ...entry, body, clientMsgId: newId() }
+      // Queued before it is sent, never after: the tap that files a show stop
+      // has to survive the screen going dark a moment later.
+      queueIncident(queued)
+      ws?.send({ type: 'logIncident', ...queued })
+    },
+
+    async loadIncidents() {
+      try {
+        const { incidents } = await api.fetchIncidents(getToken() ?? '')
+        set((state) => {
+          // Merge rather than replace: live entries may have arrived while
+          // this was in flight, and the author's own unacked ones are held
+          // in the queue rather than here.
+          const byId = new Map(state.incidents.map((e) => [e.id, e]))
+          for (const entry of incidents) byId.set(entry.id, entry)
+          return { incidents: [...byId.values()], incidentsLoaded: true }
+        })
+      } catch {
+        // Offline, or a box with the module off. The pane says so rather
+        // than spinning, and whatever is already in memory still shows.
+        set({ incidentsLoaded: true })
+      }
     },
 
     async sendFile(channelId, file, caption = '') {

@@ -110,6 +110,11 @@ const historyQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 })
 
+const incidentQuerySchema = z.object({
+  beforeSeq: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+})
+
 const contextQuerySchema = z.object({
   seq: z.coerce.number().int().positive(),
   radius: z.coerce.number().int().min(1).max(100).default(30),
@@ -1257,6 +1262,24 @@ export function buildApp({
       const { from, to } = parsed.data
       const clampedFrom = Math.max(from, to - 7 * 24 * 60 * 60_000)
       return { rows: metrics ? metrics.bundle(clampedFrom, to) : [] }
+    })
+  }
+
+  // -- show log --------------------------------------------------------------
+  //
+  // Live entries arrive over the WebSocket; this is the scrollback, the same
+  // shape as a channel's. Session-authed and not admin-gated: the log is the
+  // crew's account of their own night, and a stage manager asking a lighting
+  // tech "what time did that happen" is the point of it.
+  if (modules.includes('incident')) {
+    fastify.get('/api/incidents', (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      const parsed = incidentQuerySchema.safeParse(req.query)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid query' })
+      const { beforeSeq, limit } = parsed.data
+      const before = beforeSeq ?? store.latestIncidentSeq() + 1
+      return { incidents: store.listIncidentsBefore(before, limit) }
     })
   }
 

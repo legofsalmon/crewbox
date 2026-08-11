@@ -250,7 +250,14 @@ test('the changeover between two acts comes across, and is checked', async ({ br
 
   await openPatch(page)
   await page.locator('input[type=file]').setInputFiles('e2e/fixtures/festival-day-sheet.csv')
-  await expect(page.locator('table')).toBeVisible()
+  // Longer than the 5 s default, and only here. This import is the heaviest
+  // thing in the suite — 56 channels × 16 acts parsed, a document created,
+  // IndexedDB written and the running order synced — on a fresh device
+  // against a box that by this point in the run holds a whole day of
+  // sheets, plots and log entries. It sat on the default timeout and fell
+  // off it three times across two branches; the app is doing real work, so
+  // the test gets the room rather than the app losing the feature.
+  await expect(page.locator('table')).toBeVisible({ timeout: 20_000 })
   await page.getByRole('button', { name: 'Lineup' }).click()
 
   // "45" on the second act and "HR" on the next two — an hour, written the

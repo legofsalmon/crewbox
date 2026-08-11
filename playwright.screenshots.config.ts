@@ -54,7 +54,7 @@ export default defineConfig({
       // a public site. This one is plainly an illustration.
       CREWBOX_CONTROL_KEY: 'shots-control-key',
       JOIN_RATE_LIMIT: '1000',
-      CREWBOX_MODULES: 'patch,lighting,network',
+      CREWBOX_MODULES: 'schedule,patch,lighting,incident,network',
       LIVEKIT_URL: '',
     },
   },

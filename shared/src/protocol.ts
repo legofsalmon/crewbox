@@ -1,5 +1,11 @@
 import { z } from 'zod'
 import type { Channel, Message, User } from './types.js'
+import {
+  INCIDENT_KINDS,
+  INCIDENT_SEVERITIES,
+  MAX_INCIDENT_LENGTH,
+  type Incident,
+} from './incident.js'
 
 export const MAX_MESSAGE_LENGTH = 4000
 
@@ -128,6 +134,28 @@ export const dmxWatchSchema = z.object({
   levels: z.boolean().default(false),
 })
 
+/**
+ * File an entry in the show log.
+ *
+ * `at` is when it happened and is the client's to decide — a stage manager
+ * logs at 21:14 the thing that stopped the show at 21:04, and the record has
+ * to say 21:04. It is bounded to a day either side of the box's own clock so
+ * a wrong phone clock can misplace an entry by hours but never by years.
+ */
+export const logIncidentSchema = z.object({
+  type: z.literal('logIncident'),
+  clientMsgId: z.string().min(8).max(64),
+  kind: z.enum(INCIDENT_KINDS).default('note'),
+  severity: z.enum(INCIDENT_SEVERITIES).default('note'),
+  body: z.string().trim().min(1).max(MAX_INCIDENT_LENGTH),
+  at: z.number().int().positive(),
+  stage: z.string().max(80).default(''),
+  actId: z.string().max(64).default(''),
+  actName: z.string().max(200).default(''),
+  /** The entry this corrects, when it is a correction. */
+  amends: z.string().max(64).optional(),
+})
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   helloSchema,
   sendSchema,
@@ -139,6 +167,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   dmxWatchSchema,
   rttReportSchema,
   voiceStatsSchema,
+  logIncidentSchema,
 ])
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -338,7 +367,21 @@ export interface DmxLevelsMessage {
   values: Array<[number, number]>
 }
 
+/**
+ * A new show-log entry, to every connected client.
+ *
+ * Broadcast rather than fetched, because the value of the log is that the
+ * whole crew sees the same account of the night as it is written — a lighting
+ * tech who watched the same thing happen can file the correction before
+ * anyone has gone home.
+ */
+export interface IncidentMessage {
+  type: 'incident'
+  incident: Incident
+}
+
 export type ServerMessage =
+  | IncidentMessage
   | TallyMessage
   | WelcomeMessage
   | DmxStateMessage

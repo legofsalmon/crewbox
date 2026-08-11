@@ -2,6 +2,7 @@ import { chatModule } from '../modules/chat/index.ts'
 import { patchModule } from '../modules/patch/index.ts'
 import { scheduleModule } from '../modules/schedule/index.ts'
 import { lightingModule } from '../modules/lighting/index.ts'
+import { incidentModule } from '../modules/incident/index.ts'
 import { networkModule } from '../modules/network/index.ts'
 import type { CrewboxModule } from './modules.ts'
 
@@ -15,5 +16,6 @@ export const allModules: CrewboxModule[] = [
   scheduleModule,
   patchModule,
   lightingModule,
+  incidentModule,
   networkModule,
 ]

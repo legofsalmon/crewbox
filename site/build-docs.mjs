@@ -36,6 +36,7 @@ export const SECTIONS = [
   'Start here',
   'Chat & voice',
   'Running order',
+  'Show log',
   'Patch sheets',
   'Lighting',
   'Network',
