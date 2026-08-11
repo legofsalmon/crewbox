@@ -107,6 +107,14 @@ export interface AppState {
   users: Record<string, User>
   channels: Record<string, Channel>
   online: Record<string, boolean>
+  /**
+   * The crew member a vision desk has cut to, if any.
+   *
+   * Shell state because it is the event's, not a module's, and because the
+   * person it names is the one who most needs to be told without going
+   * looking for it.
+   */
+  onAir: string | null
   /** Online with no on-site connection — joining from the office/warehouse. */
   remoteUsers: Record<string, boolean>
   readState: Record<string, number>
@@ -565,6 +573,9 @@ export const useStore = create<AppState>()((set, get) => {
         void cache.deleteOutbox(msg.clientMsgId)
         break
       }
+      case 'tally':
+        set({ onAir: msg.userId })
+        break
       case 'presence':
         set({
           online: { ...get().online, [msg.userId]: msg.online },
@@ -666,6 +677,7 @@ export const useStore = create<AppState>()((set, get) => {
     users: {},
     channels: {},
     online: {},
+    onAir: null,
     remoteUsers: {},
     readState: {},
     mentionSeqs: {},

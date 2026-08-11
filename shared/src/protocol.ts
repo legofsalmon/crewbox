@@ -304,6 +304,24 @@ export interface DmxUniverseWire {
   everLit: string
 }
 
+/**
+ * Who is live on camera, if anybody.
+ *
+ * Raised from a vision desk through the control API, not by anyone in the
+ * app — the person on camera is the last person who should be looking at a
+ * phone to find out. Sent to every device, because "don't call Dev, he's
+ * live" is as useful to the caller as the red bar is to Dev.
+ *
+ * `userId` null means nobody is on air, which is a state worth broadcasting
+ * rather than an absence worth inferring.
+ */
+export interface TallyMessage {
+  type: 'tally'
+  userId: string | null
+  /** When it went live, so a device joining late can show how long. 0 when off. */
+  since: number
+}
+
 export interface DmxStateMessage {
   type: 'dmxState'
   /** False when this box was never asked to listen to a lighting network. */
@@ -321,6 +339,7 @@ export interface DmxLevelsMessage {
 }
 
 export type ServerMessage =
+  | TallyMessage
   | WelcomeMessage
   | DmxStateMessage
   | DmxLevelsMessage

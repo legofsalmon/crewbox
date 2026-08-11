@@ -7,6 +7,7 @@ import ChannelView from './components/ChannelView.tsx'
 import SearchOverlay from './components/SearchOverlay.tsx'
 import AdminPanel from './components/AdminPanel.tsx'
 import AdminUnlock from './components/AdminUnlock.tsx'
+import OnAirBar from './components/OnAirBar.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
 import FileDetail from './components/FileDetail.tsx'
@@ -143,6 +144,7 @@ function Shell() {
           <strong>Reload</strong>
         </button>
       )}
+      <OnAirBar />
       <VoiceBar />
       <div className={`layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <Sidebar />

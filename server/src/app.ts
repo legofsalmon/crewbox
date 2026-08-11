@@ -64,6 +64,7 @@ import {
   verifyPin,
   verifyPinAsync,
 } from './auth.ts'
+import { controlKey, keyFromHeaders, keyMatches, Tally } from './control.ts'
 import { Hub } from './hub.ts'
 import type { Store } from './store.ts'
 
@@ -157,6 +158,17 @@ const settingsPatchSchema = z.object({
    * floor and is never shown to anyone who hasn't already unlocked.
    */
   adminPassword: z.string().min(8).max(128).optional(),
+})
+
+/**
+ * `null` clears; a string names a crew member by id or by name.
+ *
+ * `nullable` and not `optional`: a desk saying "nobody is on air" is a
+ * statement, and an empty body arriving by accident should be a 400 rather
+ * than a silent all-clear on a live camera.
+ */
+const tallyBodySchema = z.object({
+  user: z.string().max(80).nullable(),
 })
 
 const unlockBodySchema = z.object({
@@ -407,6 +419,8 @@ export function buildApp({
   void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
+  const tally = new Tally()
+  hub.setTally(tally)
   const docs = new DocsRelay()
   fastify.addHook('onClose', () => docs.close())
 
@@ -479,6 +493,10 @@ export function buildApp({
   // is long and random by default, so this only has to make an online guess
   // hopeless, not survive an offline crack.
   const adminLimiter = new RateLimiter(10, 10 * 60_000)
+  // The control surface is a machine, not a person: a desk cutting cameras
+  // sends far more than a human ever would, so this is generous — it exists
+  // to stop a wrong key being guessed at, not to pace a Stream Deck.
+  const controlLimiter = new RateLimiter(120, 60_000)
   // Twelve hours: long enough that nobody retypes it during a shift, short
   // enough that a phone left on a flightcase overnight is locked by morning.
   const adminTokens = new AdminTokens(12 * 60 * 60_000)
@@ -1278,6 +1296,53 @@ export function buildApp({
     return { adminToken: adminTokens.issue() }
   })
 
+  // -- control surface -------------------------------------------------------
+  //
+  // Keyed, and deliberately not the admin password. See control.ts.
+
+  /** True when this request carried the box's control key. */
+  const authControl = (req: { headers: Record<string, unknown>; ip: string }): boolean => {
+    if (!controlLimiter.allow(req.ip)) return false
+    return keyMatches(keyFromHeaders(req.headers), controlKey(store))
+  }
+
+  /**
+   * Raise or clear the on-air tally.
+   *
+   * `{ "user": "<id or name>" }` to light somebody up, `{ "user": null }` to
+   * clear. Names are accepted as well as ids because the thing calling this
+   * is a button somebody configured once, and "Dev Okafor" is what they know
+   * — an id would mean looking it up and rebuilding the button if the crew
+   * member is ever recreated.
+   */
+  fastify.post('/api/control/tally', (req, reply) => {
+    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    const parsed = tallyBodySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'send { "user": "<id or name>" } or { "user": null }' })
+    }
+
+    const wanted = parsed.data.user
+    let userId: string | null = null
+    if (wanted) {
+      const users = store.listUsers()
+      const match =
+        users.find((u) => u.id === wanted) ??
+        users.find((u) => u.name.toLowerCase() === wanted.toLowerCase())
+      if (!match) return reply.code(404).send({ error: `no crew member "${wanted}"` })
+      userId = match.id
+    }
+
+    if (tally.set(userId)) hub.broadcastTally(tally.current())
+    return { ok: true, ...tally.current() }
+  })
+
+  /** What is on air now, for a desk that reconnected and wants to resync. */
+  fastify.get('/api/control/tally', (req, reply) => {
+    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    return tally.current()
+  })
+
   /** Give the unlock back early — the panel's Lock button. */
   fastify.post('/api/admin/lock', (req, reply) => {
     adminTokens.revoke(adminTokenOf(req))
@@ -1489,6 +1554,11 @@ export function buildApp({
         // than inferred from the readiness row's wording, so rephrasing that
         // row can never silently remove the fix it points at.
         portRedirect: Boolean(captive?.listening && captive.fallback),
+        // The control key, shown the same way and for the same reason as the
+        // event PIN: it is minted silently on first use, and a key nobody
+        // can find is a feature nobody has. Behind the admin password, and
+        // it grants far less than that password does — see control.ts.
+        controlKey: controlKey(store),
       },
       readiness,
       readinessState: worstState(readiness),

@@ -136,6 +136,13 @@ export function isRemoteConnection(req: IncomingMessage | undefined, trustProxy 
  * — the box runs perfectly well without it, and the hub should not know
  * whether it is there.
  */
+/** The on-air state, as much of it as the hub needs to touch. */
+interface TallySource {
+  current: () => { userId: string | null; since: number }
+  /** Drop a tally pointing at somebody who has gone. Returns true if it did. */
+  forget: (userId: string) => boolean
+}
+
 interface CollectorSink {
   noteRtt: (ms: number) => void
   noteVoice: (stats: { lossPct: number; jitterMs: number; concealedPct: number }) => void
@@ -164,6 +171,15 @@ export class Hub {
    */
   private collector: CollectorSink | undefined
 
+  /**
+   * Who is on air, when a vision desk is driving one.
+   *
+   * Held by the hub rather than passed on every call so a device joining
+   * mid-show learns it with everything else — a red bar that only appears on
+   * the next cut is a red bar that is wrong for however long that takes.
+   */
+  private tally: TallySource | undefined
+
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
@@ -177,6 +193,16 @@ export class Hub {
   /** Hand the audit collector what the crew's devices report. Off by default. */
   setCollector(collector: CollectorSink | undefined): void {
     this.collector = collector
+  }
+
+  /** Where the on-air state lives, so a late joiner is told with the rest. */
+  setTally(tally: TallySource): void {
+    this.tally = tally
+  }
+
+  /** Tell every device who is on air now. */
+  broadcastTally(state: { userId: string | null; since: number }): void {
+    this.broadcastAll({ type: 'tally', userId: state.userId, since: state.since })
   }
 
   attach(wss: WebSocketServer): void {
@@ -409,6 +435,11 @@ export class Hub {
         Date.now() - DELETION_REPLAY_MS
       ),
     })
+    // Straight after the welcome, and only when somebody is actually live:
+    // a device joining mid-show has to arrive already knowing, or its red
+    // bar is wrong until the next cut.
+    const onAir = this.tally?.current()
+    if (onAir?.userId) this.send(conn.ws, { type: 'tally', ...onAir })
     // Count this socket exactly once. A first hello brings the user online; a
     // repeat on an already-authed socket is presence-idempotent (a client
     // re-sending hello can't inflate the online tally); a re-auth as someone
@@ -600,6 +631,10 @@ export class Hub {
       this.online.delete(userId)
       this.localSockets.delete(userId)
       this.broadcastAll({ type: 'presence', userId, online: false })
+      // A tally pointing at somebody who has left the event is a red bar
+      // nobody can clear: not them, because they are gone, and not anyone
+      // else, because it is not their bar.
+      if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
     } else {
       this.online.set(userId, count - 1)
       // Their last on-site device left; they're still on from the office.
