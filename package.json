@@ -1,7 +1,7 @@
 {
   "name": "crewbox",
   "private": true,
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Offline-first crew comms for temporary events — chat, voice, and department modules from one box",
   "type": "module",
   "workspaces": [

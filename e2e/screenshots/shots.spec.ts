@@ -245,9 +245,22 @@ test('shots: admin', async () => {
   await expect(maya.getByRole('heading', { name: 'Admin' })).toBeVisible()
   await shoot(maya, 'admin-crew')
 
-  // One scrolling panel, not tabs: bring the box section into view.
-  await maya.getByRole('heading', { name: 'This box' }).scrollIntoViewIfNeeded()
+  // One scrolling panel, not tabs: bring the box section to the TOP of it.
+  // scrollIntoViewIfNeeded does nothing here — the heading is already a few
+  // pixels inside the viewport at the bottom of the channel list — so every
+  // "This box" shot since the docs began has actually been a picture of the
+  // crew list with the heading cut off at the bottom edge.
+  await maya
+    .getByRole('heading', { name: 'This box' })
+    .evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await expect(maya.getByText('Event name', { exact: false }).first()).toBeVisible()
   await shoot(maya, 'admin-this-box')
+
+  // The desk control key, which the control API page tells an operator to
+  // come here and find. It is the last row of the box's info list, a long
+  // way below the readiness rows above.
+  await maya.getByText('Desk control key').evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await shoot(maya, 'admin-desk-key')
 
   // Leave the page usable for the tests after this one. The unlock itself
   // survives in memory, which is what lets the extras test run the probe.
