@@ -1,4 +1,4 @@
-import { newId } from '@crewbox/shared'
+import { newId, type Act } from '@crewbox/shared'
 import * as Y from 'yjs'
 
 /**
@@ -19,24 +19,13 @@ import * as Y from 'yjs'
  * several stages are a field on the act rather than several timetables.
  */
 
-/** Times are plain "HH:MM" strings, parsed where they are used, never Date. */
-export interface Act {
-  id: string
-  name: string
-  /** Which stage, room or area. Free text — it is whatever the poster says. */
-  stage: string
-  /** Plain YYYY-MM-DD, so a multi-day festival is one timetable. */
-  date: string
-  /** "19:00". Empty when the slot is still TBC. */
-  start: string
-  end: string
-  /**
-   * Minutes between the previous act coming down and this one going on.
-   * 0 when nothing says — including the first act of the day, which has no
-   * act before it to change over from.
-   */
-  changeover: number
-}
+/**
+ * An act's shape, and the maths for reading a day of them, live in shared:
+ * the box answers "who is on" now as well, over the control API, and one
+ * running order read two ways is a running order two things disagree about.
+ * Re-exported because this file is where the app's timetable lives.
+ */
+export type { Act }
 
 export interface TimetableSnapshot {
   acts: Act[]

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { formatChangeover, gapBetween, parseChangeover, parseClock } from './changeover'
+import { parseClock } from '@crewbox/shared'
+import { formatChangeover, gapBetween, parseChangeover } from './changeover'
 
 /**
  * The changeover cell is free text somebody types between two bands while

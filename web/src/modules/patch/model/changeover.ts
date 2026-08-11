@@ -18,15 +18,7 @@
  * running order — are arithmetic.
  */
 
-/** Minutes past midnight, or null. Accepts "19:00", "19.00", "9:05". */
-export function parseClock(text: string): number | null {
-  const match = /^\s*(\d{1,2})\s*[:.]\s*(\d{2})\s*$/.exec(text)
-  if (!match) return null
-  const hours = Number(match[1])
-  const minutes = Number(match[2])
-  if (hours > 23 || minutes > 59) return null
-  return hours * 60 + minutes
-}
+import { parseClock } from '@crewbox/shared'
 
 /**
  * A changeover cell as minutes, or null when it says nothing.

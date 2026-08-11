@@ -1,5 +1,5 @@
 import type * as Y from 'yjs'
-import { inRunningOrder } from '../../../shell/timetable/agenda.ts'
+import { inRunningOrder } from '@crewbox/shared'
 import { actsForStage, updateAct, type Act } from '../../../shell/timetable/model.ts'
 import { emptyExtras, type SheetAct, type SheetMeta, type SheetSnapshot } from './types'
 

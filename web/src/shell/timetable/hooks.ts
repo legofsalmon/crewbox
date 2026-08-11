@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTimetable } from './store.ts'
-import { agenda, nowMinutes, toAgendaAct, type StageAgenda } from './agenda.ts'
+import { agenda, nowMinutes, toAgendaAct, type StageAgenda } from '@crewbox/shared'
 import { stagesIn, type Act } from './model.ts'
 
 /** How often the countdowns move. Fine enough to trust, idle enough to ignore. */

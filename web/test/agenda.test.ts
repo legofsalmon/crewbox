@@ -7,7 +7,7 @@ import {
   showMinutes,
   toAgendaAct,
   type AgendaAct,
-} from '../src/shell/timetable/agenda.ts'
+} from '@crewbox/shared'
 
 /**
  * Reading the timetable.
