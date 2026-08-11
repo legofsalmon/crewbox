@@ -7,9 +7,9 @@ import {
   initSheet,
   patchSubBoxDisplay,
   setPatchField,
+  setActExtra,
   setPatchSubBox,
   snapshotSheet,
-  updateArtist,
 } from './sheetDoc'
 import {
   deleteVersion,
@@ -19,11 +19,17 @@ import {
   versionSnapshot,
 } from './versions'
 import { patchKey } from './types'
+import { snapshotTimetable, updateAct } from '../../../shell/timetable/model.ts'
 
 const newSheet = () => {
   const doc = new Y.Doc()
-  initSheet(doc, { title: 'Versions Show', date: '2026-07-25', now: '2026-07-25T10:00:00.000Z' })
-  return doc
+  const events = new Y.Doc()
+  initSheet(doc, events, {
+    title: 'Versions Show',
+    date: '2026-07-25',
+    now: '2026-07-25T10:00:00.000Z',
+  })
+  return { doc, events, act: snapshotTimetable(events).acts[0]!.id }
 }
 
 const sync = (a: Y.Doc, b: Y.Doc) => {
@@ -33,7 +39,7 @@ const sync = (a: Y.Doc, b: Y.Doc) => {
 
 describe('sheet versions', () => {
   it('saves named versions and lists them newest first', () => {
-    const doc = newSheet()
+    const { doc } = newSheet()
     saveVersion(doc, 'first', '2026-07-25T10:00:00.000Z')
     saveVersion(doc, '  ', '2026-07-25T11:00:00.000Z')
     const versions = listVersions(doc)
@@ -42,56 +48,56 @@ describe('sheet versions', () => {
   })
 
   it('restores the sheet to exactly the saved state', () => {
-    const doc = newSheet()
+    const { doc, act } = newSheet()
     const snap0 = snapshotSheet(doc)
-    const artist = snap0.artists[0].id
     const channel = snap0.channels[0].id
     addSubBox(doc, { name: 'Box A', stagePosition: 'DSL' })
-    setPatchSubBox(doc, artist, channel, 'Box A')
-    setPatchField(doc, artist, channel, 'input', 'Kick')
+    setPatchSubBox(doc, act, channel, 'Box A')
+    setPatchField(doc, act, channel, 'input', 'Kick')
+    setActExtra(doc, act, 'spec', 'own desk')
     const saved = saveVersion(doc, 'after soundcheck')
 
-    // Diverge in every root: cells, structure, artist, meta.
-    setPatchField(doc, artist, channel, 'input', 'Kick REPLACED')
+    // Diverge in every root: cells, structure, what the sheet holds, meta.
+    setPatchField(doc, act, channel, 'input', 'Kick REPLACED')
     addChannel(doc)
-    updateArtist(doc, artist, { name: 'Renamed' })
+    setActExtra(doc, act, 'spec', 'REPLACED')
 
     expect(restoreVersion(doc, saved.id)).toBe(true)
     const after = snapshotSheet(doc)
     expect(after).toEqual(versionSnapshot(saved))
+    expect(after.extras[act]?.spec).toBe('own desk')
     // Sub-box reference (not just text) survives the round trip.
-    const entry = after.patches[patchKey(artist, channel)]
+    const entry = after.patches[patchKey(act, channel)]
     expect(entry.subBoxId).not.toBeNull()
     expect(patchSubBoxDisplay(entry, after.subBoxes)).toBe('Box A (DSL)')
   })
 
   it('restore is a single undo step; saving adds none', () => {
-    const doc = newSheet()
+    const { doc, act } = newSheet()
     const undoManager = createSheetUndoManager(doc)
     const snap0 = snapshotSheet(doc)
-    const artist = snap0.artists[0].id
     const channel = snap0.channels[0].id
 
-    setPatchField(doc, artist, channel, 'input', 'A')
+    setPatchField(doc, act, channel, 'input', 'A')
     undoManager.stopCapturing()
     const saved = saveVersion(doc, 'v1')
     expect(undoManager.undoStack).toHaveLength(1)
 
-    setPatchField(doc, artist, channel, 'input', 'B')
+    setPatchField(doc, act, channel, 'input', 'B')
     undoManager.stopCapturing()
     restoreVersion(doc, saved.id)
-    expect(snapshotSheet(doc).patches[patchKey(artist, channel)].input).toBe('A')
+    expect(snapshotSheet(doc).patches[patchKey(act, channel)].input).toBe('A')
 
     undoManager.undo()
-    expect(snapshotSheet(doc).patches[patchKey(artist, channel)].input).toBe('B')
+    expect(snapshotSheet(doc).patches[patchKey(act, channel)].input).toBe('B')
     undoManager.redo()
-    expect(snapshotSheet(doc).patches[patchKey(artist, channel)].input).toBe('A')
+    expect(snapshotSheet(doc).patches[patchKey(act, channel)].input).toBe('A')
     // Undoing the restore never touches the saved versions.
     expect(listVersions(doc)).toHaveLength(1)
   })
 
   it('deletes versions and reports a missing id on restore', () => {
-    const doc = newSheet()
+    const { doc } = newSheet()
     const saved = saveVersion(doc, 'gone soon')
     deleteVersion(doc, saved.id)
     expect(listVersions(doc)).toHaveLength(0)
@@ -99,7 +105,7 @@ describe('sheet versions', () => {
   })
 
   it('concurrent saves on two devices merge as two entries', () => {
-    const a = newSheet()
+    const { doc: a } = newSheet()
     const b = new Y.Doc()
     sync(a, b)
     saveVersion(a, 'from A', '2026-07-25T12:00:00.000Z')
@@ -107,5 +113,19 @@ describe('sheet versions', () => {
     sync(a, b)
     expect(listVersions(a).map((v) => v.name)).toEqual(['from B', 'from A'])
     expect(listVersions(b)).toHaveLength(2)
+  })
+
+  it('restoring a version leaves the running order alone', () => {
+    // A version is a version of this sheet. Restoring one must not reach
+    // across and move set times for every other department on the box.
+    const { doc, events, act } = newSheet()
+    const saved = saveVersion(doc, 'before the change')
+    updateAct(events, act, { name: 'Renamed after the save', start: '22:30' })
+
+    restoreVersion(doc, saved.id)
+    expect(snapshotTimetable(events).acts[0]).toMatchObject({
+      name: 'Renamed after the save',
+      start: '22:30',
+    })
   })
 })

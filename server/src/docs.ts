@@ -191,13 +191,25 @@ export class DocsRelay {
 }
 
 /**
+ * Namespaces the shell owns rather than any module.
+ *
+ * The timetable — who is on, where, and when — is consulted by every
+ * department and belongs to the event, not to whoever happens to have it
+ * open. A box that turns off a module must not lose it, so it is always
+ * reachable and is not in CREWBOX_MODULES.
+ */
+export const SHELL_NAMESPACES: readonly string[] = ['timetable']
+
+/**
  * Room names are namespaced by module id — `patch/sheet-<id>` — so the relay
  * never hosts an unscoped, colliding room space, and a module can only be
- * reached when the box enables it.
+ * reached when the box enables it. The shell's own namespaces are always
+ * allowed; see SHELL_NAMESPACES.
  */
 export function parseRoomName(room: string, enabledModules: string[]): string | null {
   const match = /^([a-z0-9-]+)\/([A-Za-z0-9._:-]{1,128})$/.exec(room)
   if (!match) return null
-  if (!enabledModules.includes(match[1]!)) return null
+  const namespace = match[1]!
+  if (!SHELL_NAMESPACES.includes(namespace) && !enabledModules.includes(namespace)) return null
   return room
 }

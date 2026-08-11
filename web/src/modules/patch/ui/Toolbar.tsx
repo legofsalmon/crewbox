@@ -1,8 +1,11 @@
 import type { RefObject } from 'react'
 import type * as Y from 'yjs'
+import { useStageNames } from '../../../shell/timetable/hooks.ts'
+import { timetable } from '../../../shell/timetable/store.ts'
 import { setMetaField } from '../model/sheetDoc'
+import { setSheetStage } from '../model/lineup'
 import { displayToIso, isoToDisplay } from '../model/date'
-import type { SheetSnapshot } from '../model/types'
+import type { SheetAct, SheetSnapshot } from '../model/types'
 import { downloadSheetCsv } from './download'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useToasts } from './toastContext'
@@ -28,6 +31,7 @@ type Search = {
 export default function Toolbar({
   doc,
   snapshot,
+  acts,
   onOpenSubBoxes,
   onOpenStagePatch,
   onOpenLineup,
@@ -38,6 +42,7 @@ export default function Toolbar({
 }: {
   doc: Y.Doc
   snapshot: SheetSnapshot
+  acts: SheetAct[]
   onOpenSubBoxes: () => void
   onOpenStagePatch: () => void
   onOpenLineup: () => void
@@ -47,8 +52,14 @@ export default function Toolbar({
   search: Search
 }) {
   const { addToast } = useToasts()
+  const stageNames = useStageNames()
 
-  const stage = useDraft(snapshot.meta.stage, (next) => setMetaField(doc, 'stage', next.trim()))
+  // The acts move with the name: the stage is how the sheet finds its
+  // columns, so a rename on its own would empty the grid and say nothing.
+  const stage = useDraft(snapshot.meta.stage, (next) => {
+    setSheetStage(timetable().doc, snapshot.meta, acts, next)
+    setMetaField(doc, 'stage', next.trim())
+  })
   const date = useDraft(isoToDisplay(snapshot.meta.date), (next) => {
     const iso = displayToIso(next)
     if (iso) {
@@ -59,21 +70,32 @@ export default function Toolbar({
   })
 
   const handleExport = () => {
-    downloadSheetCsv(snapshot)
+    downloadSheetCsv(snapshot, acts)
     addToast('Export complete', 'Sheet downloaded as CSV', 'success')
   }
 
   return (
     <div className={styles.toolbar}>
       <div className={styles.field}>
+        {/* Load-bearing, not decorative: the stage is how this sheet picks
+            its acts out of the event's running order. Renaming it brings
+            this sheet's acts along; the names already in use are offered
+            back, because "Main Stage" where the running order says "Main"
+            is a second stage and an empty grid. */}
         <label htmlFor="sheet-stage">Stage:</label>
         <input
           id="sheet-stage"
           type="text"
           placeholder="Main Stage"
           maxLength={50}
+          list="dl-sheet-stages"
           {...stage.inputProps}
         />
+        <datalist id="dl-sheet-stages">
+          {stageNames.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
       </div>
       <div className={styles.field}>
         <label htmlFor="sheet-date">Date:</label>

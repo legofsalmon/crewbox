@@ -2,37 +2,32 @@
 title: Running order
 section: Running order
 order: 10
-blurb: What's on and what's next, on every phone — read from the patch sheets that already hold the set times.
+blurb: Who's on, where and when — entered once and read by every department.
 ---
 
 # Running order
 
-The most-consulted document on any site is the running order, and until now
-crewbox held it and showed it to nobody. A festival patch sheet is already
-one stage's day — every act on it carries a start time, an end time and the
-changeover before it, imported from the production company's own
-spreadsheet — but that lives inside **Patch Sheets**, which a stage manager,
-a lighting tech or the bar lead has no reason to open.
+The most-consulted document on any site is the running order — who's on,
+where, and when. Crewbox keeps one, in one place, and every department reads
+the same copy.
 
-**Running order** reads those same sheets and shows the two facts everybody
-actually wants: what's on, and how long until the next thing.
+It belongs to the event rather than to a department, so it lives in the app
+itself rather than inside any one module. A box that turns a module off
+doesn't lose it, and nothing has to be kept in step with anything.
 
-## Nobody types the day twice
+## Adding the acts
 
-This module owns no documents of its own. It reads the patch sheets on the
-box, so:
+**Running order → Edit.** Add an act, give it a stage, a date and its times.
+That's the whole thing.
 
-- A set time corrected on the audio desk moves the countdown on every phone.
-  There's no second copy to keep in step, and no version that can be wrong.
-- A stage appears as soon as somebody makes a patch sheet for it. The
-  sheet's **stage** field is the name you'll see.
-- If there are no sheets yet, the module says so and points at the one that
-  holds the data, rather than looking broken.
+Changes are shared as you type. There's no save button because there's
+nothing to save to — everyone on the box is looking at the same document, so
+a set time corrected at the production desk is corrected on every phone
+before the next person looks. Two people can edit at once and neither loses
+work.
 
-Reading a sheet is not the same as being in it. Your phone won't appear in
-anyone's patch sheet as a second pair of eyes just because your running
-order is up — the presence count on a sheet still means people who actually
-have it open.
+Stage names are offered back to you as you type them, because "Main Stage"
+and "Main stage" are two stages to a computer and one to a crew.
 
 ## What it shows
 
@@ -49,6 +44,18 @@ sinks to the bottom.
 The sidebar carries the same thing in one row per stage, so a stage manager
 who never opens the module still sees who's on and how long they have.
 
+## One place, many readers
+
+Nobody types the day twice. The running order is entered once and everything
+else reads it. Adding a consumer doesn't mean adding a copy.
+
+**Patch sheets** are the worked example. A sheet is a stage on a day, so its
+columns _are_ that stage's slots here: the sheet keeps the channels, the
+sub-boxes, the patch and its own notes about each act, and asks the running
+order who the acts are. Correct a set time in either place and both are
+right, because there is only one copy. Importing a festival's master patch
+fills the running order in the same move.
+
 ## Sets that run past midnight
 
 A 00:30 headliner belongs to the night that started at 19:00, not to the
@@ -64,5 +71,7 @@ a TBC slot shouldn't silently become the answer to "who's on".
 
 ## Turning it off
 
-It's on by default. `CREWBOX_MODULES` without `schedule` removes it, the
-same as any other module.
+`CREWBOX_MODULES` without `schedule` removes the screen, the same as any
+other module. The running order itself is still there — it belongs to the
+event, not to the module that displays it — so anything else that reads it
+keeps working.

@@ -1,10 +1,10 @@
 import type * as Y from 'yjs'
-import { createDocStore, type DocHandle } from '../../_shared/docs/store.ts'
+import { createDocStore, type DocHandle } from '../../../lib/docs/store.ts'
 import { createPlotUndoManager, getPlotRoots, initPlot, LOCAL_ORIGIN } from '../model/plotDoc'
 
 /**
  * The lighting module's doc store — one doc per plot plus the shared index.
- * The lifecycle itself lives in _shared/docs; this is just configuration.
+ * The lifecycle itself lives in lib/docs; this is just configuration.
  */
 
 export type { DocHandle }

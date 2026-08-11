@@ -3,7 +3,7 @@ import {
   removeIndexEntry as removeEntry,
   snapshotIndex as snapshotDocIndex,
   upsertIndexEntry as upsertEntry,
-} from '../../_shared/docs/indexDoc'
+} from '../../../lib/docs/indexDoc'
 import type { SheetIndexEntry } from './types'
 import { LOCAL_ORIGIN } from './sheetDoc'
 

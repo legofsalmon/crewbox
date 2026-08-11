@@ -1,10 +1,10 @@
-import type { ArtistFile } from '../model/types'
+import type { ActFile } from '../model/types'
 import * as api from '../../../lib/api.ts'
 import { apiUrl } from '../../../lib/server.ts'
 import { sessionToken, useStore } from '../../../store.ts'
 
 /**
- * Artist attachments go through the crewbox files service — the same
+ * Act attachments go through the crewbox files service — the same
  * content-addressed store chat attachments use (sha-256 dedupe, capability
  * URLs, immutable caching) — not a module-private endpoint. Removing a file
  * from a sheet only drops the doc's reference; the blob stays on the box
@@ -18,11 +18,11 @@ export const canUseAttachments = (): boolean =>
   Boolean(sessionToken()) && useStore.getState().connection === 'online'
 
 /** Download/view URL for a stored attachment (capability URL — no headers). */
-export const attachmentUrl = (file: ArtistFile): string =>
+export const attachmentUrl = (file: ActFile): string =>
   apiUrl(`/api/files/${file.id}/${encodeURIComponent(file.name)}`)
 
 /** Upload a file's bytes; returns the metadata to store in the doc. */
-export const uploadAttachment = async (file: File): Promise<ArtistFile> => {
+export const uploadAttachment = async (file: File): Promise<ActFile> => {
   const { file: meta } = await api.uploadFile(sessionToken() ?? '', file)
   return { id: meta.id, name: meta.name, type: meta.mime, size: meta.size }
 }

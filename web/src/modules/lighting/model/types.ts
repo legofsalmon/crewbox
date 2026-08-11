@@ -4,7 +4,7 @@ import type { GdtfChannel } from './gdtf'
  * The lighting module's domain types.
  *
  * A lighting plot is one row per fixture with fixed columns — flat, unlike a
- * patch sheet's channels × artists grid. The field set is deliberately a
+ * patch sheet's channels × acts grid. The field set is deliberately a
  * crew-and-ops one: get it rigged, powered, addressed, and checked. Gel,
  * gobo, and focus notes are the designer's paperwork and are out of scope;
  * `notes` carries anything that doesn't fit.

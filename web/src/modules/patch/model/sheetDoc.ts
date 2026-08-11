@@ -1,10 +1,13 @@
 import { newId } from '@crewbox/shared'
 import * as Y from 'yjs'
+import { addAct, upsertAct } from '../../../shell/timetable/model.ts'
 import {
+  emptyExtras,
   emptyPatchEntry,
+  fileKey,
   patchKey,
-  type Artist,
-  type ArtistFile,
+  type ActExtras,
+  type ActFile,
   type Channel,
   type PatchEntry,
   type PatchField,
@@ -25,19 +28,32 @@ export const LOCAL_ORIGIN = 'livepatch-local'
 
 type YEntity = Y.Map<unknown>
 
+/**
+ * The sheet's roots.
+ *
+ * There is no act list. Who is on and when belongs to the event's timetable
+ * in the shell, and a sheet picks its own acts out of it by stage and date
+ * (see lineup.ts). What is left here is what only this sheet knows: its
+ * channels, its sub-boxes, the patch itself, and the spec/notes/riders it
+ * keeps against each act.
+ */
 export interface SheetRoots {
   meta: Y.Map<unknown>
   channels: Y.Array<YEntity>
-  artists: Y.Array<YEntity>
   subBoxes: Y.Array<YEntity>
+  /** actId → { spec, notes }. Keyed, because order comes from the timetable. */
+  extras: Y.Map<YEntity>
+  /** `${actId}:${fileId}` → ActFile. */
+  files: Y.Map<YEntity>
   patches: Y.Map<YEntity>
 }
 
 export const getSheetRoots = (doc: Y.Doc): SheetRoots => ({
   meta: doc.getMap('meta'),
   channels: doc.getArray<YEntity>('channels'),
-  artists: doc.getArray<YEntity>('artists'),
   subBoxes: doc.getArray<YEntity>('subBoxes'),
+  extras: doc.getMap<YEntity>('extras'),
+  files: doc.getMap<YEntity>('files'),
   patches: doc.getMap<YEntity>('patches'),
 })
 
@@ -55,6 +71,9 @@ const transact = (doc: Y.Doc, fn: () => void) => doc.transact(fn, LOCAL_ORIGIN)
  * origins and are never undone — you take back your own change, not a
  * collaborator's. captureTimeout groups edits landing within one beat; the
  * blur/Enter commit cadence keeps distinct edits as distinct steps.
+ *
+ * The timetable is a different document with its own undo manager, so
+ * Ctrl+Z in a sheet never reaches back and moves an act's set time.
  */
 export const createSheetUndoManager = (doc: Y.Doc): Y.UndoManager =>
   new Y.UndoManager(Object.values(getSheetRoots(doc)) as Y.AbstractType<unknown>[], {
@@ -74,37 +93,42 @@ const findById = (arr: Y.Array<YEntity>, id: string): { item: YEntity; index: nu
 
 export interface InitSheetOptions {
   title: string
+  /**
+   * The stage this sheet covers. Defaults to the title, because a sheet named
+   * "Main Stage" is a stage called Main Stage, and a sheet that shares its
+   * stage with every other sheet on the box would show every other sheet's
+   * acts. Both are one field away from being renamed.
+   */
+  stage?: string
   date?: string
   now?: string
   channelCount?: number
 }
 
-/** Populate an empty doc with the default sheet structure. */
-export const initSheet = (doc: Y.Doc, options: InitSheetOptions): void => {
-  const { meta, channels, artists } = getSheetRoots(doc)
+/**
+ * Populate an empty doc with the default sheet structure, and put its first
+ * act on the running order.
+ *
+ * The act goes in the timetable rather than here — a sheet with no acts is a
+ * grid with no columns, and the first thing anyone does with a new sheet is
+ * type a patch against somebody.
+ */
+export const initSheet = (doc: Y.Doc, timetableDoc: Y.Doc, options: InitSheetOptions): void => {
+  const { meta, channels } = getSheetRoots(doc)
   const now = options.now ?? new Date().toISOString()
+  const stage = (options.stage ?? options.title).trim()
+  const date = options.date ?? todayIso()
   transact(doc, () => {
     meta.set('title', options.title.trim() || 'Untitled Sheet')
-    meta.set('stage', '')
-    meta.set('date', options.date ?? todayIso())
+    meta.set('stage', stage)
+    meta.set('date', date)
     meta.set('created', now)
     const count = options.channelCount ?? DEFAULT_CHANNEL_COUNT
     for (let i = 0; i < count; i++) {
       channels.push([mapFrom({ id: newId(), label: String(i + 1), input: '' })])
     }
-    artists.push([
-      mapFrom({
-        id: newId(),
-        name: 'Artist 1',
-        startTime: '19:00',
-        endTime: '20:00',
-        changeover: 0,
-        spec: '',
-        notes: '',
-        files: new Y.Array<ArtistFile>(),
-      }),
-    ])
   })
+  addAct(timetableDoc, { name: 'Act 1', stage, date, start: '19:00', end: '20:00' })
 }
 
 // --- Meta -------------------------------------------------------------------
@@ -171,7 +195,7 @@ export const renameChannel = (doc: Y.Doc, channelId: string, label: string) => {
  *
  * This is the sheet's spine: a festival stage patches KICK IN on 1 whoever is
  * playing, and only the sub-box and the mic change between acts. Keeping it
- * here rather than in every artist's column is the difference between typing
+ * here rather than in every act's column is the difference between typing
  * it once and typing it once per act.
  */
 export const setChannelInput = (doc: Y.Doc, channelId: string, input: string) => {
@@ -181,7 +205,7 @@ export const setChannelInput = (doc: Y.Doc, channelId: string, input: string) =>
   })
 }
 
-/** Remove a channel and every artist's patch entry for it. */
+/** Remove a channel and every act's patch entry for it. */
 export const removeChannel = (doc: Y.Doc, channelId: string) => {
   const { channels, patches } = getSheetRoots(doc)
   transact(doc, () => {
@@ -195,87 +219,62 @@ export const removeChannel = (doc: Y.Doc, channelId: string) => {
   })
 }
 
-// --- Artists ----------------------------------------------------------------
+// --- What the sheet keeps about an act --------------------------------------
 
-export const addArtist = (doc: Y.Doc): string => {
-  const { artists } = getSheetRoots(doc)
-  const id = newId()
-  transact(doc, () => {
-    artists.push([
-      mapFrom({
-        id,
-        name: `Artist ${artists.length + 1}`,
-        startTime: '19:00',
-        endTime: '20:00',
-        changeover: 0,
-        spec: '',
-        notes: '',
-        files: new Y.Array<ArtistFile>(),
-      }),
-    ])
-  })
-  return id
-}
-
-export const updateArtist = (
-  doc: Y.Doc,
-  artistId: string,
-  fields: Partial<Omit<Artist, 'id' | 'files'>>
-) => {
-  const { artists } = getSheetRoots(doc)
-  transact(doc, () => {
-    const found = findById(artists, artistId)
-    if (!found) return
-    for (const [k, v] of Object.entries(fields)) found.item.set(k, v)
-  })
+/** Must run inside a transaction. */
+const getOrCreateExtras = (extras: Y.Map<YEntity>, actId: string): YEntity => {
+  let entry = extras.get(actId)
+  if (!entry) {
+    entry = mapFrom({ actId, spec: '', notes: '' })
+    extras.set(actId, entry)
+  }
+  return entry
 }
 
 /**
- * The files list is a Y.Array created WITH the artist, so concurrent additions
- * from different devices merge instead of overwriting each other. The lazy
- * branch below only covers artists from sheets that predate attachments —
- * concurrent first-attachments on such an artist can lose one file to a
- * container-level last-write-wins, which is accepted for that migration case.
+ * Write the spec or the notes for an act on this sheet.
+ *
+ * Two fields, not one, because a paper sheet has two and they hold different
+ * things: the spec is what the act brings and needs, and gets read before the
+ * day; the notes are whatever came up, and get read on it.
  */
-const getOrCreateFiles = (artist: YEntity): Y.Array<ArtistFile> => {
-  let files = artist.get('files') as Y.Array<ArtistFile> | undefined
-  if (!files) {
-    files = new Y.Array<ArtistFile>()
-    artist.set('files', files)
-  }
-  return files
+export const setActExtra = (
+  doc: Y.Doc,
+  actId: string,
+  field: 'spec' | 'notes',
+  value: string
+): void => {
+  const { extras } = getSheetRoots(doc)
+  transact(doc, () => getOrCreateExtras(extras, actId).set(field, value))
 }
 
-export const addArtistFile = (doc: Y.Doc, artistId: string, file: ArtistFile) => {
-  const { artists } = getSheetRoots(doc)
-  transact(doc, () => {
-    const found = findById(artists, artistId)
-    if (!found) return
-    getOrCreateFiles(found.item).push([file])
-  })
+export const addActFile = (doc: Y.Doc, actId: string, file: ActFile): void => {
+  const { files } = getSheetRoots(doc)
+  transact(doc, () => files.set(fileKey(actId, file.id), mapFrom({ ...file, actId })))
 }
 
-export const removeArtistFile = (doc: Y.Doc, artistId: string, fileId: string) => {
-  const { artists } = getSheetRoots(doc)
+export const removeActFile = (doc: Y.Doc, actId: string, fileId: string): void => {
+  const { files } = getSheetRoots(doc)
+  transact(doc, () => files.delete(fileKey(actId, fileId)))
+}
+
+/**
+ * Forget everything this sheet holds about an act.
+ *
+ * Called when someone takes the act off the running order from here: the act
+ * leaves the event, and the sheet that removed it clears its own half in the
+ * same breath rather than leaving a column's worth of patch stranded behind
+ * an id nothing points at any more.
+ */
+export const clearActFromSheet = (doc: Y.Doc, actId: string): void => {
+  const { extras, files, patches } = getSheetRoots(doc)
   transact(doc, () => {
-    const found = findById(artists, artistId)
-    if (!found) return
-    const files = getOrCreateFiles(found.item)
-    for (let i = files.length - 1; i >= 0; i--) {
-      if (files.get(i).id === fileId) files.delete(i)
+    extras.delete(actId)
+    for (const key of [...files.keys()]) {
+      if (key.startsWith(`${actId}:`)) files.delete(key)
     }
-  })
-}
-
-/** Remove an artist and all of their patch entries. */
-export const removeArtist = (doc: Y.Doc, artistId: string) => {
-  const { artists, patches } = getSheetRoots(doc)
-  transact(doc, () => {
-    const found = findById(artists, artistId)
-    if (!found) return
-    artists.delete(found.index)
     for (const key of [...patches.keys()]) {
-      if (key.startsWith(`${artistId}:`)) patches.delete(key)
+      if (key.startsWith(`${actId}:`)) patches.delete(key)
     }
   })
 }
@@ -375,12 +374,12 @@ const resolveSubBoxRef = (subBoxes: Y.Array<YEntity>, raw: string): SubBox | und
 /** Write one field of one entry. Must run inside a transaction. */
 const writeFieldValue = (
   roots: SheetRoots,
-  artistId: string,
+  actId: string,
   channelId: string,
   field: PatchField,
   value: string
 ) => {
-  const entry = getOrCreateEntry(roots.patches, patchKey(artistId, channelId))
+  const entry = getOrCreateEntry(roots.patches, patchKey(actId, channelId))
   if (field === 'subBox') {
     // The whole string is tried first, so a box someone genuinely named
     // "SB 1" still resolves and sheets written before tails existed keep
@@ -404,21 +403,21 @@ const writeFieldValue = (
 
 export const setPatchField = (
   doc: Y.Doc,
-  artistId: string,
+  actId: string,
   channelId: string,
   field: Exclude<PatchField, 'subBox'>,
   value: string
 ) => {
   const { patches } = getSheetRoots(doc)
   transact(doc, () => {
-    getOrCreateEntry(patches, patchKey(artistId, channelId)).set(field, value)
+    getOrCreateEntry(patches, patchKey(actId, channelId)).set(field, value)
   })
 }
 
 // --- Range paste (Google Sheets migration) ----------------------------------
 
 export interface PasteColumn {
-  artistId: string
+  actId: string
   field: PatchField
 }
 
@@ -455,7 +454,7 @@ export const pasteGrid = (
       const row = rows[r]
       const width = Math.min(columns.length, row.length)
       for (let c = 0; c < width; c++) {
-        writeFieldValue(roots, columns[c].artistId, channelId, columns[c].field, row[c])
+        writeFieldValue(roots, columns[c].actId, channelId, columns[c].field, row[c])
         writtenCells++
       }
     }
@@ -468,48 +467,89 @@ export const pasteGrid = (
  * sub-box (by display name or bare name, case-insensitively), the cell stores
  * a reference to it; otherwise it stores the text as-is.
  */
-export const setPatchSubBox = (doc: Y.Doc, artistId: string, channelId: string, raw: string) => {
+export const setPatchSubBox = (doc: Y.Doc, actId: string, channelId: string, raw: string) => {
   const roots = getSheetRoots(doc)
   transact(doc, () => {
-    writeFieldValue(roots, artistId, channelId, 'subBox', raw)
+    writeFieldValue(roots, actId, channelId, 'subBox', raw)
   })
 }
 
 // --- CSV import -------------------------------------------------------------
 
 export interface ImportedSheetData {
-  /** `input` is the house input on that channel, shared by every artist. */
+  /** `input` is the house input on that channel, shared by every act. */
   channels: { label: string; input?: string }[]
-  artists: {
+  /**
+   * The acts the file names. These land on the event's running order, not in
+   * the sheet — importing a festival's master patch is how a box learns the
+   * day's timetable, and it would be a shame for that to stay in audio.
+   */
+  acts: {
     name: string
-    startTime?: string
-    endTime?: string
+    start?: string
+    end?: string
     changeover?: number
     spec?: string
     notes?: string
   }[]
   /** Sub-boxes the file declared, so cells resolve to them rather than to text. */
   subBoxes?: Array<Omit<SubBox, 'id'>>
-  /** patches[artistIndex][channelIndex] — sparse. */
+  /** patches[actIndex][channelIndex] — sparse. */
   patches: Array<Array<Partial<Record<PatchField, string>> | undefined>>
 }
 
+/** Must run inside a transaction. */
+const setSpecOrNotes = (
+  roots: SheetRoots,
+  actId: string,
+  field: 'spec' | 'notes',
+  value: string
+) => {
+  getOrCreateExtras(roots.extras, actId).set(field, value)
+}
+
 /**
- * Populate an empty doc from imported data (see importCsv.ts). One
- * transaction; the caller clears the undo stack afterwards like createSheet.
+ * Populate an empty doc from imported data (see importCsv.ts), putting its
+ * acts on the running order. One transaction per document; the caller clears
+ * the undo stack afterwards like createSheet.
  */
 export const buildImportedSheet = (
   doc: Y.Doc,
+  timetableDoc: Y.Doc,
   data: ImportedSheetData,
-  options: { title: string; now?: string }
+  options: { title: string; stage?: string; date?: string; now?: string }
 ): void => {
   const roots = getSheetRoots(doc)
-  const { meta, channels, artists } = roots
+  const { meta, channels } = roots
   const now = options.now ?? new Date().toISOString()
+  const title = options.title.trim() || 'Imported Sheet'
+  const stage = (options.stage ?? title).trim()
+  const date = options.date ?? todayIso()
+
+  // The acts go in first and outside the sheet's transaction: they are a
+  // different document, and the ids they come back with are what the patch
+  // cells below are keyed by.
+  //
+  // Upsert rather than append, and only the fields the file actually filled
+  // in: importing the same running order twice — a second sheet for the same
+  // stage, a re-import after a correction — must reconcile with the day
+  // that is already there rather than listing it again. Blank cells say
+  // nothing, so they leave a time somebody fixed by hand alone.
+  const actIds = data.acts.map((act) =>
+    upsertAct(timetableDoc, {
+      name: act.name.trim() || 'Act',
+      stage,
+      date,
+      ...(act.start ? { start: act.start } : {}),
+      ...(act.end ? { end: act.end } : {}),
+      ...(act.changeover ? { changeover: act.changeover } : {}),
+    })
+  )
+
   transact(doc, () => {
-    meta.set('title', options.title.trim() || 'Imported Sheet')
-    meta.set('stage', '')
-    meta.set('date', todayIso())
+    meta.set('title', title)
+    meta.set('stage', stage)
+    meta.set('date', date)
     meta.set('created', now)
 
     // Sub-boxes go in before any patch cell is written: `writeFieldValue`
@@ -527,46 +567,32 @@ export const buildImportedSheet = (
       return id
     })
 
-    data.artists.forEach((artist, artistIndex) => {
-      const artistId = newId()
-      artists.push([
-        mapFrom({
-          id: artistId,
-          name: artist.name.trim() || `Artist ${artistIndex + 1}`,
-          startTime: artist.startTime ?? '19:00',
-          endTime: artist.endTime ?? '20:00',
-          changeover: artist.changeover ?? 0,
-          spec: artist.spec ?? '',
-          notes: artist.notes ?? '',
-          files: new Y.Array<ArtistFile>(),
-        }),
-      ])
-      const artistPatches = data.patches[artistIndex] ?? []
-      artistPatches.forEach((entry, channelIndex) => {
+    data.acts.forEach((act, actIndex) => {
+      const actId = actIds[actIndex]!
+      if (act.spec) setSpecOrNotes(roots, actId, 'spec', act.spec)
+      if (act.notes) setSpecOrNotes(roots, actId, 'notes', act.notes)
+      const actPatches = data.patches[actIndex] ?? []
+      actPatches.forEach((entry, channelIndex) => {
         if (!entry) return
         const channelId = channelIds[channelIndex]
         if (!channelId) return
         for (const [field, value] of Object.entries(entry)) {
-          if (value) writeFieldValue(roots, artistId, channelId, field as PatchField, value)
+          if (value) writeFieldValue(roots, actId, channelId, field as PatchField, value)
         }
       })
     })
   })
 }
 
-/** Copy every patch entry from one artist onto another (overwriting). */
-export const copyPatchesFromArtist = (
-  doc: Y.Doc,
-  sourceArtistId: string,
-  targetArtistId: string
-) => {
+/** Copy every patch entry from one act onto another (overwriting). */
+export const copyPatchesFromAct = (doc: Y.Doc, sourceActId: string, targetActId: string) => {
   const { channels, patches } = getSheetRoots(doc)
   transact(doc, () => {
     for (const channel of channels.toArray()) {
       const channelId = channel.get('id') as string
-      const source = patches.get(patchKey(sourceArtistId, channelId))
+      const source = patches.get(patchKey(sourceActId, channelId))
       if (!source) continue
-      patches.set(patchKey(targetArtistId, channelId), mapFrom(source.toJSON()))
+      patches.set(patchKey(targetActId, channelId), mapFrom(source.toJSON()))
     }
   })
 }
@@ -579,11 +605,26 @@ const withEntryDefaults = (raw: Partial<PatchEntry>): PatchEntry => ({
 })
 
 export const snapshotSheet = (doc: Y.Doc): SheetSnapshot => {
-  const { meta, channels, artists, subBoxes, patches } = getSheetRoots(doc)
+  const { meta, channels, subBoxes, extras, files, patches } = getSheetRoots(doc)
   const patchesJson: Record<string, PatchEntry> = {}
   for (const [key, entry] of patches.entries()) {
     patchesJson[key] = withEntryDefaults(entry.toJSON() as Partial<PatchEntry>)
   }
+
+  // Defaults first, so a doc written before a field existed reads back with
+  // an empty one rather than `undefined` reaching the UI. The casts are to
+  // Partial deliberately: the stored maps genuinely lack these keys, and
+  // claiming otherwise is what would let `undefined` through.
+  const extrasJson: Record<string, ActExtras> = {}
+  for (const [actId, entry] of extras.entries()) {
+    extrasJson[actId] = { ...emptyExtras(actId), ...(entry.toJSON() as Partial<ActExtras>) }
+  }
+  for (const entry of files.values()) {
+    const file = entry.toJSON() as ActFile & { actId: string }
+    const held = (extrasJson[file.actId] ??= emptyExtras(file.actId))
+    held.files = [...held.files, { id: file.id, name: file.name, type: file.type, size: file.size }]
+  }
+
   return {
     meta: {
       title: (meta.get('title') as string) ?? '',
@@ -591,31 +632,26 @@ export const snapshotSheet = (doc: Y.Doc): SheetSnapshot => {
       date: (meta.get('date') as string) ?? '',
       created: (meta.get('created') as string) ?? '',
     } satisfies SheetMeta,
-    // Defaults first, so a sheet written before a field existed reads back
-    // with an empty one rather than `undefined` reaching the grid. The casts
-    // are to Partial deliberately: the stored maps genuinely lack these keys,
-    // and claiming otherwise is what would let `undefined` through.
     channels: channels
       .toArray()
       .map((m) => ({ input: '', ...(m.toJSON() as Partial<Channel>) }) as Channel),
-    artists: artists
-      .toArray()
-      .map(
-        (m) =>
-          ({ files: [], spec: '', changeover: 0, ...(m.toJSON() as Partial<Artist>) }) as Artist
-      ),
     subBoxes: subBoxes.toArray().map((m) => m.toJSON() as SubBox),
+    extras: extrasJson,
     patches: patchesJson,
   }
 }
 
 /**
- * Rewrite the five editable roots to exactly match a snapshot. Ids are
- * preserved, so patch keys and sub-box references stay valid. One transaction
- * with LOCAL_ORIGIN — restoring a saved version is a single undoable step.
+ * Rewrite the editable roots to exactly match a snapshot. Ids are preserved,
+ * so patch keys and sub-box references stay valid. One transaction with
+ * LOCAL_ORIGIN — restoring a saved version is a single undoable step.
+ *
+ * The running order is not touched. A saved version is a version of *this
+ * sheet*, and restoring one must not reach across and move set times for
+ * every other department on the box.
  */
 export const applySnapshot = (doc: Y.Doc, snapshot: SheetSnapshot): void => {
-  const { meta, channels, artists, subBoxes, patches } = getSheetRoots(doc)
+  const { meta, channels, subBoxes, extras, files, patches } = getSheetRoots(doc)
   transact(doc, () => {
     meta.set('title', snapshot.meta.title)
     meta.set('stage', snapshot.meta.stage)
@@ -623,16 +659,18 @@ export const applySnapshot = (doc: Y.Doc, snapshot: SheetSnapshot): void => {
     meta.set('created', snapshot.meta.created)
     channels.delete(0, channels.length)
     channels.push(snapshot.channels.map((channel) => mapFrom({ ...channel })))
-    artists.delete(0, artists.length)
-    artists.push(
-      snapshot.artists.map(({ files, ...artist }) => {
-        const filesArray = new Y.Array<ArtistFile>()
-        if (files.length > 0) filesArray.push([...files])
-        return mapFrom({ ...artist, files: filesArray })
-      })
-    )
     subBoxes.delete(0, subBoxes.length)
     subBoxes.push(snapshot.subBoxes.map((subBox) => mapFrom({ ...subBox })))
+
+    for (const key of [...extras.keys()]) extras.delete(key)
+    for (const key of [...files.keys()]) files.delete(key)
+    for (const held of Object.values(snapshot.extras)) {
+      extras.set(held.actId, mapFrom({ actId: held.actId, spec: held.spec, notes: held.notes }))
+      for (const file of held.files) {
+        files.set(fileKey(held.actId, file.id), mapFrom({ ...file, actId: held.actId }))
+      }
+    }
+
     for (const key of [...patches.keys()]) patches.delete(key)
     for (const [key, entry] of Object.entries(snapshot.patches)) {
       patches.set(key, mapFrom(entry as unknown as Record<string, unknown>))

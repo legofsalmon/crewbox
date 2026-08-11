@@ -110,13 +110,13 @@ for (const scheme of ['light', 'dark'] as const) {
     const newSheet = 'button:has-text("New Sheet")'
     expect(await textContrast(page, newSheet)).toBeGreaterThan(4.5)
 
-    // ...and the grid chrome, whose artist header painted text-on-text.
+    // ...and the grid chrome, whose act header painted text-on-text.
     await page.getByRole('button', { name: '+ New Sheet' }).click()
     await page.locator('#new-sheet-name').fill(`Contrast ${scheme} ${Date.now()}`)
     await page.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(page.locator('table')).toBeVisible()
 
-    expect(await textContrast(page, 'th:has-text("Artist 1")')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, 'th:has-text("Act 1")')).toBeGreaterThan(4.5)
     expect(await textContrast(page, 'th:has-text("CH")')).toBeGreaterThan(4.5)
 
     await context.close()

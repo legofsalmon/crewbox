@@ -47,12 +47,34 @@ from — there is exactly one source of truth.
 
 **Lineup** manages the acts:
 
-- **+ Add Artist**, then name, **start and end times**, a **Spec** field
+- **+ Add Act**, then name, **start and end times**, a **Spec** field
   (backline, band size, what they bring) and an **Additional info** field
   for what came up on the day.
 - **Files** — drop an act's rider or stage plot straight onto their row.
   Attachments live on the box, so they need a connection to add or open.
 - Acts appear as the column groups of the grid, in running order.
+
+### Where the acts come from
+
+The names and times aren't the sheet's — they're the event's
+[running order](/docs/schedule), and this is one of its editors. Move a set
+time here and it has moved on every phone, every countdown and every other
+department's screen before you look up. The **Spec**, **Additional info**
+and **Files** belong to this sheet alone, so an audio sheet and a lighting
+sheet can say different things about the same band.
+
+That means two things worth knowing:
+
+- **The Stage field in the toolbar decides the columns.** A sheet shows its
+  own stage's acts on its own date. Type a stage the running order doesn't
+  use and the grid is empty — the field offers back the stages already in
+  use for exactly that reason. A sheet with no stage named yet shows
+  everything on its date.
+- **Removing an act removes it from the event**, not just from this sheet,
+  along with this sheet's patch for it. Crewbox asks first and says so.
+
+A sheet with no acts says so and offers the way out, rather than showing a
+grid with no columns and no explanation.
 
 ## Changeovers
 

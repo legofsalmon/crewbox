@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
-import { docsWsUrl } from '../../../lib/server.ts'
-import { sessionToken, useStore } from '../../../store.ts'
+import { docsWsUrl } from '../server.ts'
+import { sessionToken, useStore } from '../../store.ts'
 
 export type SyncStatus = 'off' | 'connecting' | 'connected'
 
@@ -11,7 +11,7 @@ export interface RemotePeer {
   color: string
   /**
    * Opaque key of whatever this peer is editing, as defined by the owning
-   * module — patch uses `${artistId}:${channelId}:${field}`. Null when the
+   * module — patch uses `${actId}:${channelId}:${field}`. Null when the
    * peer is present but not in a field.
    */
   editing: string | null

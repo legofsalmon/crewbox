@@ -9,18 +9,7 @@ const sheet = (over: Partial<SheetSnapshot> = {}): SheetSnapshot => ({
     { id: 'c2', label: '2', input: 'SNARE TOP' },
     { id: 'c3', label: '3', input: 'BASS' },
   ],
-  artists: [
-    {
-      id: 'a1',
-      name: 'Armen',
-      startTime: '',
-      endTime: '',
-      spec: '',
-      notes: '',
-      changeover: 0,
-      files: [],
-    },
-  ],
+  extras: {},
   subBoxes: [{ id: 'b1', name: 'PINK', inputs: 4, color: '#ff00ff', stagePosition: 'USC' }],
   patches: {},
   ...over,
@@ -90,30 +79,8 @@ describe('reading the sheet from the stage end', () => {
     expect(stagePatchFor(snapshot, 'a1')[0].used).toBe(0)
   })
 
-  it('keeps one artist out of another’s table', () => {
+  it('keeps one act out of another’s table', () => {
     const snapshot = sheet({
-      artists: [
-        {
-          id: 'a1',
-          name: 'A',
-          startTime: '',
-          endTime: '',
-          spec: '',
-          notes: '',
-          changeover: 0,
-          files: [],
-        },
-        {
-          id: 'a2',
-          name: 'B',
-          startTime: '',
-          endTime: '',
-          spec: '',
-          notes: '',
-          changeover: 0,
-          files: [],
-        },
-      ],
       patches: { [patchKey('a2', 'c1')]: patch({ subBoxId: 'b1', subBoxTail: 1 }) },
     })
     expect(stagePatchFor(snapshot, 'a1')[0].used).toBe(0)

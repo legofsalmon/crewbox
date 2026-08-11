@@ -1,4 +1,4 @@
-import { createSeenRegistry } from '../../_shared/docs/seen.ts'
+import { createSeenRegistry } from '../../../lib/docs/seen.ts'
 
 /**
  * Which sheets this device has seen, by last-viewed time — the sidebar shows

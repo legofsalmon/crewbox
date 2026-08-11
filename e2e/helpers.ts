@@ -48,17 +48,17 @@ export const openSheetByName = async (page: Page, name: string) => {
   await expect(page.locator('table')).toBeVisible()
 }
 
-export const cell = (page: Page, artist: string, channel: string, field: string) =>
-  page.getByLabel(`${artist}, channel ${channel}, ${field}`)
+export const cell = (page: Page, act: string, channel: string, field: string) =>
+  page.getByLabel(`${act}, channel ${channel}, ${field}`)
 
 export const commitCell = async (
   page: Page,
-  artist: string,
+  act: string,
   channel: string,
   field: string,
   value: string
 ) => {
-  const input = cell(page, artist, channel, field)
+  const input = cell(page, act, channel, field)
   await input.click()
   await input.fill(value)
   await input.press('Enter')

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Running order — Crewbox docs</title>
-    <meta name="description" content="What's on and what's next, on every phone — read from the patch sheets that already hold the set times." />
+    <meta name="description" content="Who's on, where and when — entered once and read by every department." />
     <link rel="stylesheet" href="/docs/docs.css" />
   </head>
   <body>
@@ -28,23 +28,26 @@
       </aside>
       <main class="content">
         <h1 id="running-order"><a class="anchor" href="#running-order">Running order</a></h1>
-<p>The most-consulted document on any site is the running order, and until now crewbox held it and showed it to nobody. A festival patch sheet is already one stage's day — every act on it carries a start time, an end time and the changeover before it, imported from the production company's own spreadsheet — but that lives inside <strong>Patch Sheets</strong>, which a stage manager, a lighting tech or the bar lead has no reason to open.</p>
-<p><strong>Running order</strong> reads those same sheets and shows the two facts everybody actually wants: what's on, and how long until the next thing.</p>
-<h2 id="nobody-types-the-day-twice"><a class="anchor" href="#nobody-types-the-day-twice">Nobody types the day twice</a></h2>
-<p>This module owns no documents of its own. It reads the patch sheets on the box, so:</p>
-<ul><li>A set time corrected on the audio desk moves the countdown on every phone. There's no second copy to keep in step, and no version that can be wrong.</li><li>A stage appears as soon as somebody makes a patch sheet for it. The sheet's <strong>stage</strong> field is the name you'll see.</li><li>If there are no sheets yet, the module says so and points at the one that holds the data, rather than looking broken.</li></ul>
-<p>Reading a sheet is not the same as being in it. Your phone won't appear in anyone's patch sheet as a second pair of eyes just because your running order is up — the presence count on a sheet still means people who actually have it open.</p>
+<p>The most-consulted document on any site is the running order — who's on, where, and when. Crewbox keeps one, in one place, and every department reads the same copy.</p>
+<p>It belongs to the event rather than to a department, so it lives in the app itself rather than inside any one module. A box that turns a module off doesn't lose it, and nothing has to be kept in step with anything.</p>
+<h2 id="adding-the-acts"><a class="anchor" href="#adding-the-acts">Adding the acts</a></h2>
+<p><strong>Running order → Edit.</strong> Add an act, give it a stage, a date and its times. That's the whole thing.</p>
+<p>Changes are shared as you type. There's no save button because there's nothing to save to — everyone on the box is looking at the same document, so a set time corrected at the production desk is corrected on every phone before the next person looks. Two people can edit at once and neither loses work.</p>
+<p>Stage names are offered back to you as you type them, because &quot;Main Stage&quot; and &quot;Main stage&quot; are two stages to a computer and one to a crew.</p>
 <h2 id="what-it-shows"><a class="anchor" href="#what-it-shows">What it shows</a></h2>
 <p>Per stage, ordered so whatever is happening soonest is at the top:</p>
 <ul><li><strong>On now</strong> — the act playing, and when it comes off.</li><li><strong>Next</strong> — what follows, and how long until it starts.</li></ul>
 <p>Between sets, <strong>On now</strong> reads <code>—</code> and <code>changeover</code>. That's the busiest moment on a stage and the answer someone is looking for, so it's stated rather than left blank. Once a stage is done for the day it says so and sinks to the bottom.</p>
 <p>The sidebar carries the same thing in one row per stage, so a stage manager who never opens the module still sees who's on and how long they have.</p>
+<h2 id="one-place-many-readers"><a class="anchor" href="#one-place-many-readers">One place, many readers</a></h2>
+<p>Nobody types the day twice. The running order is entered once and everything else reads it. Adding a consumer doesn't mean adding a copy.</p>
+<p><strong>Patch sheets</strong> are the worked example. A sheet is a stage on a day, so its columns <em>are</em> that stage's slots here: the sheet keeps the channels, the sub-boxes, the patch and its own notes about each act, and asks the running order who the acts are. Correct a set time in either place and both are right, because there is only one copy. Importing a festival's master patch fills the running order in the same move.</p>
 <h2 id="sets-that-run-past-midnight"><a class="anchor" href="#sets-that-run-past-midnight">Sets that run past midnight</a></h2>
 <p>A 00:30 headliner belongs to the night that started at 19:00, not to the following morning — so the running order treats anything before 06:00 as part of the night before. Without that, sorting by the clock alone puts the biggest act of the weekend first thing in the morning.</p>
 <p>A set that crosses midnight (23:40 to 00:20) is measured by its length, so it reads as forty minutes rather than twenty hours.</p>
 <p>Acts with no start time are carried but never shown as &quot;on now&quot; or &quot;next&quot; — a TBC slot shouldn't silently become the answer to &quot;who's on&quot;.</p>
 <h2 id="turning-it-off"><a class="anchor" href="#turning-it-off">Turning it off</a></h2>
-<p>It's on by default. <code>CREWBOX_MODULES</code> without <code>schedule</code> removes it, the same as any other module.</p>
+<p><code>CREWBOX_MODULES</code> without <code>schedule</code> removes the screen, the same as any other module. The running order itself is still there — it belongs to the event, not to the module that displays it — so anything else that reads it keeps working.</p>
         <footer class="prevnext"><a class="prev" href="/docs/voice"><span>Previous</span>Voice intercom</a><a class="next" href="/docs/patch"><span>Next</span>Patch sheets</a></footer>
       </main>
     </div>

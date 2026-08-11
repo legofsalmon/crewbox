@@ -8,8 +8,10 @@ import { useSheet } from '../store/hooks'
 import { useSheetPeers, useSheetRemotePeers, useSyncStatus } from '../store/useSync'
 import { useUndoRedo } from '../store/useUndo'
 import { useDraft } from '../../_shared/ui/useDraft'
+import { useTimetable } from '../../../shell/timetable/store.ts'
 import { patchSubBoxDisplay, setMetaField } from '../model/sheetDoc'
-import { PATCH_FIELDS, patchKey, type SheetSnapshot } from '../model/types'
+import { sheetActs } from '../model/lineup'
+import { PATCH_FIELDS, patchKey, type SheetAct, type SheetSnapshot } from '../model/types'
 import Toolbar from './Toolbar'
 import PatchGrid from './PatchGrid'
 import SubBoxManager from './SubBoxManager'
@@ -19,7 +21,7 @@ import VersionManager from './VersionManager'
 import styles from './SheetView.module.scss'
 
 /** All cells (and channel labels) whose display value contains the query. */
-const findMatches = (snapshot: SheetSnapshot, query: string) => {
+const findMatches = (snapshot: SheetSnapshot, acts: SheetAct[], query: string) => {
   const cells = new Set<string>()
   const channels = new Set<string>()
   const q = query.trim().toLowerCase()
@@ -27,14 +29,14 @@ const findMatches = (snapshot: SheetSnapshot, query: string) => {
   const order: string[] = []
   for (const channel of snapshot.channels) {
     if (channel.label.toLowerCase().includes(q)) channels.add(channel.id)
-    for (const artist of snapshot.artists) {
-      const entry = snapshot.patches[patchKey(artist.id, channel.id)]
+    for (const act of acts) {
+      const entry = snapshot.patches[patchKey(act.id, channel.id)]
       if (!entry) continue
       for (const field of PATCH_FIELDS) {
         const display =
           field === 'subBox' ? patchSubBoxDisplay(entry, snapshot.subBoxes) : entry[field]
         if (display && display.toLowerCase().includes(q)) {
-          const cellId = `${artist.id}:${channel.id}:${field}`
+          const cellId = `${act.id}:${channel.id}:${field}`
           cells.add(cellId)
           order.push(cellId)
         }
@@ -156,6 +158,9 @@ function ShareMenu({
 export default function SheetView({ sheetId, onClose }: { sheetId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = useSheet(sheetId)
   const { canUndo, canRedo, undo, redo } = useUndoRedo(undoManager)
+  // The acts are the event's, not the sheet's: this stage's slots out of the
+  // running order, merged with the spec and notes the sheet keeps about them.
+  const { snapshot: timetable, loaded: timetableLoaded } = useTimetable()
   const [showSubBoxes, setShowSubBoxes] = useState(false)
   const [showStagePatch, setShowStagePatch] = useState(false)
   const [showLineup, setShowLineup] = useState(false)
@@ -165,9 +170,14 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   const searchRef = useRef<HTMLInputElement>(null)
   const matchCursor = useRef(0)
 
+  const acts = useMemo(
+    () => (snapshot ? sheetActs(snapshot, timetable.acts) : []),
+    [snapshot, timetable.acts]
+  )
+
   const matches = useMemo(
-    () => (snapshot ? findMatches(snapshot, searchQuery) : null),
-    [snapshot, searchQuery]
+    () => (snapshot ? findMatches(snapshot, acts, searchQuery) : null),
+    [snapshot, acts, searchQuery]
   )
 
   const jumpToNextMatch = () => {
@@ -216,7 +226,11 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
     return () => unregister.forEach((fn) => fn())
   }, [undo, redo])
 
-  if (!doc || !snapshot || !loaded) {
+  // The timetable is waited for as well as the sheet, because the columns
+  // come from it: rendering a beat early would draw the grid with no acts,
+  // flash "nothing is on this sheet", and then mount every cell a second
+  // time under whatever finger was already typing into the first one.
+  if (!doc || !snapshot || !loaded || !timetableLoaded) {
     return <div className={styles.loading}>Loading sheet…</div>
   }
 
@@ -252,6 +266,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
       <Toolbar
         doc={doc}
         snapshot={snapshot}
+        acts={acts}
         onOpenSubBoxes={() => setShowSubBoxes(true)}
         onOpenStagePatch={() => setShowStagePatch(true)}
         onOpenLineup={() => setShowLineup(true)}
@@ -275,6 +290,8 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
           doc={doc}
           sheetId={sheetId}
           snapshot={snapshot}
+          acts={acts}
+          onOpenLineup={() => setShowLineup(true)}
           matchedCells={matches?.cells}
           matchedChannels={matches?.channels}
         />
@@ -284,10 +301,15 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
         <SubBoxManager doc={doc} snapshot={snapshot} onClose={() => setShowSubBoxes(false)} />
       )}
       {showStagePatch && (
-        <StagePatch snapshot={snapshot} onClose={() => setShowStagePatch(false)} />
+        <StagePatch snapshot={snapshot} acts={acts} onClose={() => setShowStagePatch(false)} />
       )}
       {showLineup && (
-        <LineupManager doc={doc} snapshot={snapshot} onClose={() => setShowLineup(false)} />
+        <LineupManager
+          doc={doc}
+          snapshot={snapshot}
+          acts={acts}
+          onClose={() => setShowLineup(false)}
+        />
       )}
       {showVersions && (
         <VersionManager doc={doc} onUndo={undo} onClose={() => setShowVersions(false)} />

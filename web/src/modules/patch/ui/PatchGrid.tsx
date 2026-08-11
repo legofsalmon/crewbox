@@ -2,7 +2,7 @@ import { Fragment, memo, useCallback, useRef } from 'react'
 import type * as Y from 'yjs'
 import {
   addChannel,
-  copyPatchesFromArtist,
+  copyPatchesFromAct,
   pasteGrid,
   patchSubBoxDisplay,
   removeChannel,
@@ -18,6 +18,7 @@ import {
   patchEntryHasContent,
   patchKey,
   type Channel,
+  type SheetAct,
   type SheetSnapshot,
 } from '../model/types'
 import { FIELD_SUGGESTIONS, SUB_BOX_FALLBACK_SUGGESTIONS } from '../model/constants'
@@ -71,7 +72,7 @@ function ChannelHeaderRow({
           {...draft.inputProps}
         />
         {/* The house input: what is on this channel all day, whoever is
-            playing. Lives on the channel rather than in every artist's
+            playing. Lives on the channel rather than in every act's
             column, because on a festival stage only the sub-box and the mic
             change between acts. */}
         <input
@@ -126,18 +127,23 @@ export default function PatchGrid({
   doc,
   sheetId,
   snapshot,
+  acts,
+  onOpenLineup,
   matchedCells,
   matchedChannels,
 }: {
   doc: Y.Doc
   sheetId: string
   snapshot: SheetSnapshot
-  /** Cell ids (`artistId:channelId:field`) highlighted by the find box. */
+  /** This stage's acts from the running order, in order. Columns, in short. */
+  acts: SheetAct[]
+  onOpenLineup: () => void
+  /** Cell ids (`actId:channelId:field`) highlighted by the find box. */
   matchedCells?: Set<string>
   /** Channel ids whose label matches the find query. */
   matchedChannels?: Set<string>
 }) {
-  const { channels, artists, subBoxes, patches } = snapshot
+  const { channels, subBoxes, patches } = snapshot
   // "Nothing typed yet": no patch data at all. A fresh sheet has channels
   // (the numbered rows) but no patches, so this is the honest test.
   const untouched = Object.keys(patches).length === 0
@@ -152,18 +158,18 @@ export default function PatchGrid({
   // referentially stable — it is a prop of every memoized PatchCell, and a
   // fresh function here would defeat the memo for the whole grid on every
   // snapshot.
-  const pasteContext = useRef({ channels, artists, addToast })
-  pasteContext.current = { channels, artists, addToast }
+  const pasteContext = useRef({ channels, acts, addToast })
+  pasteContext.current = { channels, acts, addToast }
   const handlePasteRange = useCallback(
     (gridPos: string, text: string) => {
-      const { channels, artists, addToast } = pasteContext.current
+      const { channels, acts, addToast } = pasteContext.current
       const rows = parseTsv(text)
       if (rows.length === 0) return
       const [rowIndex, colIndex] = gridPos.split(':').map(Number)
       const startChannel = channels[rowIndex]
       if (!startChannel) return
-      const allColumns: PasteColumn[] = artists.flatMap((artist) =>
-        PATCH_FIELDS.map((field) => ({ artistId: artist.id, field }))
+      const allColumns: PasteColumn[] = acts.flatMap((act) =>
+        PATCH_FIELDS.map((field) => ({ actId: act.id, field }))
       )
       const columns = allColumns.slice(colIndex)
       const widest = Math.max(...rows.map((row) => row.length))
@@ -213,23 +219,41 @@ export default function PatchGrid({
         </datalist>
       ))}
 
+      {acts.length === 0 && (
+        // A grid with no columns, and no clue why. The acts are on the
+        // event's running order now, so the two ways out are both named: put
+        // one there, or point this sheet at a stage that already has some.
+        <p className={styles.noActs}>
+          Nothing is on <strong>{snapshot.meta.stage || 'this sheet'}</strong> yet. Acts live on the
+          running order, so every department works from the same times —{' '}
+          <button type="button" className={styles.inlineLink} onClick={onOpenLineup}>
+            add one in the lineup
+          </button>
+          , or set the stage above to one that already has acts.
+        </p>
+      )}
+
       <table className={styles.table}>
         <thead>
           <tr>
             <td className={`${styles.cornerCell} ${styles.stickyCorner}`} aria-hidden="true" />
-            {artists.map((artist, index) => (
-              <th key={artist.id} colSpan={PATCH_FIELDS.length} className={styles.artistHeader}>
-                <div className={styles.artistHeaderInner}>
-                  <span className={styles.artistName}>{artist.name}</span>
-                  <span className={styles.artistTime}>
-                    {artist.startTime}–{artist.endTime}
-                  </span>
+            {acts.map((act, index) => (
+              <th key={act.id} colSpan={PATCH_FIELDS.length} className={styles.actHeader}>
+                <div className={styles.actHeaderInner}>
+                  <span className={styles.actName}>{act.name}</span>
+                  {/* Imported sheets often carry no set times, and a bare
+                      en-dash on every column is worse than nothing. */}
+                  {(act.start || act.end) && (
+                    <span className={styles.actTime}>
+                      {act.start}–{act.end}
+                    </span>
+                  )}
                   {index > 0 && (
                     <button
                       type="button"
                       className={styles.copyButton}
-                      onClick={() => copyPatchesFromArtist(doc, artists[index - 1].id, artist.id)}
-                      title={`Copy patch from ${artists[index - 1].name}`}
+                      onClick={() => copyPatchesFromAct(doc, acts[index - 1].id, act.id)}
+                      title={`Copy patch from ${acts[index - 1].name}`}
                     >
                       ← Copy
                     </button>
@@ -242,8 +266,8 @@ export default function PatchGrid({
             <th scope="col" className={`${styles.fieldHeader} ${styles.stickyCorner}`}>
               Ch · Input
             </th>
-            {artists.map((artist) => (
-              <Fragment key={artist.id}>
+            {acts.map((act) => (
+              <Fragment key={act.id}>
                 {PATCH_FIELDS.map((field) => (
                   <th key={field} scope="col" className={styles.fieldHeader}>
                     {PATCH_FIELD_LABELS[field]}
@@ -260,17 +284,17 @@ export default function PatchGrid({
                 doc={doc}
                 channel={channel}
                 removable={channels.length > 1}
-                hasContent={artists.some((artist) =>
-                  patchEntryHasContent(patches[patchKey(artist.id, channel.id)])
+                hasContent={acts.some((act) =>
+                  patchEntryHasContent(patches[patchKey(act.id, channel.id)])
                 )}
                 isMatch={matchedChannels?.has(channel.id)}
               />
-              {artists.map((artist, artistIndex) => (
-                <Fragment key={artist.id}>
+              {acts.map((act, actIndex) => (
+                <Fragment key={act.id}>
                   {PATCH_FIELDS.map((field, fieldIndex) => {
                     const entryAbove =
                       rowIndex > 0
-                        ? patches[patchKey(artist.id, channels[rowIndex - 1].id)]
+                        ? patches[patchKey(act.id, channels[rowIndex - 1].id)]
                         : undefined
                     const valueAbove =
                       rowIndex > 0
@@ -285,19 +309,19 @@ export default function PatchGrid({
                         key={field}
                         doc={doc}
                         sheetId={sheetId}
-                        artistId={artist.id}
+                        actId={act.id}
                         channelId={channel.id}
                         field={field}
-                        entry={patches[patchKey(artist.id, channel.id)]}
+                        entry={patches[patchKey(act.id, channel.id)]}
                         subBoxes={subBoxes}
                         datalistId={DATALIST_IDS[field]}
-                        label={`${artist.name}, channel ${channel.label}, ${PATCH_FIELD_LABELS[field]}`}
-                        remoteEditor={remoteEditors[`${artist.id}:${channel.id}:${field}`]}
-                        gridPos={`${rowIndex}:${artistIndex * PATCH_FIELDS.length + fieldIndex}`}
+                        label={`${act.name}, channel ${channel.label}, ${PATCH_FIELD_LABELS[field]}`}
+                        remoteEditor={remoteEditors[`${act.id}:${channel.id}:${field}`]}
+                        gridPos={`${rowIndex}:${actIndex * PATCH_FIELDS.length + fieldIndex}`}
                         onNavigate={navigate}
                         onPasteRange={handlePasteRange}
                         valueAbove={valueAbove}
-                        isMatch={matchedCells?.has(`${artist.id}:${channel.id}:${field}`)}
+                        isMatch={matchedCells?.has(`${act.id}:${channel.id}:${field}`)}
                       />
                     )
                   })}
@@ -315,7 +339,7 @@ export default function PatchGrid({
         {/* A brand-new sheet is ten blank rows and no clue what to do with
             them. Only shown while nothing has been filled in, so it never
             nags anyone working. */}
-        {untouched && (
+        {untouched && acts.length > 0 && (
           <p className={styles.startHint}>
             Type straight into the grid, or bring one in from the sheet list with{' '}
             <strong>Import CSV</strong>.

@@ -1,20 +1,14 @@
-import { parseClock } from '../../patch/model/changeover.ts'
+import { parseClock } from '../../modules/patch/model/changeover.ts'
+import type { Act } from './model.ts'
 
 /**
- * The running order, as everyone else on site needs it.
+ * Reading the timetable: what is on, what is next, and how long.
  *
- * The data already exists. A festival patch sheet is one stage's day, and
- * every act on it already carries a start time, an end time and the
- * changeover before it — imported from the production company's own
- * spreadsheet. Until now that was visible only inside Patch Sheets, which is
- * a module a stage manager, a lighting tech or the bar lead has no reason to
- * open. So the single most-consulted document on site was the one crewbox
- * held and did not show.
- *
- * This computes what to show from those sheets. It is deliberately pure: no
- * Yjs, no React, no clock of its own. `now` is passed in, because a running
- * order that is wrong for an hour twice a year — or silently wrong for
- * everyone west of UTC — is worse than no running order at all.
+ * Deliberately pure — no Yjs, no React, no clock of its own. `now` is passed
+ * in, because a running order that is wrong for an hour twice a year, or
+ * silently wrong for everyone west of UTC, is worse than no running order at
+ * all. Every module that answers "what is on" goes through here, so they
+ * cannot disagree about it.
  */
 
 /**
@@ -37,6 +31,32 @@ const DAY = 24 * 60
  * 23:00 rather than before 19:00.
  */
 export const showMinutes = (clock: number): number => (clock < DAY_ROLLS_AT ? clock + DAY : clock)
+
+/**
+ * Acts in the order the day runs: by date, then by the show clock.
+ *
+ * Shared by everything that draws a list of acts — the running order's own
+ * editor and every sheet that takes its columns from here — so a patch sheet
+ * and the board can never put the same two acts in a different order.
+ *
+ * Anything without a time yet goes last, in the order it was entered. A TBC
+ * slot at the head of a running order is the least certain thing in the most
+ * prominent place, and on a sheet it would be the first column. Ties keep
+ * their entry order, so nothing shuffles under a finger mid-edit.
+ */
+export const inRunningOrder = <T extends Act>(acts: T[]): T[] =>
+  acts
+    .map((act, index) => ({ act, index, start: toAgendaAct(act).start }))
+    .sort(
+      (a, b) => blankLast(a.act.date, b.act.date) || nullLast(a.start, b.start) || a.index - b.index
+    )
+    .map((entry) => entry.act)
+
+const blankLast = (a: string, b: string): number =>
+  a === b ? 0 : !a ? 1 : !b ? -1 : a.localeCompare(b)
+
+const nullLast = (a: number | null, b: number | null): number =>
+  a === null || b === null ? (a === b ? 0 : a === null ? 1 : -1) : a - b
 
 export interface AgendaAct {
   id: string
@@ -67,20 +87,13 @@ export interface StageAgenda {
 }
 
 /**
- * Build one act from a patch sheet's artist row. Times that do not parse
+ * Place one timetable act on the show-day line. Times that do not parse
  * become null rather than zero — a missing time must never read as midnight
  * and put an act at the top of the day.
  */
-export function toAgendaAct(input: {
-  id: string
-  name: string
-  stage: string
-  startTime: string
-  endTime: string
-  changeover?: number
-}): AgendaAct {
-  const start = parseClock(input.startTime)
-  const end = parseClock(input.endTime)
+export function toAgendaAct(input: Act): AgendaAct {
+  const start = parseClock(input.start)
+  const end = parseClock(input.end)
   const mappedStart = start === null ? null : showMinutes(start)
 
   // The end is derived from the set's *duration*, not mapped independently.
@@ -96,7 +109,7 @@ export function toAgendaAct(input: {
     stage: input.stage.trim(),
     start: mappedStart,
     end: mappedStart === null || duration === null ? null : mappedStart + duration,
-    changeover: input.changeover ?? 0,
+    changeover: input.changeover,
   }
 }
 

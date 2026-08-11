@@ -18,7 +18,7 @@ export interface TailRow {
   tail: number
   /** The channel this tail feeds, or null when nothing is patched to it. */
   channel: Channel | null
-  /** What's on it — the artist's own input if set, else the house input. */
+  /** What's on it — the act's own input if set, else the house input. */
   input: string
   micDi: string
   /**
@@ -40,12 +40,12 @@ export interface BoxRun {
   used: number
 }
 
-/** What an artist's cell says its input is, falling back to the house input. */
+/** What an act's cell says its input is, falling back to the house input. */
 export const effectiveInput = (entry: PatchEntry | undefined, channel: Channel): string =>
   entry?.input?.trim() ? entry.input : channel.input
 
 /**
- * Every sub-box run for one artist, in sheet order.
+ * Every sub-box run for one act, in sheet order.
  *
  * Defined sub-boxes come first and always appear, at their full width, so a
  * half-used 12-way box still shows its five empty tails — the empties are the
@@ -53,7 +53,7 @@ export const effectiveInput = (entry: PatchEntry | undefined, channel: Channel):
  * exist as text in cells follow, listing just the tails actually used, since
  * nothing says how big they are.
  */
-export function stagePatchFor(snapshot: SheetSnapshot, artistId: string): BoxRun[] {
+export function stagePatchFor(snapshot: SheetSnapshot, actId: string): BoxRun[] {
   const { channels, subBoxes, patches } = snapshot
 
   /** Box key → tail → channels claiming it. */
@@ -61,7 +61,7 @@ export function stagePatchFor(snapshot: SheetSnapshot, artistId: string): BoxRun
   const textBoxes = new Map<string, string>()
 
   for (const channel of channels) {
-    const entry = patches[patchKey(artistId, channel.id)]
+    const entry = patches[patchKey(actId, channel.id)]
     if (!entry || entry.subBoxTail === null) continue
     const key = entry.subBoxId ?? `text:${entry.subBoxText.trim().toLowerCase()}`
     if (!entry.subBoxId) {
@@ -76,7 +76,7 @@ export function stagePatchFor(snapshot: SheetSnapshot, artistId: string): BoxRun
   const rowFor = (tail: number, byTail: Map<number, Channel[]> | undefined): TailRow => {
     const claiming = byTail?.get(tail) ?? []
     const [channel, ...clashes] = claiming
-    const entry = channel ? patches[patchKey(artistId, channel.id)] : undefined
+    const entry = channel ? patches[patchKey(actId, channel.id)] : undefined
     return {
       tail,
       channel: channel ?? null,

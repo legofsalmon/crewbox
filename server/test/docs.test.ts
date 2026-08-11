@@ -104,6 +104,23 @@ describe('docs relay auth', () => {
     expect(parseRoomName('patch/a/b', enabled)).toBeNull()
     expect(parseRoomName('../etc/passwd', enabled)).toBeNull()
   })
+
+  it('always allows the shell namespaces, whatever the box enables', () => {
+    // The timetable is the event's, not a department's. A box running
+    // chat-only still has a running order, and every module that reads it
+    // would break if turning one module off took it away.
+    expect(parseRoomName('timetable/event', ['chat'])).toBe('timetable/event')
+    expect(parseRoomName('timetable/event', [])).toBe('timetable/event')
+  })
+
+  it('does not let a shell namespace become a wildcard', () => {
+    // Always-allowed is not the same as unscoped: the room still has to be
+    // shaped like a room, and nothing else gets in on the strength of it.
+    expect(parseRoomName('timetable', [])).toBeNull()
+    expect(parseRoomName('timetable/', [])).toBeNull()
+    expect(parseRoomName('timetable/a/b', [])).toBeNull()
+    expect(parseRoomName('timetables/event', [])).toBeNull()
+  })
 })
 
 describe('docs relay sync', () => {

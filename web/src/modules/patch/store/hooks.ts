@@ -1,10 +1,10 @@
 import type * as Y from 'yjs'
-import { useDocIndex, useStoreDoc } from '../../_shared/docs/hooks.ts'
+import { useDocIndex, useStoreDoc } from '../../../lib/docs/hooks.ts'
 import { snapshotSheet } from '../model/sheetDoc'
 import type { SheetIndexEntry, SheetSnapshot } from '../model/types'
 import { sheetStore } from './docManager.ts'
 
-export { useDocSnapshot } from '../../_shared/docs/hooks.ts'
+export { useDocSnapshot } from '../../../lib/docs/hooks.ts'
 
 /** Open a sheet doc for the component's lifetime and render its live snapshot. */
 export function useSheet(sheetId: string | null): {
