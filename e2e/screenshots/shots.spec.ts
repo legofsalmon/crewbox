@@ -70,6 +70,11 @@ test('seed: the event, the crew, the paperwork', async ({ page, browser }) => {
   await expect(maya.getByLabel('Sheet title')).toBeVisible()
   await maya.getByLabel('Sheet title').fill('Riverside Weekender — Master Patch')
   await maya.getByLabel('Sheet title').press('Enter')
+  // The stage an import lands on is named after the file it came from, which
+  // is not what a crew calls it. Renaming it here is what a crew would do
+  // first, and it takes the acts with it onto the event's running order.
+  await maya.locator('#sheet-stage').fill('Main Stage')
+  await maya.locator('#sheet-stage').press('Enter')
 
   // --- lighting: the MVR rig, renamed, with a trim set ---------------------
   await lena.getByRole('button', { name: 'All plots…' }).click()

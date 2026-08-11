@@ -1,5 +1,6 @@
+import type * as Y from 'yjs'
 import { inRunningOrder } from '../../../shell/timetable/agenda.ts'
-import { actsForStage, type Act } from '../../../shell/timetable/model.ts'
+import { actsForStage, updateAct, type Act } from '../../../shell/timetable/model.ts'
 import { emptyExtras, type SheetAct, type SheetMeta, type SheetSnapshot } from './types'
 
 /**
@@ -39,3 +40,29 @@ export const sheetActs = (snapshot: SheetSnapshot, acts: Act[]): SheetAct[] =>
     const { spec, notes, files } = snapshot.extras[act.id] ?? emptyExtras(act.id)
     return { ...act, spec, notes, files }
   })
+
+/**
+ * Rename the stage this sheet is for, taking its acts with it.
+ *
+ * The stage field decides the columns now, so on its own a rename would empty
+ * the sheet — every act still filed under the old spelling, the grid blank,
+ * and nothing saying why. Someone typing "Main" over an imported sheet's
+ * machine-generated stage name means "this sheet is the Main stage", not
+ * "throw this away", so the acts follow the name.
+ *
+ * `acts` is what the sheet is currently showing, which is exactly the set
+ * that should move. The one case that must not move anything is a sheet with
+ * no stage named yet: it is showing the whole day, and dragging every other
+ * stage's acts onto this name would be a rename of the entire event.
+ */
+export const setSheetStage = (
+  timetableDoc: Y.Doc,
+  meta: Pick<SheetMeta, 'stage'>,
+  acts: SheetAct[],
+  next: string
+): void => {
+  const from = meta.stage.trim()
+  const to = next.trim()
+  if (from === to || !from) return
+  for (const act of acts) updateAct(timetableDoc, act.id, { stage: to })
+}

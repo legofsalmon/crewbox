@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { actsOnSheet, sheetActs } from './lineup'
+import * as Y from 'yjs'
+import { actsOnSheet, setSheetStage, sheetActs } from './lineup'
 import { emptyExtras, type SheetSnapshot } from './types'
-import type { Act } from '../../../shell/timetable/model.ts'
+import { addAct, snapshotTimetable, type Act } from '../../../shell/timetable/model.ts'
 
 /**
  * How a patch sheet finds its own columns.
@@ -126,5 +127,54 @@ describe('merging the sheet’s own half back in', () => {
   it('follows a sheet that is pointed at a different stage', () => {
     const acts = [act({ id: 'main' }), act({ id: 'barn', stage: 'Barn' })]
     expect(sheetActs(withMeta('Barn', '2026-08-09'), acts).map((a) => a.id)).toEqual(['barn'])
+  })
+})
+
+describe('renaming the stage a sheet is for', () => {
+  /**
+   * The trap this exists to close: the stage decides the columns, so a
+   * rename on its own leaves every act filed under the old spelling and the
+   * grid blank, with nothing saying why.
+   */
+  const seed = (stage: string) => {
+    const events = new Y.Doc()
+    const mine = addAct(events, { name: 'Mine', stage, date: '2026-08-09' })
+    const theirs = addAct(events, { name: 'Theirs', stage: 'Barn', date: '2026-08-09' })
+    return { events, mine, theirs }
+  }
+  const showing = (events: Y.Doc, meta: { stage: string; date: string }) =>
+    sheetActs(withMeta(meta.stage, meta.date), snapshotTimetable(events).acts)
+
+  it('takes the sheet’s acts with it', () => {
+    const { events, mine } = seed('festival-master-patch')
+    const meta = { stage: 'festival-master-patch', date: '2026-08-09' }
+
+    setSheetStage(events, meta, showing(events, meta), 'Main')
+
+    const after = snapshotTimetable(events).acts
+    expect(after.find((a) => a.id === mine)?.stage).toBe('Main')
+    expect(showing(events, { stage: 'Main', date: '2026-08-09' }).map((a) => a.name)).toEqual([
+      'Mine',
+    ])
+  })
+
+  it('leaves another stage’s acts where they are', () => {
+    const { events, theirs } = seed('Main')
+    const meta = { stage: 'Main', date: '2026-08-09' }
+    setSheetStage(events, meta, showing(events, meta), 'Main Stage')
+    expect(snapshotTimetable(events).acts.find((a) => a.id === theirs)?.stage).toBe('Barn')
+  })
+
+  it('moves nothing when the sheet had no stage named yet', () => {
+    // A stageless sheet is showing the whole day. Dragging every act on it
+    // onto one name would be a rename of the entire event, not of a sheet.
+    const { events } = seed('Main')
+    const meta = { stage: '', date: '2026-08-09' }
+    setSheetStage(events, meta, showing(events, meta), 'Main')
+    expect(
+      snapshotTimetable(events)
+        .acts.map((a) => a.stage)
+        .sort()
+    ).toEqual(['Barn', 'Main'])
   })
 })

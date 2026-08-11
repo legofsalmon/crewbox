@@ -241,9 +241,13 @@ export default function PatchGrid({
               <th key={act.id} colSpan={PATCH_FIELDS.length} className={styles.actHeader}>
                 <div className={styles.actHeaderInner}>
                   <span className={styles.actName}>{act.name}</span>
-                  <span className={styles.actTime}>
-                    {act.start}–{act.end}
-                  </span>
+                  {/* Imported sheets often carry no set times, and a bare
+                      en-dash on every column is worse than nothing. */}
+                  {(act.start || act.end) && (
+                    <span className={styles.actTime}>
+                      {act.start}–{act.end}
+                    </span>
+                  )}
                   {index > 0 && (
                     <button
                       type="button"

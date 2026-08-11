@@ -1,7 +1,9 @@
 import type { RefObject } from 'react'
 import type * as Y from 'yjs'
 import { useStageNames } from '../../../shell/timetable/hooks.ts'
+import { timetable } from '../../../shell/timetable/store.ts'
 import { setMetaField } from '../model/sheetDoc'
+import { setSheetStage } from '../model/lineup'
 import { displayToIso, isoToDisplay } from '../model/date'
 import type { SheetAct, SheetSnapshot } from '../model/types'
 import { downloadSheetCsv } from './download'
@@ -52,7 +54,12 @@ export default function Toolbar({
   const { addToast } = useToasts()
   const stageNames = useStageNames()
 
-  const stage = useDraft(snapshot.meta.stage, (next) => setMetaField(doc, 'stage', next.trim()))
+  // The acts move with the name: the stage is how the sheet finds its
+  // columns, so a rename on its own would empty the grid and say nothing.
+  const stage = useDraft(snapshot.meta.stage, (next) => {
+    setSheetStage(timetable().doc, snapshot.meta, acts, next)
+    setMetaField(doc, 'stage', next.trim())
+  })
   const date = useDraft(isoToDisplay(snapshot.meta.date), (next) => {
     const iso = displayToIso(next)
     if (iso) {
@@ -71,9 +78,10 @@ export default function Toolbar({
     <div className={styles.toolbar}>
       <div className={styles.field}>
         {/* Load-bearing, not decorative: the stage is how this sheet picks
-            its acts out of the event's running order. Spelling it a second
-            way ("Main stage") makes a second stage and empties the grid,
-            which is why the names already in use are offered back. */}
+            its acts out of the event's running order. Renaming it brings
+            this sheet's acts along; the names already in use are offered
+            back, because "Main Stage" where the running order says "Main"
+            is a second stage and an empty grid. */}
         <label htmlFor="sheet-stage">Stage:</label>
         <input
           id="sheet-stage"
