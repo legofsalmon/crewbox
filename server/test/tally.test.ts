@@ -104,6 +104,34 @@ describe('naming the person on camera', () => {
   })
 })
 
+describe('a desk that polls, and a stranger that guesses', () => {
+  it('never throttles a desk holding the right key', async () => {
+    // A Stream Deck asks what is on air a second at a time all night, which
+    // is the whole point of this surface. Counting those against a limiter
+    // meant for guessers would turn a busy show into a dead button.
+    const codes = new Set<number>()
+    for (let i = 0; i < 200; i++) {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/control/tally',
+        headers: { 'x-api-key': key },
+      })
+      codes.add(res.statusCode)
+    }
+    expect([...codes]).toEqual([200])
+  })
+
+  it('says "too many" rather than "wrong key" once a guesser is throttled', async () => {
+    // A 401 here would send whoever built the button off to check a key that
+    // was right all along.
+    let last = 0
+    for (let i = 0; i < 130; i++) {
+      last = (await post({ user: 'Dev Okafor' }, { 'x-api-key': `guess-${i}` })).statusCode
+    }
+    expect(last).toBe(429)
+  })
+})
+
 describe('a desk that reconnected', () => {
   it('can read back what is on air', async () => {
     await post({ user: 'Dev Okafor' }, { 'x-api-key': key })

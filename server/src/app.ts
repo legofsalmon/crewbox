@@ -1347,10 +1347,27 @@ export function buildApp({
   //
   // Keyed, and deliberately not the admin password. See control.ts.
 
-  /** True when this request carried the box's control key. */
-  const authControl = (req: { headers: Record<string, unknown>; ip: string }): boolean => {
-    if (!controlLimiter.allow(req.ip)) return false
-    return keyMatches(keyFromHeaders(req.headers), controlKey(store))
+  /**
+   * True when this request carried the box's control key; otherwise it has
+   * already been refused and the caller should stop.
+   *
+   * Only *wrong* keys are counted against the limiter. A desk polling the
+   * state twice a second is doing exactly what this surface is for, and
+   * throttling it would turn a busy show into a dead button; a wrong key is
+   * the only thing worth slowing down. Being over the limit is a 429 and not
+   * a 401, because "bad or missing key" sends whoever built the button off
+   * to check a key that was right all along.
+   */
+  const authControl = (req: FastifyRequest, reply: FastifyReply): boolean => {
+    if (keyMatches(keyFromHeaders(req.headers as Record<string, unknown>), controlKey(store))) {
+      return true
+    }
+    if (!controlLimiter.allow(req.ip)) {
+      void reply.code(429).send({ error: 'too many bad keys — wait a minute and try again' })
+      return false
+    }
+    void reply.code(401).send({ error: 'bad or missing key' })
+    return false
   }
 
   /**
@@ -1363,7 +1380,7 @@ export function buildApp({
    * member is ever recreated.
    */
   fastify.post('/api/control/tally', (req, reply) => {
-    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    if (!authControl(req, reply)) return reply
     const parsed = tallyBodySchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.code(400).send({ error: 'send { "user": "<id or name>" } or { "user": null }' })
@@ -1386,7 +1403,7 @@ export function buildApp({
 
   /** What is on air now, for a desk that reconnected and wants to resync. */
   fastify.get('/api/control/tally', (req, reply) => {
-    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    if (!authControl(req, reply)) return reply
     return tally.current()
   })
 
@@ -1400,7 +1417,7 @@ export function buildApp({
    * anybody wrote — a key on a desk is not a key to the crew's messages.
    */
   fastify.get('/api/control/state', (req, reply) => {
-    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    if (!authControl(req, reply)) return reply
     const wanted = (req.query as { stage?: string } | undefined)?.stage?.trim().toLowerCase()
     const stats = hub.stats()
     const onAir = tally.current()
@@ -1456,7 +1473,7 @@ export function buildApp({
    * able to write into a DM.
    */
   fastify.post('/api/control/message', (req, reply) => {
-    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    if (!authControl(req, reply)) return reply
     const parsed = controlMessageSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply

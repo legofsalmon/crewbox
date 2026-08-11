@@ -150,7 +150,10 @@ those two apart at a desk mid-show is nobody's idea of an evening.
 
 ## Limits
 
-- 120 requests a minute per source address. That is generous for a Stream
-  Deck and mean for somebody guessing at the key.
+- **A correct key is never throttled.** Poll the state as often as your desk
+  wants to; that is what it is for.
+- **A wrong one is**, at 120 tries a minute per source address. Past that the
+  answer is `429` rather than another `401`, so a throttled desk and a
+  mistyped key never look the same.
 - Everything here is read-or-tally-or-post. There is no call that changes the
   event, deletes anything, or reads what the crew wrote to each other.

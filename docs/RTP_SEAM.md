@@ -61,11 +61,11 @@ Verified against the AES67 practical guides and the AIMS interop notes:
   ship into a show.
 - **SDP over SAP** for discovery.
 
-Crewbox already has the *receive* halves of the last two: `netwatch/ptp.ts`
+Crewbox already has the _receive_ halves of the last two: `netwatch/ptp.ts`
 decodes PTPv2 Announce messages and reports grandmaster health, and
 `netwatch/sap.ts` parses the SAP/SDP announcements that make up an AES67
 stream directory. Both are strictly read-only by design, and being able to
-*watch* a grandmaster is a long way from being *slaved* to one.
+_watch_ a grandmaster is a long way from being _slaved_ to one.
 
 ## The four routes to a media plane
 

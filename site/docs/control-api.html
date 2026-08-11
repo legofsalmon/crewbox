@@ -82,7 +82,7 @@ needs to trust that certificate — see
 <a href="/docs/https-and-voice">HTTPS, names and certificates</a>. A desk that cannot
 verify it will fail every call with a TLS error, not a <code>401</code>.</p></div>
 <h2 id="limits"><a class="anchor" href="#limits">Limits</a></h2>
-<ul><li>120 requests a minute per source address. That is generous for a Stream Deck and mean for somebody guessing at the key.</li><li>Everything here is read-or-tally-or-post. There is no call that changes the event, deletes anything, or reads what the crew wrote to each other.</li></ul>
+<ul><li><strong>A correct key is never throttled.</strong> Poll the state as often as your desk wants to; that is what it is for.</li><li><strong>A wrong one is</strong>, at 120 tries a minute per source address. Past that the answer is <code>429</code> rather than another <code>401</code>, so a throttled desk and a mistyped key never look the same.</li><li>Everything here is read-or-tally-or-post. There is no call that changes the event, deletes anything, or reads what the crew wrote to each other.</li></ul>
         <footer class="prevnext"><a class="prev" href="/docs/phones-and-platforms"><span>Previous</span>Phones and platforms</a><a class="next" href="/docs/shortcuts"><span>Next</span>Keyboard shortcuts</a></footer>
       </main>
     </div>

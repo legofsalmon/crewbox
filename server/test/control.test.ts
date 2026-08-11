@@ -192,7 +192,13 @@ describe('reading the running order off the relay', () => {
     // that is missing, or arrives as something other than a string, has to
     // read as empty rather than throwing on a route a desk polls all night.
     const [act] = readRunningOrder(
-      timetableDoc([{ name: 42 as unknown as string, stage: 'Main Stage', changeover: 'HR' }])
+      timetableDoc([
+        {
+          name: 42 as unknown as string,
+          stage: 'Main Stage',
+          changeover: 'HR' as unknown as number,
+        },
+      ])
     )
     expect(act).toMatchObject({ name: '', start: '', end: '', changeover: 0 })
   })
