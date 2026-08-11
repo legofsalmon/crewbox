@@ -5,6 +5,9 @@ import type {
   Channel,
   ChannelKind,
   FileMeta,
+  Incident,
+  IncidentKind,
+  IncidentSeverity,
   Message,
   MessageKind,
   Role,
@@ -117,6 +120,42 @@ function toMessage(row: MessageRow): Message {
   return message
 }
 
+interface IncidentRow {
+  id: string
+  seq: number
+  author_id: string | null
+  author_name: string
+  kind: string
+  severity: string
+  body: string
+  at: number
+  logged_at: number
+  stage: string
+  act_id: string
+  act_name: string
+  amends: string | null
+  client_msg_id: string | null
+}
+
+function toIncident(row: IncidentRow): Incident {
+  return {
+    id: row.id,
+    seq: row.seq,
+    authorId: row.author_id,
+    authorName: row.author_name,
+    kind: row.kind as IncidentKind,
+    severity: row.severity as IncidentSeverity,
+    body: row.body,
+    at: row.at,
+    loggedAt: row.logged_at,
+    stage: row.stage,
+    actId: row.act_id,
+    actName: row.act_name,
+    ...(row.amends ? { amends: row.amends } : {}),
+    ...(row.client_msg_id ? { clientMsgId: row.client_msg_id } : {}),
+  }
+}
+
 export class Store {
   constructor(private readonly db: DatabaseSync) {}
 
@@ -154,6 +193,13 @@ export class Store {
       this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
       this.db.prepare('DELETE FROM channel_members WHERE user_id = ?').run(userId)
       this.db.prepare('UPDATE messages SET author_id = NULL WHERE author_id = ?').run(userId)
+      // The show log keeps the entry and loses the person: what happened at
+      // 21:04 is the event's record, who typed it is theirs. The name goes
+      // with the id — leaving it would make "deleted my account" a promise
+      // this table quietly broke.
+      this.db
+        .prepare("UPDATE incidents SET author_id = NULL, author_name = '' WHERE author_id = ?")
+        .run(userId)
       this.db.prepare('DELETE FROM users WHERE id = ?').run(userId)
     })
   }
@@ -637,5 +683,115 @@ export class Store {
          ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
       )
       .run(key, value, Date.now())
+  }
+
+  // -- show log -------------------------------------------------------------
+  //
+  // Append and read. There is deliberately no update and no delete: a
+  // correction is a new entry naming the one it corrects (see amends), the
+  // way a paper log book is corrected, and both stay readable.
+
+  /**
+   * File an entry. Returns the stored row and whether it was already there.
+   *
+   * The dedupe is the same one chat uses, and it matters more here: a phone
+   * that logs a show stop, loses Wi-Fi before the acknowledgement and retries
+   * must not put two show stops in the record.
+   */
+  appendIncident(input: {
+    authorId: string | null
+    authorName: string
+    kind: IncidentKind
+    severity: IncidentSeverity
+    body: string
+    at: number
+    stage?: string
+    actId?: string
+    actName?: string
+    amends?: string
+    clientMsgId?: string
+  }): { incident: Incident; deduped: boolean } {
+    return transaction(this.db, () => {
+      if (input.clientMsgId) {
+        const existing = this.db
+          .prepare('SELECT * FROM incidents WHERE client_msg_id = ?')
+          .get(input.clientMsgId) as unknown as IncidentRow | undefined
+        if (existing) return { incident: toIncident(existing), deduped: true }
+      }
+      const { next } = this.db
+        .prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM incidents')
+        .get() as { next: number }
+      const incident: Incident = {
+        id: newId(),
+        seq: next,
+        authorId: input.authorId,
+        authorName: input.authorName,
+        kind: input.kind,
+        severity: input.severity,
+        body: input.body,
+        at: input.at,
+        loggedAt: Date.now(),
+        stage: input.stage ?? '',
+        actId: input.actId ?? '',
+        actName: input.actName ?? '',
+        ...(input.amends ? { amends: input.amends } : {}),
+        ...(input.clientMsgId ? { clientMsgId: input.clientMsgId } : {}),
+      }
+      this.db
+        .prepare(
+          `INSERT INTO incidents
+             (id, seq, author_id, author_name, kind, severity, body, at, logged_at,
+              stage, act_id, act_name, amends, client_msg_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          incident.id,
+          incident.seq,
+          incident.authorId,
+          incident.authorName,
+          incident.kind,
+          incident.severity,
+          incident.body,
+          incident.at,
+          incident.loggedAt,
+          incident.stage,
+          incident.actId,
+          incident.actName,
+          incident.amends ?? null,
+          incident.clientMsgId ?? null
+        )
+      return { incident, deduped: false }
+    })
+  }
+
+  /**
+   * The log, newest first, for entries before `beforeSeq`.
+   *
+   * Ordered by seq rather than by `at`, because seq is the order the box
+   * learned things and cannot be argued with; an entry back-dated by ten
+   * minutes must not silently jump above one already read. The pane sorts by
+   * `at` for display — that is a view, this is the record.
+   */
+  listIncidentsBefore(beforeSeq: number, limit: number): Incident[] {
+    const rows = this.db
+      .prepare('SELECT * FROM incidents WHERE seq < ? ORDER BY seq DESC LIMIT ?')
+      .all(beforeSeq, limit) as unknown as IncidentRow[]
+    return rows.map(toIncident)
+  }
+
+  /** Every entry in the window, oldest first — for the show report. */
+  listIncidentsBetween(from: number, to: number): Incident[] {
+    const rows = this.db
+      .prepare('SELECT * FROM incidents WHERE at >= ? AND at <= ? ORDER BY seq')
+      .all(from, to) as unknown as IncidentRow[]
+    return rows.map(toIncident)
+  }
+
+  /** Highest seq in the log, or 0 when nothing has been filed. */
+  latestIncidentSeq(): number {
+    const row = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM incidents').get() as {
+      seq: number
+    }
+    return row.seq
   }
 }

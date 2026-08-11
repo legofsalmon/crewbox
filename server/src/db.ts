@@ -153,6 +153,41 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_audit_probe_runs_started
     ON audit_probe_runs(started_at);
   `,
+  // v8: the show log — one append-only stream for the whole box.
+  //
+  // Not per-channel like messages: there is one show, and an entry filed by
+  // lighting is part of the same night as one filed by stage management.
+  // `seq` is unique across the table for that reason.
+  //
+  // author_name is stored beside author_id on purpose. The id is the link
+  // while the account exists; the name is what the log says next year, after
+  // a rename or a departure. Both are cleared together when somebody deletes
+  // their account, which keeps the record and drops the person.
+  //
+  // Nothing here is ever UPDATEd by the app: a correction is a new row whose
+  // `amends` names the row it corrects. `at` and `logged_at` are separate
+  // because the show does not wait for anyone to get their phone out.
+  `
+  CREATE TABLE IF NOT EXISTS incidents (
+    id            TEXT PRIMARY KEY,
+    seq           INTEGER NOT NULL UNIQUE,
+    author_id     TEXT REFERENCES users(id),
+    author_name   TEXT NOT NULL DEFAULT '',
+    kind          TEXT NOT NULL DEFAULT 'note',
+    severity      TEXT NOT NULL DEFAULT 'note',
+    body          TEXT NOT NULL DEFAULT '',
+    at            INTEGER NOT NULL,
+    logged_at     INTEGER NOT NULL,
+    stage         TEXT NOT NULL DEFAULT '',
+    act_id        TEXT NOT NULL DEFAULT '',
+    act_name      TEXT NOT NULL DEFAULT '',
+    amends        TEXT,
+    client_msg_id TEXT
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_incidents_client_msg_id
+    ON incidents(client_msg_id) WHERE client_msg_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_incidents_at ON incidents(at);
+  `,
 ]
 
 export function openDb(path: string): DatabaseSync {
