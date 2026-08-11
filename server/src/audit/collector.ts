@@ -76,6 +76,7 @@ export class Collector {
   private lastPrune = 0
   /** RTT samples reported by clients since the last flush (phase 6 hook). */
   private rttSamples: number[] = []
+  private voiceSamples: Array<{ lossPct: number; jitterMs: number; concealedPct: number }> = []
 
   constructor(
     private readonly metrics: MetricsStore | undefined,
@@ -105,6 +106,17 @@ export class Collector {
     this.rttSamples.push(ms)
   }
 
+  /**
+   * A device reporting how comms sounded to it.
+   *
+   * Kept per-sample rather than pre-averaged for the same reason as RTT: one
+   * phone behind a truck having a bad minute is the thing worth seeing, and
+   * an average taken here would flatten it before the rollup ever saw it.
+   */
+  noteVoice(stats: { lossPct: number; jitterMs: number; concealedPct: number }): void {
+    this.voiceSamples.push(stats)
+  }
+
   /** One sampling pass. Public so tests can drive it with an injected clock. */
   sample(): void {
     const now = this.now()
@@ -132,6 +144,14 @@ export class Collector {
     if (this.rttSamples.length > 0) {
       for (const ms of this.rttSamples) this.add('crew.rtt', '', ms)
       this.rttSamples = []
+    }
+    if (this.voiceSamples.length > 0) {
+      for (const sample of this.voiceSamples) {
+        this.add('voice.lossPct', '', sample.lossPct)
+        this.add('voice.jitterMs', '', sample.jitterMs)
+        this.add('voice.concealedPct', '', sample.concealedPct)
+      }
+      this.voiceSamples = []
     }
 
     if (this.sources.dmxHealth) this.sampleDmx(this.sources.dmxHealth(), next, now)

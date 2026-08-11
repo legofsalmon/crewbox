@@ -1546,6 +1546,85 @@ ul {
   text-align: center;
 }
 
+/* ------------------------------------------------------------------ on air */
+/* Full width and top of the stack. Its whole job is to be impossible to miss
+   by someone who is not looking at their phone — which is the state anyone
+   on camera should be in. */
+.on-air {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: var(--bg-raised);
+  color: var(--danger);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Somebody else is live: worth knowing, not worth shouting about. */
+.on-air-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+/* It is you. Now it shouts.
+   A literal red rather than --danger, and the same literal in both themes.
+   Tally red is a real-world convention like a scrim is — the bar means the
+   camera is live whatever the app's palette is doing. It also has to carry
+   white text: --danger is tuned as a *text* colour and reaches only 3.05:1
+   behind white in the dark theme, where this hits 6.9:1. */
+.on-air-me {
+  background: #b3151f;
+  color: #fff;
+  border-bottom-color: #b3151f;
+  font-size: 14px;
+}
+
+.on-air-me .on-air-dot {
+  background: #fff;
+  animation: on-air-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes on-air-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* A blinking red bar is exactly what a vestibular disorder does not need,
+   and the colour and the words already carry it. */
+@media (prefers-reduced-motion: reduce) {
+  .on-air-me .on-air-dot {
+    animation: none;
+  }
+}
+
+/* Blocked playback: a control, not a warning — the browser is waiting for a
+   gesture and this is the gesture. Sized like a real target because it is
+   pressed once, in a hurry, often in the dark. */
+.ptt-blocked {
+  /* Outlined rather than filled: --danger is tuned as a *text* colour in
+     both themes, so white on it is thin in the dark one. This way the token
+     does the job it was picked for and the contrast holds either side. */
+  background: var(--bg-raised);
+  color: var(--danger);
+  border: 2px solid var(--danger);
+  border-radius: 99px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 38px;
+}
+
 /* -------------------------------------------------------- audio settings */
 .audio-panel {
   width: min(440px, 100%);
@@ -2182,6 +2261,19 @@ ul {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * A key that gets read off this screen and typed into a desk, so it wraps
+ * rather than ellipsing — half a key is worse than a tall row — and one tap
+ * selects the whole of it.
+ */
+.admin-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: all;
 }
 
 /* --------------------------------------------------------------- mobile */

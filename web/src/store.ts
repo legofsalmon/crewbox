@@ -107,6 +107,14 @@ export interface AppState {
   users: Record<string, User>
   channels: Record<string, Channel>
   online: Record<string, boolean>
+  /**
+   * The crew member a vision desk has cut to, if any.
+   *
+   * Shell state because it is the event's, not a module's, and because the
+   * person it names is the one who most needs to be told without going
+   * looking for it.
+   */
+  onAir: string | null
   /** Online with no on-site connection — joining from the office/warehouse. */
   remoteUsers: Record<string, boolean>
   readState: Record<string, number>
@@ -179,6 +187,8 @@ export interface AppState {
   leaveVoice: () => Promise<void>
   setTalking: (on: boolean) => void
   toggleLatch: () => void
+  /** Let blocked audio through. Must be called from a real user gesture. */
+  resumeVoiceAudio: () => void
   join: (name: string, eventPin: string, personalPin: string) => Promise<void>
   sendMessage: (channelId: string, body: string) => void
   sendFile: (channelId: string, file: File, caption?: string) => Promise<void>
@@ -563,6 +573,9 @@ export const useStore = create<AppState>()((set, get) => {
         void cache.deleteOutbox(msg.clientMsgId)
         break
       }
+      case 'tally':
+        set({ onAir: msg.userId })
+        break
       case 'presence':
         set({
           online: { ...get().online, [msg.userId]: msg.online },
@@ -664,6 +677,7 @@ export const useStore = create<AppState>()((set, get) => {
     users: {},
     channels: {},
     online: {},
+    onAir: null,
     remoteUsers: {},
     readState: {},
     mentionSeqs: {},
@@ -697,7 +711,18 @@ export const useStore = create<AppState>()((set, get) => {
         const { VoiceManager } = await import('./lib/voice.ts')
         voiceManager ??= new VoiceManager(
           (partial) => set({ voice: { ...useStore.getState().voice, ...partial } }),
-          (message) => get().toast(message, 'warning')
+          (message) => get().toast(message, 'warning'),
+          // Straight out over the chat socket, which is already open and
+          // already carries the other thing only a device can measure (its
+          // own round trip). Dropped without complaint when the socket is
+          // down: this is a graph, and a graph is never worth a retry queue.
+          (qos) =>
+            ws?.send({
+              type: 'voiceStats',
+              lossPct: qos.lossPct,
+              jitterMs: qos.jitterMs,
+              concealedPct: qos.concealedPct,
+            })
         )
       }
       // Browsers only hand over a microphone in a secure context, and a box
@@ -734,6 +759,10 @@ export const useStore = create<AppState>()((set, get) => {
 
     async leaveVoice() {
       await voiceManager?.leave()
+    },
+
+    resumeVoiceAudio() {
+      void voiceManager?.resumeAudio()
     },
 
     setTalking(on) {

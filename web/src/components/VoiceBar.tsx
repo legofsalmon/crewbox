@@ -18,6 +18,7 @@ export default function VoiceBar() {
   const setTalking = useStore((s) => s.setTalking)
   const toggleLatch = useStore((s) => s.toggleLatch)
   const setAudioSettingsOpen = useStore((s) => s.setAudioSettingsOpen)
+  const resumeVoiceAudio = useStore((s) => s.resumeVoiceAudio)
 
   if (voice.channelId === null || voice.status === 'idle') return null
 
@@ -79,6 +80,13 @@ export default function VoiceBar() {
           {/* Status pills float above the button; kept out of flow so they
               never shift the talk target under the user's finger. */}
           <div className="ptt-alerts" aria-live="polite">
+            {/* First, because it is the only one that means you are hearing
+                nothing at all — and the only one a tap fixes. */}
+            {voice.audioBlocked && (
+              <button className="ptt-blocked" onClick={resumeVoiceAudio}>
+                Tap to hear comms
+              </button>
+            )}
             {(voice.myQuality === 'poor' || voice.myQuality === 'lost') && (
               <span className="ptt-weak" role="status">
                 Weak signal — your voice may be choppy

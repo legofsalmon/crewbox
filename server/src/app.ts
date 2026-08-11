@@ -17,7 +17,13 @@ import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 import QRCode from 'qrcode-svg'
-import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
+import {
+  HOME_CHANNEL,
+  MAX_MESSAGE_LENGTH,
+  newId,
+  type PublicConfig,
+  type User,
+} from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
 import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
 import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
@@ -35,6 +41,14 @@ import type { NetWatch } from './netwatch/listener.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, type MetricsStore } from './audit/metrics.ts'
+
+/**
+ * How far back the comms-quality row looks.
+ *
+ * Long enough to survive a quiet patch between calls, short enough that
+ * "comms were breaking up" means during this act rather than at load-in.
+ */
+const VOICE_QUALITY_WINDOW_MS = 10 * 60_000
 import { Prober } from './audit/probes.ts'
 import { scoreAudit } from './audit/score.ts'
 import { setupPage } from './setup.ts'
@@ -56,6 +70,15 @@ import {
   verifyPin,
   verifyPinAsync,
 } from './auth.ts'
+import {
+  controlKey,
+  keyFromHeaders,
+  keyMatches,
+  readRunningOrder,
+  stageBoard,
+  Tally,
+  TIMETABLE_ROOM,
+} from './control.ts'
 import { Hub } from './hub.ts'
 import type { Store } from './store.ts'
 
@@ -149,6 +172,26 @@ const settingsPatchSchema = z.object({
    * floor and is never shown to anyone who hasn't already unlocked.
    */
   adminPassword: z.string().min(8).max(128).optional(),
+})
+
+/**
+ * `null` clears; a string names a crew member by id or by name.
+ *
+ * `nullable` and not `optional`: a desk saying "nobody is on air" is a
+ * statement, and an empty body arriving by accident should be a 400 rather
+ * than a silent all-clear on a live camera.
+ */
+const tallyBodySchema = z.object({
+  user: z.string().max(80).nullable(),
+})
+
+/**
+ * A message posted from a desk. The channel is named the way whoever built
+ * the button knows it — "#foh", "foh", or an id a script stored.
+ */
+const controlMessageSchema = z.object({
+  channel: z.string().trim().min(1).max(80),
+  body: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH),
 })
 
 const unlockBodySchema = z.object({
@@ -286,6 +329,12 @@ export interface AppDeps {
    * tests and the e2e box work without a metrics store.
    */
   metrics?: MetricsStore
+  /**
+   * The wall clock the running order is read against. Injected by tests, so
+   * "what is on the main stage" can be asked at nine in the evening from a CI
+   * runner at four in the morning. Production passes nothing.
+   */
+  clock?: () => Date
   logger?: boolean
 }
 
@@ -320,6 +369,7 @@ export function buildApp({
   dmx,
   netwatch,
   metrics,
+  clock = () => new Date(),
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -385,6 +435,23 @@ export function buildApp({
   // while someone is still looking at it.
   adminPasswordHash()
 
+  /**
+   * What the crew's own devices said about comms over the window a show moves
+   * in. Null when nobody has been on voice, which is a different thing from
+   * clean and is reported as one — by the readiness list and by a desk alike.
+   */
+  const recentVoiceQuality = (): {
+    concealedPct: number
+    lossPct: number
+    devices: number
+  } | null => {
+    if (!metrics) return null
+    const now = Date.now()
+    const worst = metrics.worstVoice(now - VOICE_QUALITY_WINDOW_MS, now)
+    if (!worst) return null
+    return { concealedPct: worst.concealedPct, lossPct: worst.lossPct, devices: worst.samples }
+  }
+
   const publicConfig = (): PublicConfig => ({
     eventName: store.getSetting('eventName') ?? '',
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
@@ -399,6 +466,8 @@ export function buildApp({
   void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
+  const tally = new Tally()
+  hub.setTally(tally)
   const docs = new DocsRelay()
   fastify.addHook('onClose', () => docs.close())
 
@@ -471,6 +540,10 @@ export function buildApp({
   // is long and random by default, so this only has to make an online guess
   // hopeless, not survive an offline crack.
   const adminLimiter = new RateLimiter(10, 10 * 60_000)
+  // The control surface is a machine, not a person: a desk cutting cameras
+  // sends far more than a human ever would, so this is generous — it exists
+  // to stop a wrong key being guessed at, not to pace a Stream Deck.
+  const controlLimiter = new RateLimiter(120, 60_000)
   // Twelve hours: long enough that nobody retypes it during a shift, short
   // enough that a phone left on a flightcase overnight is locked by morning.
   const adminTokens = new AdminTokens(12 * 60 * 60_000)
@@ -1270,6 +1343,152 @@ export function buildApp({
     return { adminToken: adminTokens.issue() }
   })
 
+  // -- control surface -------------------------------------------------------
+  //
+  // Keyed, and deliberately not the admin password. See control.ts.
+
+  /**
+   * True when this request carried the box's control key; otherwise it has
+   * already been refused and the caller should stop.
+   *
+   * Only *wrong* keys are counted against the limiter. A desk polling the
+   * state twice a second is doing exactly what this surface is for, and
+   * throttling it would turn a busy show into a dead button; a wrong key is
+   * the only thing worth slowing down. Being over the limit is a 429 and not
+   * a 401, because "bad or missing key" sends whoever built the button off
+   * to check a key that was right all along.
+   */
+  const authControl = (req: FastifyRequest, reply: FastifyReply): boolean => {
+    if (keyMatches(keyFromHeaders(req.headers as Record<string, unknown>), controlKey(store))) {
+      return true
+    }
+    if (!controlLimiter.allow(req.ip)) {
+      void reply.code(429).send({ error: 'too many bad keys — wait a minute and try again' })
+      return false
+    }
+    void reply.code(401).send({ error: 'bad or missing key' })
+    return false
+  }
+
+  /**
+   * Raise or clear the on-air tally.
+   *
+   * `{ "user": "<id or name>" }` to light somebody up, `{ "user": null }` to
+   * clear. Names are accepted as well as ids because the thing calling this
+   * is a button somebody configured once, and "Dev Okafor" is what they know
+   * — an id would mean looking it up and rebuilding the button if the crew
+   * member is ever recreated.
+   */
+  fastify.post('/api/control/tally', (req, reply) => {
+    if (!authControl(req, reply)) return reply
+    const parsed = tallyBodySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'send { "user": "<id or name>" } or { "user": null }' })
+    }
+
+    const wanted = parsed.data.user
+    let userId: string | null = null
+    if (wanted) {
+      const users = store.listUsers()
+      const match =
+        users.find((u) => u.id === wanted) ??
+        users.find((u) => u.name.toLowerCase() === wanted.toLowerCase())
+      if (!match) return reply.code(404).send({ error: `no crew member "${wanted}"` })
+      userId = match.id
+    }
+
+    if (tally.set(userId)) hub.broadcastTally(tally.current())
+    return { ok: true, ...tally.current() }
+  })
+
+  /** What is on air now, for a desk that reconnected and wants to resync. */
+  fastify.get('/api/control/tally', (req, reply) => {
+    if (!authControl(req, reply)) return reply
+    return tally.current()
+  })
+
+  /**
+   * Everything a button can show: the event, who is on air, how many crew are
+   * on, what the comms sounded like, and what is on which stage.
+   *
+   * One request rather than five, because a Stream Deck polls this a second
+   * at a time all night and every extra round trip is a thing that can be
+   * half-configured. Read-only, and it deliberately says nothing about what
+   * anybody wrote — a key on a desk is not a key to the crew's messages.
+   */
+  fastify.get('/api/control/state', (req, reply) => {
+    if (!authControl(req, reply)) return reply
+    const wanted = (req.query as { stage?: string } | undefined)?.stage?.trim().toLowerCase()
+    const stats = hub.stats()
+    const onAir = tally.current()
+
+    // Only while a phone on site has the app open: the relay holds documents
+    // for connected clients and nothing else, so an empty box genuinely does
+    // not know the running order rather than knowing it is empty.
+    const timetable = docs.peek(TIMETABLE_ROOM)
+    const board = stageBoard(readRunningOrder(timetable), clock())
+
+    return {
+      event: publicConfig().eventName,
+      version: APP_VERSION,
+      onAir: {
+        ...onAir,
+        // The desk asked by name; answer by name as well as by id, so a
+        // button's feedback text needs no second lookup.
+        name: onAir.userId ? (store.getUserById(onAir.userId)?.name ?? '') : '',
+      },
+      crew: { online: stats.onlineUsers, total: store.countUsers() },
+      voice: {
+        enabled: voiceAvailable,
+        // What crew devices reported over the last ten minutes, as numbers
+        // rather than a verdict — the thresholds that turn these into "comms
+        // are struggling" belong in one place, and that place is the
+        // readiness list. A desk can colour a button however it likes.
+        quality: recentVoiceQuality(),
+      },
+      // Public channels only, and only their names: this is the list a
+      // message button offers, not a directory of who is talking to whom.
+      channels: store
+        .listAllChannels()
+        .filter((channel) => channel.kind === 'public' && !channel.retired)
+        .map((channel) => ({ id: channel.id, name: channel.name })),
+      runningOrder: {
+        known: timetable !== null,
+        stages: wanted ? board.filter((s) => s.stage.toLowerCase() === wanted) : board,
+      },
+    }
+  })
+
+  /**
+   * Post a message into a channel from the desk.
+   *
+   * The call every festival actually wants: the button that already fires the
+   * changeover music also tells the crew it has started. It lands as a system
+   * message — the box speaking, in the same voice as "#foh created" — because
+   * a machine posting under a crew member's name is a machine putting words
+   * in somebody's mouth, and on a comms channel that is how a wrong
+   * instruction gets followed.
+   *
+   * Public channels only. A key sitting in a desk config file must never be
+   * able to write into a DM.
+   */
+  fastify.post('/api/control/message', (req, reply) => {
+    if (!authControl(req, reply)) return reply
+    const parsed = controlMessageSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: 'send { "channel": "<name or id>", "body": "<message>" }' })
+    }
+    const wanted = parsed.data.channel.replace(/^#/, '')
+    const channel = store.getChannel(wanted) ?? store.getChannelByName(wanted.toLowerCase())
+    if (!channel || channel.kind !== 'public' || channel.retired) {
+      return reply.code(404).send({ error: `no channel "${parsed.data.channel}"` })
+    }
+    const message = hub.systemMessage(channel.id, parsed.data.body)
+    return { ok: true, channelId: channel.id, channel: channel.name, seq: message.seq }
+  })
+
   /** Give the unlock back early — the panel's Lock button. */
   fastify.post('/api/admin/lock', (req, reply) => {
     adminTokens.revoke(adminTokenOf(req))
@@ -1427,6 +1646,10 @@ export function buildApp({
     // battery, or where asking is not worth the cost — the row drops out
     // rather than being guessed at.
     const power = await readPower()
+    // What the crew's own devices said, over the window a show moves in.
+    // Absent when nobody has been on voice, which is a different thing from
+    // clean and is reported as one.
+    const voiceQuality = recentVoiceQuality()
     const readiness = boxReadiness({
       // req.protocol is 'https' for a TLS connection, and honours
       // x-forwarded-proto only when this box is configured to trust a proxy.
@@ -1447,6 +1670,7 @@ export function buildApp({
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,
       host: hostOf(req),
+      ...(voiceQuality ? { voiceQuality } : {}),
     })
     return {
       settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },
@@ -1466,6 +1690,11 @@ export function buildApp({
         // than inferred from the readiness row's wording, so rephrasing that
         // row can never silently remove the fix it points at.
         portRedirect: Boolean(captive?.listening && captive.fallback),
+        // The control key, shown the same way and for the same reason as the
+        // event PIN: it is minted silently on first use, and a key nobody
+        // can find is a feature nobody has. Behind the admin password, and
+        // it grants far less than that password does — see control.ts.
+        controlKey: controlKey(store),
       },
       readiness,
       readinessState: worstState(readiness),

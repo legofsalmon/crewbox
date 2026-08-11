@@ -1,15 +1,46 @@
-import { parseClock } from '../../modules/patch/model/changeover.ts'
-import type { Act } from './model.ts'
-
 /**
- * Reading the timetable: what is on, what is next, and how long.
+ * The running order, and the maths for reading it.
  *
- * Deliberately pure — no Yjs, no React, no clock of its own. `now` is passed
+ * Times are plain "HH:MM" strings, parsed where they are used, never Date.
+ *
+ * This lives in shared rather than in the app because two things now answer
+ * "who is on": every phone's sidebar, and the box itself when a production
+ * desk asks over the control API. Two implementations of a show day that
+ * rolls over at six in the morning is two chances to tell a stage manager the
+ * headliner is on at nine — so there is one, and both sides read it.
+ *
+ * Deliberately pure: no Yjs, no React, no clock of its own. `now` is passed
  * in, because a running order that is wrong for an hour twice a year, or
- * silently wrong for everyone west of UTC, is worse than no running order at
- * all. Every module that answers "what is on" goes through here, so they
- * cannot disagree about it.
+ * silently wrong for everyone west of UTC, is worse than no running order.
  */
+
+/** Minutes past midnight, or null. Accepts "19:00", "19.00", "9:05". */
+export function parseClock(text: string): number | null {
+  const match = /^\s*(\d{1,2})\s*[:.]\s*(\d{2})\s*$/.exec(text)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 23 || minutes > 59) return null
+  return hours * 60 + minutes
+}
+
+export interface Act {
+  id: string
+  name: string
+  /** Which stage, room or area. Free text — it is whatever the poster says. */
+  stage: string
+  /** Plain YYYY-MM-DD, so a multi-day festival is one timetable. */
+  date: string
+  /** "19:00". Empty when the slot is still TBC. */
+  start: string
+  end: string
+  /**
+   * Minutes between the previous act coming down and this one going on.
+   * 0 when nothing says — including the first act of the day, which has no
+   * act before it to change over from.
+   */
+  changeover: number
+}
 
 /**
  * When a show day rolls over.

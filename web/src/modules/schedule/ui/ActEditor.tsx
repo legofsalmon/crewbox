@@ -1,4 +1,4 @@
-import { inRunningOrder } from '../../../shell/timetable/agenda.ts'
+import { inRunningOrder } from '@crewbox/shared'
 import { removeAct, updateAct, type Act } from '../../../shell/timetable/model.ts'
 import { timetable } from '../../../shell/timetable/store.ts'
 import styles from './Schedule.module.css'

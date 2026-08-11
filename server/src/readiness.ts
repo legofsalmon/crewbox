@@ -67,6 +67,17 @@ export interface ReadinessInput {
    * worth — the row is simply left off rather than guessed at.
    */
   power?: PowerReading
+  /**
+   * What the crew's own devices said comms sounded like, over the last few
+   * minutes. Absent when nobody has been on voice, or when the audit that
+   * collects it is off.
+   *
+   * Concealment is the share of audio a decoder had to fabricate to cover a
+   * gap, which is the number that corresponds to what a person actually
+   * heard — loss and jitter can both look poor while a jitter buffer absorbs
+   * them and nobody notices a thing.
+   */
+  voiceQuality?: { concealedPct: number; lossPct: number; devices: number } | null
   /** When backup.sh last finished here, if it ever has. */
   backup?: { at: number; dest?: string } | null
   /** Clock for the backup age. Injected so the check stays pure. */
@@ -381,6 +392,55 @@ function voiceCheck(input: ReadinessInput): ReadinessCheck {
   }
 }
 
+/**
+ * How comms actually sounded, from the only place that can know.
+ *
+ * The box measures its own network and it always looks well from where it is
+ * standing. This line exists because the interesting failure is the one the
+ * box cannot see: a phone behind a truck, an access point at the edge of its
+ * range, a crew member whose comms are breaking up while every server-side
+ * number stays green.
+ *
+ * Silent when nobody has been on voice. A row that says "fine" about a thing
+ * it has no evidence for is how the panel loses the right to be believed.
+ */
+function voiceQualityCheck(quality: NonNullable<ReadinessInput['voiceQuality']>): ReadinessCheck {
+  const base = { id: 'voice-quality', label: 'How comms sound' }
+  const heard =
+    `${quality.concealedPct.toFixed(1)}% of comms audio was patched over by the ` +
+    `decoder on the worst-affected device${quality.devices === 1 ? '' : ` of ${quality.devices}`}`
+
+  // The thresholds are about audibility, not about networking. Below about a
+  // per cent nobody reports anything; by five it is the thing they mention.
+  if (quality.concealedPct >= 5) {
+    return {
+      ...base,
+      state: 'off',
+      detail: `Comms are breaking up — ${heard}.`,
+      fix: 'Someone is at the edge of the Wi-Fi, or an access point is overloaded. The Network pane names which link, and the running order says who is where.',
+    }
+  }
+  if (quality.concealedPct >= 1) {
+    return {
+      ...base,
+      state: 'limited',
+      detail: `Comms are audibly rough in places — ${heard}.`,
+      fix: 'Worth a look before it matters: the Network pane shows which link is struggling.',
+    }
+  }
+  return {
+    ...base,
+    state: 'ok',
+    detail:
+      quality.lossPct >= 2
+        ? // Worth saying out loud: it is the case where the network numbers
+          // look alarming and the crew heard nothing wrong, and somebody
+          // chasing the loss figure would be chasing nothing.
+          `Clean — ${quality.lossPct.toFixed(1)}% of packets were late or lost, and the buffer covered it.`
+        : 'Clean, on every device that has been on voice.',
+  }
+}
+
 export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
   const checks: ReadinessCheck[] = []
 
@@ -400,6 +460,8 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
   if (input.power) checks.push(powerCheck(input.power))
 
   checks.push(voiceCheck(input))
+  // Only with evidence. See voiceQualityCheck.
+  if (input.voiceQuality) checks.push(voiceQualityCheck(input.voiceQuality))
 
   checks.push(
     input.secure

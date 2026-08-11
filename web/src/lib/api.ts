@@ -54,6 +54,13 @@ export interface AdminSettings {
     /** True when ADMIN_PASSWORD is set, so the panel can't change it here. */
     adminPasswordFromEnv: boolean
     /**
+     * The key a production desk drives this box with. Shown for the same
+     * reason as the event PIN: it is minted silently on first use, and a key
+     * nobody can find is a feature nobody has. Optional so an older box
+     * still parses.
+     */
+    controlKey?: string
+    /**
      * The probe responder could not take port 80 and is on a fallback port,
      * so a redirect rule is needed. Drives the download button; optional so
      * an older box still parses.

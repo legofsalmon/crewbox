@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Driving the box from a desk — Crewbox docs</title>
+    <meta name="description" content="The keyed control API — tally, running order and messages on a Stream Deck button, from Companion or anything that can make an HTTP request." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Running order</h2><ul><li><a href="/docs/schedule">Running order</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li><li><a href="/docs/control-api" aria-current="page">Driving the box from a desk</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="driving-the-box-from-a-desk"><a class="anchor" href="#driving-the-box-from-a-desk">Driving the box from a desk</a></h1>
+<p>A production desk already has a Stream Deck where vision, lighting and playback are each one button away. Crewbox being the exception makes crewbox the thing somebody has to remember to go and click — which on a show is the same as the thing that doesn't happen.</p>
+<p>So the box answers a small HTTP surface designed for a machine: raise a tally, read what is on which stage, post a message to a channel. It is meant for <a href="https://bitfocus.io/companion" rel="noopener noreferrer">Bitfocus Companion</a> and works from anything that can make a request — a cue stack, a Node-RED flow, a shell script in a show folder.</p>
+<h2 id="the-key"><a class="anchor" href="#the-key">The key</a></h2>
+<p>Every call carries a key. The box mints one the first time it is asked for, and shows it in <strong>Admin → This box</strong> next to the event PIN.</p>
+<p>Present it either way — both are conventional and both work:</p>
+<pre><code>curl -H &quot;x-api-key: YOUR-KEY&quot; https://box.local/api/control/state
+curl -H &quot;Authorization: Bearer YOUR-KEY&quot; https://box.local/api/control/state</code></pre>
+<div class="callout callout-note"><p>This is deliberately not the admin password. The admin password is a person
+doing something once; the key is a machine doing something a hundred times
+a night, and it grants far less. Nothing on this surface can change the
+event, delete anything, or read a message anybody wrote.</p></div>
+<p>To pin the key — so a spare box answers the buttons you already built, or so a leaked one can be replaced without touching a running show — start the box with <code>CREWBOX_CONTROL_KEY</code> set. The environment wins over the stored key and is never written to disk, the same rule the rest of the box follows.</p>
+<h2 id="tally-who-is-on-camera"><a class="anchor" href="#tally-who-is-on-camera">Tally: who is on camera</a></h2>
+<pre><code>POST /api/control/tally   { &quot;user&quot;: &quot;Dev Okafor&quot; }   raise
+POST /api/control/tally   { &quot;user&quot;: null }           clear
+GET  /api/control/tally                              read it back</code></pre>
+<p>The crew member is named the way the person building the button knows them — their name in the app. An id works too, if a script stored one. A name that matches nobody is a <code>404</code> rather than a success that lit nobody up.</p>
+<p>Everyone's app shows a bar the moment it changes; the person named gets the loud version of it. It is raised from the desk and never from inside the app, because the person on camera is the last person who should be tapping a phone.</p>
+<p>Bind two buttons — one that names the camera's crew member, one that sends <code>null</code> — and the tally follows your cuts.</p>
+<h2 id="state-everything-a-button-can-show"><a class="anchor" href="#state-everything-a-button-can-show">State: everything a button can show</a></h2>
+<pre><code>GET /api/control/state
+GET /api/control/state?stage=Main%20Stage</code></pre>
+<p>One request rather than five, because a desk polls this a second at a time all night. It answers with the event name, who is on air (by id <em>and</em> by name), how many crew are online, whether voice is configured and what the crew's own devices said about it, the channels a message could go to, and the running order per stage:</p>
+<pre><code>{
+  &quot;event&quot;: &quot;Test Event&quot;,
+  &quot;onAir&quot;: { &quot;userId&quot;: &quot;…&quot;, &quot;name&quot;: &quot;Dev Okafor&quot;, &quot;since&quot;: 1770000000000 },
+  &quot;crew&quot;: { &quot;online&quot;: 14, &quot;total&quot;: 22 },
+  &quot;runningOrder&quot;: {
+    &quot;known&quot;: true,
+    &quot;stages&quot;: [
+      {
+        &quot;stage&quot;: &quot;Main Stage&quot;,
+        &quot;onNow&quot;: { &quot;name&quot;: &quot;The Fixture&quot;, &quot;endsIn&quot;: 60, &quot;ends&quot;: &quot;in 1h&quot; },
+        &quot;next&quot;: { &quot;name&quot;: &quot;Night Bus&quot;, &quot;startsIn&quot;: 120, &quot;starts&quot;: &quot;in 2h&quot; }
+      }
+    ]
+  }
+}</code></pre>
+<p>Each act comes with the numbers and the same thing in words, so a button can print <code>starts</code> without doing any arithmetic of its own.</p>
+<p>Two details worth knowing:</p>
+<ul><li><strong><code>known: false</code> means the box is not holding a copy of the running order</strong>, which is different from the running order being empty. The timetable lives on the crew's phones and syncs through the box; when nobody on site has the app open there is nothing to read. A button should show a dash rather than an empty stage.</li><li><strong>The clock is the show's, not the calendar's.</strong> A set at 00:30 belongs to the night that started at 19:00, and the box says so — it reads the running order with exactly the code the app uses, so a desk and a phone can never disagree about who is on.</li></ul>
+<h2 id="messages-telling-the-crew-something-from-the-desk"><a class="anchor" href="#messages-telling-the-crew-something-from-the-desk">Messages: telling the crew something from the desk</a></h2>
+<pre><code>POST /api/control/message   { &quot;channel&quot;: &quot;general&quot;, &quot;body&quot;: &quot;Changeover started&quot; }</code></pre>
+<p>The channel is named the way it is written down — <code>general</code>, <code>#general</code>, or an id. It lands as a system message, in the same voice as &quot;#foh created&quot;, because a machine posting under a crew member's name is a machine putting words in somebody's mouth on a comms channel.</p>
+<p>Public channels only. A key sitting in a desk config file can never write into a DM.</p>
+<h2 id="setting-it-up-in-companion"><a class="anchor" href="#setting-it-up-in-companion">Setting it up in Companion</a></h2>
+<p>Companion's <strong>Generic: HTTP requests</strong> module covers all of this — there is no crewbox module to install.</p>
+<ul><li><strong>A tally button</strong> is a POST action to <code>https://box.local/api/control/tally</code> with the body <code>{&quot;user&quot;: &quot;Dev Okafor&quot;}</code> and a custom header <code>x-api-key: YOUR-KEY</code>. Bind a second button to the same URL with <code>{&quot;user&quot;: null}</code> for the clear.</li><li><strong>A changeover call</strong> is a POST to <code>/api/control/message</code> with <code>{&quot;channel&quot;: &quot;general&quot;, &quot;body&quot;: &quot;Changeover started&quot;}</code> — the same button that fires the walk-in music.</li><li><strong>Button feedback</strong> is a polled GET of <code>/api/control/state</code>; pull the fields you want out of the response with Companion's HTTP variables and draw them on the button. <code>starts</code> and <code>ends</code> are already worded for a button face.</li></ul>
+<p>Check the URL and the key once with <code>curl</code> before building the page. A mistyped key answers <code>401</code> and a mistyped host answers nothing, and telling those two apart at a desk mid-show is nobody's idea of an evening.</p>
+<div class="callout callout-warning"><p>If the box is serving HTTPS with its own certificate, the desk machine
+needs to trust that certificate — see
+<a href="/docs/https-and-voice">HTTPS, names and certificates</a>. A desk that cannot
+verify it will fail every call with a TLS error, not a <code>401</code>.</p></div>
+<h2 id="limits"><a class="anchor" href="#limits">Limits</a></h2>
+<ul><li><strong>A correct key is never throttled.</strong> Poll the state as often as your desk wants to; that is what it is for.</li><li><strong>A wrong one is</strong>, at 120 tries a minute per source address. Past that the answer is <code>429</code> rather than another <code>401</code>, so a throttled desk and a mistyped key never look the same.</li><li>Everything here is read-or-tally-or-post. There is no call that changes the event, deletes anything, or reads what the crew wrote to each other.</li></ul>
+        <footer class="prevnext"><a class="prev" href="/docs/phones-and-platforms"><span>Previous</span>Phones and platforms</a><a class="next" href="/docs/shortcuts"><span>Next</span>Keyboard shortcuts</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

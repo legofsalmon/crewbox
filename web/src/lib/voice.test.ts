@@ -22,8 +22,12 @@ type Handler = (...args: unknown[]) => void
 /** Stand-in Room whose connect outcome and events the test drives. */
 class FakeRoom {
   static connectBehaviour: 'ok' | 'fail' = 'ok'
+  /** Whether the browser lets this page make a noise without a gesture. */
+  static playbackBehaviour: 'allowed' | 'blocked' = 'allowed'
+  static disconnectCalls = 0
   handlers = new Map<string, Handler[]>()
   state = 'disconnected'
+  canPlaybackAudio = true
   activeSpeakers: Array<{ identity: string }> = []
   remoteParticipants = new Map()
   localParticipant = {
@@ -52,9 +56,17 @@ class FakeRoom {
     this.state = 'connected'
   }
 
-  async startAudio(): Promise<void> {}
+  async startAudio(): Promise<void> {
+    if (FakeRoom.playbackBehaviour === 'blocked') {
+      this.canPlaybackAudio = false
+      this.emit('audioPlaybackChanged')
+      throw new Error('audio playback failed: NotAllowedError')
+    }
+    this.canPlaybackAudio = true
+  }
 
   async disconnect(): Promise<void> {
+    FakeRoom.disconnectCalls++
     this.state = 'disconnected'
     this.emit('disconnected')
   }
@@ -73,6 +85,7 @@ vi.mock('livekit-client', () => ({
     ActiveSpeakersChanged: 'activeSpeakersChanged',
     ConnectionQualityChanged: 'connectionQualityChanged',
     LocalTrackPublished: 'localTrackPublished',
+    AudioPlaybackStatusChanged: 'audioPlaybackChanged',
   },
   ConnectionQuality: { Excellent: 'excellent', Good: 'good', Poor: 'poor', Lost: 'lost' },
   ConnectionState: { Connected: 'connected', Disconnected: 'disconnected' },
@@ -202,5 +215,87 @@ describe('a push-to-talk release is never lost to a reconnect', () => {
     room.emit('reconnected')
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mic).toHaveBeenLastCalledWith(false)
+  })
+})
+
+describe('a browser that refuses to make a noise', () => {
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    FakeRoom.playbackBehaviour = 'allowed'
+    FakeRoom.disconnectCalls = 0
+  })
+
+  it('is a state with a button on it, not a failed join', async () => {
+    // Blocked autoplay is the ordinary first join on iOS. Treating it as a
+    // failed join told the crew member the join failed while the room stayed
+    // connected underneath — in the SFU, out of the UI, hearing nothing and
+    // with no idea they might still be heard.
+    FakeRoom.playbackBehaviour = 'blocked'
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+
+    await expect(manager.join('chan-1', 'token', 'ws://box')).resolves.toBeUndefined()
+    expect(states.some((s) => s.status === 'connected')).toBe(true)
+  })
+
+  it('raises the flag the tap-to-hear control hangs off', async () => {
+    FakeRoom.playbackBehaviour = 'blocked'
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+    await manager.join('chan-1', 'token', 'ws://box')
+
+    expect(states.some((s) => s.audioBlocked === true)).toBe(true)
+  })
+
+  it('lowers it again once the tap gets through', async () => {
+    FakeRoom.playbackBehaviour = 'blocked'
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+    await manager.join('chan-1', 'token', 'ws://box')
+
+    FakeRoom.playbackBehaviour = 'allowed'
+    await manager.resumeAudio()
+
+    expect(states.at(-1)).toMatchObject({ audioBlocked: false })
+  })
+
+  it('says nothing when the browser was never going to block it', async () => {
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+    await manager.join('chan-1', 'token', 'ws://box')
+
+    expect(states.some((s) => s.audioBlocked === true)).toBe(false)
+  })
+})
+
+describe('a room nobody is holding any more', () => {
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    FakeRoom.playbackBehaviour = 'allowed'
+    FakeRoom.disconnectCalls = 0
+  })
+
+  it('hangs up when the manager resets, rather than dropping the reference', async () => {
+    // `reset` used to null the room without disconnecting. A join that failed
+    // after connect had already succeeded left a live room with nothing
+    // pointing at it: gone from their own screen, still in the participant
+    // list, and arriving as a second device on the next join.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    const room = (manager as unknown as { room: FakeRoom }).room
+
+    room.emit('disconnected')
+
+    expect(FakeRoom.disconnectCalls).toBeGreaterThan(0)
+  })
+
+  it('does not hang up twice on a deliberate leave', async () => {
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    await manager.leave()
+
+    // leave() nulls the room before disconnecting, so reset() finds nothing
+    // left to close — one hang-up, not two.
+    expect(FakeRoom.disconnectCalls).toBe(1)
   })
 })

@@ -27,6 +27,15 @@ export interface VoiceState {
   myQuality: VoiceQuality
   /** 0–1 live level of my mic (only while captured); null when unavailable. */
   micLevel: number | null
+  /**
+   * The browser is refusing to play the audio until someone taps.
+   *
+   * Its own state rather than an `error`, because it is not a failure and it
+   * is recoverable by exactly one gesture. Being connected to comms and
+   * hearing nothing, with the UI insisting all is well, is the worst of the
+   * available outcomes — so this drives a control rather than a message.
+   */
+  audioBlocked: boolean
   devices: { inputs: DeviceInfo[]; outputs: DeviceInfo[]; canSelectOutput: boolean }
   selectedInput: string | null
   selectedOutput: string | null
@@ -42,6 +51,7 @@ export const initialVoiceState: VoiceState = {
   micReady: false,
   myQuality: 'unknown',
   micLevel: null,
+  audioBlocked: false,
   devices: { inputs: [], outputs: [], canSelectOutput: canSelectOutput() },
   selectedInput: null,
   selectedOutput: null,

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { useAgenda } from '../../../shell/timetable/hooks.ts'
-import { relative } from '../../../shell/timetable/agenda.ts'
+import { relative } from '@crewbox/shared'
 import { addAct, stagesIn } from '../../../shell/timetable/model.ts'
 import { timetable } from '../../../shell/timetable/store.ts'
 import ActEditor from './ActEditor.tsx'

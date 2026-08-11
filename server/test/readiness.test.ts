@@ -347,3 +347,47 @@ describe('backup', () => {
     expect(boxReadiness(input()).find((c) => c.id === 'backup')).toBeUndefined()
   })
 })
+
+describe('how comms sound, from the crew’s own devices', () => {
+  const quality = (concealedPct: number, lossPct = 0, devices = 4) =>
+    find(boxReadiness(input({ voiceQuality: { concealedPct, lossPct, devices } })), 'voice-quality')
+
+  it('says nothing at all when nobody has been on voice', () => {
+    // The row has to be absent, not green. A panel that reports "clean" about
+    // a thing it has no evidence for is a panel that stops being believed —
+    // the same rule the SFU line already follows.
+    expect(find(boxReadiness(input()), 'voice-quality')).toBeUndefined()
+  })
+
+  it('reports clean when the decoder never had to invent anything', () => {
+    expect(quality(0).state).toBe('ok')
+  })
+
+  it('warns before it is a complaint', () => {
+    expect(quality(2).state).toBe('limited')
+  })
+
+  it('calls it broken when it is what people are hearing', () => {
+    const check = quality(9)
+    expect(check.state).toBe('off')
+    expect(check.detail).toContain('breaking up')
+  })
+
+  it('names the worst device rather than an average', () => {
+    // The whole reason the metric is a max: one crew member behind a truck
+    // is the story, and nine clean phones would average them out of it.
+    expect(quality(9, 0, 10).detail).toContain('worst-affected device of 10')
+  })
+
+  it('reads as one device without the arithmetic when there is only one', () => {
+    expect(quality(9, 0, 1).detail).not.toContain(' of 1')
+  })
+
+  it('says so when the network looked bad and the crew heard nothing wrong', () => {
+    // The case that stops someone chasing a loss figure for an hour: the
+    // jitter buffer absorbed it, and concealment is what the ear got.
+    const check = quality(0, 6)
+    expect(check.state).toBe('ok')
+    expect(check.detail).toContain('the buffer covered it')
+  })
+})

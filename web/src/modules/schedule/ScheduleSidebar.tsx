@@ -1,6 +1,6 @@
 import { useStore } from '../../store.ts'
 import { useAgenda } from '../../shell/timetable/hooks.ts'
-import { relative } from '../../shell/timetable/agenda.ts'
+import { relative } from '@crewbox/shared'
 
 /** Four fits a phone sidebar without scrolling; the module has the rest. */
 const MAX_SIDEBAR_STAGES = 4

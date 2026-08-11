@@ -129,6 +129,25 @@ export function isRemoteConnection(req: IncomingMessage | undefined, trustProxy 
   return ip !== '' && !isPrivateIp(ip)
 }
 
+/**
+ * The slice of the audit collector this hub writes to.
+ *
+ * Structural rather than an import so hub.ts stays free of the audit module
+ * — the box runs perfectly well without it, and the hub should not know
+ * whether it is there.
+ */
+/** The on-air state, as much of it as the hub needs to touch. */
+interface TallySource {
+  current: () => { userId: string | null; since: number }
+  /** Drop a tally pointing at somebody who has gone. Returns true if it did. */
+  forget: (userId: string) => boolean
+}
+
+interface CollectorSink {
+  noteRtt: (ms: number) => void
+  noteVoice: (stats: { lossPct: number; jitterMs: number; concealedPct: number }) => void
+}
+
 interface Logger {
   info: (msg: string) => void
   warn: (msg: string) => void
@@ -144,13 +163,22 @@ export class Hub {
   private heartbeat: NodeJS.Timeout | null = null
   private dmxTimer: NodeJS.Timeout | null = null
   /**
-   * Where client-reported round trips go, when the audit module is on.
+   * Where client-reported measurements go, when the audit module is on.
    *
    * Set after construction rather than injected, because the collector reads
    * this hub's stats — constructor injection either way would be circular.
    * Typed structurally so hub.ts stays free of audit imports.
    */
-  private collector: { noteRtt: (ms: number) => void } | undefined
+  private collector: CollectorSink | undefined
+
+  /**
+   * Who is on air, when a vision desk is driving one.
+   *
+   * Held by the hub rather than passed on every call so a device joining
+   * mid-show learns it with everything else — a red bar that only appears on
+   * the next cut is a red bar that is wrong for however long that takes.
+   */
+  private tally: TallySource | undefined
 
   constructor(
     private readonly store: Store,
@@ -162,9 +190,19 @@ export class Hub {
     private readonly dmx?: DmxListener
   ) {}
 
-  /** Hand the audit collector the crowd-Wi-Fi reports. Off by default. */
-  setCollector(collector: { noteRtt: (ms: number) => void } | undefined): void {
+  /** Hand the audit collector what the crew's devices report. Off by default. */
+  setCollector(collector: CollectorSink | undefined): void {
     this.collector = collector
+  }
+
+  /** Where the on-air state lives, so a late joiner is told with the rest. */
+  setTally(tally: TallySource): void {
+    this.tally = tally
+  }
+
+  /** Tell every device who is on air now. */
+  broadcastTally(state: { userId: string | null; since: number }): void {
+    this.broadcastAll({ type: 'tally', userId: state.userId, since: state.since })
   }
 
   attach(wss: WebSocketServer): void {
@@ -315,6 +353,17 @@ export class Hub {
         if (this.overActionLimit(conn)) break
         this.collector?.noteRtt(msg.ms)
         break
+      case 'voiceStats':
+        // Same posture as rttReport: a graph, not a decision. The numbers
+        // are computed on a device the box does not own, so the schema has
+        // already bounded them before they reach here.
+        if (this.overActionLimit(conn)) break
+        this.collector?.noteVoice({
+          lossPct: msg.lossPct,
+          jitterMs: msg.jitterMs,
+          concealedPct: msg.concealedPct,
+        })
+        break
     }
   }
 
@@ -386,6 +435,11 @@ export class Hub {
         Date.now() - DELETION_REPLAY_MS
       ),
     })
+    // Straight after the welcome, and only when somebody is actually live:
+    // a device joining mid-show has to arrive already knowing, or its red
+    // bar is wrong until the next cut.
+    const onAir = this.tally?.current()
+    if (onAir?.userId) this.send(conn.ws, { type: 'tally', ...onAir })
     // Count this socket exactly once. A first hello brings the user online; a
     // repeat on an already-authed socket is presence-idempotent (a client
     // re-sending hello can't inflate the online tally); a re-auth as someone
@@ -577,6 +631,10 @@ export class Hub {
       this.online.delete(userId)
       this.localSockets.delete(userId)
       this.broadcastAll({ type: 'presence', userId, online: false })
+      // A tally pointing at somebody who has left the event is a red bar
+      // nobody can clear: not them, because they are gone, and not anyone
+      // else, because it is not their bar.
+      if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
     } else {
       this.online.set(userId, count - 1)
       // Their last on-site device left; they're still on from the office.
