@@ -47,6 +47,12 @@ export default defineConfig({
       CREWBOX_DMX_UNIVERSES: '1-2',
       CREWBOX_WATCH: '1',
       ADMIN_PASSWORD: 'shots-admin-password',
+      // Pinned for the same two reasons as the password above. The This-box
+      // shot now prints the desk control key, and a box left to mint its own
+      // would put a fresh 32-character string in a committed PNG on every
+      // run — churn in the repo, and a credential-shaped thing published on
+      // a public site. This one is plainly an illustration.
+      CREWBOX_CONTROL_KEY: 'shots-control-key',
       JOIN_RATE_LIMIT: '1000',
       CREWBOX_MODULES: 'patch,lighting,network',
       LIVEKIT_URL: '',

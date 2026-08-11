@@ -31,7 +31,8 @@
 <p>A production desk already has a Stream Deck where vision, lighting and playback are each one button away. Crewbox being the exception makes crewbox the thing somebody has to remember to go and click — which on a show is the same as the thing that doesn't happen.</p>
 <p>So the box answers a small HTTP surface designed for a machine: raise a tally, read what is on which stage, post a message to a channel. It is meant for <a href="https://bitfocus.io/companion" rel="noopener noreferrer">Bitfocus Companion</a> and works from anything that can make a request — a cue stack, a Node-RED flow, a shell script in a show folder.</p>
 <h2 id="the-key"><a class="anchor" href="#the-key">The key</a></h2>
-<p>Every call carries a key. The box mints one the first time it is asked for, and shows it in <strong>Admin → This box</strong> next to the event PIN.</p>
+<p>Every call carries a key. The box mints one the first time it is asked for, and prints it at the bottom of <strong>Admin → This box</strong>.</p>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/admin-desk-key-light.png" /><img src="/docs/img/admin-desk-key-dark.png" alt="The desk control key in the admin panel" width="1280" height="720" loading="lazy" /></picture>
 <p>Present it either way — both are conventional and both work:</p>
 <pre><code>curl -H &quot;x-api-key: YOUR-KEY&quot; https://box.local/api/control/state
 curl -H &quot;Authorization: Bearer YOUR-KEY&quot; https://box.local/api/control/state</code></pre>

@@ -21,7 +21,9 @@ script in a show folder.
 ## The key
 
 Every call carries a key. The box mints one the first time it is asked for,
-and shows it in **Admin → This box** next to the event PIN.
+and prints it at the bottom of **Admin → This box**.
+
+![The desk control key in the admin panel](shot:admin-desk-key)
 
 Present it either way — both are conventional and both work:
 
