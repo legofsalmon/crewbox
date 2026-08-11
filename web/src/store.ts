@@ -179,6 +179,8 @@ export interface AppState {
   leaveVoice: () => Promise<void>
   setTalking: (on: boolean) => void
   toggleLatch: () => void
+  /** Let blocked audio through. Must be called from a real user gesture. */
+  resumeVoiceAudio: () => void
   join: (name: string, eventPin: string, personalPin: string) => Promise<void>
   sendMessage: (channelId: string, body: string) => void
   sendFile: (channelId: string, file: File, caption?: string) => Promise<void>
@@ -734,6 +736,10 @@ export const useStore = create<AppState>()((set, get) => {
 
     async leaveVoice() {
       await voiceManager?.leave()
+    },
+
+    resumeVoiceAudio() {
+      void voiceManager?.resumeAudio()
     },
 
     setTalking(on) {

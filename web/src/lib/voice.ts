@@ -9,12 +9,14 @@ import {
 import {
   canSelectOutput,
   deviceLabel,
+  isIOS,
   resolveDevice,
   saveDeviceId,
   savedDeviceId,
   type AudioKind,
   type DeviceInfo,
 } from './devices.ts'
+import { isSafari, shouldMixThroughWebAudio } from './voice-playback.ts'
 
 import {
   initialVoiceState,
@@ -93,6 +95,10 @@ export class VoiceManager {
       },
       ...(savedOut && canSelectOutput() ? { audioOutput: { deviceId: savedOut } } : {}),
       publishDefaults: { dtx: true, red: true, stopMicTrackOnMute: false },
+      // One mixed audio graph instead of an element per speaker, on the
+      // browsers that need it. See voice-playback.ts for why it is not
+      // simply on everywhere.
+      webAudioMix: shouldMixThroughWebAudio({ ios: isIOS(), safari: isSafari() }),
     })
     this.room = room
 
@@ -126,6 +132,12 @@ export class VoiceManager {
           this.startLevelMeter()
         }
       })
+      .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        // Truthful either way: it goes up when the browser blocks playback
+        // and down again the moment a gesture unblocks it, including when
+        // that gesture was somewhere else entirely.
+        this.publish({ audioBlocked: !room.canPlaybackAudio })
+      })
       .on(RoomEvent.Reconnecting, () => this.publish({ status: 'reconnecting' }))
       .on(RoomEvent.Reconnected, () => {
         this.publish({ status: 'connected' })
@@ -158,12 +170,19 @@ export class VoiceManager {
           setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS)
         ),
       ])
-      await room.startAudio()
+      // Deliberately not awaited into the join's failure path. Blocked
+      // autoplay is the *normal* first join on iOS, and treating it as a
+      // failed join was worse than useless: the crew member was told the
+      // join failed while the room stayed connected underneath — present in
+      // the SFU, absent from the UI, hearing nothing and unaware they could
+      // still be heard. It is now a state with a button on it.
+      void room.startAudio().catch(() => {})
       // Listening works from here even if the mic never materialises.
       this.publish({
         status: 'connected',
         talking: false,
         latched: false,
+        audioBlocked: !room.canPlaybackAudio,
         selectedInput: savedIn,
         selectedOutput: savedOut,
       })
@@ -227,6 +246,24 @@ export class VoiceManager {
     this.channelId = null
     if (room) await room.disconnect()
     this.reset()
+  }
+
+  /**
+   * Let the audio through, from a real user gesture.
+   *
+   * The only cure for a browser that has decided this page may not make a
+   * noise, and it has to be called from a tap — which is why it is a method
+   * the UI can bind to a button rather than something retried on a timer.
+   */
+  async resumeAudio(): Promise<void> {
+    const room = this.room
+    if (!room) return
+    try {
+      await room.startAudio()
+      this.publish({ audioBlocked: !room.canPlaybackAudio })
+    } catch {
+      this.publish({ audioBlocked: true })
+    }
   }
 
   /** Open/close the mic. Mute-based, so open latency is near-zero. */
@@ -433,8 +470,15 @@ export class VoiceManager {
     this.stopMicTest()
     for (const el of this.audioEls) el.remove()
     this.audioEls.clear()
+    // Hang up on the way out. `reset` used to only drop the reference, so a
+    // join that failed after `connect` had already succeeded left a live
+    // room with nothing pointing at it: the crew member vanished from their
+    // own UI while staying in the SFU's participant list, and the next join
+    // arrived as a second device belonging to the same person.
+    const room = this.room
     this.room = null
     this.channelId = null
+    if (room) void room.disconnect().catch(() => {})
     this.publish({ ...initialVoiceState, devices: initialVoiceState.devices, error })
   }
 }
