@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
-import { docsWsUrl } from '../../../lib/server.ts'
-import { sessionToken, useStore } from '../../../store.ts'
+import { docsWsUrl } from '../server.ts'
+import { sessionToken, useStore } from '../../store.ts'
 
 export type SyncStatus = 'off' | 'connecting' | 'connected'
 

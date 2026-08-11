@@ -1,5 +1,5 @@
 import type * as Y from 'yjs'
-import { createDocStore, type DocHandle } from '../../_shared/docs/store.ts'
+import { createDocStore, type DocHandle } from '../../../lib/docs/store.ts'
 import {
   buildImportedSheet,
   createSheetUndoManager,
@@ -12,7 +12,7 @@ import {
 /**
  * The patch module's doc store: one doc per sheet plus the shared index.
  * Everything below is patch-specific configuration — the lifecycle itself
- * (IndexedDB, sync, the local registry, deletion) lives in _shared/docs.
+ * (IndexedDB, sync, the local registry, deletion) lives in lib/docs.
  */
 
 export type { DocHandle }

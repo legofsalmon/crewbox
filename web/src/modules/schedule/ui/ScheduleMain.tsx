@@ -1,33 +1,34 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
-import { useStore } from '../../../store.ts'
-import { useAgendaActs } from '../store/useAgenda.ts'
-import { agenda, nowMinutes, relative } from '../model/agenda.ts'
+import { useAgenda } from '../../../shell/timetable/hooks.ts'
+import { relative } from '../../../shell/timetable/agenda.ts'
+import { addAct, stagesIn } from '../../../shell/timetable/model.ts'
+import { timetable } from '../../../shell/timetable/store.ts'
+import ActEditor from './ActEditor.tsx'
 import styles from './Schedule.module.css'
 
-/** How often the countdowns move. Fine enough to trust, idle enough to ignore. */
-const TICK_MS = 15_000
-
 /**
- * Now & Next — the running order, for everyone rather than for audio.
+ * The running order: what is on, what is next, and where it is edited.
  *
  * Read standing up, usually on a phone, often in the dark, by someone who
- * wants one of two facts: what is on, and how long until the next thing.
- * Everything here is arranged around those two and nothing else. The full
- * day, the specs and the notes stay in Patch Sheets, where the people who
- * need that level of detail already are.
+ * wants one of two facts — what is on, and how long until the next thing.
+ * The board is arranged around those two and nothing else.
+ *
+ * Editing lives behind a toggle rather than beside every row. Far more
+ * people read this than write it, and a screen full of inputs is a worse
+ * answer to "who is on" than a screen full of answers.
  */
 export default function ScheduleMain() {
-  const { acts, sheets, loaded } = useAgendaActs()
-  const setActiveModule = useStore((s) => s.setActiveModule)
-  const [now, setNow] = useState(() => nowMinutes(new Date()))
+  const { stages, acts, loaded } = useAgenda()
+  const [editing, setEditing] = useState(false)
 
-  useEffect(() => {
-    const timer = setInterval(() => setNow(nowMinutes(new Date())), TICK_MS)
-    return () => clearInterval(timer)
-  }, [])
-
-  const stages = agenda(acts, now)
+  const add = () => {
+    // A new act inherits the stage already in use, because the common case is
+    // adding the next band to a stage that exists rather than opening a new
+    // one — and two spellings of the same stage name are two stages here.
+    addAct(timetable().doc, { stage: stagesIn(acts)[0] ?? '' })
+    setEditing(true)
+  }
 
   return (
     <div className={styles.schedule}>
@@ -35,33 +36,37 @@ export default function ScheduleMain() {
         <div className={styles.heroTop}>
           <DrawerButton />
           <h1>Running order</h1>
+          <div className={styles.heroActions}>
+            <button
+              className={styles.toggle}
+              onClick={() => setEditing((on) => !on)}
+              aria-pressed={editing}
+            >
+              {editing ? 'Done' : 'Edit'}
+            </button>
+          </div>
         </div>
         <p className={styles.sub}>
-          What’s on and what’s next, from the patch sheets. Set times change there and land here.
+          Who’s on, where and when — shared with everyone on the box, and the one place it’s kept.
         </p>
       </header>
 
-      {stages.length === 0 ? (
+      {editing ? (
+        <ActEditor acts={acts} onAdd={add} />
+      ) : stages.length === 0 ? (
         <div className={styles.empty}>
           {!loaded ? (
             <p>Loading…</p>
-          ) : sheets === 0 ? (
-            <>
-              <p>No patch sheets on this box yet.</p>
-              <p className={styles.emptyHint}>
-                The running order comes from them — every act’s set times are already on the sheet
-                audio builds, so nobody types the day twice.
-              </p>
-              <button className={styles.link} onClick={() => setActiveModule('patch')}>
-                Open Patch Sheets
-              </button>
-            </>
           ) : (
             <>
-              <p>No set times on the sheets yet.</p>
+              <p>No running order yet.</p>
               <p className={styles.emptyHint}>
-                Add start times to the acts in Patch Sheets and the running order fills itself in.
+                Add the acts once here and every department reads the same times — the patch sheets,
+                the countdowns, and anything else that needs to know what’s on.
               </p>
+              <button className={styles.link} onClick={add}>
+                Add the first act
+              </button>
             </>
           )}
         </div>

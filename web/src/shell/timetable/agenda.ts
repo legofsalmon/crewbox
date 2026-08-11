@@ -1,20 +1,14 @@
-import { parseClock } from '../../patch/model/changeover.ts'
+import { parseClock } from '../../modules/patch/model/changeover.ts'
+import type { Act } from './model.ts'
 
 /**
- * The running order, as everyone else on site needs it.
+ * Reading the timetable: what is on, what is next, and how long.
  *
- * The data already exists. A festival patch sheet is one stage's day, and
- * every act on it already carries a start time, an end time and the
- * changeover before it — imported from the production company's own
- * spreadsheet. Until now that was visible only inside Patch Sheets, which is
- * a module a stage manager, a lighting tech or the bar lead has no reason to
- * open. So the single most-consulted document on site was the one crewbox
- * held and did not show.
- *
- * This computes what to show from those sheets. It is deliberately pure: no
- * Yjs, no React, no clock of its own. `now` is passed in, because a running
- * order that is wrong for an hour twice a year — or silently wrong for
- * everyone west of UTC — is worse than no running order at all.
+ * Deliberately pure — no Yjs, no React, no clock of its own. `now` is passed
+ * in, because a running order that is wrong for an hour twice a year, or
+ * silently wrong for everyone west of UTC, is worse than no running order at
+ * all. Every module that answers "what is on" goes through here, so they
+ * cannot disagree about it.
  */
 
 /**
@@ -67,20 +61,13 @@ export interface StageAgenda {
 }
 
 /**
- * Build one act from a patch sheet's artist row. Times that do not parse
+ * Place one timetable act on the show-day line. Times that do not parse
  * become null rather than zero — a missing time must never read as midnight
  * and put an act at the top of the day.
  */
-export function toAgendaAct(input: {
-  id: string
-  name: string
-  stage: string
-  startTime: string
-  endTime: string
-  changeover?: number
-}): AgendaAct {
-  const start = parseClock(input.startTime)
-  const end = parseClock(input.endTime)
+export function toAgendaAct(input: Act): AgendaAct {
+  const start = parseClock(input.start)
+  const end = parseClock(input.end)
   const mappedStart = start === null ? null : showMinutes(start)
 
   // The end is derived from the set's *duration*, not mapped independently.
@@ -96,7 +83,7 @@ export function toAgendaAct(input: {
     stage: input.stage.trim(),
     start: mappedStart,
     end: mappedStart === null || duration === null ? null : mappedStart + duration,
-    changeover: input.changeover ?? 0,
+    changeover: input.changeover,
   }
 }
 

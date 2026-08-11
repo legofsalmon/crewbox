@@ -1,4 +1,4 @@
-import { createSeenRegistry } from '../../_shared/docs/seen.ts'
+import { createSeenRegistry } from '../../../lib/docs/seen.ts'
 
 /**
  * Which plots this device has seen — the sidebar shows an "updated" dot

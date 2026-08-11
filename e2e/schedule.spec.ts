@@ -1,90 +1,81 @@
-import { expect, test } from '@playwright/test'
-import {
-  commitCell,
-  createSheet,
-  newDevice,
-  openPatch,
-  openSheetByName,
-  uniqueName,
-} from './helpers'
+import { expect, test, type Page } from '@playwright/test'
+import { newDevice, uniqueName } from './helpers'
 
 /**
- * The running order module.
+ * The running order, now that the shell owns it.
  *
  * Scope note: the time arithmetic — midnight rollover, sets that cross it,
  * implied end times, stage ordering — is covered by web/test/agenda.test.ts,
- * where it can be driven at any hour of any day. That is where the risk in
- * the model lives, and a browser test could only ever run at the time it
- * happens to run at.
- *
- * What is worth checking in a real browser is the wiring, and one thing that
- * is not obvious at all: reading somebody else's documents must not make you
- * look like a person in them.
+ * and the document itself by web/test/timetable.test.ts, both of which can
+ * be driven at any hour of any day. A browser test can only ever run at the
+ * hour it happens to run at, so what is worth checking here is different:
+ * that an act typed on one device is the running order on another, which is
+ * the whole claim of moving this out of the patch sheets.
  */
-test('the running order is reachable and carries the shell drawer', async ({ browser }) => {
-  const page = await newDevice(browser)
-
-  await page
-    .getByRole('button', { name: /Now & Next|off in|in \d/ })
-    .first()
-    .click()
-  await expect(page.getByRole('heading', { name: 'Running order' })).toBeVisible()
-  await expect(page.getByText(/from the patch sheets/)).toBeVisible()
-
-  // Deliberately not asserting the empty state here. The suite shares one
-  // box, so by the time this runs other specs may have made patch sheets —
-  // an "it says there are no sheets" assertion would pass or fail on test
-  // order rather than on behaviour. What is order-independent is that the
-  // module renders and is escapable.
-  //
-  // The drawer button is located by class, not by role: above 900px it is
-  // display:none, which takes it out of the accessibility tree altogether,
-  // so no role query can see it even with toBeAttached. Without it a phone
-  // user who navigates here is stranded with a closed sidebar.
-  await expect(page.locator('main .hamburger')).toBeAttached()
-})
 
 /**
- * The regression this module caused once and must not cause again.
- *
- * The running order reads every patch sheet on the box to work out what is
- * on. Opening a shared document used to announce this device in it, so every
- * phone running the running order appeared in every sheet's presence — a
- * patch operator saw company in a sheet nobody else had open, and the peer
- * count was wrong for everyone.
- *
- * Syncing a document and being a person in it are different things. This is
- * the test that says so.
+ * By route, not through the sidebar. The sidebar row's label is a live
+ * countdown — "off in 20", "in 2h", "done" — so any locator for it passes or
+ * fails on whatever time the suite happens to run at.
  */
-test('reading every sheet for the running order adds nobody to a sheet', async ({ browser }) => {
+const openRunningOrder = async (page: Page) => {
+  await page.goto('/m/schedule')
+  await expect(page.getByRole('heading', { name: 'Running order' })).toBeVisible()
+}
+
+test('an act added on one device is the running order on another', async ({ browser }) => {
   const deviceA = await newDevice(browser)
-  await openPatch(deviceA)
-  const sheet = uniqueName('Presence Stage')
-  await createSheet(deviceA, sheet)
-  await commitCell(deviceA, 'Artist 1', '1', 'Input', 'Kick in')
+  await openRunningOrder(deviceA)
 
-  // Device B never opens the sheet — but its running order reads it, which
-  // is exactly the situation that used to inflate the count.
+  await deviceA.getByRole('button', { name: 'Edit' }).click()
+  await deviceA.getByRole('button', { name: '+ Add act' }).click()
+
+  // Upper case in the fixture because the board renders stage names through
+  // text-transform, and Playwright matches text as rendered rather than as
+  // written — a lower-case fixture never matches.
+  const act = uniqueName('HEADLINER')
+  const stage = uniqueName('STAGE')
+
+  // exact, and scoped to main: getByLabel matches substrings, so a bare
+  // 'Act' also catches the row's "Remove this act" button, and a bare
+  // 'Stage' catches the sidebar's own stage row.
+  const editor = deviceA.locator('main')
+  await editor.getByLabel('Act', { exact: true }).last().fill(act)
+  await editor.getByLabel('Stage', { exact: true }).last().fill(stage)
+  await editor.getByLabel('On', { exact: true }).last().fill('21:00')
+  await editor.getByLabel('Off', { exact: true }).last().fill('22:00')
+
+  // The claim: no save button, no export, no second copy — device B is
+  // simply looking at the same document.
   const deviceB = await newDevice(browser)
-  await deviceB
-    .getByRole('button', { name: /Now & Next|Presence Stage/ })
-    .first()
-    .click()
-  await expect(deviceB.getByRole('heading', { name: 'Running order' })).toBeVisible()
+  await openRunningOrder(deviceB)
 
-  // One person is in this sheet, so the chip must not claim otherwise: it
-  // says "Synced" alone for a single device.
+  // Scoped to main: the sidebar carries the same stage, which is the point
+  // of it, and two matches trip strict mode.
   //
-  // Scoped to main, and anchored. The suite shares a box, and an unanchored
-  // /Synced/ matched a lighting plot another spec had named "Synced Rig" —
-  // the same strict-mode trap this module's act names sprang on patch.spec.
-  const chip = deviceA.locator('main').getByText(/^Synced/)
-  await expect(chip).toBeVisible()
-  await expect(chip).toHaveText('Synced')
+  // The stage heading is asserted rather than the act name, because whether
+  // an act is drawn on the board depends on whether it is on now or next —
+  // a 21:00 slot is neither at half past midnight, and the suite runs at
+  // whatever hour it runs at. The stage appears either way.
+  const board = deviceB.locator('main')
+  await expect(board.getByRole('heading', { name: stage })).toBeVisible()
+  await expect(board.getByText('On now')).toBeVisible()
 
-  // And once B genuinely opens it, presence works as it always did — the
-  // quiet reader is promoted to a person rather than staying invisible.
-  await openPatch(deviceB)
-  await openSheetByName(deviceB, sheet)
-  await expect(chip).toHaveText('Synced · 2 devices')
+  // That the act itself crossed: B opens the same editor and finds it, with
+  // no import, no export and no second copy.
+  await deviceB.getByRole('button', { name: 'Edit' }).click()
+  await expect(deviceB.locator('main').getByLabel('Act', { exact: true })).toHaveValue(act)
+})
+
+test('the running order is reachable and carries the shell drawer', async ({ browser }) => {
+  const page = await newDevice(browser)
+  await openRunningOrder(page)
+
+  // Every module view needs the shell's drawer button, or a phone user who
+  // navigates here is stranded with a closed sidebar.
+  //
+  // Located by class, not by role: above 900px it is display:none, which
+  // takes it out of the accessibility tree altogether, so no role query can
+  // see it even with toBeAttached.
+  await expect(page.locator('main .hamburger')).toBeAttached()
 })

@@ -12,6 +12,23 @@ owns `/c/<channelId>` rather than `/m/chat`.
 This document is the practical path from "we want a module for the lighting
 crew" to a working one. It describes what exists today, not a plan.
 
+## Shell state vs a module's own
+
+Before either primitive, ask whether the data is a department's at all. The
+**timetable** — who is on, where, and when — is consulted by audio, lighting,
+stage management and anything that timestamps against a set, so it lives in
+`web/src/shell/timetable/` rather than in a module. A box that turns a module
+off must not lose it.
+
+Shell state gets its own relay namespace, listed in `SHELL_NAMESPACES`
+(`server/src/docs.ts`), and is always reachable regardless of
+`CREWBOX_MODULES`. The Schedule module is the _screen_ for the timetable, not
+its owner: turn the module off and the data is still there for everything
+else.
+
+The rule of thumb: if two departments would both want to edit it, it is the
+event's and belongs to the shell. If only one would, it is that module's.
+
 ## The two sync primitives
 
 Pick one before you write anything else, because everything downstream

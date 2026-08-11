@@ -7,10 +7,10 @@ import {
   showMinutes,
   toAgendaAct,
   type AgendaAct,
-} from '../src/modules/schedule/model/agenda.ts'
+} from '../src/shell/timetable/agenda.ts'
 
 /**
- * The running order, derived from the patch sheets that already hold it.
+ * Reading the timetable.
  *
  * Almost every test here is about time, because time is where a schedule
  * betrays a festival: the headliner is at 00:30, the day is numbered from
@@ -49,8 +49,10 @@ describe('a show day that runs past midnight', () => {
       id: 'a',
       name: 'Headliner',
       stage: 'Main',
-      startTime: '23:40',
-      endTime: '00:20',
+      date: '',
+      start: '23:40',
+      end: '00:20',
+      changeover: 0,
     })
     expect(crossing.end! - crossing.start!).toBe(40)
   })
@@ -60,8 +62,10 @@ describe('a show day that runs past midnight', () => {
       id: 'a',
       name: 'Opener',
       stage: 'Main',
-      startTime: '19:00',
-      endTime: '19:45',
+      date: '',
+      start: '19:00',
+      end: '19:45',
+      changeover: 0,
     })
     expect(normal.end! - normal.start!).toBe(45)
   })
@@ -69,7 +73,15 @@ describe('a show day that runs past midnight', () => {
   it('never turns a missing time into midnight', () => {
     // A blank cell that read as 00:00 would put a TBC act at the top of the
     // running order, which is worse than showing nothing.
-    const blank = toAgendaAct({ id: 'a', name: 'TBC', stage: 'Main', startTime: '', endTime: '' })
+    const blank = toAgendaAct({
+      id: 'a',
+      name: 'TBC',
+      stage: 'Main',
+      date: '',
+      start: '',
+      end: '',
+      changeover: 0,
+    })
     expect(blank.start).toBeNull()
     expect(blank.end).toBeNull()
   })

@@ -126,3 +126,117 @@
   cursor: pointer;
   text-decoration: underline;
 }
+
+.heroActions {
+  margin-left: auto;
+}
+
+.toggle {
+  background: var(--bg-active);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-text, #fff);
+  border-color: transparent;
+}
+
+/* The editor. Wide enough to read as a running order on a laptop, and it
+   reflows to one field per line on a phone. */
+.editor {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.field,
+.fieldWide,
+.fieldNarrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 120px;
+}
+
+.fieldWide {
+  flex: 3 1 200px;
+}
+
+.fieldNarrow {
+  flex: 0 1 110px;
+}
+
+.row span {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.row input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  min-width: 0;
+}
+
+.row input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.remove {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.remove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.addAct {
+  align-self: start;
+  background: var(--accent);
+  color: var(--accent-text, #fff);
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.editorHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}

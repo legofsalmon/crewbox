@@ -1,14 +1,14 @@
 import { useMemo } from 'react'
 import type * as Y from 'yjs'
-import { useDocIndex, useRemotePeers, useStoreDoc, useSyncPeers } from '../../_shared/docs/hooks.ts'
-import type { RemotePeer } from '../../_shared/docs/sync.ts'
+import { useDocIndex, useRemotePeers, useStoreDoc, useSyncPeers } from '../../../lib/docs/hooks.ts'
+import type { RemotePeer } from '../../../lib/docs/sync.ts'
 import { findAddressConflicts, findOverruns, universeUsage } from '../model/addressing'
 import { snapshotPlot } from '../model/plotDoc'
 import type { PlotSnapshot } from '../model/types'
 import { plotRoom, plotStore } from './docManager.ts'
 
-export { useSyncStatus } from '../../_shared/docs/hooks.ts'
-export type { RemotePeer, SyncStatus } from '../../_shared/docs/sync.ts'
+export { useSyncStatus } from '../../../lib/docs/hooks.ts'
+export type { RemotePeer, SyncStatus } from '../../../lib/docs/sync.ts'
 
 export interface PlotIndexEntry {
   plotId: string
