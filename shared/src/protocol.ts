@@ -87,6 +87,31 @@ export const rttReportSchema = z.object({
 })
 
 /**
+ * A device saying how comms actually sounded to it.
+ *
+ * Distinct from `rttReport`, which is about the WebSocket and answers "how
+ * far away does this phone feel". This is about the audio, and answers the
+ * question an audio lead asks instead: was anyone's comms breaking up, and
+ * whose. Only the receiving browser can say — its decoder is the only thing
+ * that knows how much of the sound it had to invent.
+ *
+ * `concealedPct` is the one that matters. Loss and jitter describe what the
+ * network did; concealment is what the crew heard, and the two come apart
+ * every time a jitter buffer quietly absorbs a burst.
+ *
+ * Additive and advisory, like `rttReport`: an older box drops the type, a
+ * box with the audit off ignores it, and nothing here reaches a decision —
+ * so no PROTOCOL_VERSION bump. Percentages are bounded by the schema rather
+ * than trusted, because they are computed on a device the box does not own.
+ */
+export const voiceStatsSchema = z.object({
+  type: z.literal('voiceStats'),
+  lossPct: z.number().min(0).max(100),
+  jitterMs: z.number().min(0).max(10_000),
+  concealedPct: z.number().min(0).max(100),
+})
+
+/**
  * Watch what the lighting network is doing.
  *
  * Universes are named by the client because only the client knows which ones
@@ -113,6 +138,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   pingSchema,
   dmxWatchSchema,
   rttReportSchema,
+  voiceStatsSchema,
 ])
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>

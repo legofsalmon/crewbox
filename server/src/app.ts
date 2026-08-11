@@ -35,6 +35,14 @@ import type { NetWatch } from './netwatch/listener.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, type MetricsStore } from './audit/metrics.ts'
+
+/**
+ * How far back the comms-quality row looks.
+ *
+ * Long enough to survive a quiet patch between calls, short enough that
+ * "comms were breaking up" means during this act rather than at load-in.
+ */
+const VOICE_QUALITY_WINDOW_MS = 10 * 60_000
 import { Prober } from './audit/probes.ts'
 import { scoreAudit } from './audit/score.ts'
 import { setupPage } from './setup.ts'
@@ -1427,6 +1435,20 @@ export function buildApp({
     // battery, or where asking is not worth the cost — the row drops out
     // rather than being guessed at.
     const power = await readPower()
+    // What the crew's own devices said, over the window a show moves in.
+    // Absent when nobody has been on voice, which is a different thing from
+    // clean and is reported as one.
+    const voiceQuality = (() => {
+      if (!metrics) return null
+      const now = Date.now()
+      const worst = metrics.worstVoice(now - VOICE_QUALITY_WINDOW_MS, now)
+      if (!worst) return null
+      return {
+        concealedPct: worst.concealedPct,
+        lossPct: worst.lossPct,
+        devices: worst.samples,
+      }
+    })()
     const readiness = boxReadiness({
       // req.protocol is 'https' for a TLS connection, and honours
       // x-forwarded-proto only when this box is configured to trust a proxy.
@@ -1447,6 +1469,7 @@ export function buildApp({
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,
       host: hostOf(req),
+      ...(voiceQuality ? { voiceQuality } : {}),
     })
     return {
       settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },

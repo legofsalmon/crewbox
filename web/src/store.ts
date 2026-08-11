@@ -699,7 +699,18 @@ export const useStore = create<AppState>()((set, get) => {
         const { VoiceManager } = await import('./lib/voice.ts')
         voiceManager ??= new VoiceManager(
           (partial) => set({ voice: { ...useStore.getState().voice, ...partial } }),
-          (message) => get().toast(message, 'warning')
+          (message) => get().toast(message, 'warning'),
+          // Straight out over the chat socket, which is already open and
+          // already carries the other thing only a device can measure (its
+          // own round trip). Dropped without complaint when the socket is
+          // down: this is a graph, and a graph is never worth a retry queue.
+          (qos) =>
+            ws?.send({
+              type: 'voiceStats',
+              lossPct: qos.lossPct,
+              jitterMs: qos.jitterMs,
+              concealedPct: qos.concealedPct,
+            })
         )
       }
       // Browsers only hand over a microphone in a secure context, and a box

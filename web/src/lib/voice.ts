@@ -4,6 +4,7 @@ import {
   RoomEvent,
   Track,
   type LocalTrackPublication,
+  type RemoteAudioTrack,
   type RemoteTrack,
 } from 'livekit-client'
 import {
@@ -17,6 +18,7 @@ import {
   type DeviceInfo,
 } from './devices.ts'
 import { isSafari, shouldMixThroughWebAudio } from './voice-playback.ts'
+import { qosBetween, worstQos, type ReceiverSample, type VoiceQos } from './voice-qos.ts'
 
 import {
   initialVoiceState,
@@ -30,7 +32,19 @@ export type { VoiceParticipant, VoiceQuality, VoiceState }
 const CONNECT_TIMEOUT_MS = 10_000
 const LEVEL_INTERVAL_MS = 100
 
+/**
+ * How often to ask the decoder how comms sounded.
+ *
+ * Slow on purpose. Each pass walks every subscribed track's stats, the
+ * numbers only mean anything over a window, and this runs on a phone in
+ * someone's pocket for a twelve-hour day.
+ */
+const QOS_INTERVAL_MS = 15_000
+
 type Publish = (state: Partial<VoiceState>) => void
+
+/** Where a quality reading goes. The store hands this to the WebSocket. */
+export type ReportQos = (qos: VoiceQos) => void
 
 /**
  * Something the crew has to be told, rather than a state the UI can render.
@@ -69,10 +83,14 @@ export class VoiceManager {
   private analyserCtx: AudioContext | null = null
   private micTestStream: MediaStream | null = null
   private talking = false
+  private qosTimer: number | null = null
+  /** Last stats per track sid, so each pass reads a window and not a lifetime. */
+  private qosPrevious = new Map<string, ReceiverSample>()
 
   constructor(
     private readonly publish: Publish,
-    private readonly notify: Notify = () => {}
+    private readonly notify: Notify = () => {},
+    private readonly reportQos: ReportQos = () => {}
   ) {
     navigator.mediaDevices?.addEventListener?.('devicechange', () => {
       void this.refreshDevices()
@@ -189,6 +207,7 @@ export class VoiceManager {
       this.publishParticipants()
       void this.refreshDevices()
       void this.acquireMic()
+      this.startQosSampling()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'could not join voice'
       this.reset(message)
@@ -365,6 +384,68 @@ export class VoiceManager {
     }
   }
 
+  // -- how it actually sounded -----------------------------------------------
+
+  /**
+   * Ask every subscribed track's decoder what it had to do to keep up.
+   *
+   * The box can measure its own network all day and it will always look
+   * healthy from where it is standing. This is the only vantage point that
+   * can say a crew member's comms were breaking up, because the concealment
+   * counters live in the decoder that did the concealing.
+   *
+   * Failures here are silent by design: this is telemetry for a graph, and a
+   * browser that withholds a counter must not cost anyone their intercom.
+   */
+  private startQosSampling(): void {
+    this.stopQosSampling()
+    this.qosTimer = window.setInterval(() => void this.sampleQos(), QOS_INTERVAL_MS)
+  }
+
+  private stopQosSampling(): void {
+    if (this.qosTimer !== null) clearInterval(this.qosTimer)
+    this.qosTimer = null
+    this.qosPrevious.clear()
+  }
+
+  private async sampleQos(): Promise<void> {
+    const room = this.room
+    if (!room) return
+    const readings: VoiceQos[] = []
+    const seen = new Set<string>()
+
+    for (const participant of room.remoteParticipants.values()) {
+      for (const publication of participant.audioTrackPublications.values()) {
+        // Audio by construction, but the SDK types the map's value as any
+        // remote track — and an older client may not carry the stats call at
+        // all, which is a missing graph rather than a broken intercom.
+        const track = publication.track as RemoteAudioTrack | undefined
+        if (typeof track?.getReceiverStats !== 'function') continue
+        seen.add(publication.trackSid)
+        try {
+          const next = (await track.getReceiverStats()) as ReceiverSample | undefined
+          if (!next) continue
+          const prev = this.qosPrevious.get(publication.trackSid)
+          this.qosPrevious.set(publication.trackSid, next)
+          if (!prev) continue
+          const qos = qosBetween(prev, next)
+          if (qos) readings.push(qos)
+        } catch {
+          // A browser that won't answer is not a fault worth surfacing.
+        }
+      }
+    }
+
+    // Forget tracks that have gone, or a long shift slowly fills this with
+    // people who left hours ago.
+    for (const sid of [...this.qosPrevious.keys()]) {
+      if (!seen.has(sid)) this.qosPrevious.delete(sid)
+    }
+
+    const worst = worstQos(readings)
+    if (worst) this.reportQos(worst)
+  }
+
   // -- mic level meter -------------------------------------------------------
 
   /**
@@ -468,6 +549,7 @@ export class VoiceManager {
   private reset(error: string | null = null): void {
     this.talking = false
     this.stopMicTest()
+    this.stopQosSampling()
     for (const el of this.audioEls) el.remove()
     this.audioEls.clear()
     // Hang up on the way out. `reset` used to only drop the reference, so a

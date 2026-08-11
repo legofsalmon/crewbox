@@ -129,6 +129,18 @@ export function isRemoteConnection(req: IncomingMessage | undefined, trustProxy 
   return ip !== '' && !isPrivateIp(ip)
 }
 
+/**
+ * The slice of the audit collector this hub writes to.
+ *
+ * Structural rather than an import so hub.ts stays free of the audit module
+ * — the box runs perfectly well without it, and the hub should not know
+ * whether it is there.
+ */
+interface CollectorSink {
+  noteRtt: (ms: number) => void
+  noteVoice: (stats: { lossPct: number; jitterMs: number; concealedPct: number }) => void
+}
+
 interface Logger {
   info: (msg: string) => void
   warn: (msg: string) => void
@@ -144,13 +156,13 @@ export class Hub {
   private heartbeat: NodeJS.Timeout | null = null
   private dmxTimer: NodeJS.Timeout | null = null
   /**
-   * Where client-reported round trips go, when the audit module is on.
+   * Where client-reported measurements go, when the audit module is on.
    *
    * Set after construction rather than injected, because the collector reads
    * this hub's stats — constructor injection either way would be circular.
    * Typed structurally so hub.ts stays free of audit imports.
    */
-  private collector: { noteRtt: (ms: number) => void } | undefined
+  private collector: CollectorSink | undefined
 
   constructor(
     private readonly store: Store,
@@ -162,8 +174,8 @@ export class Hub {
     private readonly dmx?: DmxListener
   ) {}
 
-  /** Hand the audit collector the crowd-Wi-Fi reports. Off by default. */
-  setCollector(collector: { noteRtt: (ms: number) => void } | undefined): void {
+  /** Hand the audit collector what the crew's devices report. Off by default. */
+  setCollector(collector: CollectorSink | undefined): void {
     this.collector = collector
   }
 
@@ -314,6 +326,17 @@ export class Hub {
         // silently when the audit module is off or the socket is chatty.
         if (this.overActionLimit(conn)) break
         this.collector?.noteRtt(msg.ms)
+        break
+      case 'voiceStats':
+        // Same posture as rttReport: a graph, not a decision. The numbers
+        // are computed on a device the box does not own, so the schema has
+        // already bounded them before they reach here.
+        if (this.overActionLimit(conn)) break
+        this.collector?.noteVoice({
+          lossPct: msg.lossPct,
+          jitterMs: msg.jitterMs,
+          concealedPct: msg.concealedPct,
+        })
         break
     }
   }

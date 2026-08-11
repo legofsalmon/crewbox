@@ -50,6 +50,9 @@ export const AUDIT_METRICS = [
   'media.ptpV1RateHz',
   'media.mdnsDevices',
   'media.sapStreams',
+  'voice.lossPct',
+  'voice.jitterMs',
+  'voice.concealedPct',
   'watch.packets',
 ] as const
 
@@ -233,6 +236,30 @@ export class MetricsStore {
   }
 
   /** Drop everything older than `before` (rollups, events, probe runs). */
+  /**
+   * The worst comms audio any device reported in a recent window.
+   *
+   * `max` rather than `avg` because the question is whether *anyone's* comms
+   * broke up: averaging one struggling phone against nine clean ones is how
+   * a real complaint disappears into a healthy-looking figure. `count` says
+   * how many readings the window holds, which is what lets the caller tell
+   * "clean" from "nobody has been on voice".
+   */
+  worstVoice(
+    from: number,
+    to: number
+  ): { concealedPct: number; lossPct: number; samples: number } | null {
+    const concealed = this.series('voice.concealedPct', '', from, to)
+    if (concealed.length === 0) return null
+    const loss = this.series('voice.lossPct', '', from, to)
+    const peak = (rows: RollupRow[]) => rows.reduce((worst, row) => Math.max(worst, row.max), 0)
+    return {
+      concealedPct: peak(concealed),
+      lossPct: peak(loss),
+      samples: concealed.reduce((total, row) => total + row.count, 0),
+    }
+  }
+
   prune(before: number): void {
     transaction(this.db, () => {
       this.db.prepare(`DELETE FROM audit_metrics WHERE ts < ?`).run(before)

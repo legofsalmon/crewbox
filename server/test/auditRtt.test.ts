@@ -15,8 +15,17 @@ import type { Store } from '../src/store.ts'
 const noopLog = { info() {}, warn() {}, error() {} } as never
 const noConfig = () => ({ eventName: '', wifiSsid: '', voiceEnabled: false, modules: [] })
 
+type Sink = NonNullable<Parameters<Hub['setCollector']>[0]>
+
+/** A collector stub: supply the half a test cares about, get the rest free. */
+const sink = (partial: Partial<Sink>): Sink => ({
+  noteRtt: () => {},
+  noteVoice: () => {},
+  ...partial,
+})
+
 /** A hub with a fake authenticated socket, driven straight at `onMessage`. */
-function socket(collector?: { noteRtt: (ms: number) => void }) {
+function socket(collector?: Sink) {
   const hub = new Hub({} as Store, noopLog, noConfig)
   hub.setCollector(collector)
   const sent: Array<Record<string, unknown>> = []
@@ -41,7 +50,7 @@ function socket(collector?: { noteRtt: (ms: number) => void }) {
 describe('client-reported round trips', () => {
   it('hands the reported figure to the audit collector', () => {
     const seen: number[] = []
-    const { deliver } = socket({ noteRtt: (ms) => seen.push(ms) })
+    const { deliver } = socket(sink({ noteRtt: (ms) => void seen.push(ms) }))
 
     deliver({ type: 'rttReport', ms: 412 })
     expect(seen).toEqual([412])
@@ -55,14 +64,14 @@ describe('client-reported round trips', () => {
   })
 
   it('never answers a report — it is advisory, not a request', () => {
-    const { deliver, sent } = socket({ noteRtt: () => {} })
+    const { deliver, sent } = socket(sink({}))
     deliver({ type: 'rttReport', ms: 90 })
     expect(sent).toEqual([])
   })
 
   it('a socket that floods reports is cut off by the action limit', () => {
     const seen: number[] = []
-    const { deliver } = socket({ noteRtt: (ms) => seen.push(ms) })
+    const { deliver } = socket(sink({ noteRtt: (ms) => void seen.push(ms) }))
 
     // The action limit is 60 per window and shared with typing/markRead, so a
     // client sending far more than its once-a-minute budget stops landing.
@@ -70,5 +79,53 @@ describe('client-reported round trips', () => {
 
     expect(seen.length).toBeGreaterThan(0)
     expect(seen.length).toBeLessThan(200)
+  })
+})
+
+describe('what comms actually sounded like', () => {
+  /**
+   * The one measurement the box cannot take for itself. Server-side numbers
+   * describe the box's own end of the wire and always look well from there;
+   * only the receiving decoder knows how much of the audio it had to invent
+   * to cover a gap.
+   */
+  it('carries a device report through to the collector', () => {
+    const seen: Array<Record<string, number>> = []
+    const { deliver } = socket(sink({ noteVoice: (stats) => void seen.push({ ...stats }) }))
+
+    deliver({ type: 'voiceStats', lossPct: 12.5, jitterMs: 40, concealedPct: 3.25 })
+
+    expect(seen).toEqual([{ lossPct: 12.5, jitterMs: 40, concealedPct: 3.25 }])
+  })
+
+  it('drops a report from a socket that is already being chatty', () => {
+    // Same guard as every other client-driven action: a phone with a stuck
+    // timer must not be able to bury the rollup under its own telemetry.
+    const seen: unknown[] = []
+    const { deliver } = socket(sink({ noteVoice: () => void seen.push(1) }))
+    for (let i = 0; i < 400; i++) {
+      deliver({ type: 'voiceStats', lossPct: 0, jitterMs: 0, concealedPct: 0 })
+    }
+    expect(seen.length).toBeLessThan(400)
+  })
+
+  it('never reaches the collector with a figure outside its bounds', () => {
+    // These are computed on a device the box does not own. The schema is the
+    // boundary, so a device claiming 900% concealment is rejected before any
+    // of it is believed.
+    const seen: unknown[] = []
+    const { deliver } = socket(sink({ noteVoice: () => void seen.push(1) }))
+
+    deliver({ type: 'voiceStats', lossPct: 0, jitterMs: 0, concealedPct: 900 })
+
+    expect(seen).toHaveLength(0)
+  })
+
+  it('is ignored entirely when the audit module is off', () => {
+    // No collector at all — the common case, and it must not throw.
+    const { deliver } = socket(undefined)
+    expect(() =>
+      deliver({ type: 'voiceStats', lossPct: 5, jitterMs: 5, concealedPct: 5 })
+    ).not.toThrow()
   })
 })
