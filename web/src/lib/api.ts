@@ -1,4 +1,4 @@
-import type { Channel, FileMeta, Message, PublicConfig, User } from '@crewbox/shared'
+import type { Channel, FileMeta, Incident, Message, PublicConfig, User } from '@crewbox/shared'
 import { apiUrl } from './server.ts'
 
 export type ReadinessState = 'ok' | 'limited' | 'off'
@@ -319,4 +319,16 @@ export async function adminExport(auth: AdminAuth): Promise<Blob> {
     throw new ApiError(data.error ?? `request failed (${res.status})`, res.status)
   }
   return res.blob()
+}
+
+/**
+ * The show log's scrollback. Live entries arrive over the socket; this is
+ * what a pane opens with, and what a device that was away catches up on.
+ */
+export function fetchIncidents(
+  token: string,
+  beforeSeq?: number
+): Promise<{ incidents: Incident[] }> {
+  const params = beforeSeq ? `?${new URLSearchParams({ beforeSeq: String(beforeSeq) })}` : ''
+  return request(`/api/incidents${params}`, { headers: { authorization: `Bearer ${token}` } })
 }
