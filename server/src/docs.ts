@@ -51,6 +51,22 @@ export class DocsRelay {
     this.heartbeat.unref()
   }
 
+  /**
+   * A room's document, if this box has ever relayed one.
+   *
+   * Read-only, and deliberately does *not* create the room — asking whether
+   * anybody has put a running order on this box must not conjure an empty
+   * one and start relaying it.
+   *
+   * The relay has no business parsing what it carries; this exists so a
+   * caller that legitimately reads one document (the control surface, for a
+   * desk asking what is on next) can, without the relay growing an opinion
+   * about the contents.
+   */
+  peek(name: string): Y.Doc | null {
+    return this.rooms.get(name)?.doc ?? null
+  }
+
   private getRoom(name: string): Room {
     let room = this.rooms.get(name)
     if (room) return room

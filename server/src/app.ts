@@ -17,7 +17,13 @@ import multipart from '@fastify/multipart'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 import QRCode from 'qrcode-svg'
-import { HOME_CHANNEL, newId, type PublicConfig, type User } from '@crewbox/shared'
+import {
+  HOME_CHANNEL,
+  MAX_MESSAGE_LENGTH,
+  newId,
+  type PublicConfig,
+  type User,
+} from '@crewbox/shared'
 import { DocsRelay, parseRoomName } from './docs.ts'
 import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
 import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
@@ -64,7 +70,15 @@ import {
   verifyPin,
   verifyPinAsync,
 } from './auth.ts'
-import { controlKey, keyFromHeaders, keyMatches, Tally } from './control.ts'
+import {
+  controlKey,
+  keyFromHeaders,
+  keyMatches,
+  readRunningOrder,
+  stageBoard,
+  Tally,
+  TIMETABLE_ROOM,
+} from './control.ts'
 import { Hub } from './hub.ts'
 import type { Store } from './store.ts'
 
@@ -169,6 +183,15 @@ const settingsPatchSchema = z.object({
  */
 const tallyBodySchema = z.object({
   user: z.string().max(80).nullable(),
+})
+
+/**
+ * A message posted from a desk. The channel is named the way whoever built
+ * the button knows it — "#foh", "foh", or an id a script stored.
+ */
+const controlMessageSchema = z.object({
+  channel: z.string().trim().min(1).max(80),
+  body: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH),
 })
 
 const unlockBodySchema = z.object({
@@ -306,6 +329,12 @@ export interface AppDeps {
    * tests and the e2e box work without a metrics store.
    */
   metrics?: MetricsStore
+  /**
+   * The wall clock the running order is read against. Injected by tests, so
+   * "what is on the main stage" can be asked at nine in the evening from a CI
+   * runner at four in the morning. Production passes nothing.
+   */
+  clock?: () => Date
   logger?: boolean
 }
 
@@ -340,6 +369,7 @@ export function buildApp({
   dmx,
   netwatch,
   metrics,
+  clock = () => new Date(),
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -404,6 +434,23 @@ export function buildApp({
   // Minted at startup rather than on first use, so it reaches the console
   // while someone is still looking at it.
   adminPasswordHash()
+
+  /**
+   * What the crew's own devices said about comms over the window a show moves
+   * in. Null when nobody has been on voice, which is a different thing from
+   * clean and is reported as one — by the readiness list and by a desk alike.
+   */
+  const recentVoiceQuality = (): {
+    concealedPct: number
+    lossPct: number
+    devices: number
+  } | null => {
+    if (!metrics) return null
+    const now = Date.now()
+    const worst = metrics.worstVoice(now - VOICE_QUALITY_WINDOW_MS, now)
+    if (!worst) return null
+    return { concealedPct: worst.concealedPct, lossPct: worst.lossPct, devices: worst.samples }
+  }
 
   const publicConfig = (): PublicConfig => ({
     eventName: store.getSetting('eventName') ?? '',
@@ -1343,6 +1390,88 @@ export function buildApp({
     return tally.current()
   })
 
+  /**
+   * Everything a button can show: the event, who is on air, how many crew are
+   * on, what the comms sounded like, and what is on which stage.
+   *
+   * One request rather than five, because a Stream Deck polls this a second
+   * at a time all night and every extra round trip is a thing that can be
+   * half-configured. Read-only, and it deliberately says nothing about what
+   * anybody wrote — a key on a desk is not a key to the crew's messages.
+   */
+  fastify.get('/api/control/state', (req, reply) => {
+    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    const wanted = (req.query as { stage?: string } | undefined)?.stage?.trim().toLowerCase()
+    const stats = hub.stats()
+    const onAir = tally.current()
+
+    // Only while a phone on site has the app open: the relay holds documents
+    // for connected clients and nothing else, so an empty box genuinely does
+    // not know the running order rather than knowing it is empty.
+    const timetable = docs.peek(TIMETABLE_ROOM)
+    const board = stageBoard(readRunningOrder(timetable), clock())
+
+    return {
+      event: publicConfig().eventName,
+      version: APP_VERSION,
+      onAir: {
+        ...onAir,
+        // The desk asked by name; answer by name as well as by id, so a
+        // button's feedback text needs no second lookup.
+        name: onAir.userId ? (store.getUserById(onAir.userId)?.name ?? '') : '',
+      },
+      crew: { online: stats.onlineUsers, total: store.countUsers() },
+      voice: {
+        enabled: voiceAvailable,
+        // What crew devices reported over the last ten minutes, as numbers
+        // rather than a verdict — the thresholds that turn these into "comms
+        // are struggling" belong in one place, and that place is the
+        // readiness list. A desk can colour a button however it likes.
+        quality: recentVoiceQuality(),
+      },
+      // Public channels only, and only their names: this is the list a
+      // message button offers, not a directory of who is talking to whom.
+      channels: store
+        .listAllChannels()
+        .filter((channel) => channel.kind === 'public' && !channel.retired)
+        .map((channel) => ({ id: channel.id, name: channel.name })),
+      runningOrder: {
+        known: timetable !== null,
+        stages: wanted ? board.filter((s) => s.stage.toLowerCase() === wanted) : board,
+      },
+    }
+  })
+
+  /**
+   * Post a message into a channel from the desk.
+   *
+   * The call every festival actually wants: the button that already fires the
+   * changeover music also tells the crew it has started. It lands as a system
+   * message — the box speaking, in the same voice as "#foh created" — because
+   * a machine posting under a crew member's name is a machine putting words
+   * in somebody's mouth, and on a comms channel that is how a wrong
+   * instruction gets followed.
+   *
+   * Public channels only. A key sitting in a desk config file must never be
+   * able to write into a DM.
+   */
+  fastify.post('/api/control/message', (req, reply) => {
+    if (!authControl(req)) return reply.code(401).send({ error: 'bad or missing key' })
+    const parsed = controlMessageSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: 'send { "channel": "<name or id>", "body": "<message>" }' })
+    }
+    const wanted = parsed.data.channel.replace(/^#/, '')
+    const channel = store.getChannel(wanted) ?? store.getChannelByName(wanted.toLowerCase())
+    if (!channel || channel.kind !== 'public' || channel.retired) {
+      return reply.code(404).send({ error: `no channel "${parsed.data.channel}"` })
+    }
+    const message = hub.systemMessage(channel.id, parsed.data.body)
+    return { ok: true, channelId: channel.id, channel: channel.name, seq: message.seq }
+  })
+
   /** Give the unlock back early — the panel's Lock button. */
   fastify.post('/api/admin/lock', (req, reply) => {
     adminTokens.revoke(adminTokenOf(req))
@@ -1503,17 +1632,7 @@ export function buildApp({
     // What the crew's own devices said, over the window a show moves in.
     // Absent when nobody has been on voice, which is a different thing from
     // clean and is reported as one.
-    const voiceQuality = (() => {
-      if (!metrics) return null
-      const now = Date.now()
-      const worst = metrics.worstVoice(now - VOICE_QUALITY_WINDOW_MS, now)
-      if (!worst) return null
-      return {
-        concealedPct: worst.concealedPct,
-        lossPct: worst.lossPct,
-        devices: worst.samples,
-      }
-    })()
+    const voiceQuality = recentVoiceQuality()
     const readiness = boxReadiness({
       // req.protocol is 'https' for a TLS connection, and honours
       // x-forwarded-proto only when this box is configured to trust a proxy.

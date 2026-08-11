@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { controlKey, keyFromHeaders, keyMatches, Tally } from '../src/control.ts'
+import * as Y from 'yjs'
+import type { Act } from '@crewbox/shared'
+import {
+  controlKey,
+  keyFromHeaders,
+  keyMatches,
+  readRunningOrder,
+  stageBoard,
+  Tally,
+} from '../src/control.ts'
 
 /**
  * The keyed control surface, and the tally it exists to raise.
  *
- * The tests worth having here are about the two ways this could quietly do
- * the wrong thing: letting a caller in who should not be, and leaving a red
- * ON AIR bar on somebody who is no longer there to clear it.
+ * The tests worth having here are about the ways this could quietly do the
+ * wrong thing: letting a caller in who should not be, leaving a red ON AIR
+ * bar on somebody who is no longer there to clear it, and telling a desk the
+ * headliner is on at nine in the morning.
  */
 
 const store = (initial: Record<string, string> = {}) => {
@@ -136,5 +146,139 @@ describe('who is on air', () => {
     tally.set('u1')
     expect(tally.forget('u2')).toBe(false)
     expect(tally.current().userId).toBe('u1')
+  })
+})
+
+/** A timetable document as a phone would have left it on the relay. */
+const timetableDoc = (acts: Partial<Act>[]): Y.Doc => {
+  const doc = new Y.Doc()
+  const array = doc.getArray<Y.Map<unknown>>('acts')
+  for (const act of acts) {
+    const map = new Y.Map<unknown>()
+    for (const [key, value] of Object.entries(act)) map.set(key, value)
+    array.push([map])
+  }
+  return doc
+}
+
+describe('reading the running order off the relay', () => {
+  it('has nothing to say when the box is holding no timetable', () => {
+    // Which is the normal state of a box nobody has the app open on — not an
+    // error, and not an empty running order either.
+    expect(readRunningOrder(null)).toEqual([])
+  })
+
+  it('reads what a phone wrote', () => {
+    const acts = readRunningOrder(
+      timetableDoc([
+        { id: 'a1', name: 'Night Bus', stage: 'Main Stage', start: '23:30', end: '00:45' },
+      ])
+    )
+    expect(acts).toEqual([
+      {
+        id: 'a1',
+        name: 'Night Bus',
+        stage: 'Main Stage',
+        date: '',
+        start: '23:30',
+        end: '00:45',
+        changeover: 0,
+      },
+    ])
+  })
+
+  it('reads a doc written by a version that knew different fields', () => {
+    // The app on a given phone can be newer or older than the box. A field
+    // that is missing, or arrives as something other than a string, has to
+    // read as empty rather than throwing on a route a desk polls all night.
+    const [act] = readRunningOrder(
+      timetableDoc([{ name: 42 as unknown as string, stage: 'Main Stage', changeover: 'HR' }])
+    )
+    expect(act).toMatchObject({ name: '', start: '', end: '', changeover: 0 })
+  })
+
+  it('keeps a half-typed act rather than hiding it', () => {
+    // The phones' countdown carries unnamed slots, so the box has to as well.
+    // A stage the box calls clear and the sidebar calls busy is worse than a
+    // button with a blank on it.
+    expect(readRunningOrder(timetableDoc([{ stage: 'Main Stage', start: '21:00' }]))).toHaveLength(
+      1
+    )
+  })
+})
+
+const at = (hours: number, minutes: number): Date => new Date(2026, 7, 11, hours, minutes)
+
+let seq = 0
+const act = (fields: Partial<Act>): Act => ({
+  id: `act-${++seq}`,
+  name: '',
+  stage: '',
+  date: '',
+  start: '',
+  end: '',
+  changeover: 0,
+  ...fields,
+})
+
+const DAY = [
+  act({ name: 'Sound Check Kids', stage: 'Main Stage', start: '19:00', end: '20:00' }),
+  act({ name: 'The Fixture', stage: 'Main Stage', start: '21:00', end: '22:30' }),
+  act({ name: 'Night Bus', stage: 'Main Stage', start: '23:30', end: '00:45' }),
+  act({ name: 'Backline', stage: 'Second Stage', start: '22:00', end: '23:00' }),
+]
+
+describe('what a desk button shows', () => {
+  it('names what is on and what is next', () => {
+    const [main] = stageBoard(DAY, at(21, 30))
+    expect(main?.onNow?.name).toBe('The Fixture')
+    expect(main?.next?.name).toBe('Night Bus')
+  })
+
+  it('gives the numbers and the words for them', () => {
+    // The words are the point: a Stream Deck button prints a string, and
+    // every desk doing its own minute arithmetic is a desk doing it wrong.
+    const [main] = stageBoard(DAY, at(21, 30))
+    expect(main?.onNow?.endsIn).toBe(60)
+    expect(main?.onNow?.ends).toBe('in 1h')
+    expect(main?.next?.starts).toBe('in 2h')
+  })
+
+  it('puts the stage with something on it first', () => {
+    const board = stageBoard(DAY, at(21, 30))
+    expect(board.map((s) => s.stage)).toEqual(['Main Stage', 'Second Stage'])
+  })
+
+  it('knows the 00:45 set belongs to tonight, not to tomorrow morning', () => {
+    // The failure this guards is the whole reason the maths is shared with
+    // the app: sorted by the clock alone, the headliner is the first thing
+    // on in the morning and the desk says so an hour before doors.
+    const [main] = stageBoard(DAY, at(23, 50))
+    expect(main?.onNow?.name).toBe('Night Bus')
+    expect(main?.next).toBeNull()
+  })
+
+  it('still says so after midnight', () => {
+    const [main] = stageBoard(DAY, new Date(2026, 7, 12, 0, 30))
+    expect(main?.onNow?.name).toBe('Night Bus')
+    expect(main?.onNow?.ends).toBe('in 15 min')
+  })
+
+  it('leaves next empty once a stage is done for the day', () => {
+    const second = stageBoard(DAY, at(23, 50)).find((s) => s.stage === 'Second Stage')
+    expect(second?.onNow).toBeNull()
+    expect(second?.next).toBeNull()
+  })
+
+  it('never calls a TBC slot the act that is on', () => {
+    const board = stageBoard([act({ name: 'Special Guest', stage: 'Main Stage' })], at(21, 30))
+    expect(board[0]?.onNow).toBeNull()
+    expect(board[0]?.next).toBeNull()
+  })
+
+  it('files an act with no stage under a name a button can print', () => {
+    const board = stageBoard([act({ name: 'Walkabout', start: '21:00', end: '22:00' })], at(21, 30))
+    expect(board[0]?.stage).toBe('Stage')
+    expect(board[0]?.onNow?.name).toBe('Walkabout')
   })
 })

@@ -2263,6 +2263,19 @@ ul {
   white-space: nowrap;
 }
 
+/*
+ * A key that gets read off this screen and typed into a desk, so it wraps
+ * rather than ellipsing — half a key is worse than a tall row — and one tap
+ * selects the whole of it.
+ */
+.admin-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 /* --------------------------------------------------------------- mobile */
 @media (max-width: 900px) {
   .sidebar {

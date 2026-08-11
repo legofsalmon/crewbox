@@ -508,6 +508,16 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
             <dt>Voice</dt>
             <dd>{info.voiceEnabled ? 'Enabled' : 'Not configured'}</dd>
           </div>
+          {/* The key a vision desk drives tally with. Printed here for the
+              same reason as the event PIN: the box mints it silently on
+              first use, and a key nobody can find is a feature nobody has.
+              It grants far less than the password guarding this panel. */}
+          {info.controlKey && (
+            <div>
+              <dt>Desk control key</dt>
+              <dd className="admin-key">{info.controlKey}</dd>
+            </div>
+          )}
         </dl>
       )}
     </>

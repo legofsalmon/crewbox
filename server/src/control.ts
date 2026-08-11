@@ -1,4 +1,13 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import type * as Y from 'yjs'
+import {
+  agenda,
+  nowMinutes,
+  relative,
+  toAgendaAct,
+  type Act,
+  type AgendaEntry,
+} from '@crewbox/shared'
 
 /**
  * The control surface: how a desk drives the box.
@@ -112,4 +121,91 @@ export class Tally {
     if (this.userId !== userId) return false
     return this.set(null)
   }
+}
+
+/** Room name the shell's timetable lives in. Must match the web store. */
+export const TIMETABLE_ROOM = 'timetable/event'
+
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+
+/**
+ * The running order, read off the document the box already relays.
+ *
+ * Defensive on every field, because this document is written by whatever
+ * version of the app each phone happens to be running and read here by a
+ * box that may be older or newer than all of them. A missing or wrong-typed
+ * field reads as empty rather than throwing or defaulting to something a
+ * desk might believe — an act with no time is a TBC slot, and the agenda
+ * below declines to call a TBC slot "on now".
+ *
+ * Unnamed acts are kept rather than skipped. They are half-typed rows, and
+ * they are on the phones' countdown too; dropping them here would make the
+ * box say a stage is clear while the sidebar says something unnamed is on.
+ */
+export function readRunningOrder(doc: Y.Doc | null): Act[] {
+  if (!doc) return []
+  return doc
+    .getArray<Y.Map<unknown>>('acts')
+    .toArray()
+    .map((entry) => ({
+      id: text(entry.get('id')),
+      name: text(entry.get('name')),
+      stage: text(entry.get('stage')),
+      date: text(entry.get('date')),
+      start: text(entry.get('start')),
+      end: text(entry.get('end')),
+      changeover:
+        typeof entry.get('changeover') === 'number' ? (entry.get('changeover') as number) : 0,
+    }))
+}
+
+/**
+ * One act on a desk's display: the numbers to do maths with, and the same
+ * thing in words so a button can print it without doing any.
+ */
+export interface BoardEntry {
+  name: string
+  stage: string
+  /** Minutes until it starts, negative once it has. Null when it is TBC. */
+  startsIn: number | null
+  endsIn: number | null
+  /** "in 25 min" / "5 min ago" — empty when there is no time to render. */
+  starts: string
+  ends: string
+}
+
+export interface StageBoard {
+  stage: string
+  onNow: BoardEntry | null
+  next: BoardEntry | null
+}
+
+/**
+ * What is on and what is next, per stage, for a desk.
+ *
+ * The maths is the shell's, imported rather than reimplemented: the phones
+ * and this endpoint answer "who is on" from the same code, including the
+ * six-in-the-morning show-day roll that decides whether the 00:30 headliner
+ * is the last act of tonight or the first of tomorrow. A box that disagreed
+ * with the sidebar in a crew member's pocket would be worse than a box that
+ * said nothing.
+ *
+ * `now` is passed in, so this is testable at any hour.
+ */
+export function stageBoard(acts: Act[], now: Date): StageBoard[] {
+  const entry = (found: AgendaEntry | null): BoardEntry | null =>
+    found && {
+      name: found.act.name,
+      stage: found.act.stage,
+      startsIn: found.startsIn,
+      endsIn: found.endsIn,
+      starts: found.startsIn === null ? '' : relative(found.startsIn),
+      ends: found.endsIn === null ? '' : relative(found.endsIn),
+    }
+
+  return agenda(acts.map(toAgendaAct), nowMinutes(now)).map((stage) => ({
+    stage: stage.stage,
+    onNow: entry(stage.onNow),
+    next: entry(stage.next),
+  }))
 }
