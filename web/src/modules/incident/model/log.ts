@@ -126,6 +126,21 @@ export function byShowDay(entries: Incident[]): LogDay[] {
   return days
 }
 
+/**
+ * An entry's time, always 24-hour.
+ *
+ * The rest of the app follows the device's locale for a message timestamp,
+ * which is right for chat. A log is different: it is read back weeks later,
+ * quoted into a report, and compared against a call sheet and a running
+ * order that are both in 24-hour — and "9:04" in a record of a night that
+ * ran from 19:00 to 01:00 is a genuine ambiguity, not a preference. The pane
+ * and the show report share this so they can never disagree.
+ */
+export const clockOf = (at: number): string => {
+  const d = new Date(at)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 /** How many entries in the log matter enough to put on a sidebar badge. */
 export const seriousCount = (entries: Incident[]): number =>
   entries.filter((e) => e.severity === 'serious').length

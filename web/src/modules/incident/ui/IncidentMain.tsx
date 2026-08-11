@@ -10,7 +10,7 @@ import {
 } from '@crewbox/shared'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { useStore } from '../../../store.ts'
-import { byShowDay, filterLog, loggedLate, type LogFilter } from '../model/log.ts'
+import { byShowDay, clockOf, filterLog, loggedLate, type LogFilter } from '../model/log.ts'
 import { reportFilename, showReportHtml } from '../model/report.ts'
 import { queuedIncidents } from '../model/outbox.ts'
 import LogEntryForm from './LogEntryForm.tsx'
@@ -28,9 +28,6 @@ import styles from './Incident.module.css'
  * correction under it, and both stay — which is what makes this a record
  * rather than a shared document.
  */
-
-const clock = (at: number): string =>
-  new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 const dayLabel = (day: string): string =>
   new Date(`${day}T12:00:00`).toLocaleDateString([], {
@@ -54,7 +51,7 @@ function Entry({
   return (
     <li className={`${styles.entry} ${styles[entry.severity]}`}>
       <div className={styles.entryHead}>
-        <span className={styles.time}>{clock(entry.at)}</span>
+        <span className={styles.time}>{clockOf(entry.at)}</span>
         <span className={styles.kind}>{INCIDENT_KIND_LABELS[entry.kind]}</span>
         {entry.severity !== 'note' && (
           <span className={`${styles.sev} ${styles[`sev-${entry.severity}`]}`}>
@@ -80,7 +77,7 @@ function Entry({
           <p className={styles.entryBody}>{correction.body}</p>
           <div className={styles.entryFoot}>
             <span>
-              Correction at {clock(correction.at)}
+              Correction at {clockOf(correction.at)}
               {correction.authorName ? ` · ${correction.authorName}` : ''}
             </span>
           </div>

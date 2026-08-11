@@ -1,5 +1,5 @@
 import { INCIDENT_KIND_LABELS, INCIDENT_SEVERITY_LABELS, type Incident } from '@crewbox/shared'
-import { loggedLate, showDayOf, withCorrections } from './log.ts'
+import { clockOf, loggedLate, showDayOf, withCorrections } from './log.ts'
 
 /**
  * The show report — the thing that gets emailed on the Monday.
@@ -19,11 +19,6 @@ const esc = (s: string): string =>
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
   )
-
-const clock = (at: number): string => {
-  const d = new Date(at)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 
 const STYLE = `
   :root { --ink:#1a1a1a; --muted:#5a5a5a; --line:#d8d4cc; --paper:#fdfbf7;
@@ -63,7 +58,7 @@ function entryHtml(entry: Incident, corrections: Incident[]): string {
   const where = [entry.stage, entry.actName].filter(Boolean).join(' · ')
   return `<div class="entry ${entry.severity}">
     <div class="head">
-      <span class="time">${clock(entry.at)}</span>
+      <span class="time">${clockOf(entry.at)}</span>
       <span class="kind">${esc(INCIDENT_KIND_LABELS[entry.kind])}${
         entry.severity === 'note' ? '' : ` — ${esc(INCIDENT_SEVERITY_LABELS[entry.severity])}`
       }</span>
@@ -79,7 +74,7 @@ function entryHtml(entry: Incident, corrections: Incident[]): string {
       .map(
         (c) => `<div class="correction">
       <p class="body">${esc(c.body)}</p>
-      <p class="by">Correction at ${clock(c.at)}${
+      <p class="by">Correction at ${clockOf(c.at)}${
         c.authorName ? ` by ${esc(c.authorName)}` : ''
       }</p>
     </div>`

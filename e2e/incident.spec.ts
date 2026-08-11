@@ -25,8 +25,8 @@ test('an entry filed on one phone is on every other phone', async ({ browser }) 
   await openLog(sm)
   await sm.getByRole('button', { name: 'Log an entry' }).click()
   await sm.getByLabel('What happened').fill('Show stopped — wind reading over limit')
-  await sm.getByLabel('Kind').selectOption('show-stop')
-  await sm.getByLabel('How bad').selectOption('serious')
+  await sm.getByLabel('Kind', { exact: true }).selectOption('show-stop')
+  await sm.getByLabel('How bad', { exact: true }).selectOption('serious')
   await sm.getByRole('button', { name: 'Log it' }).click()
 
   // The author sees it without a reload...

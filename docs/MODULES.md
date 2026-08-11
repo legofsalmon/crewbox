@@ -64,7 +64,15 @@ follows from it.
 delivery matter, and history is the point. Chat uses it: per-channel
 sequence numbers, a client-id outbox, resume-from-cursor, server-side
 dedupe. Reach for it when the question is "what happened, in what order" —
-incident logs, show calls, cue-fired records.
+show logs, show calls, cue-fired records.
+
+The **show log** is the worked example (`modules/incident`, plus the
+`incidents` table and `logIncident` on the socket). It picked this primitive
+for a reason worth repeating: a CRDT lets anyone edit or delete any past
+entry with no trace, which is the wrong property for a record somebody may
+later have to stand behind. Nothing in that module UPDATEs or DELETEs a row —
+a correction is a new entry naming the one it corrects, and both stay. If a
+module of yours is a _record_ rather than a _state_, copy that shape.
 
 **Shared doc** — a CRDT document many people edit at once, where the current
 state is the point and edits merge without a server arbitrating. Patch

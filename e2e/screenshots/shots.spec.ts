@@ -235,6 +235,43 @@ test('shots: network audit', async () => {
   await shoot(dev, 'network-cards')
 })
 
+test('shots: the show log', async () => {
+  // A night with something in it. Written from the stage manager's phone,
+  // because that is who keeps this.
+  await maya
+    .getByRole('button', { name: /Show log/ })
+    .first()
+    .click()
+  await expect(maya.getByRole('heading', { name: 'Show log' })).toBeVisible()
+
+  const file = async (body: string, kind: string, severity: string, minutesAgo?: number) => {
+    await maya.getByRole('button', { name: 'Log an entry' }).click()
+    await maya.getByLabel('What happened').fill(body)
+    await maya.getByLabel('Kind', { exact: true }).selectOption(kind)
+    await maya.getByLabel('How bad', { exact: true }).selectOption(severity)
+    if (minutesAgo) await maya.getByRole('button', { name: `${minutesAgo} min ago` }).click()
+    await maya.getByRole('button', { name: 'Log it' }).click()
+    await expect(maya.getByText(body)).toBeVisible()
+  }
+
+  await file('Barrier moved back a metre at stage left, security happy', 'crowd', 'note', 30)
+  await file('Desk rebooted during changeover — 4 min, back before doors', 'technical', 'issue', 15)
+  await file(
+    'Show held: wind reading over limit, crowd held at the barrier',
+    'show-stop',
+    'serious'
+  )
+
+  await shoot(maya, 'incident-log')
+
+  // The form, open, with the "when" row that is the point of it.
+  await maya.getByRole('button', { name: 'Log an entry' }).click()
+  await maya.getByLabel('What happened').fill('First aid called to the pit, punter walked away')
+  await maya.getByLabel('Kind', { exact: true }).selectOption('medical')
+  await shoot(maya, 'incident-form')
+  await maya.getByRole('button', { name: 'Cancel' }).click()
+})
+
 test('shots: admin', async () => {
   await maya.getByRole('button', { name: 'Admin panel' }).click()
   await expect(maya.getByPlaceholder("the box's admin password")).toBeVisible()

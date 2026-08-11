@@ -1,6 +1,6 @@
 import { useStore } from '../../store.ts'
 import { INCIDENT_KIND_LABELS } from '@crewbox/shared'
-import { inLogOrder, seriousCount } from './model/log.ts'
+import { clockOf, inLogOrder, seriousCount } from './model/log.ts'
 
 /**
  * The show log's sidebar row: the last thing that happened, and how bad.
@@ -18,9 +18,7 @@ export default function IncidentSidebar() {
 
   const [latest] = inLogOrder(incidents)
   const serious = seriousCount(incidents)
-  const when = latest
-    ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : ''
+  const when = latest ? clockOf(latest.at) : ''
 
   return (
     <>
