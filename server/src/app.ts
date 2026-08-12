@@ -1298,13 +1298,23 @@ export function buildApp({
 
   // -- video: watching the LED wall ------------------------------------------
   //
-  // Reading is the crew's; transmitting is an admin's, twice.
+  // Reading is the whole crew's. The sweep is an admin's, and needs
+  // confirming.
   //
-  // `GET /api/video/state` is session-authed like the network audit — a
-  // screens tech should be able to look at the wall's temperature from their
-  // phone without an admin unlock. Everything below it either changes what
-  // the box may contact or puts a packet on a video network, so it is
-  // admin-gated, and the two that transmit need an intent raised first.
+  // The line is drawn at what a request *is*, not at how much it matters. A
+  // screens tech naming a processor and watching it produces addressed GETs
+  // and nothing else — reads, at the same rate whoever asks for them — so
+  // gating that behind the admin password would make the pane useless to the
+  // person it is for while protecting nothing.
+  //
+  // The sweep is the exception because it is the one packet here that is not
+  // a read of a named device: a broadcast to a whole segment, from a box that
+  // may also be sitting on the crew Wi-Fi. That is a decision about somebody
+  // else's network, so it needs the password and a separate confirmation.
+  //
+  // Watching still raises an intent, for everyone. Not as a permission —
+  // there is nothing to withhold — but because a crew member is entitled to
+  // read what the box is about to put on a show network before it does.
   if (modules.includes('video') && video) {
     const addSchema = z.object({
       host: z.string().min(7).max(15),
@@ -1334,41 +1344,55 @@ export function buildApp({
       }
     })
 
-    // Adding an address contacts nothing, so it needs no intent — it is a
-    // note about the world, not permission to talk to it. Monitoring is the
-    // separate, confirmed step.
+    // Adding an address contacts nothing, so it needs no intent and no
+    // password — it is a note about the world, not permission to talk to it.
+    // Whoever knows the processor's address is the screens tech, and making
+    // them find an admin to type it in helps nobody.
     fastify.post('/api/video/processors', (req, reply) => {
-      const admin = authAdmin(req, reply)
-      if (!admin) return reply
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
       const parsed = addSchema.safeParse(req.body)
       if (!parsed.success) return reply.code(400).send({ error: 'invalid processor' })
       const result = video.store.add({
         host: parsed.data.host,
         ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-        addedBy: admin.name,
+        addedBy: user.name,
       })
       if (!result.ok) return reply.code(400).send({ error: result.reason })
       return { processor: result.processor }
     })
 
+    // Removing stops traffic and loses a note. Both are the safe direction,
+    // so it takes no more than a session — the same rule as deleting a patch
+    // sheet.
     fastify.delete('/api/video/processors/:id', (req, reply) => {
-      if (!authAdmin(req, reply)) return reply
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
       const { id } = req.params as { id: string }
       if (!video.store.remove(id)) return reply.code(404).send({ error: 'no such processor' })
       return { removed: true }
     })
 
     /**
-     * Half one of the double confirmation: say what would happen.
+     * Half one of the confirmation: say what would happen.
      *
      * Answers with a single-use token and the exact traffic it would
-     * authorise. Raising an intent sends nothing.
+     * authorise. Raising an intent sends nothing, so the guard here is only
+     * whatever the *second* half will need — the admin password for a sweep,
+     * a session for watching. Handing out a scan token to anyone would make
+     * the password on `/api/video/scan` the only thing holding, and one lock
+     * is easier to leave open than two.
      */
     fastify.post('/api/video/intent', (req, reply) => {
-      const admin = authAdmin(req, reply)
-      if (!admin) return reply
       const parsed = intentSchema.safeParse(req.body)
       if (!parsed.success) return reply.code(400).send({ error: 'invalid request' })
+      const user = parsed.data.action === 'scan' ? authAdmin(req, reply) : authUser(req)
+      if (!user) {
+        // authAdmin has already answered; authUser has not.
+        return parsed.data.action === 'scan'
+          ? reply
+          : reply.code(401).send({ error: 'unauthenticated' })
+      }
       const processor = parsed.data.processorId
         ? video.store.get(parsed.data.processorId)
         : undefined
@@ -1376,7 +1400,7 @@ export function buildApp({
         return reply.code(404).send({ error: 'no such processor' })
       }
       const described = video.describe({
-        userId: admin.id,
+        userId: user.id,
         action: parsed.data.action,
         ...(processor ? { processor } : {}),
       })
@@ -1404,13 +1428,18 @@ export function buildApp({
     /**
      * Half two, for monitoring one processor.
      *
+     * A session, not the admin password: everything this starts is an
+     * addressed GET. The confirmation stays for everyone, because reading
+     * what the box is about to put on a show network is worth a screen
+     * whoever is looking at it.
+     *
      * Turning it *off* deliberately needs no confirmation: stopping is not a
      * transmission, and anything that makes stopping harder than starting is
      * the wrong way round on a show day.
      */
     fastify.post('/api/video/processors/:id/watch', (req, reply) => {
-      const admin = authAdmin(req, reply)
-      if (!admin) return reply
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
       const { id } = req.params as { id: string }
       const parsed = watchSchema.safeParse(req.body)
       if (!parsed.success) return reply.code(400).send({ error: 'invalid request' })
@@ -1423,12 +1452,12 @@ export function buildApp({
 
       const spent = video.intents.consume({
         token: confirmationOf(req),
-        userId: admin.id,
+        userId: user.id,
         action: 'watch',
         processorId: id,
       })
       if (!spent.ok) return reply.code(428).send({ error: spent.reason })
-      video.store.setMonitored(id, true, admin.name)
+      video.store.setMonitored(id, true, user.name)
       // Read it straight away rather than making somebody wait 20 s to find
       // out whether the address was right — but do not wait for the answer.
       // A mistyped address costs an SNMP timeout plus six HTTP ones, half a

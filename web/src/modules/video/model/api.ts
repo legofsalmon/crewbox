@@ -4,11 +4,11 @@ import { apiUrl } from '../../../lib/server.ts'
 /**
  * Talking to the box about the video network.
  *
- * Two shapes of call, and the difference matters. `fetchVideoState` is the
- * crew's — session-authed, like the network audit, because a screens tech
- * should be able to read a wall's temperature off their phone without an
- * admin unlock. Everything else needs an admin token, and the two that put a
- * packet on the video network need a confirmation raised first.
+ * Everything here is a read except one call. Naming a processor and watching
+ * it produces addressed GETs, so those are session-authed like the rest of
+ * the app — a screens tech should not need an admin unlock to look at their
+ * own wall. `runScan` is the exception: a broadcast across a whole segment is
+ * a decision about somebody else's network, so it carries the admin token.
  *
  * `raiseIntent` never transmits. It asks the box what a thing *would* send,
  * and comes back with those words plus a single-use token. The token is what
@@ -55,27 +55,29 @@ export function fetchVideoState(): Promise<VideoState> {
   return call<VideoState>('/api/video/state', { method: 'GET' })
 }
 
-export function addProcessor(
-  adminToken: string,
-  host: string,
-  name: string
-): Promise<{ processor: VideoProcessor }> {
-  return call('/api/video/processors', { method: 'POST', adminToken, body: { host, name } })
+export function addProcessor(host: string, name: string): Promise<{ processor: VideoProcessor }> {
+  return call('/api/video/processors', { method: 'POST', body: { host, name } })
 }
 
-export function removeProcessor(adminToken: string, id: string): Promise<{ removed: boolean }> {
-  return call(`/api/video/processors/${id}`, { method: 'DELETE', adminToken })
+export function removeProcessor(id: string): Promise<{ removed: boolean }> {
+  return call(`/api/video/processors/${id}`, { method: 'DELETE' })
 }
 
-/** Half one: ask what would be sent. Sends nothing itself. */
+/**
+ * Half one: ask what would be sent. Sends nothing itself.
+ *
+ * `adminToken` is only meaningful for a sweep, and the box enforces that —
+ * it will not hand out a scan token to a plain session, so this cannot be
+ * used to get round the password on the sweep itself.
+ */
 export function raiseIntent(
-  adminToken: string,
   action: VideoAction,
-  processorId?: string
+  processorId?: string,
+  adminToken?: string
 ): Promise<{ intent: VideoIntent }> {
   return call('/api/video/intent', {
     method: 'POST',
-    adminToken,
+    ...(adminToken ? { adminToken } : {}),
     body: { action, ...(processorId ? { processorId } : {}) },
   })
 }
@@ -93,14 +95,12 @@ export function runScan(adminToken: string, confirm: string): Promise<{ started:
  * are the same shape.
  */
 export function setWatching(
-  adminToken: string,
   id: string,
   monitored: boolean,
   confirm?: string
 ): Promise<{ monitored: boolean }> {
   return call(`/api/video/processors/${id}/watch`, {
     method: 'POST',
-    adminToken,
     ...(confirm ? { confirm } : {}),
     body: { monitored },
   })

@@ -189,10 +189,35 @@ not 255.255.255.255. A limited broadcast leaves by whichever adapter the
 routing table fancies, which on a box that also holds the crew Wi-Fi means
 probing a network nobody asked about.
 
+## Who may do what
+
+The line is drawn at what a request _is_, not at how much it matters.
+
+| Action                     | Needs                                   |
+| -------------------------- | --------------------------------------- |
+| Read the pane              | a session                               |
+| Add or remove a processor  | a session                               |
+| Start or stop watching one | a session, plus a confirmation to start |
+| Sweep for processors       | the admin password, plus a confirmation |
+
+Naming a processor and watching it produces addressed GETs, at a fixed rate,
+whoever asked for them. Gating that behind the admin password would make the
+pane useless to the screens tech it is for while protecting nothing — the
+person who knows the processor's address _is_ the screens tech.
+
+The sweep is the exception because it is the one packet here that is not a
+read of a named device: a broadcast at a whole segment, from a box that may
+also be sitting on the crew Wi-Fi. That is a decision about somebody else's
+network, so it takes the password.
+
+The box will not issue a _scan_ intent to a plain session either. Otherwise
+the password on `/api/video/scan` would be the only thing holding, and one
+lock is easier to leave open than two.
+
 ## The gate
 
 Two actions transmit: sweeping for processors, and starting to watch one.
-Both are admin-only, and **neither can be done in a single request**.
+**Neither can be done in a single request**, by anybody.
 
 ```
 POST /api/video/intent    → { token, willSend: [...], target, expiresAt }
@@ -206,9 +231,14 @@ call requires that token back.
 
 Doing this on the box rather than as a confirm dialog is the point. A dialog
 protects the person looking at it; this protects the network. There is no
-single call — mistyped, replayed, or made by something holding an admin token
-— that puts a packet on a video network. `server/test/videoRoutes.test.ts` is
-written as a list of attempts to get round it.
+single call — mistyped, replayed, or made by something holding a token — that
+puts a packet on a video network. `server/test/videoRoutes.test.ts` is written
+as a list of attempts to get round it.
+
+For watching, the confirmation is not a permission check — there is nothing
+being withheld, since a session is enough. It is there because a crew member
+is entitled to read what the box is about to put on a show network before it
+does.
 
 **Turning monitoring off needs no confirmation.** Stopping is not a
 transmission, and anything that makes stopping harder than starting is the
@@ -220,8 +250,8 @@ A box with the video module enabled and nothing armed contacts nothing. That
 is why `video` is safe in the default `CREWBOX_MODULES` list:
 
 - Adding a processor stores an address. It contacts nothing.
-- The watcher polls only entries with `monitored` set, which only an admin
-  with a confirmation can set.
+- The watcher polls only entries with `monitored` set, which nothing sets
+  without a confirmation first.
 - A sweep runs once, on request, never on a timer.
 - No socket is held open between polls. SNMP opens one per request and closes
   it in `finally`; the discovery socket closes when the sweep ends.
@@ -276,9 +306,18 @@ doing something visible. If VMP does not stutter and no `Busying` appears,
 polling at 0.05 Hz is not going to be the thing that breaks a show — and the
 "REASONED, unverified" on §COEX HTTP above can become an observation.
 
-## Out of scope
+## Out of scope, for now
 
-Controlling anything. Brightness, presets, blackout, freeze, input select,
-test patterns, cabinet configuration — none of it, from any surface, at any
-permission level. The register bus. Being a backup for VMP or NovaLCT.
-Recording or storing video.
+Controlling anything: brightness, presets, blackout, freeze, input select,
+test patterns, cabinet configuration. None of it, from any surface, at any
+permission level — there is no code in the box that could.
+
+**A control surface is expected later**, and is deliberately a separate piece
+of work rather than something this one leaves a hook for. When it arrives it
+will need its own decisions about who may drive a wall and how a mistake is
+undone, and none of those are answered by "the reader already has an
+address". Until then the guarantees above are unconditional, which is the
+whole reason they are worth writing down.
+
+Permanently out: the register bus, being a backup for VMP or NovaLCT, and
+recording or storing video.

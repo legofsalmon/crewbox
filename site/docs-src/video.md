@@ -23,6 +23,9 @@ There is no way from this pane — or from any other surface, at any permission
 level — to change brightness, recall a preset, black out a screen or select an
 input. The code to do it does not exist in the box.
 
+(Control may come later, as its own thing with its own rules about who can
+drive a wall. Everything on this page describes a version that cannot.)
+
 That is a property of the build rather than a policy: the HTTP client's method
 is typed as the literal `GET`, the SNMP encoder can only produce a GetRequest,
 and a test reads every file in the module to check that neither has quietly
@@ -33,19 +36,25 @@ the box inherits whatever the box can do, and a festival's video network
 carries the show. An app that _can_ black out a screen is a way to black out a
 screen from somebody's pocket.
 
-## Reading is everyone's; transmitting is not
+## The pane is yours; the sweep is an admin's
 
-Anyone signed in can open the pane and read it. You do not need the admin
-password to look at a wall's temperature on your phone.
+Anyone signed in can open it, name a processor, watch one, and stop watching.
+You do not need the admin password for any of that — everything it starts is
+the box reading one address you gave it.
 
-What needs the admin password is anything that changes what the box contacts:
-adding a processor, removing one, turning watching on, and sweeping.
+The **sweep** is the one exception, and it takes the admin password. The
+difference is not how much it matters: it is that a sweep broadcasts to a
+whole network segment rather than reading one processor somebody named. That
+is a decision about the venue's network, not about your wall.
 
 ## Adding a processor
 
 Type its address and a name — "upstage left", whatever the crew calls it. If
 the processor tells the box it calls itself something else, that appears
 underneath rather than replacing what a human chose.
+
+The person who knows the address is usually the screens tech, so this does
+not go through an admin.
 
 **Adding contacts nothing.** An address in the list is a note about the world,
 not permission to talk to it. The row says so until somebody turns it on.
@@ -59,15 +68,21 @@ asks properly. Instead of "are you sure?", you get the exact requests the box
 would make: the addresses, the ports, the interval. They are the words you
 would need if a venue's network manager asked what your box put on their VLAN.
 
-Confirming starts a poll about every twenty seconds. **Stopping needs no
-confirmation at all** — anything that makes stopping harder than starting is
-the wrong way round on a show day.
+Confirming starts a poll about every twenty seconds. It is not a permission
+check — anyone signed in can do this — it is there so you read what the box
+is about to put on a show network before it does.
+
+**Stopping needs no confirmation at all.** Anything that makes stopping
+harder than starting is the wrong way round on a show day.
 
 ## Sweeping for processors
 
 If you know which network the processors are on but not their addresses, an
 admin can sweep for them. One broadcast, the same packet NovaLCT sends to find
 controllers, run once when you ask and never on a timer.
+
+This is the admin-gated one because it is the only thing here that talks to a
+whole segment instead of to an address somebody typed in.
 
 It shows you what it would send before it sends anything, and afterwards it
 prints what it actually transmitted, verbatim, for a venue that wants to check

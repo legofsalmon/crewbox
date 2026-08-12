@@ -9,6 +9,9 @@ import styles from './ProcessorRow.module.scss'
  * controller tells us it calls itself something else; that goes underneath.
  * Everything below the name is only what the box actually read, so a sparse
  * row means a quiet controller rather than a hidden failure.
+ *
+ * `armedBy` is shown because traffic on a show network should have a name
+ * against it, not because anyone needs permission to put it there.
  */
 
 const HEALTH_CLASS: Record<string, string> = {
@@ -21,7 +24,6 @@ const HEALTH_CLASS: Record<string, string> = {
 export default function ProcessorRow({
   status,
   now,
-  isAdmin,
   busy,
   onWatch,
   onStop,
@@ -29,7 +31,6 @@ export default function ProcessorRow({
 }: {
   status: ProcessorStatus
   now: number
-  isAdmin: boolean
   busy: boolean
   onWatch: () => void
   onStop: () => void
@@ -96,25 +97,26 @@ export default function ProcessorRow({
         <p className={styles.errors}>Didn’t answer: {reading.errors.join('; ')}</p>
       )}
 
-      {isAdmin && (
-        <div className={styles.actions}>
-          {processor.monitored ? (
-            <button className={styles.stop} onClick={onStop} disabled={busy}>
-              Stop watching
-            </button>
-          ) : (
-            <button className={styles.watch} onClick={onWatch} disabled={busy}>
-              Watch this…
-            </button>
-          )}
-          <button className={styles.remove} onClick={onRemove} disabled={busy}>
-            Remove
+      {/* Open to anyone signed in: everything these start is an addressed
+          GET, so a screens tech should not need to find an admin to look at
+          their own wall. The sweep is the one privileged thing here. */}
+      <div className={styles.actions}>
+        {processor.monitored ? (
+          <button className={styles.stop} onClick={onStop} disabled={busy}>
+            Stop watching
           </button>
-          {processor.armedBy && processor.monitored && (
-            <span className={styles.who}>turned on by {processor.armedBy}</span>
-          )}
-        </div>
-      )}
+        ) : (
+          <button className={styles.watch} onClick={onWatch} disabled={busy}>
+            Watch this…
+          </button>
+        )}
+        <button className={styles.remove} onClick={onRemove} disabled={busy}>
+          Remove
+        </button>
+        {processor.armedBy && processor.monitored && (
+          <span className={styles.who}>turned on by {processor.armedBy}</span>
+        )}
+      </div>
     </li>
   )
 }

@@ -20,11 +20,16 @@ import styles from './VideoMain.module.scss'
  * Video → LED: what the walls are doing, from the other side of the site.
  *
  * The module reads and cannot write. Nothing crewbox sends can change what is
- * on a wall — there is no encoder in the codebase that could — and the two
- * things that put a packet on the video network at all are admin-only and
- * need a separate confirmation each time. That confirmation is not this
- * dialog: the box refuses the call without a token it issues, and the dialog
- * is where the token is shown to a human first.
+ * on a wall — there is no encoder in the codebase that could.
+ *
+ * So the pane is the crew's: anyone signed in can name a processor and watch
+ * it, because everything that starts is an addressed GET. The sweep is the
+ * exception and takes the admin password, being the one packet here that is
+ * not a read of a named device — a broadcast at a whole segment.
+ *
+ * Watching still shows the confirmation, to everyone. Not as a permission
+ * check, which the box does: as the screen where a crew member reads what is
+ * about to go on a show network before it does.
  *
  * Polling, like the network audit, and paused when the tab is hidden. A pane
  * nobody has open costs nothing — but note that unlike the audit, the *box*
@@ -67,10 +72,9 @@ export default function VideoMain(_props: { subpath: string }) {
 
   /** Half one: ask the box what this would send. Transmits nothing. */
   const propose = async (action: VideoAction, processorId?: string) => {
-    if (!adminToken) return
     setConfirmError('')
     try {
-      const { intent } = await raiseIntent(adminToken, action, processorId)
+      const { intent } = await raiseIntent(action, processorId, adminToken ?? undefined)
       setPending({ intent })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'could not ask the box')
@@ -79,14 +83,15 @@ export default function VideoMain(_props: { subpath: string }) {
 
   /** Half two: the admin has read what it would send and said yes. */
   const confirm = async () => {
-    if (!adminToken || !pending) return
+    if (!pending) return
     setBusy(true)
     setConfirmError('')
     try {
       if (pending.intent.action === 'scan') {
+        if (!adminToken) return
         await runScan(adminToken, pending.intent.token)
       } else {
-        await setWatching(adminToken, pending.intent.processorId!, true, pending.intent.token)
+        await setWatching(pending.intent.processorId!, true, pending.intent.token)
       }
       setPending(null)
       await load()
@@ -99,10 +104,9 @@ export default function VideoMain(_props: { subpath: string }) {
 
   const add = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!adminToken) return
     setAddError('')
     try {
-      await addProcessor(adminToken, host.trim(), name.trim())
+      await addProcessor(host.trim(), name.trim())
       setHost('')
       setName('')
       await load()
@@ -163,125 +167,132 @@ export default function VideoMain(_props: { subpath: string }) {
                   key={status.processor.id}
                   status={status}
                   now={now}
-                  isAdmin={Boolean(adminToken)}
                   busy={busy}
                   onWatch={() => void propose('watch', status.processor.id)}
-                  onStop={() =>
-                    void act(() => setWatching(adminToken!, status.processor.id, false))
-                  }
-                  onRemove={() => void act(() => removeProcessor(adminToken!, status.processor.id))}
+                  onStop={() => void act(() => setWatching(status.processor.id, false))}
+                  onRemove={() => void act(() => removeProcessor(status.processor.id))}
                 />
               ))}
             </ul>
           )}
 
-          {adminToken ? (
-            <section className={styles.admin} aria-label="Add a processor">
-              <h2 className={styles.sectionTitle}>Add a processor</h2>
-              <p className={styles.sectionBlurb}>
-                Typing an address in contacts nothing. The box only starts reading a processor once
-                somebody turns it on, which is a separate confirmation.
-              </p>
-              <form className={styles.form} onSubmit={(event) => void add(event)}>
-                <label className={styles.field}>
-                  <span>Address</span>
-                  <input
-                    value={host}
-                    onChange={(event) => setHost(event.target.value)}
-                    placeholder="10.0.30.11"
-                    inputMode="numeric"
-                    required
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span>Name</span>
-                  <input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="Main wall"
-                  />
-                </label>
-                <button className={styles.add} type="submit">
-                  Add
-                </button>
-              </form>
-              {addError && <p className={styles.error}>{addError}</p>}
-            </section>
-          ) : (
-            <p className={styles.who}>
-              An admin can add processors and turn watching on from their device.
+          <section className={styles.admin} aria-label="Add a processor">
+            <h2 className={styles.sectionTitle}>Add a processor</h2>
+            <p className={styles.sectionBlurb}>
+              Typing an address in contacts nothing. The box only starts reading a processor once
+              somebody turns it on, which is a separate confirmation.
             </p>
-          )}
+            <form className={styles.form} onSubmit={(event) => void add(event)}>
+              <label className={styles.field}>
+                <span>Address</span>
+                <input
+                  value={host}
+                  onChange={(event) => setHost(event.target.value)}
+                  placeholder="10.0.30.11"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+              <label className={styles.field}>
+                <span>Name</span>
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Main wall"
+                />
+              </label>
+              <button className={styles.add} type="submit">
+                Add
+              </button>
+            </form>
+            {addError && <p className={styles.error}>{addError}</p>}
+          </section>
 
-          {adminToken && (
-            <section className={styles.admin} aria-label="Sweep for processors">
-              <h2 className={styles.sectionTitle}>Sweep for processors</h2>
-              {state.canScan ? (
-                <>
+          {/* Rendered for everyone, so the section does not appear and vanish
+              with other people's unlocks — only the button is privileged, the
+              same shape the network audit's deep probe uses. */}
+          <section className={styles.admin} aria-label="Sweep for processors">
+            <h2 className={styles.sectionTitle}>Sweep for processors</h2>
+            {!state.canScan ? (
+              <p className={styles.sectionBlurb}>
+                This box has no video-network adapter set, so it has nothing to sweep. Set
+                CREWBOX_VIDEO_IFACE to the address of the card on the video network, or add
+                processors by address above — those are read without it.
+              </p>
+            ) : (
+              <>
+                {adminToken ? (
+                  <>
+                    <p className={styles.sectionBlurb}>
+                      One broadcast on {state.interfaceIp}, the same packet NovaLCT sends to find
+                      controllers. It runs once when you ask for it and never on a timer. You will
+                      be shown exactly what goes on the wire before anything is sent.
+                    </p>
+                    <button
+                      className={styles.scan}
+                      onClick={() => void propose('scan')}
+                      disabled={state.scanning || busy}
+                    >
+                      {state.scanning ? 'Sweeping…' : 'Sweep for processors…'}
+                    </button>
+                  </>
+                ) : (
+                  // Not the same words with the button removed: "you will be
+                  // shown what it sends" is addressed to somebody who can send
+                  // it. This says what a sweep is and why this one thing is
+                  // privileged when the rest of the pane is not.
                   <p className={styles.sectionBlurb}>
-                    One broadcast on {state.interfaceIp}, the same packet NovaLCT sends to find
-                    controllers. It runs once when you ask for it and never on a timer. You will be
-                    shown exactly what goes on the wire before anything is sent.
+                    A sweep puts one broadcast packet on the whole {state.interfaceIp} network,
+                    rather than reading a processor somebody named. That is a decision about the
+                    venue&rsquo;s network, so it takes the admin password — an admin can run one
+                    from their device.
                   </p>
-                  <button
-                    className={styles.scan}
-                    onClick={() => void propose('scan')}
-                    disabled={state.scanning || busy}
-                  >
-                    {state.scanning ? 'Sweeping…' : 'Sweep for processors…'}
-                  </button>
-                </>
-              ) : (
-                <p className={styles.sectionBlurb}>
-                  This box has no video-network adapter set, so it has nothing to sweep. Set
-                  CREWBOX_VIDEO_IFACE to the address of the card on the video network, or add
-                  processors by address above — those are read without it.
-                </p>
-              )}
+                )}
+              </>
+            )}
 
-              {state.scan && (
-                <div className={styles.scanResult}>
-                  <p className={styles.meta}>
-                    Last sweep by {state.scan.by}, {state.scan.found.length} answered.
+            {state.scan && (
+              <div className={styles.scanResult}>
+                <p className={styles.meta}>
+                  Last sweep by {state.scan.by}, {state.scan.found.length} answered.
+                </p>
+                <ul className={styles.sent}>
+                  {state.scan.sent.map((line) => (
+                    <li key={line}>sent: {line}</li>
+                  ))}
+                </ul>
+                {state.scan.found.map((found) => (
+                  <div key={found.host} className={styles.found}>
+                    <span className={styles.foundHost}>{found.host}</span>
+                    {found.payload && <span className={styles.foundRaw}>{found.payload}</span>}
+                    {found.known ? (
+                      <span className={styles.meta}>already listed</span>
+                    ) : (
+                      <button
+                        className={styles.addFound}
+                        disabled={busy}
+                        onClick={() => void act(() => addProcessor(found.host, ''))}
+                      >
+                        Add
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {state.scan.errors.map((line) => (
+                  <p key={line} className={styles.error}>
+                    {line}
                   </p>
-                  <ul className={styles.sent}>
-                    {state.scan.sent.map((line) => (
-                      <li key={line}>sent: {line}</li>
-                    ))}
-                  </ul>
-                  {state.scan.found.map((found) => (
-                    <div key={found.host} className={styles.found}>
-                      <span className={styles.foundHost}>{found.host}</span>
-                      {found.payload && <span className={styles.foundRaw}>{found.payload}</span>}
-                      {found.known ? (
-                        <span className={styles.meta}>already listed</span>
-                      ) : (
-                        <button
-                          className={styles.addFound}
-                          disabled={busy}
-                          onClick={() => void act(() => addProcessor(adminToken, found.host, ''))}
-                        >
-                          Add
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {state.scan.errors.map((line) => (
-                    <p key={line} className={styles.error}>
-                      {line}
-                    </p>
-                  ))}
-                  {state.scan.found.length > 0 && (
-                    <p className={styles.meta}>
-                      A processor answers with its address and nothing crewbox can safely read
-                      beyond that — whatever follows is shown raw, unlabelled, because nobody has
-                      captured a real reply to know what it means.
-                    </p>
-                  )}
-                </div>
-              )}
-            </section>
-          )}
+                ))}
+                {state.scan.found.length > 0 && (
+                  <p className={styles.meta}>
+                    A processor answers with its address and nothing crewbox can safely read beyond
+                    that — whatever follows is shown raw, unlabelled, because nobody has captured a
+                    real reply to know what it means.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
         </div>
       )}
 

@@ -5,10 +5,10 @@ import { newDevice } from './helpers'
  * The LED pane, through a real box.
  *
  * The unit tests cover the protocol and the gate. What only this layer can
- * show is the shape of the promise from a crew member's side: that reading is
- * everyone's, that changing what the box contacts is not, and that the second
- * confirmation is a real screen with the real traffic written on it rather
- * than a "are you sure?".
+ * show is the shape of it from a crew member's side: that the pane is theirs,
+ * that the sweep is the one thing that is not, and that the confirmation is a
+ * real screen with the real traffic written on it rather than an "are you
+ * sure?".
  */
 
 const openVideo = async (page: Page) => {
@@ -30,17 +30,45 @@ const unlockAdmin = async (page: Page) => {
   await expect(page.getByRole('dialog', { name: 'Admin panel' })).toBeHidden()
 }
 
-test('the pane is readable by anyone and editable by nobody without the password', async ({
-  browser,
-}) => {
+test('the pane belongs to the crew, except the sweep', async ({ browser }) => {
   const crew = await newDevice(browser, 'Screens Tech')
   await openVideo(crew)
 
-  // A screens tech should not need an admin unlock to look at the wall.
+  // A screens tech should not need an admin unlock to name their own wall or
+  // to look at it — everything that starts is an addressed GET.
   await expect(crew.getByText('crewbox reads LED processors and cannot control them')).toBeVisible()
-  await expect(crew.getByText('An admin can add processors')).toBeVisible()
-  await expect(crew.getByRole('button', { name: 'Add' })).toHaveCount(0)
-  await expect(crew.getByRole('button', { name: /Sweep for processors/ })).toHaveCount(0)
+  await expect(crew.getByRole('button', { name: 'Add', exact: true })).toBeVisible()
+
+  // The sweep is the exception, and the pane says why rather than just
+  // hiding the button.
+  await expect(crew.getByRole('button', { name: /Sweep for processors…/ })).toHaveCount(0)
+  await expect(crew.getByText('so it takes the admin password')).toBeVisible()
+  // The wording is written for somebody who cannot run it, rather than the
+  // admin's copy with the button taken away.
+  await expect(crew.getByText('You will be shown exactly what goes on the wire')).toHaveCount(0)
+
+  await crew.context().close()
+})
+
+test('a crew member can watch a wall, after reading what it will send', async ({ browser }) => {
+  const crew = await newDevice(browser, 'Screens Tech Two')
+  await openVideo(crew)
+
+  await crew.getByLabel('Address').fill('10.99.99.21')
+  await crew.getByLabel('Name').fill('Side fill')
+  await crew.getByRole('button', { name: 'Add', exact: true }).click()
+
+  const row = crew.getByRole('listitem').filter({ hasText: 'Side fill' })
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: 'Watch this…' }).click()
+
+  // No password, but still not in one step: the confirmation is information,
+  // not a permission check.
+  const dialog = crew.getByRole('dialog', { name: /Start watching/ })
+  await expect(dialog.getByText('10.99.99.21:161')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Yes, send it' }).click()
+  await expect(crew.getByRole('dialog')).toBeHidden({ timeout: 15_000 })
+  await expect(row.getByRole('button', { name: 'Stop watching' })).toBeVisible()
 
   await crew.context().close()
 })
@@ -54,12 +82,13 @@ test('adding a processor contacts nothing until somebody says so', async ({ brow
   await page.getByLabel('Name').fill('Upstage left')
   await page.getByRole('button', { name: 'Add', exact: true }).click()
 
-  await expect(page.getByText('Upstage left')).toBeVisible()
-  await expect(page.getByText('Not watched')).toBeVisible()
+  const added = page.getByRole('listitem').filter({ hasText: 'Upstage left' })
+  await expect(added).toBeVisible()
+  await expect(added.getByText('Not watched')).toBeVisible()
   // The resting state, said out loud: the address is a note about the world,
   // not permission to talk to it.
   await expect(
-    page.getByText(
+    added.getByText(
       'The box has never contacted this address and will not until someone turns it on'
     )
   ).toBeVisible()

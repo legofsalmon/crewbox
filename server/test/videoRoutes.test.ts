@@ -14,11 +14,17 @@ import type { WatcherIo } from '../src/video/watcher.ts'
 /**
  * The HTTP surface, which is where the promise is actually kept.
  *
- * "Watch the wall, don't drive it" and "only admins, only with a double
- * confirmation" are properties of these routes, not of the pane. Somebody
- * with a session token and curl is the threat model this file is written
- * against — everything here is a way of trying to get a packet onto a video
- * network in one request.
+ * Two properties live here rather than in the pane.
+ *
+ * The first is the line: reads are the crew's, the sweep is an admin's.
+ * Naming a processor and watching it produces addressed GETs at a fixed rate
+ * whoever asks, so it takes a session; a sweep broadcasts at a whole segment,
+ * so it takes the password.
+ *
+ * The second is that **no single request transmits**, and that one holds for
+ * everybody. Somebody with a session token and curl is the threat model —
+ * most of what follows is a way of trying to get a packet onto a video
+ * network in one call.
  */
 
 const EVENT_PIN = '9999'
@@ -193,7 +199,7 @@ const raiseIntent = async (
   return (res.json() as { intent: VideoIntent }).intent
 }
 
-describe('reading is the crew"s', () => {
+describe('the pane is the crew"s', () => {
   it('lets any signed-in crew member see the wall', async () => {
     const token = await join('Sam')
     const res = await app.inject({
@@ -226,16 +232,29 @@ describe('reading is the crew"s', () => {
   })
 })
 
-describe('changing what the box may contact is an admin"s', () => {
-  it('refuses a plain crew member adding a processor', async () => {
+describe('naming a processor takes no password', () => {
+  it('lets a screens tech add one from their own phone', async () => {
+    // The person who knows the processor's address is the screens tech.
+    // Making them find an admin to type it in protects nothing — adding
+    // contacts no device at all.
     const token = await join('Sam')
     const res = await app.inject({
       method: 'POST',
       url: '/api/video/processors',
       headers: { authorization: `Bearer ${token}` },
+      payload: { host: '10.0.30.44', name: 'Side fill' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(contacted).toEqual([])
+  })
+
+  it('still needs a session', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/video/processors',
       payload: { host: '10.0.30.11' },
     })
-    expect(res.statusCode).toBe(403)
+    expect(res.statusCode).toBe(401)
   })
 
   it('adds an address without contacting it', async () => {
@@ -300,6 +319,19 @@ describe('nothing transmits in one request', () => {
     })
     expect(res.statusCode).toBe(403)
     expect(probesSent).toBe(0)
+  })
+
+  it('will not hand a crew member a scan confirmation in the first place', async () => {
+    // Otherwise the password on /api/video/scan is the only thing holding,
+    // and one lock is easier to leave open than two.
+    const token = await join('Sam')
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/video/intent',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { action: 'scan' },
+    })
+    expect(res.statusCode).toBe(403)
   })
 
   it('refuses another admin"s confirmation', async () => {
@@ -369,6 +401,44 @@ describe('nothing transmits in one request', () => {
 })
 
 describe('watching one processor', () => {
+  it('lets a crew member start it, once they have read what it sends', async () => {
+    // Everything this starts is an addressed GET at a fixed rate. Gating it
+    // behind the admin password would make the pane useless to the person it
+    // is for while protecting nothing.
+    const token = await join('Sam')
+    const admin = await asAdmin()
+    const processor = await addProcessor(admin, '10.0.30.33')
+
+    const denied = await app.inject({
+      method: 'POST',
+      url: `/api/video/processors/${processor.id}/watch`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { monitored: true },
+    })
+    // Still not in one request, for anybody.
+    expect(denied.statusCode).toBe(428)
+
+    const intent = await app.inject({
+      method: 'POST',
+      url: '/api/video/intent',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { action: 'watch', processorId: processor.id },
+    })
+    expect(intent.statusCode).toBe(200)
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/video/processors/${processor.id}/watch`,
+      headers: {
+        authorization: `Bearer ${token}`,
+        'x-video-confirm': (intent.json() as { intent: VideoIntent }).intent.token,
+      },
+      payload: { monitored: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(video.store.get(processor.id)?.monitored).toBe(true)
+    await settle()
+  })
+
   it('refuses to start watching without a confirmation', async () => {
     const auth = await asAdmin()
     const processor = await addProcessor(auth)
