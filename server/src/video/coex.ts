@@ -263,13 +263,24 @@ export class CoexReader {
     const wantTopology = this.polls % TOPOLOGY_EVERY === 0
     this.polls++
 
+    /**
+     * Endpoints that answered *this* poll.
+     *
+     * Load-bearing, and the cached topology below is why. Without it a
+     * processor that has been unplugged keeps answering with its last known
+     * model and cabinet list — every poll looks like a reading, the caller
+     * never counts a miss, and the pane shows a wall that is no longer there
+     * as healthy. Cached topology is only worth merging into a reading that
+     * got something.
+     */
+    let answered = 0
+
     const reading: ProcessorReading = {
       at: this.io.now(),
       readPath: 'http',
       cabinets: [],
       inputs: [],
       errors,
-      ...this.topology,
     }
 
     if (wantTopology) {
@@ -277,6 +288,7 @@ export class CoexReader {
       const device = await this.get('/api/v1/device')
       if (device.error) errors.push(device.error)
       else {
+        answered++
         const model = str(pick(device.data, ['model', 'deviceModel', 'productName']))
         const name = str(pick(device.data, ['name', 'deviceName', 'alias']))
         const serial = str(pick(device.data, ['sn', 'serial', 'serialNumber']))
@@ -289,11 +301,15 @@ export class CoexReader {
 
       const cabinet = await this.get('/api/v1/device/cabinet')
       if (cabinet.error) errors.push(cabinet.error)
-      else fresh.cabinets = parseCabinets(cabinet.data)
+      else {
+        answered++
+        fresh.cabinets = parseCabinets(cabinet.data)
+      }
 
       const screen = await this.get('/api/v1/screen')
       if (screen.error) errors.push(screen.error)
       else {
+        answered++
         const first = arr(pick(screen.data, ['screens', 'list', 'items']) ?? screen.data)[0]
         const brightness = num(pick(first, ['brightness', 'brightnessValue', 'lightness']))
         if (brightness !== undefined) fresh.brightness = brightness
@@ -304,17 +320,20 @@ export class CoexReader {
       const snmp = await this.get('/api/v1/device/snmpstate')
       if (snmp.error) errors.push(snmp.error)
       else {
+        answered++
         const on = bool(pick(snmp.data, ['enable', 'enabled', 'state', 'snmpState']))
         if (on !== undefined) fresh.snmpEnabled = on
       }
 
-      this.topology = fresh
-      Object.assign(reading, fresh)
+      // Only replace the cache when this poll learned something. A sweep in
+      // which every topology endpoint failed must not erase what we knew.
+      if (answered > 0) this.topology = fresh
     }
 
     const monitor = await this.get('/api/v1/device/monitor/info')
     if (monitor.error) errors.push(monitor.error)
     else {
+      answered++
       const temp = num(pick(monitor.data, ['temperature', 'temp', 'deviceTemperature']))
       const fan = num(pick(monitor.data, ['fanSpeed', 'fan', 'fanSpeedPercent']))
       if (temp !== undefined) reading.temperature = temp
@@ -328,23 +347,43 @@ export class CoexReader {
     const mode = await this.get('/api/v1/device/screen/displaymode')
     if (mode.error) errors.push(mode.error)
     else {
+      answered++
       const value = displayModeOf(pick(mode.data, ['mode', 'displayMode', 'value']) ?? mode.data)
       if (value) reading.displayMode = value
     }
 
     const inputs = await this.get('/api/v1/device/input/sources')
     if (inputs.error) errors.push(inputs.error)
-    else reading.inputs = parseInputs(inputs.data)
+    else {
+      answered++
+      reading.inputs = parseInputs(inputs.data)
+    }
 
     const backup = await this.get('/api/v1/device/backup')
     if (backup.error) errors.push(backup.error)
     else {
+      answered++
       const role = pick(backup.data, ['isBackup', 'backup', 'role', 'status'])
       const asBool = bool(role)
       if (asBool !== undefined) reading.isBackup = asBool
       else if (num(role) !== undefined) reading.isBackup = num(role) === 1
     }
 
+    // Nothing answered: an empty reading, with no cached identity dressing it
+    // up as a live one. The caller counts this as a miss.
+    if (answered === 0) return reading
+
+    // Fill the gaps a status-only poll leaves — identity and layout — from
+    // the last sweep that did read them, without letting them overwrite
+    // anything this poll saw for itself.
+    for (const [key, value] of Object.entries(this.topology)) {
+      if (reading[key as keyof ProcessorReading] === undefined) {
+        Object.assign(reading, { [key]: value })
+      }
+    }
+    if (reading.cabinets.length === 0 && this.topology.cabinets) {
+      reading.cabinets = this.topology.cabinets
+    }
     return reading
   }
 }

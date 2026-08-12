@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   TAG_SEQUENCE,
   decodeInteger,
-  decodeOid,
   encodeInteger,
   encodeOctetString,
   encodeOid,
@@ -11,6 +10,7 @@ import {
   readSequence,
   readTlv,
 } from '../src/video/ber.ts'
+import { respondTo } from './videoAgent.ts'
 import {
   GET_REQUEST,
   GET_RESPONSE,
@@ -48,40 +48,11 @@ async function startAgent(table: Record<string, string | number>): Promise<FakeA
   const state = { requests: 0 }
 
   socket.on('message', (buf, rinfo) => {
-    const message = readTlv(buf, 0)
-    const [, , pdu] = readSequence(message.value)
-    if (pdu.tag !== GET_REQUEST) return
+    const reply = respondTo(buf, table)
+    if (!reply) return
     state.requests++
-    const [id, , , list] = readSequence(pdu.value)
-    const requestId = decodeInteger(id.value)
-    const answers: Buffer[] = []
-    for (const entry of readSequence(list.value)) {
-      const [name] = readSequence(entry.value)
-      const asked_ = decodeOid(name.value)
-      asked.push(asked_)
-      const value = table[asked_]
-      const encoded =
-        value === undefined
-          ? encodeTlv(0x80, Buffer.alloc(0))
-          : typeof value === 'number'
-            ? encodeInteger(value)
-            : encodeOctetString(value)
-      answers.push(encodeTlv(TAG_SEQUENCE, Buffer.concat([encodeOid(asked_), encoded])))
-    }
-    const responsePdu = encodeTlv(
-      GET_RESPONSE,
-      Buffer.concat([
-        encodeInteger(requestId),
-        encodeInteger(0),
-        encodeInteger(0),
-        encodeTlv(TAG_SEQUENCE, Buffer.concat(answers)),
-      ])
-    )
-    const reply = encodeTlv(
-      TAG_SEQUENCE,
-      Buffer.concat([encodeInteger(1), encodeOctetString('public'), responsePdu])
-    )
-    socket.send(reply, rinfo.port, rinfo.address)
+    asked.push(...reply.asked)
+    socket.send(reply.packet, rinfo.port, rinfo.address)
   })
 
   await new Promise<void>((resolve) => socket.bind(0, '127.0.0.1', resolve))

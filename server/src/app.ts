@@ -20,6 +20,8 @@ import QRCode from 'qrcode-svg'
 import {
   HOME_CHANNEL,
   MAX_MESSAGE_LENGTH,
+  MAX_PROCESSOR_NAME,
+  VIDEO_ACTIONS,
   newId,
   type PublicConfig,
   type User,
@@ -80,6 +82,7 @@ import {
   TIMETABLE_ROOM,
 } from './control.ts'
 import { Hub } from './hub.ts'
+import type { VideoService } from './video/service.ts'
 import type { Store } from './store.ts'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -329,6 +332,15 @@ export interface AppDeps {
   /** Media-network watchers (PTP/mDNS/SAP), when this box was asked to watch. */
   netwatch?: NetWatch
   /**
+   * LED processor monitoring, when the video module is on.
+   *
+   * Unlike `dmx` and `netwatch`, whose presence means the box is already
+   * listening, this one starts silent: it contacts nothing until an admin
+   * has confirmed a specific processor twice. Omit it and the video routes
+   * are not registered at all.
+   */
+  video?: VideoService
+  /**
    * Persistent audit history (rollups/events/probe runs). Omit and the
    * network-audit collector still runs in memory but writes nothing —
    * tests and the e2e box work without a metrics store.
@@ -373,6 +385,7 @@ export function buildApp({
   probes,
   dmx,
   netwatch,
+  video,
   metrics,
   clock = () => new Date(),
   logger = true,
@@ -1280,6 +1293,146 @@ export function buildApp({
       const { beforeSeq, limit } = parsed.data
       const before = beforeSeq ?? store.latestIncidentSeq() + 1
       return { incidents: store.listIncidentsBefore(before, limit) }
+    })
+  }
+
+  // -- video: watching the LED wall ------------------------------------------
+  //
+  // Reading is the crew's; transmitting is an admin's, twice.
+  //
+  // `GET /api/video/state` is session-authed like the network audit — a
+  // screens tech should be able to look at the wall's temperature from their
+  // phone without an admin unlock. Everything below it either changes what
+  // the box may contact or puts a packet on a video network, so it is
+  // admin-gated, and the two that transmit need an intent raised first.
+  if (modules.includes('video') && video) {
+    const addSchema = z.object({
+      host: z.string().min(7).max(15),
+      name: z.string().max(MAX_PROCESSOR_NAME).optional(),
+    })
+    const intentSchema = z.object({
+      action: z.enum(VIDEO_ACTIONS),
+      processorId: z.string().max(64).optional(),
+    })
+    const watchSchema = z.object({ monitored: z.boolean() })
+
+    /** The token from the first half of the confirmation, if this is the second. */
+    const confirmationOf = (req: FastifyRequest): string | undefined => {
+      const header = req.headers['x-video-confirm']
+      return typeof header === 'string' ? header : undefined
+    }
+
+    fastify.get('/api/video/state', (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      return {
+        processors: video.watcher.statuses(),
+        scan: video.lastScanRun,
+        scanning: video.busy,
+        canScan: video.canScan,
+        interfaceIp: video.interfaceIp,
+      }
+    })
+
+    // Adding an address contacts nothing, so it needs no intent — it is a
+    // note about the world, not permission to talk to it. Monitoring is the
+    // separate, confirmed step.
+    fastify.post('/api/video/processors', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      const parsed = addSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid processor' })
+      const result = video.store.add({
+        host: parsed.data.host,
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        addedBy: admin.name,
+      })
+      if (!result.ok) return reply.code(400).send({ error: result.reason })
+      return { processor: result.processor }
+    })
+
+    fastify.delete('/api/video/processors/:id', (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const { id } = req.params as { id: string }
+      if (!video.store.remove(id)) return reply.code(404).send({ error: 'no such processor' })
+      return { removed: true }
+    })
+
+    /**
+     * Half one of the double confirmation: say what would happen.
+     *
+     * Answers with a single-use token and the exact traffic it would
+     * authorise. Raising an intent sends nothing.
+     */
+    fastify.post('/api/video/intent', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      const parsed = intentSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid request' })
+      const processor = parsed.data.processorId
+        ? video.store.get(parsed.data.processorId)
+        : undefined
+      if (parsed.data.action === 'watch' && !processor) {
+        return reply.code(404).send({ error: 'no such processor' })
+      }
+      const described = video.describe({
+        userId: admin.id,
+        action: parsed.data.action,
+        ...(processor ? { processor } : {}),
+      })
+      if (!described.ok) return reply.code(409).send({ error: described.reason })
+      return { intent: described.intent }
+    })
+
+    /** Half two, for the scan. Without the token from above this sends nothing. */
+    fastify.post('/api/video/scan', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      const spent = video.intents.consume({
+        token: confirmationOf(req),
+        userId: admin.id,
+        action: 'scan',
+      })
+      if (!spent.ok) return reply.code(428).send({ error: spent.reason })
+      if (video.busy) return reply.code(409).send({ error: 'a scan is already running' })
+      video.runScan(admin.name).catch((err) => {
+        fastify.log.warn(`video scan failed: ${String(err)}`)
+      })
+      return reply.code(202).send({ started: true })
+    })
+
+    /**
+     * Half two, for monitoring one processor.
+     *
+     * Turning it *off* deliberately needs no confirmation: stopping is not a
+     * transmission, and anything that makes stopping harder than starting is
+     * the wrong way round on a show day.
+     */
+    fastify.post('/api/video/processors/:id/watch', async (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      const { id } = req.params as { id: string }
+      const parsed = watchSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid request' })
+      if (!video.store.get(id)) return reply.code(404).send({ error: 'no such processor' })
+
+      if (!parsed.data.monitored) {
+        video.store.setMonitored(id, false)
+        return { monitored: false }
+      }
+
+      const spent = video.intents.consume({
+        token: confirmationOf(req),
+        userId: admin.id,
+        action: 'watch',
+        processorId: id,
+      })
+      if (!spent.ok) return reply.code(428).send({ error: spent.reason })
+      video.store.setMonitored(id, true, admin.name)
+      // Read it straight away rather than making somebody wait 20 s to find
+      // out whether the address was right.
+      await video.watcher.tick()
+      return { monitored: true }
     })
   }
 
