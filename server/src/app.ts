@@ -1408,7 +1408,7 @@ export function buildApp({
      * transmission, and anything that makes stopping harder than starting is
      * the wrong way round on a show day.
      */
-    fastify.post('/api/video/processors/:id/watch', async (req, reply) => {
+    fastify.post('/api/video/processors/:id/watch', (req, reply) => {
       const admin = authAdmin(req, reply)
       if (!admin) return reply
       const { id } = req.params as { id: string }
@@ -1430,8 +1430,14 @@ export function buildApp({
       if (!spent.ok) return reply.code(428).send({ error: spent.reason })
       video.store.setMonitored(id, true, admin.name)
       // Read it straight away rather than making somebody wait 20 s to find
-      // out whether the address was right.
-      await video.watcher.tick()
+      // out whether the address was right — but do not wait for the answer.
+      // A mistyped address costs an SNMP timeout plus six HTTP ones, half a
+      // minute of it, and holding the response open for that leaves an admin
+      // watching a spinner with no idea whether anything happened. The pane
+      // polls; the result lands there.
+      void video.watcher.tick().catch((err: unknown) => {
+        fastify.log.warn(`video: first read of ${id} failed: ${String(err)}`)
+      })
       return { monitored: true }
     })
   }

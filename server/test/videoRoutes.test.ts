@@ -163,6 +163,22 @@ const addProcessor = async (auth: { token: string; adminToken: string }, host = 
   return (res.json() as { processor: { id: string } }).processor
 }
 
+/**
+ * Let the fire-and-forget read the watch route kicks off run to completion.
+ *
+ * The route deliberately does not await it — a mistyped address costs half a
+ * minute of timeouts, and holding the response open for that is a spinner
+ * with nothing behind it. So a test that wants to assert on the *result* has
+ * to wait for the poll the route started, and `tick()` will no-op while that
+ * one is still in flight.
+ */
+const settle = async (): Promise<void> => {
+  for (let n = 0; n < 4; n++) {
+    await new Promise((resolve) => setImmediate(resolve))
+    await video.watcher.tick()
+  }
+}
+
 const raiseIntent = async (
   auth: { token: string; adminToken: string },
   action: 'scan' | 'watch',
@@ -436,6 +452,9 @@ describe('watching one processor', () => {
       headers: headers(auth, intent.token),
       payload: { monitored: true },
     })
+    // Let the read the route started finish before clearing, or its packets
+    // land in the window this test is asserting is silent.
+    await settle()
     contacted = []
     const off = await app.inject({
       method: 'POST',
@@ -445,7 +464,7 @@ describe('watching one processor', () => {
     })
     expect(off.statusCode).toBe(200)
     expect(video.store.get(processor.id)?.monitored).toBe(false)
-    await video.watcher.tick()
+    await settle()
     expect(contacted).toEqual([])
   })
 
@@ -459,7 +478,7 @@ describe('watching one processor', () => {
       headers: headers(auth, intent.token),
       payload: { monitored: true },
     })
-    await video.watcher.tick()
+    await settle()
     const state = await app.inject({
       method: 'GET',
       url: '/api/video/state',

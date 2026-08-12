@@ -1,0 +1,102 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  // A scrim, not a themed surface — the same literal-rgba precedent the
+  // search overlay sets. It has to darken both themes.
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.panel {
+  width: min(440px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.heading {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.lead {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.willSend {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+
+  li {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text);
+    // The point of this box is that it can be checked against a capture, so
+    // addresses and ports have to be readable character by character.
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+}
+
+.reassure {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.error {
+  font-size: 13px;
+  color: var(--danger);
+  margin-bottom: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.cancel,
+.go {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.cancel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.go {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-contrast);
+}
+
+.cancel:disabled,
+.go:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

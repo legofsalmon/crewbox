@@ -1,0 +1,138 @@
+.row {
+  list-style: none;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-faint);
+}
+
+.ok {
+  background: var(--ok);
+}
+.warn {
+  background: var(--accent);
+}
+.fault {
+  background: var(--danger);
+}
+.unknown,
+.idle {
+  background: var(--text-faint);
+}
+
+.names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.host {
+  font-size: 12px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.state {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.stateIdle {
+  color: var(--text-faint);
+}
+
+.summary {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.detail {
+  color: var(--text-muted);
+}
+
+.meta,
+.who {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.errors {
+  font-size: 12px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.watch,
+.stop,
+.remove {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.watch {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-contrast);
+}
+
+.stop,
+.remove {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.watch:disabled,
+.stop:disabled,
+.remove:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
