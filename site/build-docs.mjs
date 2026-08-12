@@ -39,6 +39,7 @@ export const SECTIONS = [
   'Show log',
   'Patch sheets',
   'Lighting',
+  'Video',
   'Network',
   'Running the box',
   'Reference',

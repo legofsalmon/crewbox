@@ -3,6 +3,7 @@ import { patchModule } from '../modules/patch/index.ts'
 import { scheduleModule } from '../modules/schedule/index.ts'
 import { lightingModule } from '../modules/lighting/index.ts'
 import { incidentModule } from '../modules/incident/index.ts'
+import { videoModule } from '../modules/video/index.ts'
 import { networkModule } from '../modules/network/index.ts'
 import type { CrewboxModule } from './modules.ts'
 
@@ -17,5 +18,6 @@ export const allModules: CrewboxModule[] = [
   patchModule,
   lightingModule,
   incidentModule,
+  videoModule,
   networkModule,
 ]

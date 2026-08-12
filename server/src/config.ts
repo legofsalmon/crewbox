@@ -72,7 +72,7 @@ export const config = {
    */
   modules: [
     ...new Set(
-      ('chat,' + (process.env.CREWBOX_MODULES ?? 'schedule,patch,lighting,incident,network'))
+      ('chat,' + (process.env.CREWBOX_MODULES ?? 'schedule,patch,lighting,incident,video,network'))
         .split(',')
         .map((m) => m.trim())
         .filter(Boolean)
@@ -127,6 +127,33 @@ export const config = {
      * one card this is effectively required.
      */
     interfaceIp: process.env.CREWBOX_WATCH_IFACE?.trim() || undefined,
+  },
+  /**
+   * Watching LED processors (the video module).
+   *
+   * There is no on/off switch here, and deliberately so: the module's resting
+   * state is already silence. The box contacts a processor only after an admin
+   * has confirmed that specific one twice, so "enabled" would gate nothing
+   * that is not already gated.
+   */
+  video: {
+    /**
+     * IP of the video-network adapter (`CREWBOX_VIDEO_IFACE`).
+     *
+     * Needed only for the discovery scan, which sends to that segment's
+     * broadcast address rather than 255.255.255.255 — a limited broadcast
+     * leaves by whichever adapter the routing table picks, which on a box that
+     * also holds the crew Wi-Fi means probing a network nobody asked about.
+     * Unset, processors added by address are still read; only scanning is
+     * unavailable, and the pane says why.
+     */
+    interfaceIp: process.env.CREWBOX_VIDEO_IFACE?.trim() || undefined,
+    /**
+     * SNMP read community. Not a secret — SNMPv2c has no encryption and
+     * "public" is what COEX controllers ship with. Configurable because some
+     * venues change it, and a venue that has will tell you what to.
+     */
+    community: process.env.CREWBOX_VIDEO_SNMP_COMMUNITY?.trim() || 'public',
   },
   /**
    * The OS connectivity-probe responder (server/src/captive.ts) — the thing

@@ -6,6 +6,7 @@ import { config, dmxMode, warnOnDefaults } from './config.ts'
 import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
 import { DmxListener, parseUniverseList } from './dmx/listener.ts'
 import { NetWatch } from './netwatch/listener.ts'
+import { VideoService } from './video/service.ts'
 import {
   advertisedUrls,
   boxDataDir,
@@ -219,6 +220,20 @@ async function main(): Promise<void> {
       })
     : undefined
 
+  // Watching the LED wall. Unlike the two above, this one is created whenever
+  // the module is enabled and still starts silent: it polls only processors an
+  // admin has armed, and a box with none armed puts nothing on a video
+  // network. CREWBOX_VIDEO_IFACE is only needed for the discovery scan — a
+  // wall added by address is read without it.
+  const video = config.modules.includes('video')
+    ? new VideoService({
+        settings: store,
+        ...(config.video.interfaceIp ? { interfaceIp: config.video.interfaceIp } : {}),
+        community: config.video.community,
+        log: console,
+      })
+    : undefined
+
   const app = buildApp({
     store,
     eventPin: config.eventPin,
@@ -255,6 +270,7 @@ async function main(): Promise<void> {
     },
     ...(dmx ? { dmx } : {}),
     ...(netwatch ? { netwatch } : {}),
+    ...(video ? { video } : {}),
     ...(tls ? { tls } : {}),
   })
   const hub = app.hub
@@ -305,6 +321,15 @@ async function main(): Promise<void> {
   if (netwatch) {
     netwatch.start()
     app.log.info('media network: watching (PTP clock, mDNS rosters, SAP streams)')
+  }
+  if (video) {
+    video.start()
+    const armed = video.store.list().filter((p) => p.monitored).length
+    app.log.info(
+      armed === 0
+        ? 'video: no LED processors armed — nothing is being contacted'
+        : `video: watching ${armed} LED processor${armed === 1 ? '' : 's'}`
+    )
   }
 
   if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
@@ -388,6 +413,7 @@ async function main(): Promise<void> {
       if (box) clearBoxStatus(dataDir)
       hub.close()
       netwatch?.stop()
+      video?.stop()
       await captive?.portal?.close()
       await closeLoopback?.()
       await app.close()

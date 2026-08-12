@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>LED walls — Crewbox docs</title>
+    <meta name="description" content="Watching LED processors from a phone — cabinets, temperature, inputs — with a box that reads them and has no way to control them." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Running order</h2><ul><li><a href="/docs/schedule">Running order</a></li></ul></section><section><h2>Show log</h2><ul><li><a href="/docs/show-log">The show log</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Video</h2><ul><li><a href="/docs/video" aria-current="page">LED walls</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li><li><a href="/docs/control-api">Driving the box from a desk</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="led-walls"><a class="anchor" href="#led-walls">LED walls</a></h1>
+<p>The <strong>Video</strong> module answers the question a screens tech asks from the far side of a field: <em>are all the cabinets talking, is anything cooking, and is there still a signal on the input?</em></p>
+<p>Every one of those is answerable by reading, and none of them needs the ability to change what is on the wall. So crewbox reads, and that is all it can do.</p>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/video-walls-light.png" /><img src="/docs/img/video-walls-dark.png" alt="The LED pane, watching two processors" width="1280" height="720" loading="lazy" /></picture>
+<h2 id="it-cannot-control-the-wall"><a class="anchor" href="#it-cannot-control-the-wall">It cannot control the wall</a></h2>
+<p>There is no way from this pane — or from any other surface, at any permission level — to change brightness, recall a preset, black out a screen or select an input. The code to do it does not exist in the box.</p>
+<p>(Control may come later, as its own thing with its own rules about who can drive a wall. Everything on this page describes a version that cannot.)</p>
+<p>That is a property of the build rather than a policy: the HTTP client's method is typed as the literal <code>GET</code>, the SNMP encoder can only produce a GetRequest, and a test reads every file in the module to check that neither has quietly grown a write. <code>docs/VIDEO_MONITORING.md</code> in the repository has the detail.</p>
+<p>The reason is the same one behind the lighting listener. Every crew phone on the box inherits whatever the box can do, and a festival's video network carries the show. An app that <em>can</em> black out a screen is a way to black out a screen from somebody's pocket.</p>
+<h2 id="the-pane-is-yours-the-sweep-is-an-admins"><a class="anchor" href="#the-pane-is-yours-the-sweep-is-an-admins">The pane is yours; the sweep is an admin's</a></h2>
+<p>Anyone signed in can open it, name a processor, watch one, and stop watching. You do not need the admin password for any of that — everything it starts is the box reading one address you gave it.</p>
+<p>The <strong>sweep</strong> is the one exception, and it takes the admin password. The difference is not how much it matters: it is that a sweep broadcasts to a whole network segment rather than reading one processor somebody named. That is a decision about the venue's network, not about your wall.</p>
+<h2 id="adding-a-processor"><a class="anchor" href="#adding-a-processor">Adding a processor</a></h2>
+<p>Type its address and a name — &quot;upstage left&quot;, whatever the crew calls it. If the processor tells the box it calls itself something else, that appears underneath rather than replacing what a human chose.</p>
+<p>The person who knows the address is usually the screens tech, so this does not go through an admin.</p>
+<p><strong>Adding contacts nothing.</strong> An address in the list is a note about the world, not permission to talk to it. The row says so until somebody turns it on.</p>
+<h2 id="turning-watching-on"><a class="anchor" href="#turning-watching-on">Turning watching on</a></h2>
+<picture><source media="(prefers-color-scheme: light)" srcset="/docs/img/video-confirm-light.png" /><img src="/docs/img/video-confirm-dark.png" alt="The confirmation, naming every packet" width="1280" height="720" loading="lazy" /></picture>
+<p>This is the step that puts traffic on the video network, so it asks — and it asks properly. Instead of &quot;are you sure?&quot;, you get the exact requests the box would make: the addresses, the ports, the interval. They are the words you would need if a venue's network manager asked what your box put on their VLAN.</p>
+<p>Confirming starts a poll about every twenty seconds. It is not a permission check — anyone signed in can do this — it is there so you read what the box is about to put on a show network before it does.</p>
+<p><strong>Stopping needs no confirmation at all.</strong> Anything that makes stopping harder than starting is the wrong way round on a show day.</p>
+<h2 id="sweeping-for-processors"><a class="anchor" href="#sweeping-for-processors">Sweeping for processors</a></h2>
+<p>If you know which network the processors are on but not their addresses, an admin can sweep for them. One broadcast, the same packet NovaLCT sends to find controllers, run once when you ask and never on a timer.</p>
+<p>This is the admin-gated one because it is the only thing here that talks to a whole segment instead of to an address somebody typed in.</p>
+<p>It shows you what it would send before it sends anything, and afterwards it prints what it actually transmitted, verbatim, for a venue that wants to check it against a capture.</p>
+<p>A processor answers with its address, and crewbox shows whatever follows raw and unlabelled — nobody has captured a real reply, so putting a label like &quot;model&quot; on those bytes would be a guess dressed as a fact.</p>
+<p>Sweeping needs the box to know which adapter is on the video network (<code>CREWBOX_VIDEO_IFACE</code>). Without it the pane says so, and processors added by address still work.</p>
+<h2 id="what-a-row-tells-you"><a class="anchor" href="#what-a-row-tells-you">What a row tells you</a></h2>
+<p>Only what the processor actually said. A controller that did not report a temperature contributes no temperature, and the row reads &quot;couldn't tell&quot; rather than &quot;fine&quot; — a screens tech reading <em>fine</em> off a box that never asked the question is worse off than one reading <em>couldn't tell</em>.</p>
+<ul><li><strong>cabinets</strong> — how many are online, and how many are not</li><li><strong>temperature</strong> — the hottest cabinet, not an average. An average hides the one panel in the sun, which is the only one worth walking over to look at</li><li><strong>inputs</strong> — how many are live, and any that are connected with no signal. Unused connectors are not faults and are not counted as any</li><li><strong>blacked out / frozen</strong> — usually somebody's decision, so it is a note rather than an alarm. But a wall that is black when nobody meant it to be is exactly what you want to notice from across a site</li></ul>
+<h2 id="snmp-is-switched-off"><a class="anchor" href="#snmp-is-switched-off">&quot;SNMP is switched off&quot;</a></h2>
+<p>Some controllers answer over SNMP, which is NovaStar's own monitoring interface and carries far more detail — per-cabinet health, per-input signal, fan and card status. Others have it turned off, and the box falls back to the HTTP API: fewer numbers, less per-cabinet detail.</p>
+<p>When that happens the row says so. Turning SNMP on is a change to the processor, so it is something to do at the front panel or in VMP — crewbox will not offer to do it, because it has no way to.</p>
+<h2 id="nothing-to-read"><a class="anchor" href="#nothing-to-read">&quot;Nothing to read&quot;</a></h2>
+<p>An address that answers on neither interface reads as <strong>nothing to read</strong>, with the honest explanation: either there is no processor there, or it is a model whose only interface is the register bus — a VX4S, or a NovaPro UHD Jr.</p>
+<p>crewbox cannot tell those apart, and deliberately does not try. Finding out would mean opening a control session, which on that interface may be exclusive — so a connection made out of curiosity could take the desk away from the operator using it.</p>
+<h2 id="worth-knowing"><a class="anchor" href="#worth-knowing">Worth knowing</a></h2>
+<p>The protocol details behind this module came from reverse-engineering work in a separate project, and <strong>no NovaStar hardware has been in front of any of it</strong>. The interfaces are documented by the manufacturer; the exact field names in the HTTP responses are not confirmed against firmware.</p>
+<p>That is why the pane leaves blanks where a controller said something it did not recognise, rather than filling them in. If a row looks sparse, that is the box being honest about what it read.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/lighting-import"><span>Previous</span>Importing rigs</a><a class="next" href="/docs/network"><span>Next</span>Network audit</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

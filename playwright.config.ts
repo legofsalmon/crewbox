@@ -47,7 +47,11 @@ export default defineConfig({
       // the suite itself once it grows. The limiter has its own coverage in
       // the server integration tests.
       JOIN_RATE_LIMIT: '1000',
-      CREWBOX_MODULES: 'schedule,patch,lighting,incident,network',
+      CREWBOX_MODULES: 'schedule,patch,lighting,incident,video,network',
+      // The video module's scan needs an interface to sweep. Loopback, so a
+      // spec can drive the confirmation flow without a packet leaving the
+      // machine — the box refuses to raise a scan intent without one.
+      CREWBOX_VIDEO_IFACE: '127.0.0.1',
       LIVEKIT_URL: '',
     },
   },
