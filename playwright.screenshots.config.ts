@@ -32,30 +32,48 @@ export default defineConfig({
       ? { launchOptions: { executablePath: process.env.PW_CHROMIUM } }
       : {}),
   },
-  webServer: {
-    command: 'npm run start -w server',
-    url: 'http://localhost:4298/api/health',
-    reuseExistingServer: false,
-    timeout: 30_000,
-    env: {
-      CREWBOX_PORT: '4298',
-      DATA_DIR: dataDir,
-      WEB_DIST: `${process.cwd()}/web/dist`,
-      EVENT_PIN: '4242',
-      CREWBOX_DMX: 'sacn',
-      CREWBOX_DMX_IFACE: '127.0.0.1',
-      CREWBOX_DMX_UNIVERSES: '1-2',
-      CREWBOX_WATCH: '1',
-      ADMIN_PASSWORD: 'shots-admin-password',
-      // Pinned for the same two reasons as the password above. The This-box
-      // shot now prints the desk control key, and a box left to mint its own
-      // would put a fresh 32-character string in a committed PNG on every
-      // run — churn in the repo, and a credential-shaped thing published on
-      // a public site. This one is plainly an illustration.
-      CREWBOX_CONTROL_KEY: 'shots-control-key',
-      JOIN_RATE_LIMIT: '1000',
-      CREWBOX_MODULES: 'schedule,patch,lighting,incident,network',
-      LIVEKIT_URL: '',
+  // Two servers: the box, and a fake LED processor for it to read. No
+  // NovaStar hardware has ever been in front of this module, so the choice
+  // for the video shot is between photographing an empty pane and
+  // photographing a simulator. The simulator serves the documented endpoints
+  // (scripts/coex-sim.mjs) and the docs page says outright that the field
+  // names behind it are unconfirmed.
+  webServer: [
+    {
+      command: 'node scripts/coex-sim.mjs',
+      url: 'http://127.0.0.1:8001/api/v1/device',
+      reuseExistingServer: false,
+      timeout: 10_000,
     },
-  },
+    {
+      command: 'npm run start -w server',
+      url: 'http://localhost:4298/api/health',
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: {
+        CREWBOX_PORT: '4298',
+        DATA_DIR: dataDir,
+        WEB_DIST: `${process.cwd()}/web/dist`,
+        EVENT_PIN: '4242',
+        CREWBOX_DMX: 'sacn',
+        CREWBOX_DMX_IFACE: '127.0.0.1',
+        CREWBOX_DMX_UNIVERSES: '1-2',
+        CREWBOX_WATCH: '1',
+        ADMIN_PASSWORD: 'shots-admin-password',
+        // Pinned for the same two reasons as the password above. The This-box
+        // shot now prints the desk control key, and a box left to mint its own
+        // would put a fresh 32-character string in a committed PNG on every
+        // run — churn in the repo, and a credential-shaped thing published on
+        // a public site. This one is plainly an illustration.
+        CREWBOX_CONTROL_KEY: 'shots-control-key',
+        JOIN_RATE_LIMIT: '1000',
+        CREWBOX_MODULES: 'schedule,patch,lighting,incident,video,network',
+        // Loopback, so the video module's sweep button is offered rather than
+        // showing its "no video adapter" state. Nothing sweeps during a shot
+        // run — the scene photographs a processor added by address.
+        CREWBOX_VIDEO_IFACE: '127.0.0.1',
+        LIVEKIT_URL: '',
+      },
+    },
+  ],
 })

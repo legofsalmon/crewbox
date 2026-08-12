@@ -15,9 +15,11 @@ merged into this repo. See [docs/UNIFICATION_PLAN.md](docs/UNIFICATION_PLAN.md)
 for the plan and roadmap, [docs/MODULES.md](docs/MODULES.md) for how to add
 a module for another department,
 [docs/DMX_MONITORING.md](docs/DMX_MONITORING.md) for the read-only Art-Net
-and sACN listener, and [docs/NETWATCH.md](docs/NETWATCH.md) for the
+and sACN listener, [docs/NETWATCH.md](docs/NETWATCH.md) for the
 audio/media-network watchers (PTP clock health, Dante/NDI rosters, AES67
-streams — same read-only guarantee).
+streams — same read-only guarantee), and
+[docs/VIDEO_MONITORING.md](docs/VIDEO_MONITORING.md) for reading NovaStar LED
+processors without any way to control them.
 
 User documentation — how crew and operators actually use the thing —
 lives at <https://crewbox.letissier.ie/docs>, built from

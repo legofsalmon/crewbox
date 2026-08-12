@@ -435,9 +435,9 @@ describe('watching one processor', () => {
     const intent = await raiseIntent(auth, 'watch', processor.id)
     expect(intent.willSend.join(' ')).toContain('10.0.30.11:161')
     expect(intent.willSend.join(' ')).toContain('10.0.30.11:8001')
-    expect(intent.willSend.join(' ')).toContain(
-      'Nothing crewbox sends can change what is on the wall'
-    )
+    // Packets only — the reassurance is the dialog's job, and the two sitting
+    // one under the other read as protesting.
+    expect(intent.willSend.join(' ')).toContain('Nothing else, and nothing until you stop it')
   })
 
   it('stops without any confirmation at all', async () => {

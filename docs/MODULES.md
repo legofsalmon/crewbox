@@ -83,6 +83,20 @@ sheets, lighting plots, camera positions, run sheets.
 Most department modules want the shared doc. The rest of this document
 assumes that.
 
+### When neither fits: state the box owns
+
+Some modules are not about crew data at all. **Network** and **Video** both
+report what the box can observe about a network, and neither primitive suits
+that: there is no history to order and no document for two people to edit.
+They poll a REST endpoint while the pane is open, and the box holds the state.
+
+Video is the one to copy if you need this shape, because it also has a
+_configuration_ half — the list of processors the box may contact. That list
+lives in the `settings` table rather than in a Yjs doc, on purpose: a Yjs doc
+syncs from whichever phone reconnects, and "what may this box send packets to"
+must not change because somebody's pocket came back into range. See
+`docs/VIDEO_MONITORING.md`.
+
 ## What the shared doc-store gives you
 
 `web/src/lib/docs/` is the lifecycle every doc-backed module

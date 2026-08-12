@@ -125,10 +125,12 @@ export class VideoService {
         action: 'watch',
         processorId: processor.id,
         target: `${processor.name} (${processor.host})`,
+        // Packets only. The dialog says "reads only" in its own words right
+        // underneath, and saying it twice in a row reads as protesting.
         willSend: [
           `SNMP GET requests to ${processor.host}:${SNMP_PORT}, about every 20 seconds`,
           `Or, if SNMP is off, HTTP GET requests to ${processor.host}:${COEX_HTTP_PORT}`,
-          'Reads only. Nothing crewbox sends can change what is on the wall',
+          'Nothing else, and nothing until you stop it',
         ],
       }),
     }

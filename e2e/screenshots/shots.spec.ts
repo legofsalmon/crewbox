@@ -304,6 +304,42 @@ test('shots: admin', async () => {
   await maya.getByRole('button', { name: 'Close admin panel' }).click()
 })
 
+test('shots: LED walls', async () => {
+  // Runs after 'shots: admin', which leaves the unlock in memory — the add
+  // form and the sweep button are both admin-only.
+  //
+  // The processor being read is scripts/coex-sim.mjs on loopback, started by
+  // this config. Nobody has had a NovaStar box in front of this module, so
+  // the alternative was photographing an empty pane; the docs page says
+  // plainly that the field names behind these numbers are unconfirmed.
+  await maya
+    .getByRole('button', { name: /LED walls/ })
+    .first()
+    .click()
+  await expect(maya.getByRole('heading', { name: 'LED walls' })).toBeVisible()
+
+  await maya.getByLabel('Address').fill('127.0.0.1')
+  await maya.getByLabel('Name').fill('Main wall')
+  await maya.getByRole('button', { name: 'Add', exact: true }).click()
+
+  const wall = maya.getByRole('listitem').filter({ hasText: 'Main wall' })
+  await expect(wall).toBeVisible()
+
+  // The confirmation, with the real traffic on it. This is the scene worth
+  // having: it is the whole argument of the module in one screenshot.
+  await wall.getByRole('button', { name: 'Watch this…' }).click()
+  await expect(maya.getByRole('dialog', { name: /Start watching/ })).toBeVisible()
+  await shoot(maya, 'video-confirm')
+
+  await maya.getByRole('button', { name: 'Yes, send it' }).click()
+  await expect(maya.getByRole('dialog')).toBeHidden({ timeout: 20_000 })
+
+  // The first read is fire-and-forget, so wait for the pane's poll to bring
+  // the simulator's cabinets in rather than photographing an empty row.
+  await expect(wall.getByText(/cabinets/)).toBeVisible({ timeout: 30_000 })
+  await shoot(maya, 'video-walls')
+})
+
 test('shots: extras — file detail, share, probe, phone modules', async ({ browser }) => {
   test.setTimeout(150_000)
 
