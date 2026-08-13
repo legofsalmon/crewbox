@@ -38,9 +38,12 @@ import { createPublicKey, createHash, verify as verifySignature } from 'node:cry
  * existence. It deserves a conversation, not a commit.
  */
 export const TRUSTED_KEYS: readonly string[] = [
-  // Placeholder — replaced by the real public key before this ships. Until a
-  // key is listed, `verifyManifest` refuses everything, which is the correct
-  // resting state for a verifier with nothing to trust.
+  // crewbox release key 1, minted 2026-08-13. Private half lives in the
+  // RELEASE_SIGNING_KEY secret on legofsalmon/crewbox and nowhere else in
+  // this repository.
+  '-----BEGIN PUBLIC KEY-----\n' +
+    'MCowBQYDK2VwAyEAlijcvU5IzE/rENDWR5WEUdAZ6K2EKjLV61vEDzBseuw=\n' +
+    '-----END PUBLIC KEY-----\n',
 ]
 
 /** What a parsed manifest gives you: filename to lowercase hex digest. */

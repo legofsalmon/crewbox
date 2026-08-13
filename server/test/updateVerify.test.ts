@@ -1,7 +1,8 @@
-import { generateKeyPairSync, sign as signWith } from 'node:crypto'
+import { createPublicKey, generateKeyPairSync, sign as signWith } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   MAX_MANIFEST_BYTES,
+  TRUSTED_KEYS,
   VerifyError,
   assetFor,
   checkAsset,
@@ -190,6 +191,40 @@ describe('naming', () => {
       manifest: 'SHA256SUMS-v0.18.0',
       signature: 'SHA256SUMS-v0.18.0.sig',
     })
+  })
+})
+
+describe('the keys this build ships with', () => {
+  /**
+   * `verifyManifest` swallows a key it cannot parse and carries on to the
+   * next one, which is right at runtime — one broken entry should not stop
+   * the others working — but it means a typo in a PEM here would look like
+   * "not signed by any key this build trusts" on every box in the field,
+   * with nothing pointing at the cause. These are the tests that turn that
+   * into a red build instead.
+   */
+  it('carries at least one, or the updater cannot accept anything', () => {
+    expect(TRUSTED_KEYS.length).toBeGreaterThan(0)
+  })
+
+  it('are all parseable ed25519 public keys', () => {
+    for (const pem of TRUSTED_KEYS) {
+      const key = createPublicKey(pem)
+      expect(key.asymmetricKeyType).toBe('ed25519')
+      expect(key.type).toBe('public')
+    }
+  })
+
+  it('holds no private key by accident', () => {
+    // The one mistake in this file that would matter: pasting the wrong half.
+    for (const pem of TRUSTED_KEYS) {
+      expect(pem).not.toContain('PRIVATE KEY')
+    }
+  })
+
+  it('lists each key once', () => {
+    const seen = TRUSTED_KEYS.map((pem) => pem.replace(/\s+/g, ''))
+    expect(new Set(seen).size).toBe(seen.length)
   })
 })
 
