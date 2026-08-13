@@ -83,7 +83,7 @@ import {
 } from './control.ts'
 import { Hub } from './hub.ts'
 import type { VideoService } from './video/service.ts'
-import type { UpdateChecker } from './update.ts'
+import type { UpdateChecker } from './update/check.ts'
 import type { Store } from './store.ts'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024

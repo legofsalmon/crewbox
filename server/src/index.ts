@@ -7,7 +7,7 @@ import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
 import { DmxListener, parseUniverseList } from './dmx/listener.ts'
 import { NetWatch } from './netwatch/listener.ts'
 import { VideoService } from './video/service.ts'
-import { UpdateChecker } from './update.ts'
+import { UpdateChecker } from './update/check.ts'
 import { APP_VERSION } from './version.ts'
 import {
   advertisedUrls,
