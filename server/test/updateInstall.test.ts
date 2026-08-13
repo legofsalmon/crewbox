@@ -25,6 +25,7 @@ import {
   writeInFlight,
   type InFlight,
 } from '../src/update/install.ts'
+import type { MacIo } from '../src/update/macapp.ts'
 
 /**
  * Swapping the binary, and getting back.
@@ -53,6 +54,19 @@ beforeEach(() => {
   writeFileSync(build, 'the new box')
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+/** A Mac that says yes to everything, recording what it was asked to do. */
+const fakeMacIo = (calls: string[]): MacIo => ({
+  run: (command, args) => {
+    calls.push([command, ...args].join(' '))
+    return ''
+  },
+  mkdtemp: () => '/tmp/crewbox-dmg-x',
+  exists: () => true,
+  writable: () => true,
+  rename: () => {},
+  remove: () => {},
+})
 
 const install = () =>
   installBuild({
@@ -102,10 +116,10 @@ describe('what is running, and how it gets replaced', () => {
     })
   })
 
-  it('refuses a bundle rather than breaking its signature', () => {
+  it('sends a bundle to the disk-image swap, not the rename dance', () => {
     // Replacing the binary inside a signed .app leaves Gatekeeper killing it
-    // on next launch, from a double-click that explains nothing. Saying no is
-    // the correct answer until the whole-bundle swap exists.
+    // on next launch. A bundle is replaced whole, from the .dmg.
+    const calls: string[] = []
     const result = installBuild({
       target: {
         kind: 'app-bundle',
@@ -116,10 +130,74 @@ describe('what is running, and how it gets replaced', () => {
       fromVersion: '0.17.1',
       toVersion: '0.18.0',
       dataDir,
+      macIo: fakeMacIo(calls),
     })
-    expect(result).toMatchObject({ ok: false, stage: 'unsupported' })
+    expect(result.ok).toBe(true)
+    expect(calls.some((c) => c.startsWith('ditto'))).toBe(true)
+    if (!result.ok) return
+    expect(result.inFlight.kind).toBe('app-bundle')
+    expect(result.inFlight.targetPath).toBe('/Applications/Crewbox.app')
+  })
+
+  it('records that a bundle restarts through open', () => {
+    // The bundle's executable is the menu-bar wrapper; starting it directly
+    // gives a box with no menu bar and no way to quit it.
+    const result = installBuild({
+      target: {
+        kind: 'app-bundle',
+        appPath: '/Applications/Crewbox.app',
+        execPath: '/Applications/Crewbox.app/Contents/Resources/crewbox-server',
+      },
+      buildPath: build,
+      fromVersion: '0.17.1',
+      toVersion: '0.18.0',
+      dataDir,
+      macIo: fakeMacIo([]),
+    })
+    if (!result.ok) return
+    expect(result.inFlight.relaunch).toEqual({
+      command: 'open',
+      args: ['-n', '/Applications/Crewbox.app'],
+    })
+  })
+
+  it('does not claim the old app is lost when nothing was ever moved', () => {
+    // A permission failure happens before anything is touched. Saying "the
+    // old app could not be put back" would send somebody hunting for damage
+    // that was never done.
+    const result = installBuild({
+      target: {
+        kind: 'app-bundle',
+        appPath: '/Applications/Crewbox.app',
+        execPath: '/Applications/Crewbox.app/Contents/Resources/crewbox-server',
+      },
+      buildPath: build,
+      fromVersion: '0.17.1',
+      toVersion: '0.18.0',
+      dataDir,
+      macIo: { ...fakeMacIo([]), writable: () => false },
+    })
+    expect(result).toMatchObject({ ok: false })
     if (result.ok) return
-    expect(result.reason).toContain('signature')
+    expect(result.reason).toContain('not writable')
+    expect(result.reason).not.toContain('could not be put back')
+  })
+
+  it('leaves no marker behind when the bundle swap fails', () => {
+    const io = fakeMacIo([])
+    installBuild({
+      target: {
+        kind: 'app-bundle',
+        appPath: '/Applications/Crewbox.app',
+        execPath: '/Applications/Crewbox.app/Contents/Resources/crewbox-server',
+      },
+      buildPath: build,
+      fromVersion: '0.17.1',
+      toVersion: '0.18.0',
+      dataDir,
+      macIo: { ...io, writable: () => false },
+    })
+    expect(existsSync(inFlightPath(dataDir))).toBe(false)
   })
 })
 
@@ -255,15 +333,39 @@ describe('an install nobody ever confirmed', () => {
     const marker: InFlight = {
       fromVersion: '0.17.1',
       toVersion: '0.18.0',
+      kind: 'binary',
       targetPath: target,
       backupPath: `${target}${OLD_SUFFIX}`,
       snapshotPath: '/data/snapshots/crewbox-0.17.1-1.db',
+      relaunch: { command: target, args: [] },
       startedAt: 1_700_000_000_000,
     }
     writeInFlight(dataDir, marker)
     expect(readInFlight(dataDir)).toEqual(marker)
     clearInFlight(dataDir)
     expect(readInFlight(dataDir)).toBeNull()
+  })
+
+  it('reads a marker written by a build that knew nothing of bundles', () => {
+    // A marker outlives the build that wrote it — that is the entire point of
+    // it. A box mid-rollback must not be defeated by a field its predecessor
+    // did not know to write, so the older shape reads as a plain binary that
+    // launches itself.
+    writeFileSync(
+      inFlightPath(dataDir),
+      JSON.stringify({
+        fromVersion: '0.17.1',
+        toVersion: '0.18.0',
+        targetPath: target,
+        backupPath: `${target}${OLD_SUFFIX}`,
+        snapshotPath: null,
+        startedAt: 1_700_000_000_000,
+      })
+    )
+    expect(readInFlight(dataDir)).toMatchObject({
+      kind: 'binary',
+      relaunch: { command: target, args: [] },
+    })
   })
 })
 

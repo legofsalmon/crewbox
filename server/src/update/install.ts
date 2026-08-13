@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { OLD_APP_SUFFIX, installMacApp, relaunchCommand, type MacIo } from './macapp.ts'
 
 /**
  * Putting a verified build in place of the running one, and being able to
@@ -42,8 +43,9 @@ export const IN_FLIGHT_FILE = 'install-in-flight.json'
  * terminal and the knowledge to use it.
  *
  * So a bundle is a different operation entirely: replace the whole `.app`
- * from the signed, notarised `.dmg`. That is not in this commit, and this
- * type exists so the difference is stated in the code rather than discovered.
+ * from the signed, notarised `.dmg`. That lives in `macapp.ts`, and this type
+ * is what routes to it — the difference is stated in the code rather than
+ * left to be discovered.
  */
 export type InstallTarget =
   { kind: 'binary'; path: string } | { kind: 'app-bundle'; appPath: string; execPath: string }
@@ -75,12 +77,27 @@ export interface InFlight {
   fromVersion: string
   /** The version that was put in its place. */
   toVersion: string
-  /** The binary that was replaced. */
+  /**
+   * What was replaced: a plain file, or a whole `.app` directory.
+   *
+   * Carried rather than re-derived, because the rollback runs in a *different
+   * process* from the install — possibly a differently-built one, after a
+   * power cut — and asking "what am I?" again there could get a different
+   * answer than the install acted on.
+   */
+  kind: InstallTarget['kind']
+  /** The binary, or the bundle, that was replaced. */
   targetPath: string
-  /** Where the replaced binary was moved to. */
+  /** Where the replaced one was moved to. */
   backupPath: string
   /** The database copy taken first, when there was one. */
   snapshotPath: string | null
+  /**
+   * How to start it again. A bare binary is its own launcher; a bundle has
+   * to go through `open`, or LaunchServices never hears about it and the
+   * menu bar never appears.
+   */
+  relaunch: { command: string; args: string[] }
   startedAt: number
 }
 
@@ -97,6 +114,8 @@ export interface InstallOptions {
   dataDir: string
   snapshotPath?: string | null
   now?: () => number
+  /** Overridable so the macOS path is testable without a Mac. */
+  macIo?: MacIo
 }
 
 /**
@@ -111,13 +130,11 @@ export function installBuild(options: InstallOptions): InstallResult {
   const { target, buildPath, dataDir } = options
   const at = (options.now ?? Date.now)()
 
+  // A bundle is a different operation entirely — the whole `.app` comes off
+  // the signed disk image — so it goes to its own module rather than being
+  // bent into the rename dance below.
   if (target.kind === 'app-bundle') {
-    return {
-      ok: false,
-      stage: 'unsupported',
-      reason:
-        'this box runs inside Crewbox.app, which updates by replacing the whole app from the .dmg — replacing the binary inside it would break the signature',
-    }
+    return installBundle(options, target, at)
   }
   if (!existsSync(buildPath)) {
     return { ok: false, stage: 'missing', reason: `${buildPath} is not there to install` }
@@ -130,9 +147,11 @@ export function installBuild(options: InstallOptions): InstallResult {
   const inFlight: InFlight = {
     fromVersion: options.fromVersion,
     toVersion: options.toVersion,
+    kind: 'binary',
     targetPath: target.path,
     backupPath,
     snapshotPath: options.snapshotPath ?? null,
+    relaunch: { command: target.path, args: [] },
     startedAt: at,
   }
 
@@ -201,10 +220,70 @@ export function installBuild(options: InstallOptions): InstallResult {
 }
 
 /**
- * Put the old binary back.
+ * The macOS bundle path: hand the whole `.app` over to the disk-image swap.
+ *
+ * `installMacApp` does its own backup and its own rollback, so this writes
+ * the marker first and then records what it did — the marker is what a later
+ * process needs to undo it, and it has to exist before anything moves.
+ */
+function installBundle(
+  options: InstallOptions,
+  target: Extract<InstallTarget, { kind: 'app-bundle' }>,
+  at: number
+): InstallResult {
+  const { dataDir, buildPath } = options
+  const backupPath = `${target.appPath}${OLD_APP_SUFFIX}`
+  const inFlight: InFlight = {
+    fromVersion: options.fromVersion,
+    toVersion: options.toVersion,
+    kind: 'app-bundle',
+    targetPath: target.appPath,
+    backupPath,
+    snapshotPath: options.snapshotPath ?? null,
+    relaunch: relaunchCommand(target.appPath),
+    startedAt: at,
+  }
+
+  try {
+    writeInFlight(dataDir, inFlight)
+  } catch (err) {
+    return { ok: false, stage: 'swap', reason: `could not record the install: ${reason(err)}` }
+  }
+
+  const installed = installMacApp({
+    appPath: target.appPath,
+    dmgPath: buildPath,
+    ...(options.macIo ? { io: options.macIo } : {}),
+  })
+  if (!installed.ok) {
+    // installMacApp has already put the old app back where it could. Clearing
+    // the marker matters: leaving one behind would have the next start try to
+    // undo an install that has already been undone.
+    clearInFlight(dataDir)
+    // The alarming suffix is earned only when the app really was moved and
+    // really is still missing. Most failures happen before anything is
+    // touched, and telling somebody their app could not be put back when it
+    // never left would send them hunting for damage that was never done.
+    const stranded = installed.movedAside && !installed.rolledBack
+    return {
+      ok: false,
+      stage: installed.stage === 'permission' ? 'unsupported' : 'swap',
+      reason: stranded
+        ? `${installed.reason} — and the old app could not be put back; it is at ${backupPath}`
+        : installed.reason,
+    }
+  }
+  return { ok: true, inFlight }
+}
+
+/**
+ * Put the old box back.
  *
  * Used both by the process supervising a restart when the new build will not
  * come up, and at startup when a marker says an install was never confirmed.
+ *
+ * Works for a bundle as well as a binary: a `.app` is a directory, so the
+ * removal has to be recursive and there is no mode to restore.
  */
 export function undoInstall(
   inFlight: InFlight,
@@ -214,11 +293,13 @@ export function undoInstall(
     return { ok: false, reason: `there is no ${inFlight.backupPath} to go back to` }
   }
   try {
-    // The failed new binary is in the way; it is verified and still in the
+    // The failed new build is in the way; it is verified and still in the
     // updates directory, so losing this copy costs a rename, not a download.
-    rmSync(inFlight.targetPath, { force: true })
+    rmSync(inFlight.targetPath, { force: true, recursive: true })
     renameSync(inFlight.backupPath, inFlight.targetPath)
-    chmodSync(inFlight.targetPath, 0o755)
+    // A bundle has no single executable bit to put back — the signature and
+    // the modes inside it came over with the directory.
+    if (inFlight.kind !== 'app-bundle') chmodSync(inFlight.targetPath, 0o755)
   } catch (err) {
     return { ok: false, reason: `could not restore the old box: ${reason(err)}` }
   }
@@ -229,7 +310,7 @@ export function undoInstall(
 /** Forget the backup once the new build has proved itself. */
 export function dropBackup(inFlight: InFlight, dataDir: string): void {
   try {
-    rmSync(inFlight.backupPath, { force: true })
+    rmSync(inFlight.backupPath, { force: true, recursive: true })
   } catch {
     // A `.old` that will not delete is clutter, not a problem. The startup
     // sweep will try again.
@@ -260,12 +341,29 @@ export function readInFlight(dataDir: string): InFlight | null {
     ) {
       return null
     }
+    // `kind` and `relaunch` are defaulted rather than required. A marker can
+    // outlive the build that wrote it — that is the whole point of it — and a
+    // box mid-rollback should not be defeated by a field its predecessor did
+    // not know to write. A plain binary that launches itself is the older
+    // behaviour and the safe assumption.
+    const relaunch =
+      typeof r.relaunch === 'object' &&
+      r.relaunch !== null &&
+      typeof r.relaunch.command === 'string' &&
+      Array.isArray(r.relaunch.args)
+        ? {
+            command: r.relaunch.command,
+            args: r.relaunch.args.filter((a) => typeof a === 'string'),
+          }
+        : { command: r.targetPath, args: [] }
     return {
       fromVersion: r.fromVersion,
       toVersion: r.toVersion,
+      kind: r.kind === 'app-bundle' ? 'app-bundle' : 'binary',
       targetPath: r.targetPath,
       backupPath: r.backupPath,
       snapshotPath: typeof r.snapshotPath === 'string' ? r.snapshotPath : null,
+      relaunch,
       startedAt: r.startedAt,
     }
   } catch {
