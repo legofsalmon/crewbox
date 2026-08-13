@@ -21,6 +21,16 @@ import { parseManifest, verifyManifest } from '../src/update/verify.ts'
 const SCRIPT = fileURLToPath(new URL('../../scripts/sign-release.mjs', import.meta.url))
 const VERSION = 'v0.18.0'
 
+/** macOS calls it `shasum -a 256`, so the tool is not everywhere. */
+const hasSha256sum = (() => {
+  try {
+    execFileSync('sha256sum', ['--version'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+})()
+
 const { publicKey, privateKey } = generateKeyPairSync('ed25519')
 const PRIVATE_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
 const PUBLIC_PEM = publicKey.export({ type: 'spki', format: 'pem' }) as string
@@ -62,6 +72,36 @@ describe('signing a release', () => {
     // Two spaces, and a trailing newline: `sha256sum -c` depends on both.
     expect(manifest).toMatch(/^[0-9a-f]{64} {2}\S/m)
     expect(manifest.endsWith('\n')).toBe(true)
+  })
+
+  /**
+   * The release notes tell people to run `sha256sum -c SHA256SUMS-<version>`.
+   * Matching the format with a regex is not the same promise: it says the
+   * file *looks* right, where the docs say the tool *accepts* it. So this
+   * runs the actual tool.
+   *
+   * Skipped where sha256sum is absent — macOS ships `shasum -a 256` under a
+   * different name, and a developer on a Mac should not get a red suite over
+   * a check CI runs on every push.
+   */
+  it.skipIf(!hasSha256sum)('is accepted by the real sha256sum', () => {
+    sign(PRIVATE_PEM)
+    const out = execFileSync('sha256sum', ['-c', `SHA256SUMS-${VERSION}`], {
+      cwd: assets,
+      encoding: 'utf8',
+    })
+    expect(out).toContain('OK')
+    expect(out).not.toContain('FAILED')
+  })
+
+  it.skipIf(!hasSha256sum)('and the real sha256sum catches a tampered asset', () => {
+    // The other half of the promise: a check that passes everything is not a
+    // check. Exit code is non-zero, so execFileSync throws.
+    sign(PRIVATE_PEM)
+    writeFileSync(join(assets, `crewbox-linux-x64-${VERSION}`), 'not the box you signed')
+    expect(() =>
+      execFileSync('sha256sum', ['-c', `SHA256SUMS-${VERSION}`], { cwd: assets, stdio: 'pipe' })
+    ).toThrow()
   })
 
   it('sorts the lines, so the same inputs give the same bytes', async () => {
