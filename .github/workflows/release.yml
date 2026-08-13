@@ -56,6 +56,16 @@ jobs:
               exit 1
             fi
           fi
+          # A box reports package.json's version, and the updater compares it
+          # against the newest release tag. Ship a tag that disagrees and every
+          # box running this release announces an update to the version it is
+          # already on, for ever, with no way to clear it but another release.
+          # Cheap to catch here; expensive to notice in a field.
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$PKG" != "${VERSION#v}" ]; then
+            echo "::error::package.json is $PKG but this release is $VERSION. Bump root, server, web and the lockfile first."
+            exit 1
+          fi
           echo "Publishing $VERSION from ${BUILD_SHA:0:12}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
