@@ -79,7 +79,11 @@ describe('naming what gets interrupted', () => {
   })
 
   it('reads as English for one of anything', () => {
-    const state: ShowState = { connections: 1, onlineUsers: 1, board: [act('Soundcheck', 'Main', 1)] }
+    const state: ShowState = {
+      connections: 1,
+      onlineUsers: 1,
+      board: [act('Soundcheck', 'Main', 1)],
+    }
     const { lines } = describeInterruption(state)
     expect(lines[0]).toContain('another 1 minute.')
     expect(lines[1]).toContain('1 person connected')
