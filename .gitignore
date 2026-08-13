@@ -8,3 +8,11 @@ deploy/poster.html
 playwright-report/
 test-results/
 build/
+
+# Signing keys. scripts/release-key.mjs writes the release key into whatever
+# directory you run it from, and the Android keystore has a way of ending up
+# beside the repo too. Neither should ever be one `git add -A` from public.
+*.pem
+*.jks
+*.keystore
+*.p12
