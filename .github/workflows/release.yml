@@ -376,12 +376,23 @@ jobs:
           mv Crewbox.dmg "Crewbox-$V.dmg"
           mv crewbox.apk "crewbox-$V.apk"
 
+      # Signed before the asset check, so the manifest and its signature are
+      # two of the assets that check covers. The box verifies the signature
+      # against keys compiled into it, which is what stops a compromised
+      # GitHub account from publishing something every crewbox would run.
+      # See docs/UPDATING.md and server/src/update/verify.ts.
+      - name: Sign the release
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          V: ${{ needs.validate.outputs.version }}
+        run: node scripts/sign-release.mjs artifacts "$V"
+
       - name: The release has exactly the expected assets
         env:
           V: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
-          EXPECTED="Crewbox-$V.dmg crewbox-darwin-arm64-$V crewbox-darwin-x64-$V crewbox-linux-x64-$V crewbox-win32-x64-$V.exe crewbox-$V.apk"
+          EXPECTED="Crewbox-$V.dmg crewbox-darwin-arm64-$V crewbox-darwin-x64-$V crewbox-linux-x64-$V crewbox-win32-x64-$V.exe crewbox-$V.apk SHA256SUMS-$V SHA256SUMS-$V.sig"
           ACTUAL="$(cd artifacts && ls | sort | tr '\n' ' ' | sed 's/ $//')"
           SORTED_EXPECTED="$(echo "$EXPECTED" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
           echo "assets: $ACTUAL"
@@ -423,6 +434,12 @@ jobs:
             Voice runs inside the box — nothing else to install. For a
             dedicated festival rig (HTTPS so browsers get the mic, local
             DNS, UPS), `deploy/RUNBOOK.md` is the day-of checklist.
+
+            **Checking what you downloaded.** `SHA256SUMS-$V` lists every
+            file's digest and `SHA256SUMS-$V.sig` is its signature. To check
+            the bytes, `sha256sum -c SHA256SUMS-$V`. To check the signature
+            came from us, see `docs/UPDATING.md`. A box updating itself does
+            both automatically and refuses anything that fails.
 
       # Admins download from the public crewbox-dist repo, so the source repo
       # can stay private. Same binaries, no source, no token in anyone's

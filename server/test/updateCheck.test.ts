@@ -12,7 +12,7 @@ import {
   parseVersion,
   type UpdateIo,
   type UpdateState,
-} from '../src/update.ts'
+} from '../src/update/check.ts'
 
 /**
  * The update check.
