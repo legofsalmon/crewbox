@@ -66,6 +66,16 @@ export interface AdminSettings {
      * an older box still parses.
      */
     portRedirect?: boolean
+    /**
+     * Whether a newer crewbox exists, when this box is checking at all.
+     * Null means it was told not to — which the panel shows as nothing,
+     * rather than as an unknown. Optional so an older box still parses.
+     */
+    update?: {
+      available: { version: string; url: string; publishedAt: number } | null
+      checkedAt: number | null
+      error: string | null
+    } | null
   }
   /** What this box can actually do right now — see server/src/readiness.ts. */
   readiness: ReadinessCheck[]

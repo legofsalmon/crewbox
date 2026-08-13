@@ -21,6 +21,14 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Windows.Forms;
 
+/// <summary>A newer release the box heard about. Absent most of the time.</summary>
+[DataContract]
+public class UpdateInfo
+{
+    [DataMember(Name = "version")] public string Version { get; set; }
+    [DataMember(Name = "url")] public string Url { get; set; }
+}
+
 [DataContract]
 public class BoxStatus
 {
@@ -31,6 +39,10 @@ public class BoxStatus
     [DataMember(Name = "eventPin")] public string EventPin { get; set; }
     [DataMember(Name = "eventName")] public string EventName { get; set; }
     [DataMember(Name = "version")] public string Version { get; set; }
+    // IsRequired defaults to false, so a status file written by a box that
+    // predates this field still decodes — which is what lets a helper and a
+    // box be different versions, the normal state after an update.
+    [DataMember(Name = "update")] public UpdateInfo Update { get; set; }
 }
 
 public class CrewboxTray : ApplicationContext
@@ -125,6 +137,19 @@ public class CrewboxTray : ApplicationContext
             string title = string.IsNullOrEmpty(status.EventName) ? "Crewbox" : status.EventName;
             menu.Items.Add(Header(title + " — running"));
             if (!string.IsNullOrEmpty(status.Version)) menu.Items.Add(Header("Version " + status.Version));
+
+            // The box does the asking; this only draws what it was told. The
+            // item opens the release page rather than installing anything —
+            // deciding to restart a box mid-event is not a menu click.
+            if (status.Update != null && !string.IsNullOrEmpty(status.Update.Version))
+            {
+                string url = status.Update.Url;
+                var item = new ToolStripMenuItem(
+                    "Update available: " + status.Update.Version, null, (s, e) => OpenUrl(url));
+                item.Font = new Font(item.Font, FontStyle.Bold);
+                menu.Items.Add(item);
+            }
+
             menu.Items.Add(new ToolStripSeparator());
 
             Add(menu, "Open the join page", (s, e) => OpenUrl(status.JoinUrl));

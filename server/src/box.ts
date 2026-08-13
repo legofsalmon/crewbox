@@ -179,6 +179,16 @@ export interface BoxStatus {
   eventPin: string
   eventName: string
   version: string
+  /**
+   * A newer release the box has heard about, when there is one.
+   *
+   * Optional, and both helpers treat it as such — a menu-bar app from an
+   * older build reads a status file containing this without complaint, and a
+   * newer helper reads an older file that lacks it. That property is why the
+   * field is added here rather than the helpers growing an HTTP client: they
+   * poll this file already, so the box does the asking and they only draw.
+   */
+  update?: { version: string; url: string }
 }
 
 /** Where the helpers look. Under the data dir so it travels with the box. */
