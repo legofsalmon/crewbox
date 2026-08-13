@@ -56,6 +56,36 @@ async function main(): Promise<void> {
 
   mkdirSync(dataDir, { recursive: true })
 
+  // Finish or undo an update that was interrupted, before anything opens the
+  // database or binds a port.
+  //
+  // Reached when the process supervising a swap died between replacing the
+  // binary and confirming the new one answered — a power cut, or a lid closed
+  // at exactly the wrong moment. Which way to jump is decided by the version
+  // now running, not by guesswork; see recoverInterruptedInstall.
+  //
+  // Only for a packaged box: from source there is no binary to swap, and a
+  // marker in a developer's data directory would be somebody else's leftovers.
+  if (box) {
+    const { recoverInterruptedInstall, sweepOldBinaries } = await import('./update/install.ts')
+    const outcome = recoverInterruptedInstall(dataDir, APP_VERSION)
+    if (outcome.action === 'rolled-back') {
+      console.warn(
+        `update to ${outcome.toVersion} was interrupted — put ${outcome.fromVersion} back`
+      )
+    } else if (outcome.action === 'confirmed') {
+      console.log(`update to ${outcome.toVersion} completed`)
+    } else if (outcome.action === 'failed') {
+      console.warn(`update recovery: ${outcome.reason}`)
+    }
+    // Windows cannot delete the image it is running, so the previous binary
+    // survives until a later start clears it. Never while an install is in
+    // flight — that file is the only way back.
+    sweepOldBinaries(dataDir, process.execPath)
+    const { sweepPartials } = await import('./update/download.ts')
+    sweepPartials(dataDir)
+  }
+
   // Imported here rather than at the top so `--stop` and `--status` never
   // load node:sqlite — it prints an ExperimentalWarning on load, which is
   // three lines of noise beside a command whose whole output is one.
@@ -237,8 +267,8 @@ async function main(): Promise<void> {
     : undefined
 
   // Asking whether a newer crewbox exists. Nothing is downloaded and nothing
-  // installed — see server/src/update.ts. On for a packaged box and off from
-  // source unless CREWBOX_UPDATE_CHECK says otherwise, the same rule the
+  // installed — see server/src/update/check.ts. On for a packaged box and off
+  // from source unless CREWBOX_UPDATE_CHECK says otherwise, the same rule the
   // captive responder follows.
   const updates =
     (config.updateCheck ?? box)
