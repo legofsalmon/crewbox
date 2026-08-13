@@ -321,6 +321,100 @@ export function adminUpdateSettings(
   })
 }
 
+/**
+ * The updater's flow, as the panel sees it.
+ *
+ * `canInstall` false with a `blocked` reason is the normal state on a box run
+ * from source — the panel says why rather than offering a button that could
+ * only ever fail.
+ */
+export interface UpdateFlow {
+  stage: 'idle' | 'downloading' | 'ready' | 'installing' | 'failed'
+  version: string | null
+  build: { name: string; bytes: number; sha256: string } | null
+  error: string | null
+  canInstall: boolean
+  blocked: string | null
+}
+
+/**
+ * What restarting right now would interrupt.
+ *
+ * `blocks` is always false and there is nothing to check: a box that refuses
+ * to update during a show is a box that cannot be fixed during a show. The
+ * lines are the point — specific enough to decide on, and to repeat to a
+ * stage manager if the decision is to wait.
+ */
+export interface Interruption {
+  blocks: false
+  outageSeconds: number
+  quiet: boolean
+  lines: string[]
+}
+
+export interface UpdateStatus {
+  flow: UpdateFlow
+  available: { version: string; url: string; publishedAt: number } | null
+  interruption: Interruption
+}
+
+export function adminGetUpdate(auth: AdminAuth): Promise<UpdateStatus> {
+  return request('/api/admin/update', { headers: adminHeaders(auth) })
+}
+
+/** Fetch and verify a build. Installs nothing; returns as soon as it starts. */
+export function adminDownloadUpdate(auth: AdminAuth, version: string): Promise<{ started: true }> {
+  return request('/api/admin/update/download', {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ version }),
+  })
+}
+
+/**
+ * Half one of the confirmation: what installing would interrupt, and a
+ * single-use token. Nothing is installed until that token comes back.
+ */
+export function adminArmUpdate(
+  auth: AdminAuth,
+  version: string
+): Promise<{ intent: { token: string; version: string; interruption: Interruption } }> {
+  return request('/api/admin/update/intent', {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ version }),
+  })
+}
+
+/**
+ * Half two. Only ever *returns* when something has gone wrong: on success the
+ * new box is serving and this one has gone, so the request dies with it.
+ * Callers should treat a dropped connection as the good outcome.
+ */
+export function adminInstallUpdate(
+  auth: AdminAuth,
+  version: string,
+  confirm: string
+): Promise<{ installed: true }> {
+  return request('/api/admin/update/install', {
+    method: 'POST',
+    headers: {
+      ...adminHeaders(auth),
+      'content-type': 'application/json',
+      'x-update-confirm': confirm,
+    },
+    body: JSON.stringify({ version }),
+  })
+}
+
+/** Clear a failure so the panel offers to try again. */
+export function adminResetUpdate(auth: AdminAuth): Promise<{ flow: UpdateFlow }> {
+  return request('/api/admin/update/reset', {
+    method: 'POST',
+    headers: adminHeaders(auth),
+  })
+}
+
 /** The export is downloaded as a blob so the UI can save it as a file. */
 export async function adminExport(auth: AdminAuth): Promise<Blob> {
   const res = await fetch(apiUrl('/api/admin/export'), { headers: adminHeaders(auth) })

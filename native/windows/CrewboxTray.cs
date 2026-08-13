@@ -138,12 +138,17 @@ public class CrewboxTray : ApplicationContext
             menu.Items.Add(Header(title + " — running"));
             if (!string.IsNullOrEmpty(status.Version)) menu.Items.Add(Header("Version " + status.Version));
 
-            // The box does the asking; this only draws what it was told. The
-            // item opens the release page rather than installing anything —
-            // deciding to restart a box mid-event is not a menu click.
+            // The box does the asking; this only draws what it was told.
+            //
+            // Opens the admin panel, not the release page. Downloading a file
+            // from a browser was the only answer before the box could update
+            // itself; now it is the wrong one, and it would leave somebody
+            // holding a binary with no idea what to do with it. Nothing is
+            // installed by this click either — the panel asks twice, and shows
+            // what a restart would interrupt before it does anything.
             if (status.Update != null && !string.IsNullOrEmpty(status.Update.Version))
             {
-                string url = status.Update.Url;
+                string url = status.JoinUrl + "?admin";
                 var item = new ToolStripMenuItem(
                     "Update available: " + status.Update.Version, null, (s, e) => OpenUrl(url));
                 item.Font = new Font(item.Font, FontStyle.Bold);
