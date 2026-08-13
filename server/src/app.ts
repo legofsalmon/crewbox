@@ -83,6 +83,7 @@ import {
 } from './control.ts'
 import { Hub } from './hub.ts'
 import type { VideoService } from './video/service.ts'
+import type { UpdateChecker } from './update.ts'
 import type { Store } from './store.ts'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -341,6 +342,12 @@ export interface AppDeps {
    */
   video?: VideoService
   /**
+   * Asks whether a newer crewbox exists. Omit and the panel simply never
+   * mentions updates — which is what a box told not to check should look
+   * like, rather than a row saying it doesn't know.
+   */
+  updates?: UpdateChecker
+  /**
    * Persistent audit history (rollups/events/probe runs). Omit and the
    * network-audit collector still runs in memory but writes nothing —
    * tests and the e2e box work without a metrics store.
@@ -386,6 +393,7 @@ export function buildApp({
   dmx,
   netwatch,
   video,
+  updates,
   metrics,
   clock = () => new Date(),
   logger = true,
@@ -1887,6 +1895,9 @@ export function buildApp({
       settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },
       serverInfo: {
         version: APP_VERSION,
+        // Null when this box was told not to check, which the panel shows as
+        // nothing at all rather than as an unknown.
+        update: updates ? updates.state() : null,
         uptimeSec: Math.round(process.uptime()),
         connections: stats.connections,
         onlineUsers: stats.onlineUsers,

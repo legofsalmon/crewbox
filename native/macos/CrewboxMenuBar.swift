@@ -21,6 +21,12 @@ import Foundation
 
 // MARK: - Status file
 
+/// A newer release the box heard about. Absent most of the time.
+struct UpdateInfo: Decodable {
+    let version: String
+    let url: String
+}
+
 struct BoxStatus: Decodable {
     let pid: Int32
     let port: Int
@@ -30,6 +36,10 @@ struct BoxStatus: Decodable {
     let eventPin: String
     let eventName: String
     let version: String
+    // Optional so a status file written by a box that predates this field
+    // still decodes — which is what lets a helper and a box be different
+    // versions, the normal state immediately after an update.
+    let update: UpdateInfo?
 }
 
 func dataDir() -> URL {
@@ -164,6 +174,20 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
             if !status.version.isEmpty {
                 menu.addItem(header("Version \(status.version)"))
             }
+
+            // The box does the asking; this only draws what it was told. The
+            // item opens the release page rather than installing anything —
+            // deciding to restart a box mid-event is not a menu click.
+            if let update = status.update, !update.version.isEmpty {
+                let item = action(
+                    "Update available: \(update.version)", #selector(openUpdate),
+                    represented: update.url)
+                item.attributedTitle = NSAttributedString(
+                    string: "Update available: \(update.version)",
+                    attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
+                menu.addItem(item)
+            }
+
             menu.addItem(.separator())
 
             menu.addItem(
@@ -227,6 +251,9 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
     // MARK: Actions
 
     @objc private func openJoin(_ sender: NSMenuItem) { open(sender.representedObject as? String) }
+    @objc private func openUpdate(_ sender: NSMenuItem) {
+        open(sender.representedObject as? String)
+    }
     @objc private func openConnect(_ sender: NSMenuItem) {
         open(sender.representedObject as? String)
     }

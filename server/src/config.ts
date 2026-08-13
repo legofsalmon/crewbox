@@ -129,6 +129,25 @@ export const config = {
     interfaceIp: process.env.CREWBOX_WATCH_IFACE?.trim() || undefined,
   },
   /**
+   * Asking whether a newer crewbox exists (server/src/update.ts).
+   *
+   * `enabled` undefined means "on for a box, off from source", the same rule
+   * the captive responder follows and for the same reason: a packaged box in
+   * a shed is the thing that benefits from being told, whereas `npm run dev`
+   * on a laptop has no business calling GitHub.
+   *
+   * It asks and nothing more — no download, no install. Set
+   * CREWBOX_UPDATE_CHECK=0 on a box whose network must make no outbound
+   * connections at all; the panel then simply never mentions updates. The
+   * request tells GitHub this box's IP and version and nothing else.
+   */
+  updateCheck:
+    process.env.CREWBOX_UPDATE_CHECK === '1'
+      ? true
+      : process.env.CREWBOX_UPDATE_CHECK === '0'
+        ? false
+        : undefined,
+  /**
    * Watching LED processors (the video module).
    *
    * There is no on/off switch here, and deliberately so: the module's resting

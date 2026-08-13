@@ -2264,6 +2264,16 @@ ul {
 }
 
 /*
+ * The one row in this list that is ever news. Accent rather than a colour of
+ * its own: an update is not a fault, and painting it like one trains people
+ * to ignore the rows that are.
+ */
+.admin-update {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/*
  * A key that gets read off this screen and typed into a desk, so it wraps
  * rather than ellipsing — half a key is worse than a tall row — and one tap
  * selects the whole of it.

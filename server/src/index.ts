@@ -7,6 +7,8 @@ import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
 import { DmxListener, parseUniverseList } from './dmx/listener.ts'
 import { NetWatch } from './netwatch/listener.ts'
 import { VideoService } from './video/service.ts'
+import { UpdateChecker } from './update.ts'
+import { APP_VERSION } from './version.ts'
 import {
   advertisedUrls,
   boxDataDir,
@@ -234,6 +236,19 @@ async function main(): Promise<void> {
       })
     : undefined
 
+  // Asking whether a newer crewbox exists. Nothing is downloaded and nothing
+  // installed — see server/src/update.ts. On for a packaged box and off from
+  // source unless CREWBOX_UPDATE_CHECK says otherwise, the same rule the
+  // captive responder follows.
+  const updates =
+    (config.updateCheck ?? box)
+      ? new UpdateChecker({
+          currentVersion: APP_VERSION,
+          settings: store,
+          log: console,
+        })
+      : undefined
+
   const app = buildApp({
     store,
     eventPin: config.eventPin,
@@ -271,6 +286,7 @@ async function main(): Promise<void> {
     ...(dmx ? { dmx } : {}),
     ...(netwatch ? { netwatch } : {}),
     ...(video ? { video } : {}),
+    ...(updates ? { updates } : {}),
     ...(tls ? { tls } : {}),
   })
   const hub = app.hub
@@ -322,6 +338,14 @@ async function main(): Promise<void> {
     netwatch.start()
     app.log.info('media network: watching (PTP clock, mDNS rosters, SAP streams)')
   }
+  // Asking whether a newer crewbox exists. On for a packaged box, off from
+  // source, and never a reason for anything to be slow: the first check is
+  // half a minute after the box is already serving and every timer is
+  // unref'd. A box with no uplink behaves exactly like one that is current.
+  if (updates) {
+    updates.start()
+  }
+
   if (video) {
     video.start()
     const armed = video.store.list().filter((p) => p.monitored).length
@@ -385,7 +409,7 @@ async function main(): Promise<void> {
       ...(certName ? { hostname: certName } : {}),
       iface: boot.iface,
     })
-    writeBoxStatus(dataDir, {
+    const status = {
       pid: process.pid,
       port: config.port,
       secure: Boolean(tls),
@@ -394,6 +418,13 @@ async function main(): Promise<void> {
       eventPin,
       eventName,
       version: process.env.DEPLOY_VERSION ?? '',
+    }
+    writeBoxStatus(dataDir, status)
+
+    // Rewrite it when the answer arrives, so the tray icon picks the news up
+    // on its next poll without the helper knowing what GitHub is.
+    updates?.onAnswer((update) => {
+      writeBoxStatus(dataDir, { ...status, ...(update ? { update } : {}) })
     })
 
     // After the status file, which is the only thing it reads.
@@ -414,6 +445,7 @@ async function main(): Promise<void> {
       hub.close()
       netwatch?.stop()
       video?.stop()
+      updates?.stop()
       await captive?.portal?.close()
       await closeLoopback?.()
       await app.close()

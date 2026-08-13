@@ -486,7 +486,25 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         <dl className="admin-info">
           <div>
             <dt>Version</dt>
-            <dd>{info.version}</dd>
+            <dd>
+              {info.version}
+              {/* Only when there is news. A box that is current, or one told
+                  not to check, says nothing rather than "up to date" — a row
+                  that is almost always the same word is a row nobody reads. */}
+              {info.update?.available && (
+                <>
+                  {' — '}
+                  <a
+                    className="admin-update"
+                    href={info.update.available.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {info.update.available.version} available
+                  </a>
+                </>
+              )}
+            </dd>
           </div>
           <div>
             <dt>Modules</dt>
