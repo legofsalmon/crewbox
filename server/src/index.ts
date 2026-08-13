@@ -8,6 +8,8 @@ import { DmxListener, parseUniverseList } from './dmx/listener.ts'
 import { NetWatch } from './netwatch/listener.ts'
 import { VideoService } from './video/service.ts'
 import { UpdateChecker } from './update/check.ts'
+import { UpdateService } from './update/service.ts'
+import { realRestartIo, statusFileProbe } from './update/restart.ts'
 import { APP_VERSION } from './version.ts'
 import {
   advertisedUrls,
@@ -20,6 +22,7 @@ import {
   portInUse,
   printBoxBanner,
   printBoxStatus,
+  readBoxStatus,
   startTrayHelper,
   stopRunningBox,
   writeBoxStatus,
@@ -266,6 +269,12 @@ async function main(): Promise<void> {
       })
     : undefined
 
+  // How the updater lets go of the port and takes it back. Declared here so
+  // the service below can close over them; assigned after listen(), because
+  // before that there is nothing to close.
+  let releaseListener: (() => Promise<void>) | null = null
+  let regainListener: (() => Promise<void>) | null = null
+
   // Asking whether a newer crewbox exists. Nothing is downloaded and nothing
   // installed — see server/src/update/check.ts. On for a packaged box and off
   // from source unless CREWBOX_UPDATE_CHECK says otherwise, the same rule the
@@ -278,6 +287,32 @@ async function main(): Promise<void> {
           log: console,
         })
       : undefined
+
+  // Downloading and installing one. Packaged boxes only — from source there
+  // is no binary to swap, and the service says so rather than offering a
+  // button that could only ever fail.
+  //
+  // The probe reads the status file rather than /api/health: a box serving
+  // HTTPS with its own certificate would fail fetch's verification, and a
+  // perfectly good update would be rolled back over a certificate authority.
+  // See statusFileProbe.
+  const updater = box
+    ? new UpdateService({
+        dataDir,
+        dbPath: join(dataDir, 'crewbox.db'),
+        currentVersion: APP_VERSION,
+        healthUrl: '',
+        releasePort: () => releaseListener?.() ?? Promise.resolve(),
+        regainPort: () => regainListener?.() ?? Promise.resolve(),
+        exit: () => process.exit(0),
+        packaged: true,
+        restartIo: {
+          ...realRestartIo,
+          probe: statusFileProbe(dataDir, process.pid, (dir) => readBoxStatus(dir)),
+        },
+        log: console,
+      })
+    : undefined
 
   const app = buildApp({
     store,
@@ -302,6 +337,7 @@ async function main(): Promise<void> {
     trustProxy: config.trustProxy,
     modules: config.modules,
     metrics,
+    ...(updater ? { updater } : {}),
     dataDir,
     ...(config.iface ? { iface: config.iface } : {}),
     network: {
@@ -345,6 +381,31 @@ async function main(): Promise<void> {
   // Bind the address resolved up top (see bindHost, before the voice block).
   await app.listen({ host: bindHost, port: config.port })
   attachWs(app)
+
+  // How an install lets go of the port, and takes it back if the new build
+  // never comes up. Assigned after listen() because there is nothing to close
+  // before it; the updater only ever calls these long afterwards.
+  //
+  // `closeAllConnections()` before `close()` is the part that matters.
+  // `close()` on its own stops accepting new connections and then waits for
+  // the existing ones to end — and crewbox's are WebSockets held open by
+  // every phone on site. Without this line an install would hang for ever on
+  // exactly the box that has crew connected, which is every box worth
+  // updating.
+  releaseListener = () =>
+    new Promise<void>((resolve, reject) => {
+      app.server.closeAllConnections()
+      app.server.close((err) => (err ? reject(err) : resolve()))
+    })
+  regainListener = () =>
+    new Promise<void>((resolve, reject) => {
+      const onError = (err: Error) => reject(err)
+      app.server.once('error', onError)
+      app.server.listen({ host: bindHost, port: config.port }, () => {
+        app.server.removeListener('error', onError)
+        resolve()
+      })
+    })
 
   // Bound to one adapter, the box would lose localhost — which is the mic
   // test, the health checks, and where a browser on the box itself goes. A

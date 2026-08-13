@@ -84,6 +84,9 @@ import {
 import { Hub } from './hub.ts'
 import type { VideoService } from './video/service.ts'
 import type { UpdateChecker } from './update/check.ts'
+import type { UpdateService } from './update/service.ts'
+import { describeInterruption } from './update/guard.ts'
+import { InstallConfirmations } from './update/confirm.ts'
 import type { Store } from './store.ts'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -348,6 +351,12 @@ export interface AppDeps {
    */
   updates?: UpdateChecker
   /**
+   * Downloading and installing one. Omit and the panel offers no button —
+   * which is the right shape for a box running from source, where there is
+   * no binary to swap.
+   */
+  updater?: UpdateService
+  /**
    * Persistent audit history (rollups/events/probe runs). Omit and the
    * network-audit collector still runs in memory but writes nothing —
    * tests and the e2e box work without a metrics store.
@@ -394,6 +403,7 @@ export function buildApp({
   netwatch,
   video,
   updates,
+  updater,
   metrics,
   clock = () => new Date(),
   logger = true,
@@ -1476,6 +1486,111 @@ export function buildApp({
         fastify.log.warn(`video: first read of ${id} failed: ${String(err)}`)
       })
       return { monitored: true }
+    })
+  }
+
+  // -- updating the box ------------------------------------------------------
+  //
+  // Admin-only throughout, and the install needs a second, separate request.
+  //
+  // The line here is different from the video module's. There, reading was
+  // the crew's because a read is a read. Here even the *download* is an
+  // admin's: it spends the venue's uplink and fills the box's disk, and the
+  // install takes every phone offline. None of that is a crew member's
+  // decision to make.
+  //
+  // The confirmation exists for the same reason it does on the video sweep:
+  // so there is no single request, however it is made, that takes a box off
+  // the air. Arming answers with exactly what is about to be interrupted —
+  // who is connected, what the running order says is on — and installing
+  // needs that answer handed back.
+  if (updater) {
+    const confirmations = new InstallConfirmations()
+    const installSchema = z.object({ version: z.string().min(2).max(64) })
+
+    /** What is about to happen, if anything is. */
+    const interruption = () =>
+      describeInterruption({
+        ...hub.stats(),
+        board: stageBoard(readRunningOrder(docs.peek(TIMETABLE_ROOM)), clock()),
+      })
+
+    fastify.get('/api/admin/update', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      return {
+        flow: updater.state(),
+        available: updates?.state().available ?? null,
+        interruption: interruption(),
+      }
+    })
+
+    /** Fetch and verify a build. Installs nothing. */
+    fastify.post('/api/admin/update/download', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      const parsed = installSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid version' })
+      const started = updater.start(parsed.data.version)
+      if (!started.ok) return reply.code(409).send({ error: started.reason })
+      // 202: the download outlives this request by a long way.
+      return reply.code(202).send({ started: true })
+    })
+
+    /**
+     * Half one of the confirmation: what installing right now would interrupt.
+     *
+     * Answers even when it would interrupt a headline set — that is the whole
+     * point of warn-but-never-block. What it will not do is let the answer be
+     * spent on a different version than the one it described.
+     */
+    fastify.post('/api/admin/update/intent', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      const parsed = installSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid version' })
+      const flow = updater.state()
+      if (flow.stage !== 'ready' || flow.version !== parsed.data.version) {
+        return reply.code(409).send({ error: 'that build is not downloaded and verified' })
+      }
+      return {
+        intent: confirmations.arm({
+          userId: admin.id,
+          version: parsed.data.version,
+          interruption: interruption(),
+        }),
+      }
+    })
+
+    /** Half two. Without the token from above this installs nothing. */
+    fastify.post('/api/admin/update/install', async (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      const parsed = installSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid version' })
+      const header = req.headers['x-update-confirm']
+      const spent = confirmations.consume({
+        token: typeof header === 'string' ? header : undefined,
+        userId: admin.id,
+        version: parsed.data.version,
+      })
+      if (!spent.ok) return reply.code(428).send({ error: spent.reason })
+
+      // Awaited, unlike the download: this only ever returns when something
+      // has gone wrong. On success the new box is serving and this process
+      // has already been told to leave, so the reply is never written.
+      const result = await updater.install()
+      if (!result.ok) return reply.code(500).send({ error: result.reason })
+      return { installed: true }
+    })
+
+    /** Clear a failure so the panel offers to try again. */
+    fastify.post('/api/admin/update/reset', (req, reply) => {
+      const admin = authAdmin(req, reply)
+      if (!admin) return reply
+      updater.reset()
+      confirmations.clear()
+      return { flow: updater.state() }
     })
   }
 

@@ -11,7 +11,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { OLD_SUFFIX, inFlightPath, installBuild, type InFlight } from '../src/update/install.ts'
-import { healthMatches, restartInto, type RestartIo } from '../src/update/restart.ts'
+import {
+  healthMatches,
+  restartInto,
+  statusFileProbe,
+  type RestartIo,
+} from '../src/update/restart.ts'
 
 /**
  * Launching the new box and deciding whether to keep it.
@@ -180,5 +185,38 @@ describe('recognising our own build', () => {
   it('still tells different versions apart', () => {
     expect(healthMatches('0.17.1+abc', 'v0.18.0')).toBe(false)
     expect(healthMatches('0.18.10', 'v0.18.1')).toBe(false)
+  })
+})
+
+describe('asking the status file instead of the network', () => {
+  /**
+   * Chosen over an HTTP probe because a box serving HTTPS with its own
+   * certificate would fail fetch's verification, and a successful update
+   * would be rolled back for having the wrong certificate authority.
+   */
+  it('accepts a file written by the new process', async () => {
+    const probe = statusFileProbe('/data', 100, () => ({ pid: 200, version: '0.18.0' }))
+    expect(await probe('ignored')).toEqual({ ok: true, version: '0.18.0' })
+  })
+
+  it('ignores our own status file', async () => {
+    // The old process's file sits on disk throughout the restart — it only
+    // clears on shutdown. Reading version alone would find the OLD version,
+    // decide something else had taken the port, and roll back a perfectly
+    // good install.
+    const probe = statusFileProbe('/data', 100, () => ({ pid: 100, version: '0.17.1' }))
+    expect(await probe('ignored')).toBeNull()
+  })
+
+  it('waits quietly while there is no file at all', async () => {
+    const probe = statusFileProbe('/data', 100, () => null)
+    expect(await probe('ignored')).toBeNull()
+  })
+
+  it('does not treat a versionless status as serving', async () => {
+    // A box built from source writes no DEPLOY_VERSION. Nothing to compare
+    // against is not the same as a match.
+    const probe = statusFileProbe('/data', 100, () => ({ pid: 200, version: '' }))
+    expect(await probe('ignored')).toBeNull()
   })
 })
