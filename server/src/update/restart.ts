@@ -83,6 +83,38 @@ export const realRestartIo: RestartIo = {
 }
 
 /**
+ * Ask the status file rather than the network.
+ *
+ * A box writes `box-status.json` immediately after `listen()`, carrying its
+ * pid and its version — which makes it a better "are you serving?" signal
+ * than an HTTP probe, for three reasons that all bite on a real box:
+ *
+ *  - **TLS.** A box serving HTTPS with its own certificate would fail
+ *    `fetch`'s verification, and a successful update would be rolled back for
+ *    having the wrong certificate authority.
+ *  - **Binding.** A box pinned to one adapter may not answer on loopback,
+ *    and guessing which address to probe is guessing.
+ *  - **Ports.** There is nothing to get wrong.
+ *
+ * The pid is what makes it correct. The *old* process's status file is still
+ * on disk throughout the restart — it only clears on shutdown — so a probe
+ * that read version alone would find the old version, decide something else
+ * had taken the port, and roll back a perfectly good install. Only a file
+ * written by some other process counts.
+ */
+export function statusFileProbe(
+  dataDir: string,
+  selfPid: number,
+  read: (dir: string) => { pid: number; version: string } | null
+): (url: string) => Promise<{ ok: true; version: string } | null> {
+  return () => {
+    const status = read(dataDir)
+    if (!status || status.pid === selfPid || !status.version) return Promise.resolve(null)
+    return Promise.resolve({ ok: true, version: status.version })
+  }
+}
+
+/**
  * Does this health answer come from the build we installed?
  *
  * `/api/health` reports `0.18.0+abc1234` while a release is tagged `v0.18.0`,
