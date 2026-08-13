@@ -355,6 +355,12 @@ jobs:
       # block is not in scope for that step's `if:`.
       DIST_TOKEN: ${{ secrets.DIST_REPO_TOKEN }}
     steps:
+      # This job used to need nothing from the repository — it moved files
+      # around and published them. Signing changed that: scripts/sign-release.mjs
+      # has to be on disk. **Before the download**, because actions/checkout
+      # cleans the workspace, and running it second would delete every artifact
+      # this job exists to publish.
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -445,11 +451,15 @@ jobs:
             dedicated festival rig (HTTPS so browsers get the mic, local
             DNS, UPS), `deploy/RUNBOOK.md` is the day-of checklist.
 
-            **Checking what you downloaded.** `SHA256SUMS-$V` lists every
-            file's digest and `SHA256SUMS-$V.sig` is its signature. To check
-            the bytes, `sha256sum -c SHA256SUMS-$V`. To check the signature
-            came from us, see `docs/UPDATING.md`. A box updating itself does
-            both automatically and refuses anything that fails.
+            **Checking what you downloaded.**
+            `SHA256SUMS-${{ needs.validate.outputs.version }}` lists every
+            file's digest and
+            `SHA256SUMS-${{ needs.validate.outputs.version }}.sig` is its
+            signature. To check the bytes,
+            `sha256sum -c SHA256SUMS-${{ needs.validate.outputs.version }}`.
+            To check the signature came from us, see `docs/UPDATING.md`. A box
+            updating itself does both automatically and refuses anything that
+            fails.
 
       # Admins download from the public crewbox-dist repo, so the source repo
       # can stay private. Same binaries, no source, no token in anyone's
