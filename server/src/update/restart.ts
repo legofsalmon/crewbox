@@ -131,9 +131,13 @@ export async function restartInto(options: RestartOptions): Promise<RestartResul
   const { inFlight, dataDir } = options
   const started = io.now()
 
+  // What starts it is whatever the install recorded, not the target path: a
+  // bundle has to go through `open`, or LaunchServices never hears about it
+  // and the box comes back with no menu bar and no way to be quit.
+  const launch = inFlight.relaunch ?? { command: inFlight.targetPath, args: [] }
   let pid: number
   try {
-    pid = io.launch(inFlight.targetPath, options.args ?? [])
+    pid = io.launch(launch.command, [...launch.args, ...(options.args ?? [])])
   } catch (err) {
     return {
       ...rollback(inFlight, dataDir),
