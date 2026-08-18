@@ -29,6 +29,14 @@ nobody home. The one optional exception: if the operator sets up a remote
 support tunnel, connections through it are marked — that's the `office`
 badge in the DM list.
 
+**One request a day, if the box has internet at all.** A box asks GitHub
+whether a newer crewbox exists, so the admin panel can say so. That request
+carries this box's IP address, as any request does, and nothing else — no
+event name, no crew, no message counts, no identifier. The reply is a
+version number and a link. Nothing is downloaded or installed unless an
+admin asks for it, twice. `CREWBOX_UPDATE_CHECK=0` stops the box asking at
+all; see [Updating the box](/docs/updating).
+
 ## What the network module listens to
 
 The [Network audit](/docs/network) grades networks by **passive

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Updating the box — Crewbox docs</title>
+    <meta name="description" content="How a box updates itself, what it checks before it trusts a build, and how to turn the whole thing off." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Running order</h2><ul><li><a href="/docs/schedule">Running order</a></li></ul></section><section><h2>Show log</h2><ul><li><a href="/docs/show-log">The show log</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Video</h2><ul><li><a href="/docs/video">LED walls</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li><li><a href="/docs/updating" aria-current="page">Updating the box</a></li><li><a href="/docs/control-api">Driving the box from a desk</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="updating-the-box"><a class="anchor" href="#updating-the-box">Updating the box</a></h1>
+<p>A box checks once a day whether a newer crewbox exists and says so — in the tray icon, and in the admin panel beside the version. It never installs anything on its own. Two separate presses stand between that notice and a restart, and the second one shows you what the restart would interrupt.</p>
+<h2 id="what-youll-see"><a class="anchor" href="#what-youll-see">What you'll see</a></h2>
+<p>When there's news, the admin panel grows a line above the version list: <strong>v0.18.0 is available</strong>, with a link to what changed.</p>
+<p>A box with nothing to do says nothing at all. There's no &quot;up to date&quot; row — a row that's almost always the same word is a row nobody reads.</p>
+<h2 id="downloading-changes-nothing"><a class="anchor" href="#downloading-changes-nothing">Downloading changes nothing</a></h2>
+<p><strong>Download</strong> fetches the build and checks it. It does not install it, and it does not restart anything. You can download during a show and install at half four in the morning; the box will still have it.</p>
+<p>What it costs is the venue's uplink — a couple of hundred megabytes — and a little disk. That's why it's an admin's decision rather than a crew member's, even though nothing happens to the box.</p>
+<p>While it downloads you can close the panel and get on with something else.</p>
+<h2 id="installing-asks-you-twice"><a class="anchor" href="#installing-asks-you-twice">Installing asks you twice</a></h2>
+<p><strong>Install and restart…</strong> doesn't restart anything. It asks the box what that would interrupt right now, and shows you the answer:</p>
+<pre><code>Main Stage: Fontaines D.C. is on for another 35 minutes.
+14 people connected on 20 devices — everyone loses comms.
+Chat, voice and every module go down for about 20 seconds while the box restarts.</code></pre>
+<p>That's read off the running order and the live connection count, not guessed. <strong>It will never stop you.</strong> A box that refused to update during a show would be a box that couldn't be fixed during a show, and you know things it doesn't — that the stage is dark, that the act finished early, that comms are already broken and that's exactly why you're here.</p>
+<p><strong>Install now</strong> is the only thing that takes the box off the air.</p>
+<h2 id="what-happens-then"><a class="anchor" href="#what-happens-then">What happens then</a></h2>
+<p>Every phone loses the box for about twenty seconds, then reconnects on its own. Nobody has to rejoin, nothing is lost, and unsent messages send when the connection returns.</p>
+<p>Behind that:</p>
+<ul><li>The database is copied first, so going back is possible.</li><li>The old binary is kept, not deleted.</li><li>The old program stays running until the new one answers.</li><li>If the new one never answers, the old one comes back and the box carries on.</li></ul>
+<p>You do not have to do anything for that last part. It is not a recovery procedure, it is what happens.</p>
+<h2 id="turning-it-off"><a class="anchor" href="#turning-it-off">Turning it off</a></h2>
+<p>A box on a network that must make no outbound connections at all: set <code>CREWBOX_UPDATE_CHECK=0</code> and it never contacts anything. The tray never mentions updates and the panel shows nothing.</p>
+<p>The check is one HTTPS request a day, asking GitHub for the newest release number. It carries this box's IP address and nothing else — no event name, no crew, no history. See <a href="/docs/privacy">Privacy</a>.</p>
+<h2 id="checking-a-build-yourself"><a class="anchor" href="#checking-a-build-yourself">Checking a build yourself</a></h2>
+<p>Every release carries a <code>SHA256SUMS-&lt;version&gt;</code> file listing every download's fingerprint, and a signature over it. The box checks both automatically — the signature against keys built into the program, so a stranger who got hold of our GitHub account still couldn't publish something a box would run.</p>
+<p>If you want to check by hand, or your venue's IT wants to:</p>
+<pre><code>sha256sum -c SHA256SUMS-v0.18.0</code></pre>
+<p>The full procedure, including checking the signature, is in <code>docs/UPDATING.md</code> in the source.</p>
+<h2 id="if-something-goes-wrong"><a class="anchor" href="#if-something-goes-wrong">If something goes wrong</a></h2>
+<p><strong>The panel says the install failed.</strong> Read the line — it says what failed and whether the previous version is back. In almost every case it is, and the box you're looking at is the one you had. <strong>Try again</strong> re-uses the download.</p>
+<p><strong>The box didn't come back.</strong> The previous binary is beside it with <code>.old</code> on the end. Rename it back and start it.</p>
+<p><strong>It came back but something's wrong with the data.</strong> Database copies are in the <code>snapshots</code> folder in the box's data directory, named with the version they belong to. Stop the box, copy the right one over <code>crewbox.db</code>, start it.</p>
+<p><strong>The power went out mid-update.</strong> Nothing to do. The box works out on its next start whether the new version is running, and either keeps it or puts the old one back.</p>
+<h2 id="a-box-run-from-source"><a class="anchor" href="#a-box-run-from-source">A box run from source</a></h2>
+<p>If you're running crewbox with <code>npm run dev</code> or from a checkout, there's no binary to swap and the panel offers nothing. Update it with git.</p>
+        <footer class="prevnext"><a class="prev" href="/docs/phones-and-platforms"><span>Previous</span>Phones and platforms</a><a class="next" href="/docs/control-api"><span>Next</span>Driving the box from a desk</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>
