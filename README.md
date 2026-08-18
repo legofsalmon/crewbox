@@ -19,7 +19,9 @@ and sACN listener, [docs/NETWATCH.md](docs/NETWATCH.md) for the
 audio/media-network watchers (PTP clock health, Dante/NDI rosters, AES67
 streams — same read-only guarantee), and
 [docs/VIDEO_MONITORING.md](docs/VIDEO_MONITORING.md) for reading NovaStar LED
-processors without any way to control them.
+processors without any way to control them, and
+[docs/UPDATING.md](docs/UPDATING.md) for how a box updates itself — the
+signing chain, rolling the release key, and getting a box back by hand.
 
 User documentation — how crew and operators actually use the thing —
 lives at <https://crewbox.letissier.ie/docs>, built from
