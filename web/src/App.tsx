@@ -33,6 +33,26 @@ export default function App() {
   // the outbox. Missing a drop target should do nothing at all.
   useEffect(() => guardStrayFileDrops(), [])
 
+  /*
+   * `?admin` opens the panel.
+   *
+   * The one caller is the tray and menu-bar helper's "Update available" item.
+   * Before the box could update itself that opened a download page, which is
+   * now the wrong answer — the update happens here. The helpers know a URL and
+   * nothing else about the app, so a query parameter is the whole interface.
+   *
+   * Stripped from the address bar immediately, so a reload or a shared link
+   * does not keep reopening a panel somebody deliberately closed.
+   */
+  useEffect(() => {
+    if (phase !== 'chat') return
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('admin')) return
+    url.searchParams.delete('admin')
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+    useStore.getState().setAdminOpen(true)
+  }, [phase])
+
   if (phase === 'boot') return <div className="boot-screen" />
   if (phase === 'join') return <Join />
   return <Shell />

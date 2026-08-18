@@ -175,13 +175,18 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
                 menu.addItem(header("Version \(status.version)"))
             }
 
-            // The box does the asking; this only draws what it was told. The
-            // item opens the release page rather than installing anything —
-            // deciding to restart a box mid-event is not a menu click.
+            // The box does the asking; this only draws what it was told.
+            //
+            // Opens the admin panel, not the release page. Downloading a file
+            // from a browser was the only answer before the box could update
+            // itself; now it is the wrong one, and it would leave somebody
+            // holding a binary with no idea what to do with it. Nothing is
+            // installed by this click either — the panel asks twice, and shows
+            // what a restart would interrupt before it does anything.
             if let update = status.update, !update.version.isEmpty {
                 let item = action(
                     "Update available: \(update.version)", #selector(openUpdate),
-                    represented: update.url)
+                    represented: status.joinUrl + "?admin")
                 item.attributedTitle = NSAttributedString(
                     string: "Update available: \(update.version)",
                     attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])

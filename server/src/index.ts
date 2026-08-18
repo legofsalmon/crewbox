@@ -296,23 +296,25 @@ async function main(): Promise<void> {
   // HTTPS with its own certificate would fail fetch's verification, and a
   // perfectly good update would be rolled back over a certificate authority.
   // See statusFileProbe.
-  const updater = box
-    ? new UpdateService({
-        dataDir,
-        dbPath: join(dataDir, 'crewbox.db'),
-        currentVersion: APP_VERSION,
-        healthUrl: '',
-        releasePort: () => releaseListener?.() ?? Promise.resolve(),
-        regainPort: () => regainListener?.() ?? Promise.resolve(),
-        exit: () => process.exit(0),
-        packaged: true,
-        restartIo: {
-          ...realRestartIo,
-          probe: statusFileProbe(dataDir, process.pid, (dir) => readBoxStatus(dir)),
-        },
-        log: console,
-      })
-    : undefined
+  // Built even from source, with `packaged: false`. It refuses everything in
+  // that state — but it refuses *out loud*, and the panel says "update it with
+  // git, not from here" rather than showing nothing and leaving somebody
+  // wondering whether the feature is broken or simply absent.
+  const updater = new UpdateService({
+    dataDir,
+    dbPath: join(dataDir, 'crewbox.db'),
+    currentVersion: APP_VERSION,
+    healthUrl: '',
+    releasePort: () => releaseListener?.() ?? Promise.resolve(),
+    regainPort: () => regainListener?.() ?? Promise.resolve(),
+    exit: () => process.exit(0),
+    packaged: box,
+    restartIo: {
+      ...realRestartIo,
+      probe: statusFileProbe(dataDir, process.pid, (dir) => readBoxStatus(dir)),
+    },
+    log: console,
+  })
 
   const app = buildApp({
     store,
@@ -337,7 +339,7 @@ async function main(): Promise<void> {
     trustProxy: config.trustProxy,
     modules: config.modules,
     metrics,
-    ...(updater ? { updater } : {}),
+    updater,
     dataDir,
     ...(config.iface ? { iface: config.iface } : {}),
     network: {

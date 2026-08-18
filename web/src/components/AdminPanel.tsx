@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Channel, User } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
+import UpdateSection from './UpdateSection.tsx'
 
 const PIN_RE = /^\d{4,8}$/
 
@@ -482,6 +483,12 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         />
       )}
       {info && <AdminPasswordField fromEnv={info.adminPasswordFromEnv} onNote={onNote} />}
+      {/*
+        Above the info list rather than inside it: everything below is a fact
+        about the box, and this is the one thing on the screen that asks for a
+        decision. It renders nothing at all when there is no news.
+      */}
+      <UpdateSection auth={auth} onNote={onNote} />
       {info && (
         <dl className="admin-info">
           <div>
