@@ -17,6 +17,7 @@ import {
 import { cache, type OutboxEntry } from './lib/db.ts'
 import {
   queueIncident,
+  clearQueuedIncidents,
   queuedIncidents,
   unqueueIncident,
   type QueuedIncident,
@@ -260,6 +261,8 @@ export interface AppState {
   toggleTheme: () => void
   toggleSounds: () => void
   logout: () => Promise<void>
+  /** The box says this session is dead. Keeps what has not been sent. */
+  sessionEnded: () => Promise<void>
   deleteAccount: () => Promise<void>
 }
 
@@ -738,7 +741,12 @@ export const useStore = create<AppState>()((set, get) => {
         break
       case 'error':
         if (msg.code === 'auth') {
-          void get().logout()
+          // The session really is dead — the box has said so about the token,
+          // not about this socket. `handshake` is the other one, and sending
+          // it as `auth` is what used to sign every phone out when the box was
+          // short of disk. Falls through to the toast, which is right: the
+          // socket reconnects and says hello again on its own.
+          void get().sessionEnded()
         } else {
           get().toast(msg.message)
         }
@@ -901,6 +909,11 @@ export const useStore = create<AppState>()((set, get) => {
       }
       // Hydrate from the local cache first so the app is usable instantly
       // (and offline); the welcome payload reconciles once connected.
+      //
+      // A browser that will not open IndexedDB answers as if it were empty
+      // rather than rejecting — see lib/db.ts. This used to be an unguarded
+      // `Promise.all` in a function `App.tsx` calls with `void`, so a private
+      // window meant no join form, no socket and no message, for ever.
       const [snapshot, cachedMessages, outbox] = await Promise.all([
         cache.loadSnapshot(),
         cache.loadMessages(),
@@ -1282,6 +1295,14 @@ export const useStore = create<AppState>()((set, get) => {
       set({ sounds })
     },
 
+    /**
+     * Somebody is handing this device on.
+     *
+     * Everything local goes, including the queues: a phone passed to the next
+     * shift must not file the last person's show-log entries under the new
+     * person's name, which is exactly what an incident queue surviving a
+     * logout did.
+     */
     async logout() {
       await voiceManager?.leave()
       void nativeAlerts()
@@ -1290,7 +1311,35 @@ export const useStore = create<AppState>()((set, get) => {
       ws?.stop()
       ws = null
       localStorage.removeItem(TOKEN_KEY)
+      clearQueuedIncidents()
       await cache.wipe()
+      location.reload()
+    },
+
+    /**
+     * The box says this session is no longer valid.
+     *
+     * Not the same as logging out, and it used to be treated as if it were.
+     * The token has to go — it will not work again — but the messages and
+     * show-log entries this crew member typed and has not managed to send are
+     * still theirs, on their own phone, and they are about to re-join as
+     * themselves on the same device. Wiping those was throwing away work
+     * because a credential expired.
+     *
+     * The device-handover case is `logout`, which does wipe them, because
+     * there the next person is somebody else.
+     */
+    async sessionEnded() {
+      await voiceManager?.leave()
+      void nativeAlerts()
+        ?.stop()
+        .catch(() => {})
+      ws?.stop()
+      ws = null
+      localStorage.removeItem(TOKEN_KEY)
+      // The cached messages are somebody's session and go; the outbox is
+      // theirs to finish sending once they are back in.
+      await cache.wipeExceptOutbox()
       location.reload()
     },
 

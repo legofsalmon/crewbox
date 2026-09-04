@@ -109,7 +109,17 @@ export function createDocStore(config: DocStoreConfig): DocStore {
       return { doc, whenLoaded: Promise.resolve(), destroy: () => doc.destroy() }
     }
     const persistence = new IndexeddbPersistence(dbPrefix + docName, doc)
-    const whenLoaded = persistence.whenSynced.then(() => undefined)
+    // Resolves either way. `typeof indexedDB !== 'undefined'` above covers a
+    // browser with no IndexedDB at all; it does not cover one that has it and
+    // refuses to open it — a corrupted profile, a private window, a quota
+    // that has run out — which rejects instead. A pane awaiting `whenLoaded`
+    // would then wait for a promise that has already failed, and the pane
+    // never appears. Persistence is an accelerator; the relay is where the
+    // document actually lives.
+    const whenLoaded = persistence.whenSynced.then(
+      () => undefined,
+      () => undefined
+    )
     syncManager.attach(room(docName), doc, { present })
     return {
       doc,

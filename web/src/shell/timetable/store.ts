@@ -34,8 +34,14 @@ export function timetable(): { doc: Y.Doc; undoManager: Y.UndoManager; whenLoade
   // No IndexedDB in the screenshot harness and some embedded webviews. The
   // timetable still works there, it just starts from whatever syncs.
   const hasIndexedDb = typeof indexedDB !== 'undefined'
+  // Resolves either way: a browser that *has* IndexedDB and refuses to open
+  // it rejects rather than being absent, and a timetable that waited on that
+  // promise would never draw. See lib/docs/store.ts.
   const whenLoaded = hasIndexedDb
-    ? new IndexeddbPersistence(DB_NAME, doc).whenSynced.then(() => undefined)
+    ? new IndexeddbPersistence(DB_NAME, doc).whenSynced.then(
+        () => undefined,
+        () => undefined
+      )
     : Promise.resolve()
 
   // Synced, but not present. Every device on the box opens this document —

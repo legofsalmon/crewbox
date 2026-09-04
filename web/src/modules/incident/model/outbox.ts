@@ -68,6 +68,18 @@ export function unqueueIncident(clientMsgId: string): void {
   write(next)
 }
 
+/**
+ * Forget everything queued, for a device being handed on.
+ *
+ * The queue outlived a logout, so the next person to pick the phone up filed
+ * the last person's show-log entries — under their own name, into a permanent
+ * record of what happened at an event. A session ending is different and does
+ * not come through here: see `sessionEnded` in the store.
+ */
+export function clearQueuedIncidents(): void {
+  write([])
+}
+
 function write(entries: QueuedIncident[]): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(entries))

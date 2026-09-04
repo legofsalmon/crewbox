@@ -332,7 +332,19 @@ export interface DeletedMessage {
 
 export interface ErrorMessage {
   type: 'error'
-  code: 'auth' | 'bad_request' | 'not_found' | 'forbidden'
+  /**
+   * `auth` means *this session is no longer valid* — the client should stop
+   * using its token. It is the only code that ends somebody's session, which
+   * is why "you have not said hello on this socket yet" is `handshake` and
+   * not this: that is a fact about one connection, and a box under load or
+   * short of disk could produce it with the session perfectly intact. It did,
+   * and every phone on site was signed out.
+   *
+   * Additive: a client that does not know `handshake` falls through to its
+   * generic branch and shows the message, which is wrong but survivable —
+   * unlike logging out. No PROTOCOL_VERSION bump.
+   */
+  code: 'auth' | 'handshake' | 'bad_request' | 'not_found' | 'forbidden'
   message: string
 }
 

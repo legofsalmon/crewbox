@@ -1423,7 +1423,7 @@ describe('replaying more than the flood guard allows', () => {
     await client.waitFor((m): m is ServerMessage => m.type === 'rejected')
     await new Promise((r) => setTimeout(r, 100))
     const rejected = client.received.filter(
-      (m): m is ServerMessage & { retry?: true } => m.type === 'rejected'
+      (m): m is Extract<ServerMessage, { type: 'rejected' }> => m.type === 'rejected'
     )
     expect(rejected.length).toBe(5)
     for (const r of rejected) expect(r.retry).toBe(true)
@@ -1455,7 +1455,7 @@ describe('replaying more than the flood guard allows', () => {
       body: 'into the void',
     })
     const rejected = await client.waitFor(
-      (m): m is ServerMessage & { retry?: true } => m.type === 'rejected'
+      (m): m is Extract<ServerMessage, { type: 'rejected' }> => m.type === 'rejected'
     )
     expect(rejected.reason).toContain('channel not found')
     expect(rejected.retry).toBeUndefined()
@@ -1469,5 +1469,90 @@ describe('replaying more than the flood guard allows', () => {
     const inOneWindow = Math.floor(SEND_WINDOW_MS / OUTBOX_FLUSH_GAP_MS)
     expect(inOneWindow).toBeLessThan(SEND_LIMIT)
     expect(SEND_LIMIT - inOneWindow).toBeGreaterThanOrEqual(10)
+  })
+})
+
+/**
+ * A full disk, and everybody signed out.
+ *
+ * `touchSession` is an UPDATE and it sat above `conn.user = user`, so on a
+ * disk with no room the throw left an authenticated crew member on an
+ * unauthenticated socket. Their next frame earned "hello required first" —
+ * sent as `code: 'auth'`, which the client reads as a dead session: token
+ * dropped, IndexedDB wiped, outbox and all, back to the join screen.
+ * Re-joining then failed too, because that is another write. One box short of
+ * disk, every phone on site signed out with its unsent messages gone.
+ *
+ * Two separate mistakes, so two separate fixes: bookkeeping does not gate
+ * authentication, and a fact about one socket is not a verdict on a session.
+ */
+describe('when the box cannot write session bookkeeping', () => {
+  it('still authenticates the crew member', async () => {
+    const token = await join('Full Disk')
+    // The one write `onHello` does that is not the session lookup.
+    const failing = () => {
+      throw new Error('SQLITE_FULL: database or disk is full')
+    }
+    const original = store.touchSession.bind(store)
+    store.touchSession = failing
+    try {
+      const { welcome } = await connect(token)
+      expect(welcome.me.name).toBe('Full Disk')
+    } finally {
+      store.touchSession = original
+    }
+  })
+
+  it('lets that connection go on sending', async () => {
+    // The part that actually cost people their messages: an unauthenticated
+    // socket refuses the next frame, and the refusal used to end the session.
+    const token = await join('Full Disk Sends')
+    const original = store.touchSession.bind(store)
+    store.touchSession = () => {
+      throw new Error('SQLITE_FULL: database or disk is full')
+    }
+    let welcome
+    try {
+      ;({ welcome } = await connect(token))
+    } finally {
+      store.touchSession = original
+    }
+    const client = sockets.at(-1)!
+    const clientMsgId = newId()
+    client.send({
+      type: 'send',
+      clientMsgId,
+      channelId: welcome.channels[0]!.id,
+      body: 'still here',
+    })
+    const ack = await client.waitFor((m): m is ServerMessage => m.type === 'ack')
+    expect(ack).toMatchObject({ clientMsgId })
+  })
+})
+
+describe('a socket that has not said hello', () => {
+  it('is told about the socket, not about the session', async () => {
+    // `auth` is the only code that ends somebody's session, so this must not
+    // be it: a box under load or short of disk can produce this with the
+    // session perfectly intact.
+    const client = new TestClient(wsUrl)
+    await client.open()
+    client.send({ type: 'markRead', channelId: 'general', seq: 1 })
+    const error = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'error' }> => m.type === 'error'
+    )
+    expect(error.code).toBe('handshake')
+    expect(error.code).not.toBe('auth')
+  })
+
+  it('still says `auth` when the session really is invalid', async () => {
+    // The distinction has to cut both ways, or it is just a rename.
+    const client = new TestClient(wsUrl)
+    await client.open()
+    client.send({ type: 'hello', token: 'not-a-real-token', cursors: {} })
+    const error = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'error' }> => m.type === 'error'
+    )
+    expect(error.code).toBe('auth')
   })
 })

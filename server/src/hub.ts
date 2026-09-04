@@ -295,7 +295,12 @@ export class Hub {
       return
     }
     if (!conn.user) {
-      this.send(conn.ws, { type: 'error', code: 'auth', message: 'hello required first' })
+      // `handshake`, not `auth`: this says nothing about the session, only
+      // that this socket has not presented it yet. Sent as `auth` it told the
+      // client its token was dead, and the client believed it — dropped the
+      // token, wiped IndexedDB and reloaded to the join screen. See
+      // ErrorMessage.
+      this.send(conn.ws, { type: 'error', code: 'handshake', message: 'hello required first' })
       conn.ws.close(4001, 'unauthenticated')
       return
     }
@@ -410,7 +415,18 @@ export class Hub {
       conn.ws.close(4001, 'invalid session')
       return
     }
-    this.store.touchSession(msg.token)
+    // Bookkeeping, and never a reason to fail a hello. It is an UPDATE, so on
+    // a full disk it throws — and it sat above `conn.user = user`, so the
+    // throw left an authenticated crew member on an unauthenticated socket.
+    // Their next ping earned "hello required first", which the client read as
+    // a dead session: token dropped, IndexedDB wiped, outbox and all, back to
+    // the join screen. Re-joining then failed too, because that is another
+    // write. A box short of disk signed out every phone on site.
+    try {
+      this.store.touchSession(msg.token)
+    } catch (err) {
+      this.log.warn(`could not record session activity: ${String(err)}`)
+    }
     // A repeated hello on the same socket must not double-count presence: the
     // close handler decrements exactly once, so onHello has to increment at
     // most once per connection. Remember whether this socket was already

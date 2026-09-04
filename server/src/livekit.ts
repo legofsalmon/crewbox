@@ -249,6 +249,24 @@ export function unpackLiveKit(
  *
  * Returns true if it reaped something, so the caller can say so.
  */
+/**
+ * Remove the pid file, whatever is actually there.
+ *
+ * Recursive and swallowing, because every caller is already handling a
+ * failure or inside an event handler: a tidy-up that throws would replace a
+ * reported problem with an unreported one, and from `child.on('exit')` it
+ * would be an uncaught exception with nothing above it — the box, for a
+ * stale file. Whatever will not go is clutter, and the next start tries
+ * again.
+ */
+function tidyPidFile(pidPath: string): void {
+  try {
+    rmSync(pidPath, { force: true, recursive: true })
+  } catch {
+    // Locked, or not ours.
+  }
+}
+
 export async function reapOrphanLiveKit(
   dir: string,
   log: BoxLog,
@@ -262,7 +280,13 @@ export async function reapOrphanLiveKit(
   } catch {
     return false
   }
-  if (!Number.isInteger(pid) || pid <= 0) return false
+  // A zero-byte or unparseable file is a record of nothing — most likely a
+  // write that ran out of disk halfway. Leaving it would make every future
+  // start skip the reap, so it goes.
+  if (!Number.isInteger(pid) || pid <= 0) {
+    tidyPidFile(pidPath)
+    return false
+  }
 
   const alive = (): boolean => {
     try {
@@ -335,8 +359,24 @@ export async function spawnLiveKit(
 
   // Recorded before the wait, so a box killed mid-startup still leaves a
   // trail for the next one to clean up.
+  //
+  // Guarded, because this is the one write on the boot path that is always a
+  // *new* file — which is exactly what fails first on a full disk. Unguarded
+  // it threw out of `main()` and exited 1 with the SFU already spawned, and
+  // the child outlived the box holding :7880 for good: the next boot's reaper
+  // reads a zero-byte file, gets NaN, and skips it. So the child goes with us
+  // rather than being orphaned, and voice simply stays off.
   const pidPath = join(dirname(binPath), PID_FILE)
-  if (child.pid) writeFileSync(pidPath, String(child.pid))
+  if (child.pid) {
+    try {
+      writeFileSync(pidPath, String(child.pid))
+    } catch (error) {
+      child.kill('SIGKILL')
+      tidyPidFile(pidPath)
+      log.warn(`voice: could not record the SFU's pid (${String(error)}); voice stays off`)
+      return { sfu: null, failure: 'no-start' }
+    }
+  }
 
   let exited = false
   child.on('error', () => {
@@ -344,7 +384,7 @@ export async function spawnLiveKit(
   })
   child.on('exit', (code) => {
     exited = true
-    rmSync(pidPath, { force: true })
+    tidyPidFile(pidPath)
     if (code !== 0 && code !== null) log.warn(`voice: SFU exited with code ${code}`)
   })
   // The SFU's own logging goes to the box log so a failure is diagnosable.
