@@ -162,7 +162,7 @@ describe('faults worth shouting about', () => {
           listening: true,
           error: null,
           joined: [1],
-          failed: [{ universe: 2, reason: 'over the 16 limit' }],
+          failed: [{ universe: 2, reason: 'over the 16 limit', retrying: false }],
           discovery: true,
         },
       }),
@@ -172,6 +172,53 @@ describe('faults worth shouting about', () => {
     const check = find(checks, 'dmx-sacn')
     expect(check?.state).toBe('limited')
     expect(check?.fix).toContain('igmp_max_memberships')
+  })
+
+  it('blames the interface, not the kernel limit, when that is what failed', () => {
+    // A card that was not up, or a CREWBOX_DMX_IFACE typo. Sending an
+    // electrician to read about igmp_max_memberships wastes the one person
+    // who could have plugged the cable in.
+    const checks = dmxReadiness(
+      status({
+        interfaceIp: '10.0.0.9',
+        sacn: {
+          listening: true,
+          error: null,
+          joined: [],
+          failed: [
+            { universe: 1, reason: 'ENODEV', retrying: true },
+            { universe: 2, reason: 'ENODEV', retrying: true },
+          ],
+          discovery: false,
+        },
+      }),
+      [universe()],
+      NOW
+    )
+    const check = find(checks, 'dmx-sacn')
+    expect(check?.fix).toContain('10.0.0.9')
+    expect(check?.fix).toContain('CREWBOX_DMX_IFACE')
+    expect(check?.fix).not.toContain('igmp_max_memberships')
+    expect(check?.detail).toContain('Still trying 1-2')
+  })
+
+  it('says nothing about retrying a limit that will never lift', () => {
+    const checks = dmxReadiness(
+      status({
+        sacn: {
+          listening: true,
+          error: null,
+          joined: [1],
+          failed: [{ universe: 2, reason: 'ENOBUFS', retrying: false }],
+          discovery: true,
+        },
+      }),
+      [universe()],
+      NOW
+    )
+    const check = find(checks, 'dmx-sacn')
+    expect(check?.fix).toContain('igmp_max_memberships')
+    expect(check?.detail).not.toContain('Still trying')
   })
 
   it('warns about a missing interface only when one was not set', () => {

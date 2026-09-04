@@ -101,6 +101,76 @@ describe('the read-only guarantee', () => {
   })
 })
 
+describe('groups that would not join the first time', () => {
+  /**
+   * A socket whose `addMembership` refuses the named universes until the
+   * returned handle is opened — an interface that was not up yet, which is
+   * what a box powered on with the rest of the rack routinely meets.
+   */
+  const withCardDown = (refuse: number[]) => {
+    const state = { down: true }
+    const createSocket = (options: dgram.SocketOptions) => {
+      const socket = dgram.createSocket(options)
+      const real = socket.addMembership.bind(socket)
+      socket.addMembership = (group: string, iface?: string) => {
+        const universe = Number(group.split('.')[2]) * 256 + Number(group.split('.')[3])
+        if (state.down && refuse.includes(universe)) {
+          const err = new Error('addMembership EADDRNOTAVAIL') as Error & { code: string }
+          err.code = 'ENODEV'
+          throw err
+        }
+        real(group, iface)
+      }
+      return socket
+    }
+    return { createSocket, cableIn: () => (state.down = false) }
+  }
+
+  it('keeps trying, and joins when the interface comes up', async () => {
+    const card = withCardDown([2])
+    const listener = start({
+      mode: 'sacn',
+      universes: [1, 2],
+      joinRetryMs: 0,
+      createSocket: card.createSocket,
+    })
+    expect(await until(() => listener.snapshot().sacn.listening)).toBe(true)
+    expect(listener.snapshot().sacn.joined).toEqual([1])
+    expect(listener.snapshot().sacn.failed).toEqual([
+      { universe: 2, reason: 'ENODEV', retrying: true },
+    ])
+
+    card.cableIn()
+    expect(await until(() => listener.snapshot().sacn.joined.length === 2)).toBe(true)
+    expect(listener.snapshot().sacn.joined).toEqual([1, 2])
+    expect(listener.snapshot().sacn.failed).toEqual([])
+  })
+
+  it('does not keep trying a universe over its own limit', async () => {
+    const listener = start({
+      mode: 'sacn',
+      universes: Array.from({ length: MAX_SACN_UNIVERSES + 2 }, (_, i) => i + 1),
+      joinRetryMs: 0,
+    })
+    expect(await until(() => listener.snapshot().sacn.listening)).toBe(true)
+    const failed = listener.snapshot().sacn.failed
+    expect(failed.length).toBe(2)
+    expect(failed.every((f) => !f.retrying)).toBe(true)
+  })
+
+  it('retries the discovery group too', async () => {
+    // Without it there is no "here is what the desks are sending", which is
+    // the one check that can tell a typo from a dead network.
+    const card = withCardDown([64214])
+    const listener = start({ mode: 'sacn', universes: [1], joinRetryMs: 0, ...card })
+    expect(await until(() => listener.snapshot().sacn.listening)).toBe(true)
+    expect(listener.snapshot().sacn.discovery).toBe(false)
+
+    card.cableIn()
+    expect(await until(() => listener.snapshot().sacn.discovery)).toBe(true)
+  })
+})
+
 describe('universe lists', () => {
   it('expands ranges and single numbers', () => {
     expect(parseUniverseList('1-4,10')).toEqual([1, 2, 3, 4, 10])

@@ -17,6 +17,7 @@ import {
   livekitCredentials,
   probeSfu,
   reapOrphanLiveKit,
+  sfuIdentity,
   spawnLiveKit,
   unpackLiveKit,
   type EmbeddedLiveKit,
@@ -247,6 +248,36 @@ describe('orphaned SFU from a killed box', () => {
     writeFileSync(join(dir, 'livekit', 'livekit.pid'), '2147483646')
     expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
     expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
+
+  it('will not kill a process that has merely inherited the pid', async () => {
+    // The one this is for: power cut, reboot, and 812 is now dnsmasq. The
+    // box used to SIGTERM it — once, silently, on every boot — and call it
+    // clearing a stale voice file.
+    const dir = tempDir()
+    mkdirSync(join(dir, 'livekit'), { recursive: true })
+    // This test process is alive, is not the SFU, and is not going anywhere.
+    writeFileSync(join(dir, 'livekit', 'livekit.pid'), String(process.pid))
+
+    const warnings: string[] = []
+    const reaped = await reapOrphanLiveKit(join(dir, 'livekit'), {
+      info: () => {},
+      warn: (m) => warnings.push(m),
+    })
+    expect(reaped).toBe(false)
+    expect(warnings.join(' ')).toMatch(/belongs to something else/)
+    // Still here. A killed test process could not assert anything.
+    expect(() => process.kill(process.pid, 0)).not.toThrow()
+    // And the file that named it is gone, so the next boot does not repeat.
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
+
+  it('recognises its own SFU by what is running, not just by the number', () => {
+    const dir = tempDir()
+    const { binPath } = unpackLiveKit(dir, loiterStub(), 'k', 's')
+    expect(sfuIdentity(process.pid, binPath)).toBe('someone-elses')
+    // The pid of this test, against the binary this test is running.
+    expect(sfuIdentity(process.pid, process.execPath)).toBe('ours')
   })
 
   it('will not kill an SFU another running box still owns', async () => {

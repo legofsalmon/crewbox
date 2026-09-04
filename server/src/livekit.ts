@@ -1,6 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
 import { seaAsset } from './box.ts'
@@ -267,6 +275,64 @@ function tidyPidFile(pidPath: string): void {
   }
 }
 
+/**
+ * Is the pid in the file still the SFU, or has the number been handed on?
+ *
+ * Pids are recycled, and a box that has just had its power cut and come back
+ * up is precisely where they get recycled from a low number: the pid file
+ * records 812, the machine reboots, and 812 is now `wpa_supplicant`, or
+ * `dnsmasq`, or the thing serving the crew's Wi-Fi. `process.kill(812)` is
+ * then a box that boots and shoots something on the rig, once, silently, and
+ * blames a stale voice file.
+ *
+ * Linux answers this exactly: `/proc/<pid>/exe` is a link to the running
+ * binary and `/proc/<pid>/cmdline` is its argv, and the SFU we unpacked is
+ * named in one or the other. Only a box with no `/proc` — a mac, a stripped
+ * container — comes back `unknown`, and there the caller keeps the old
+ * behaviour rather than never reaping, because a held :7880 is the fault
+ * this whole function exists for.
+ */
+export function sfuIdentity(pid: number, binPath: string): 'ours' | 'someone-elses' | 'unknown' {
+  // Through symlinks, because /proc reports the resolved path and a data
+  // directory under /var on a mac is really /private/var.
+  let real = binPath
+  try {
+    real = realpathSync(binPath)
+  } catch {
+    // Unpacked by a build that has since been replaced. The string still
+    // matches what was spawned, which is what the comparison is for.
+  }
+  const isOurs = (path: string) => path === binPath || path === real
+
+  let exe: string | null = null
+  try {
+    // A binary replaced under a running process reads back as `<path>
+    // (deleted)` — still that path, and the most likely way to meet it is an
+    // update that swapped the file.
+    exe = readlinkSync(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, '')
+  } catch {
+    // Someone else's process (readable only by its owner or root), a pid
+    // that has gone, or no /proc at all. The next two reads say which.
+  }
+  if (exe && isOurs(exe)) return 'ours'
+
+  // A script runs under its interpreter, so `exe` names node rather than the
+  // SFU. argv still names what was started, and is world-readable.
+  try {
+    const argv = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0')
+    return argv.some(isOurs) ? 'ours' : 'someone-elses'
+  } catch {
+    // Gone, or nothing to read.
+  }
+  if (exe) return 'someone-elses'
+  try {
+    readlinkSync('/proc/self/exe')
+  } catch {
+    return 'unknown'
+  }
+  return 'someone-elses'
+}
+
 export async function reapOrphanLiveKit(
   dir: string,
   log: BoxLog,
@@ -307,6 +373,17 @@ export async function reapOrphanLiveKit(
   }
   if (owner !== null) {
     log.warn(`voice: an SFU is running (pid ${pid}) and box ${owner} still has it — leaving it`)
+    return false
+  }
+
+  // Alive is not the same as ours. See `sfuIdentity`.
+  const identity = sfuIdentity(pid, join(dir, assetName()))
+  if (identity === 'someone-elses') {
+    log.warn(
+      `voice: pid ${pid} in the voice status file belongs to something else now — ` +
+        'leaving it alone and forgetting the file'
+    )
+    tidyPidFile(pidPath)
     return false
   }
 

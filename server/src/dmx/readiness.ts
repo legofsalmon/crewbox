@@ -42,6 +42,42 @@ const ago = (now: number, then: number): string => {
 /** Wall-clock HH:MM in the box's own timezone, for "went dark at 14:32". */
 const clock = (at: number): string => new Date(at).toTimeString().slice(0, 5)
 
+/**
+ * Why a group would not join, in the words of whoever has to fix it.
+ *
+ * This line used to say `net.ipv4.igmp_max_memberships` whatever had gone
+ * wrong, so an unplugged card or a `CREWBOX_DMX_IFACE` typo sent an
+ * electrician to read kernel documentation about a limit they were nowhere
+ * near. The kernel already said which of these it was; the panel just threw
+ * it away.
+ */
+const joinFix = (
+  failed: Array<{ universe: number; reason: string; retrying: boolean }>,
+  interfaceIp: string | null
+): string => {
+  const reasons = new Set(failed.map((f) => f.reason))
+  const fixes: string[] = []
+  if (failed.some((f) => f.reason.includes('limit')) || reasons.has('ENOBUFS')) {
+    fixes.push(
+      'Linux allows 20 multicast memberships per socket — listen to fewer universes, or raise net.ipv4.igmp_max_memberships.'
+    )
+  }
+  if (reasons.has('ENODEV') || reasons.has('EADDRNOTAVAIL')) {
+    fixes.push(
+      interfaceIp
+        ? `No interface here has the address ${interfaceIp}. Check CREWBOX_DMX_IFACE against the card that is on the lighting network, and that its cable is in.`
+        : 'The network interface was not up when the groups were joined. Check the cable and the switch port.'
+    )
+  }
+  if (reasons.has('EPERM') || reasons.has('EACCES')) {
+    fixes.push('The box was refused permission to join a multicast group.')
+  }
+  const known = ['ENOBUFS', 'ENOMEM', 'ENODEV', 'EADDRNOTAVAIL', 'EPERM', 'EACCES']
+  const rest = [...reasons].filter((r) => !known.includes(r) && !r.includes('limit'))
+  if (rest.length > 0) fixes.push(`The kernel refused the join: ${rest.join(', ')}.`)
+  return fixes.join(' ')
+}
+
 /** Loss below this is rounding noise on a UDP network; at or above, a fault. */
 const LOSS_REPORT_THRESHOLD = 0.01
 
@@ -99,14 +135,19 @@ export function dmxReadiness(
         fix: 'Something else may already hold UDP 5568 on this machine.',
       })
     } else if (failed.length > 0) {
+      const retrying = failed.filter((f) => f.retrying)
       checks.push({
         id: 'dmx-sacn',
         label: 'sACN',
         state: 'limited',
-        detail: `Joined ${plural(joined.length, 'universe')}; could not join ${failed
-          .map((f) => f.universe)
-          .join(', ')}.`,
-        fix: 'Linux allows 20 multicast memberships per socket — listen to fewer universes, or raise net.ipv4.igmp_max_memberships.',
+        detail:
+          `Joined ${plural(joined.length, 'universe')}; could not join ${summarise(
+            failed.map((f) => f.universe)
+          )}.` +
+          (retrying.length > 0
+            ? ` Still trying ${summarise(retrying.map((f) => f.universe))} — this clears itself if the interface comes up.`
+            : ''),
+        fix: joinFix(failed, status.interfaceIp),
       })
     } else {
       checks.push({
