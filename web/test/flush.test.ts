@@ -14,25 +14,23 @@ import type { QueuedIncident } from '../src/modules/incident/model/outbox.ts'
  * screen that had promised "Nothing is lost while this lasts".
  */
 
-const message = (n: number): OutboxEntry =>
-  ({
-    clientMsgId: `msg-${n}`,
-    channelId: 'general',
-    body: `queued ${n}`,
-    at: 1_700_000_000_000 + n,
-  }) as OutboxEntry
+const message = (n: number): OutboxEntry => ({
+  clientMsgId: `msg-${n}`,
+  channelId: 'general',
+  body: `queued ${n}`,
+  createdAt: 1_700_000_000_000 + n,
+})
 
-const incident = (n: number): QueuedIncident =>
-  ({
-    clientMsgId: `inc-${n}`,
-    kind: 'note',
-    severity: 'info',
-    body: `logged ${n}`,
-    at: 1_700_000_000_000 + n,
-    stage: 'Main',
-    actId: '',
-    actName: '',
-  }) as QueuedIncident
+const incident = (n: number): QueuedIncident => ({
+  clientMsgId: `inc-${n}`,
+  kind: 'note',
+  severity: 'note',
+  body: `logged ${n}`,
+  at: 1_700_000_000_000 + n,
+  stage: 'Main',
+  actId: '',
+  actName: '',
+})
 
 describe('what goes out when the signal comes back', () => {
   it('sends both queues down one sequence', () => {

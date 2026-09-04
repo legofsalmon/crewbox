@@ -13,5 +13,5 @@
     "verbatimModuleSyntax": true,
     "useDefineForClassFields": true
   },
-  "include": ["src", "vite.config.ts", "../shared/src"]
+  "include": ["src", "test", "vite.config.ts", "../shared/src"]
 }

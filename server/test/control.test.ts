@@ -264,6 +264,59 @@ describe('what a desk button shows', () => {
     expect(main?.next).toBeNull()
   })
 
+  it('names the right night at a festival that runs more than one', () => {
+    // The control API is one of the two things that answer "who is on", and
+    // it feeds a Stream Deck at a production desk and the show log's record
+    // of what happened. With the date dropped, every act on a stage across
+    // the weekend sat on one clock: on the Saturday at 21:30, with a Friday
+    // and a Saturday headliner both at 21:00, it named Friday's band.
+    const weekend = [
+      act({
+        name: 'Friday Band',
+        stage: 'Main Stage',
+        date: '2026-08-11',
+        start: '21:00',
+        end: '22:30',
+      }),
+      act({
+        name: 'Saturday Band',
+        stage: 'Main Stage',
+        date: '2026-08-12',
+        start: '21:00',
+        end: '22:30',
+      }),
+    ]
+    // 11 August is the Tuesday these fixtures use; the 12th is the day after.
+    expect(stageBoard(weekend, at(21, 30))[0]?.onNow?.name).toBe('Friday Band')
+    expect(stageBoard(weekend, new Date(2026, 7, 12, 21, 30))[0]?.onNow?.name).toBe('Saturday Band')
+  })
+
+  it('does not offer tomorrow as next until tonight is over', () => {
+    const weekend = [
+      act({
+        name: 'Tonight',
+        stage: 'Main Stage',
+        date: '2026-08-11',
+        start: '21:00',
+        end: '22:30',
+      }),
+      act({
+        name: 'Tomorrow',
+        stage: 'Main Stage',
+        date: '2026-08-12',
+        start: '19:00',
+        end: '20:00',
+      }),
+    ]
+    // Mid-set: tonight's act is on and nothing else is due tonight, so
+    // tomorrow's is next — nearly a day out, and the words have to say so.
+    const [main] = stageBoard(weekend, at(21, 30))
+    expect(main?.onNow?.name).toBe('Tonight')
+    expect(main?.next?.name).toBe('Tomorrow')
+    expect(main?.next?.startsIn).toBe(21 * 60 + 30)
+    expect(main?.next?.starts).toBe('in 21h 30m')
+  })
+
   it('still says so after midnight', () => {
     const [main] = stageBoard(DAY, new Date(2026, 7, 12, 0, 30))
     expect(main?.onNow?.name).toBe('Night Bus')

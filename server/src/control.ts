@@ -3,6 +3,7 @@ import type * as Y from 'yjs'
 import {
   agenda,
   nowMinutes,
+  showDate,
   relative,
   toAgendaAct,
   type Act,
@@ -203,7 +204,7 @@ export function stageBoard(acts: Act[], now: Date): StageBoard[] {
       ends: found.endsIn === null ? '' : relative(found.endsIn),
     }
 
-  return agenda(acts.map(toAgendaAct), nowMinutes(now)).map((stage) => ({
+  return agenda(acts.map(toAgendaAct), nowMinutes(now), showDate(now)).map((stage) => ({
     stage: stage.stage,
     onNow: entry(stage.onNow),
     next: entry(stage.next),
