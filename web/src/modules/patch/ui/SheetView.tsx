@@ -9,9 +9,10 @@ import { useSheetPeers, useSheetRemotePeers, useSyncStatus } from '../store/useS
 import { useUndoRedo } from '../store/useUndo'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useTimetable } from '../../../shell/timetable/store.ts'
-import { patchSubBoxDisplay, setMetaField } from '../model/sheetDoc'
+import { setMetaField } from '../model/sheetDoc'
 import { sheetActs } from '../model/lineup'
-import { PATCH_FIELDS, patchKey, type SheetAct, type SheetSnapshot } from '../model/types'
+import { findMatches } from '../model/find'
+import type { SheetSnapshot } from '../model/types'
 import Toolbar from './Toolbar'
 import PatchGrid from './PatchGrid'
 import SubBoxManager from './SubBoxManager'
@@ -19,32 +20,6 @@ import StagePatch from './StagePatch'
 import LineupManager from './LineupManager'
 import VersionManager from './VersionManager'
 import styles from './SheetView.module.scss'
-
-/** All cells (and channel labels) whose display value contains the query. */
-const findMatches = (snapshot: SheetSnapshot, acts: SheetAct[], query: string) => {
-  const cells = new Set<string>()
-  const channels = new Set<string>()
-  const q = query.trim().toLowerCase()
-  if (!q) return { cells, channels, order: [] as string[] }
-  const order: string[] = []
-  for (const channel of snapshot.channels) {
-    if (channel.label.toLowerCase().includes(q)) channels.add(channel.id)
-    for (const act of acts) {
-      const entry = snapshot.patches[patchKey(act.id, channel.id)]
-      if (!entry) continue
-      for (const field of PATCH_FIELDS) {
-        const display =
-          field === 'subBox' ? patchSubBoxDisplay(entry, snapshot.subBoxes) : entry[field]
-        if (display && display.toLowerCase().includes(q)) {
-          const cellId = `${act.id}:${channel.id}:${field}`
-          cells.add(cellId)
-          order.push(cellId)
-        }
-      }
-    }
-  }
-  return { cells, channels, order }
-}
 
 function PresenceAvatars({ sheetId }: { sheetId: string }) {
   const peers = useSheetRemotePeers(sheetId)
@@ -195,17 +170,34 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   }
 
   // Cmd/Ctrl+Z undoes the last committed edit; Shift adds redo (Ctrl+Y too).
-  // A field with an in-progress draft (data-dirty) keeps native text undo.
   // Cmd/Ctrl+F focuses the find box.
   // Registered through the shell registry, active only while this view is
   // mounted (i.e. on patch routes) — chat keeps its own shortcuts elsewhere.
   useEffect(() => {
+    /**
+     * Whether Ctrl+Z here means the *sheet*, rather than what is being typed.
+     *
+     * It used to mean the sheet everywhere except a grid cell with a
+     * half-typed draft, or the find box. So Ctrl+Z in a dialog — the new
+     * sheet name, an act's name, the spec and notes boxes in the Lineup —
+     * reverted the last committed edit to the sheet behind the modal, while
+     * the person pressing it was trying to take back a word they had just
+     * typed. Silently: the modal covers the grid.
+     *
+     * Inverted. Any text-entry element keeps its own text undo, and the sheet
+     * only claims the shortcut in a grid cell with nothing in progress —
+     * which is the case it was written for, and the one where the browser has
+     * nothing of its own to undo.
+     */
     const undoableTarget = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
-      return !(
-        (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
-        (target.dataset.dirty || target.dataset.search)
-      )
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable === true
+      if (!typing) return true
+      const el = target as HTMLElement
+      return Boolean(el.dataset.cell) && !el.dataset.dirty
     }
     const unregister = [
       registerShortcut({
@@ -294,6 +286,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
           onOpenLineup={() => setShowLineup(true)}
           matchedCells={matches?.cells}
           matchedChannels={matches?.channels}
+          matchedInputs={matches?.inputs}
         />
       </div>
 

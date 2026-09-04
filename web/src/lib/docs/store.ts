@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { newId } from '@crewbox/shared'
-import { removeIndexEntry, upsertIndexEntry } from './indexDoc.ts'
+import { deletedIds, removeIndexEntry, upsertIndexEntry } from './indexDoc.ts'
 import { syncManager } from './sync.ts'
 
 /**
@@ -26,6 +26,19 @@ export interface DocHandle {
   whenLoaded: Promise<void>
   /** Undo/redo over this client's local edits — content docs only, not the index. */
   undoManager?: Y.UndoManager
+  /**
+   * Give this hold back.
+   *
+   * One hold per `open`. The document is only torn down — socket, awareness
+   * entry, IndexedDB connection — when the last one is released, so two panes
+   * showing the same sheet share it and neither closing takes it from the
+   * other.
+   *
+   * Every caller must release. Nothing did: an open document was kept for the
+   * life of the tab, so a crew chief who looked at ten sheets during a load-in
+   * held ten WebSocket rooms, ten IndexedDB connections and an awareness entry
+   * in every one of them — a device that never left any room it had visited.
+   */
   destroy: () => void
 }
 
@@ -72,7 +85,27 @@ export interface DocStore {
   remove: (id: string) => Promise<void>
   /** Doc ids with data on this device (see listLocalIds' note). */
   listLocalIds: () => string[]
+  /**
+   * Forget locally-held docs the index says have been deleted elsewhere.
+   *
+   * Returns the ids it dropped, so a caller can re-render. Deleting the
+   * database is fire-and-forget — the listing is already correct without it.
+   */
+  reconcileDeletions: () => string[]
+  /** Ids the index records as deleted, so a listing can skip them. */
+  deleted: () => Set<string>
 }
+
+/**
+ * How long a document stays open after its last holder lets go.
+ *
+ * Not zero. Navigating between two sheets unmounts one pane and mounts the
+ * next, and React re-runs an effect on a dependency change by cleaning up
+ * first — so a tab away and back, or a route change and an undo of it, would
+ * otherwise tear down a WebSocket and an IndexedDB connection and build them
+ * again a few milliseconds later, on a phone, over festival Wi-Fi.
+ */
+const CLOSE_GRACE_MS = 10_000
 
 const INDEX_DOC_NAME = 'index'
 
@@ -105,31 +138,53 @@ export function createDocStore(config: DocStoreConfig): DocStore {
 
   const openRaw = (docName: string, present = true): DocHandle => {
     const doc = new Y.Doc()
-    if (!hasIndexedDb) {
-      return { doc, whenLoaded: Promise.resolve(), destroy: () => doc.destroy() }
-    }
-    const persistence = new IndexeddbPersistence(dbPrefix + docName, doc)
-    // Resolves either way. `typeof indexedDB !== 'undefined'` above covers a
-    // browser with no IndexedDB at all; it does not cover one that has it and
-    // refuses to open it — a corrupted profile, a private window, a quota
-    // that has run out — which rejects instead. A pane awaiting `whenLoaded`
-    // would then wait for a promise that has already failed, and the pane
-    // never appears. Persistence is an accelerator; the relay is where the
-    // document actually lives.
-    const whenLoaded = persistence.whenSynced.then(
-      () => undefined,
-      () => undefined
-    )
+    // A browser with no IndexedDB still gets the relay.
+    //
+    // It used to return here, with no persistence *and* no sync — so a
+    // private window, or a browser with site data blocked, gave a crew member
+    // a patch sheet that was theirs alone: their edits reached nobody and
+    // nobody else's reached them, silently, with the sheet looking exactly
+    // as it should. Persistence is an accelerator; the relay is where the
+    // document actually lives, and that is true in both directions.
+    const persistence = hasIndexedDb ? new IndexeddbPersistence(dbPrefix + docName, doc) : null
+    // Resolves either way. `typeof indexedDB !== 'undefined'` covers a browser
+    // with no IndexedDB at all; it does not cover one that has it and refuses
+    // to open it — a corrupted profile, a private window, a quota that has run
+    // out — which rejects instead. A pane awaiting `whenLoaded` would then
+    // wait for a promise that has already failed, and never appear.
+    const whenLoaded = persistence
+      ? persistence.whenSynced.then(
+          () => undefined,
+          () => undefined
+        )
+      : Promise.resolve()
     syncManager.attach(room(docName), doc, { present })
     return {
       doc,
       whenLoaded,
       destroy: () => {
         syncManager.detach(room(docName))
-        persistence.destroy()
+        persistence?.destroy()
         doc.destroy()
       },
     }
+  }
+
+  /**
+   * Drop every trace of a document from *this* device.
+   *
+   * Used both when somebody deletes one here and when the index says
+   * somebody deleted it elsewhere — a phone that had the sheet open at some
+   * point is otherwise carrying a copy of paperwork the crew has thrown
+   * away, and listing it.
+   */
+  const forget = async (id: string): Promise<void> => {
+    writeRegistry(readRegistry().filter((known) => known !== id))
+    if (!hasIndexedDb) return
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(dbPrefix + config.docName(id))
+      req.onsuccess = req.onerror = req.onblocked = () => resolve()
+    })
   }
 
   let indexHandle: DocHandle | null = null
@@ -138,7 +193,22 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     return indexHandle
   }
 
-  const handles = new Map<string, DocHandle>()
+  /** One open document, and everybody currently holding it. */
+  interface Held {
+    handle: DocHandle
+    /** How many `open` calls have not been released. */
+    holds: number
+    /** How many of those asked to be visible in the room. */
+    presentHolds: number
+    /** Teardown pending after the last release, if any. */
+    closing: ReturnType<typeof setTimeout> | null
+    close: () => void
+  }
+
+  const held = new Map<string, Held>()
+
+  /** Has this document anything in it at all? See `open`'s registry note. */
+  const hasContent = (doc: Y.Doc): boolean => doc.store.clients.size > 0
 
   /**
    * `present: false` syncs the document without announcing this device in it.
@@ -147,22 +217,56 @@ export function createDocStore(config: DocStoreConfig): DocStore {
    * as company in a sheet somebody else has open. Opening the same document
    * normally afterwards promotes it, which is what happens the moment
    * someone actually looks at it.
+   *
+   * **Every call must be matched by `destroy` on the handle it returns.** The
+   * document lives until the last holder lets go, and then a little longer —
+   * see `CLOSE_GRACE_MS`.
    */
   const open = (id: string, { present = true }: { present?: boolean } = {}): DocHandle => {
-    const existing = handles.get(id)
+    const docRoom = room(config.docName(id))
+    const existing = held.get(id)
     if (existing) {
-      if (present) syncManager.attach(room(config.docName(id)), existing.doc, { present })
-      return existing
+      // Reopened inside the grace window, or by a second pane: cancel any
+      // pending teardown and take another hold.
+      if (existing.closing) {
+        clearTimeout(existing.closing)
+        existing.closing = null
+      }
+      existing.holds++
+      if (present) {
+        existing.presentHolds++
+        syncManager.attach(docRoom, existing.handle.doc, { present })
+      }
+      return releasable(id, existing, present)
     }
 
     const inner = openRaw(config.docName(id), present)
     const { doc } = inner
     const undoManager = config.undoManager?.(doc)
 
-    const ids = readRegistry()
-    if (!ids.includes(id)) writeRegistry([...ids, id])
+    /**
+     * Remember this document locally — but only once it has content.
+     *
+     * The registry is what lets the selector list a document before (or
+     * without) any sync, and it used to be written the moment a doc was
+     * opened. So following a link to a sheet that has been deleted, or one
+     * from a box this device is not on, minted an empty document and listed
+     * it as "Untitled Sheet (local)" for ever, on a device whose owner had
+     * only clicked a link.
+     */
+    let remembered = false
+    const remember = () => {
+      if (remembered || !hasContent(doc)) return
+      remembered = true
+      const ids = readRegistry()
+      if (!ids.includes(id)) writeRegistry([...ids, id])
+    }
+    void inner.whenLoaded.then(remember)
 
     const onUpdate = (_update: Uint8Array, origin: unknown) => {
+      // Content from anywhere — this device, the relay, IndexedDB — is what
+      // makes the document real enough to list.
+      remember()
       // Local edits and their undo/redo both count as "modified" for the index.
       if (origin !== config.localOrigin && (!undoManager || origin !== undoManager)) return
       upsertIndexEntry(
@@ -174,19 +278,46 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     }
     doc.on('update', onUpdate)
 
-    const handle: DocHandle = {
-      doc,
-      whenLoaded: inner.whenLoaded,
-      undoManager,
-      destroy: () => {
+    const entry: Held = {
+      handle: { doc, whenLoaded: inner.whenLoaded, undoManager, destroy: () => {} },
+      holds: 1,
+      presentHolds: present ? 1 : 0,
+      closing: null,
+      close: () => {
         doc.off('update', onUpdate)
         undoManager?.destroy()
-        handles.delete(id)
+        held.delete(id)
         inner.destroy()
       },
     }
-    handles.set(id, handle)
-    return handle
+    held.set(id, entry)
+    return releasable(id, entry, present)
+  }
+
+  /**
+   * A handle over an already-counted hold, whose `destroy` releases just that
+   * one. Idempotent, because React cleanups and explicit closes both happen
+   * and a double release would evict a document another pane is using.
+   */
+  const releasable = (id: string, entry: Held, present: boolean): DocHandle => {
+    let released = false
+    return {
+      ...entry.handle,
+      destroy: () => {
+        if (released) return
+        released = true
+        if (present && --entry.presentHolds === 0) {
+          // Still syncing for whoever else holds it, but nobody is looking:
+          // leave the room rather than staying in it as a phantom device.
+          syncManager.unannounce(room(config.docName(id)))
+        }
+        if (--entry.holds > 0) return
+        entry.closing = setTimeout(() => {
+          entry.closing = null
+          if (entry.holds === 0) entry.close()
+        }, CLOSE_GRACE_MS)
+      },
+    }
   }
 
   return {
@@ -203,20 +334,31 @@ export function createDocStore(config: DocStoreConfig): DocStore {
       init(handle.doc)
       // The initial structure is the doc's baseline, not an undoable edit.
       handle.undoManager?.clear()
+      // And give the hold straight back. Callers use the id and navigate;
+      // none of them holds this handle, so keeping the reference here would
+      // leak one open document per document ever created in a session. The
+      // grace window covers the gap until the pane opens it properly.
+      handle.destroy()
       return { id, handle }
     },
 
     remove: async (id) => {
-      handles.get(id)?.destroy()
+      // Deliberately not a release: a deletion ends the document for
+      // everybody holding it, and leaving the socket open for the grace
+      // window would let a straggling write resurrect it.
+      held.get(id)?.close()
       removeIndexEntry(openIndex().doc, id, config.localOrigin)
-      writeRegistry(readRegistry().filter((known) => known !== id))
-      if (hasIndexedDb) {
-        await new Promise<void>((resolve) => {
-          const req = indexedDB.deleteDatabase(dbPrefix + config.docName(id))
-          req.onsuccess = req.onerror = req.onblocked = () => resolve()
-        })
-      }
+      await forget(id)
     },
+
+    reconcileDeletions: () => {
+      const gone = deletedIds(openIndex().doc)
+      const dropped = readRegistry().filter((id) => gone.has(id))
+      for (const id of dropped) void forget(id)
+      return dropped
+    },
+
+    deleted: () => deletedIds(openIndex().doc),
 
     /**
      * Doc ids with data on this device — lets a selector list docs even if

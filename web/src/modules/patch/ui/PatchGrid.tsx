@@ -12,6 +12,7 @@ import {
   type PasteColumn,
 } from '../model/sheetDoc'
 import { parseTsv } from '../model/csv'
+import { channelCellId } from '../model/find'
 import {
   PATCH_FIELDS,
   PATCH_FIELD_LABELS,
@@ -42,12 +43,15 @@ function ChannelHeaderRow({
   removable,
   hasContent,
   isMatch,
+  inputMatch,
 }: {
   doc: Y.Doc
   channel: Channel
   removable: boolean
   hasContent: boolean
   isMatch?: boolean
+  /** The house input matched the find query, not the channel's number. */
+  inputMatch?: boolean
 }) {
   const draft = useDraft(channel.label, (next) => renameChannel(doc, channel.id, next.trim()))
   const input = useDraft(channel.input, (next) => setChannelInput(doc, channel.id, next.trim()))
@@ -69,6 +73,7 @@ function ChannelHeaderRow({
           type="text"
           className={`${styles.channelInput} ${isMatch ? styles.matchCell : ''}`}
           aria-label={`Channel ${channel.label} name`}
+          data-cell={channelCellId(channel.id, 'label')}
           {...draft.inputProps}
         />
         {/* The house input: what is on this channel all day, whoever is
@@ -77,9 +82,10 @@ function ChannelHeaderRow({
             change between acts. */}
         <input
           type="text"
-          className={styles.houseInput}
+          className={`${styles.houseInput} ${inputMatch ? styles.matchCell : ''}`}
           placeholder="input"
           aria-label={`Input on channel ${channel.label}`}
+          data-cell={channelCellId(channel.id, 'input')}
           {...input.inputProps}
         />
         <span className={styles.channelActions}>
@@ -120,7 +126,8 @@ const ChannelHeader = memo(
     prev.channel.input === next.channel.input &&
     prev.removable === next.removable &&
     prev.hasContent === next.hasContent &&
-    prev.isMatch === next.isMatch
+    prev.isMatch === next.isMatch &&
+    prev.inputMatch === next.inputMatch
 )
 
 export default function PatchGrid({
@@ -131,6 +138,7 @@ export default function PatchGrid({
   onOpenLineup,
   matchedCells,
   matchedChannels,
+  matchedInputs,
 }: {
   doc: Y.Doc
   sheetId: string
@@ -142,6 +150,8 @@ export default function PatchGrid({
   matchedCells?: Set<string>
   /** Channel ids whose label matches the find query. */
   matchedChannels?: Set<string>
+  /** Channel ids whose house input matches — the sheet's spine. */
+  matchedInputs?: Set<string>
 }) {
   const { channels, subBoxes, patches } = snapshot
   // "Nothing typed yet": no patch data at all. A fresh sheet has channels
@@ -288,6 +298,7 @@ export default function PatchGrid({
                   patchEntryHasContent(patches[patchKey(act.id, channel.id)])
                 )}
                 isMatch={matchedChannels?.has(channel.id)}
+                inputMatch={matchedInputs?.has(channel.id)}
               />
               {acts.map((act, actIndex) => (
                 <Fragment key={act.id}>

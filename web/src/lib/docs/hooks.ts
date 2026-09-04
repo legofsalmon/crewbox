@@ -66,8 +66,12 @@ export function useStoreDoc<T>(
     })
     return () => {
       cancelled = true
-      // The doc stays cached in the store for quick re-open; sync providers
-      // and explicit deletion manage its real lifetime.
+      // Give the hold back. The store keeps the document open for a short
+      // grace period, so navigating away and back does not tear down a
+      // WebSocket and an IndexedDB connection and rebuild them — but a pane
+      // that stays closed stops holding a room, which is what stopped this
+      // device appearing in every sheet it had ever glanced at.
+      h.destroy()
       setHandle(null)
     }
   }, [store, id])
@@ -95,6 +99,13 @@ export function useDocIndex(store: DocStore): { entries: DocIndexEntry[]; loaded
     let cancelled = false
     handle.whenLoaded.then(() => {
       if (!cancelled) setLoaded(true)
+      // Once the index is here it can be believed about deletions. A doc
+      // deleted on another device is dropped from this one's registry and
+      // its database removed, so it neither lists nor takes up room.
+      if (!cancelled) {
+        store.reconcileDeletions()
+        setLocalIds(store.listLocalIds())
+      }
     })
     setLocalIds(store.listLocalIds())
     return () => {
@@ -104,10 +115,17 @@ export function useDocIndex(store: DocStore): { entries: DocIndexEntry[]; loaded
 
   const entries = useDocSnapshot(handle.doc, compute) ?? []
   const known = new Set(entries.map((e) => e.id))
+  // Deleting a doc removes its index row, and absence is not the same as
+  // "gone": every device merges its own registry back in, so a sheet deleted
+  // on the desk reappeared on every phone as "Untitled Sheet (local)" — and
+  // could not be deleted there either, because what they were listing was
+  // their own copy. The index carries tombstones now, and this is where they
+  // are believed.
+  const gone = store.deleted()
   const merged = [
     ...entries,
     ...localIds
-      .filter((id) => !known.has(id))
+      .filter((id) => !known.has(id) && !gone.has(id))
       // Present but never synced or edited here: no index entry to name it.
       .map((id) => ({ id, title: `${store.defaultTitle} (local)`, lastModified: '', meta: {} })),
   ]

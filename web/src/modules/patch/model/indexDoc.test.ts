@@ -34,6 +34,32 @@ describe('index doc', () => {
     expect(snapshotIndex(doc)).toHaveLength(0)
   })
 
+  it('keeps a deleted sheet deleted when another device edits it', () => {
+    /**
+     * The race two people at a festival actually have: one deletes a sheet
+     * on the desk while another is still typing into it on a phone. The
+     * phone's edit re-creates the index row, so absence alone would list the
+     * sheet again on every device — a deletion that undid itself.
+     *
+     * Deletion wins. It is the destructive answer and the one somebody chose
+     * deliberately, and the sheet's own document is still on the phone that
+     * has it if anybody needs what was typed.
+     */
+    const desk = new Y.Doc()
+    const phone = new Y.Doc()
+    upsertIndexEntry(desk, 'sheet-1', { title: 'Second Stage' })
+    Y.applyUpdate(phone, Y.encodeStateAsUpdate(desk))
+
+    removeIndexEntry(desk, 'sheet-1')
+    upsertIndexEntry(phone, 'sheet-1', { title: 'Second Stage', lastModified: 'later' })
+
+    Y.applyUpdate(phone, Y.encodeStateAsUpdate(desk, Y.encodeStateVector(phone)))
+    Y.applyUpdate(desk, Y.encodeStateAsUpdate(phone, Y.encodeStateVector(desk)))
+
+    expect(snapshotIndex(desk)).toEqual([])
+    expect(snapshotIndex(phone)).toEqual([])
+  })
+
   it('merges concurrent index updates from two devices', () => {
     const a = new Y.Doc()
     const b = new Y.Doc()

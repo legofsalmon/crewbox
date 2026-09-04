@@ -44,16 +44,42 @@ export const upsertIndexEntry = (
   }, origin)
 }
 
-export const removeIndexEntry = (doc: Y.Doc, id: string, origin: unknown) => {
+/**
+ * Documents that have been deleted, id → when.
+ *
+ * Deleting the index row is not enough on its own. Every device keeps a
+ * local registry of the docs it has data for, and the selector merges that
+ * registry in so a doc still lists before (or without) any sync. So a sheet
+ * deleted on the desk vanished from the index on every phone and came
+ * straight back on each of them as "Untitled Sheet (local)" — un-deletable,
+ * because the thing they were listing was their own copy.
+ *
+ * A tombstone says "gone", which absence cannot. It is a small map of ids
+ * and timestamps: the whole point is to be cheap enough to keep for ever,
+ * because the day it is pruned is the day an offline phone reconnects and
+ * resurrects the sheet again.
+ */
+const getTombstones = (doc: Y.Doc) => doc.getMap<string>('deleted')
+
+/** Ids this index says have been deleted. */
+export const deletedIds = (doc: Y.Doc): Set<string> => new Set(getTombstones(doc).keys())
+
+export const removeIndexEntry = (doc: Y.Doc, id: string, origin: unknown, at = new Date()) => {
   doc.transact(() => {
     getEntries(doc).delete(id)
+    getTombstones(doc).set(id, at.toISOString())
   }, origin)
 }
 
-/** All entries, most recently modified first. */
+/** All entries, most recently modified first. Deleted docs are never listed. */
 export const snapshotIndex = (doc: Y.Doc, defaultTitle: string): DocIndexEntry[] => {
   const entries: DocIndexEntry[] = []
+  const gone = deletedIds(doc)
   for (const [id, entry] of getEntries(doc).entries()) {
+    // A row and a tombstone for the same id means two devices disagreed —
+    // one deleting while the other edited. Deletion is the destructive
+    // answer and the one somebody chose deliberately, so it wins.
+    if (gone.has(id)) continue
     const json = entry.toJSON() as Record<string, unknown>
     const meta: Record<string, string> = {}
     for (const [k, v] of Object.entries(json)) {

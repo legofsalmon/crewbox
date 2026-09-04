@@ -91,7 +91,42 @@ class SyncManager {
   private announce(room: string) {
     if (this.present.has(room)) return
     this.present.add(room)
-    this.providers.get(room)?.awareness.setLocalStateField('user', this.userField())
+    const provider = this.providers.get(room)
+    if (provider) this.setUser(provider)
+    this.emit()
+  }
+
+  /**
+   * Put this crew member into a provider's awareness.
+   *
+   * Not `setLocalStateField`, which is a no-op when the local state is null —
+   * and null is exactly what `unannounce` leaves behind. So a sheet closed
+   * and opened again announced nobody: the second visit was invisible to
+   * everyone else in it, with no error and no way to tell from the screen.
+   */
+  private setUser(provider: WebsocketProvider) {
+    provider.awareness.setLocalState({
+      ...(provider.awareness.getLocalState() ?? {}),
+      user: this.userField(),
+    })
+  }
+
+  /**
+   * Stop appearing in a room, without stopping syncing it.
+   *
+   * The other half of `announce`, and it was missing — so a device stayed a
+   * person in every room it had ever opened. Ten sheets glanced at during a
+   * load-in meant ten rooms each showing one more device than was there,
+   * with peer counts, avatars and "X is editing" markers that never went
+   * away and could not be got rid of short of a reload.
+   *
+   * `setLocalState(null)` is awareness's own way of saying "I have gone": it
+   * removes this client's entry and broadcasts the removal, so the editing
+   * marker goes with it rather than being left pointing at a cell.
+   */
+  unannounce(room: string) {
+    if (!this.present.delete(room)) return
+    this.providers.get(room)?.awareness.setLocalState(null)
     this.emit()
   }
 
@@ -111,7 +146,7 @@ class SyncManager {
     // provider would announce the background readers too, undoing the whole
     // point of attaching quietly.
     for (const [room, provider] of this.providers) {
-      if (this.present.has(room)) provider.awareness.setLocalStateField('user', this.userField())
+      if (this.present.has(room)) this.setUser(provider)
     }
   }
 
@@ -136,7 +171,7 @@ class SyncManager {
     // an untouched (empty) state is never broadcast on join. That is exactly
     // what keeps a background reader (see attach) invisible: it syncs the
     // document and announces nobody.
-    if (this.present.has(room)) provider.awareness.setLocalStateField('user', this.userField())
+    if (this.present.has(room)) this.setUser(provider)
     provider.awareness.on('change', () => this.emit())
     this.providers.set(room, provider)
   }
