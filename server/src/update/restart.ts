@@ -35,10 +35,20 @@ export const HEALTH_INTERVAL_MS = 500
 export const TYPICAL_OUTAGE_SECONDS = 20
 
 export interface RestartIo {
-  /** Launch the new box, detached, and return its pid. */
+  /**
+   * Launch the new box, detached, and return its pid.
+   *
+   * Not necessarily the box's own pid. A `.app` is launched through `open`,
+   * which hands the request to LaunchServices and exits — so what comes back
+   * there is the pid of a process that is already gone. See `servingPid`.
+   */
   launch: (path: string, args: string[]) => number
-  /** Ask a box whether it is serving, and what it is. */
-  probe: (url: string) => Promise<{ ok: boolean; version: string } | null>
+  /**
+   * Ask a box whether it is serving, what it is, and — when it can be known —
+   * which process it is. `statusFileProbe` reads all three from the file the
+   * new box writes; an HTTP probe has no pid to give.
+   */
+  probe: (url: string) => Promise<{ ok: boolean; version: string; pid?: number } | null>
   /** Stop a child that never came good. */
   kill: (pid: number) => void
   now: () => number
@@ -106,11 +116,13 @@ export function statusFileProbe(
   dataDir: string,
   selfPid: number,
   read: (dir: string) => { pid: number; version: string } | null
-): (url: string) => Promise<{ ok: true; version: string } | null> {
+): (url: string) => Promise<{ ok: true; version: string; pid: number } | null> {
   return () => {
     const status = read(dataDir)
     if (!status || status.pid === selfPid || !status.version) return Promise.resolve(null)
-    return Promise.resolve({ ok: true, version: status.version })
+    // The pid goes back too. It is the box's own, which on macOS is the only
+    // way to name it: the launch went through `open`, and that pid is gone.
+    return Promise.resolve({ ok: true, version: status.version, pid: status.pid })
   }
 }
 
@@ -179,16 +191,27 @@ export async function restartInto(options: RestartOptions): Promise<RestartResul
   }
   options.log?.info(`update: started ${inFlight.toVersion} as pid ${pid}, waiting for it to serve`)
 
+  // Who to stop, if it comes to that.
+  //
+  // On a `.app` the launch pid belongs to `open`, which exited the moment
+  // LaunchServices took the request — killing it stops nothing, and the new
+  // box goes on holding the port while this process rolls back and tries to
+  // take it. A probe that answered names the process actually serving, so it
+  // wins. When nothing ever answered there is nothing better to use, and the
+  // launch pid at least covers the plain-binary case.
+  let servingPid = pid
+
   while (io.now() - started < timeoutMs) {
     await io.sleep(intervalMs)
     const health = await io.probe(options.healthUrl)
     if (!health) continue
+    if (health.pid) servingPid = health.pid
     if (!healthMatches(health.version, inFlight.toVersion)) {
       // Something is serving, but it is not what we installed. Almost
       // certainly the old box never actually let go of the port. Rolling
       // back is right: we cannot confirm the new build, and leaving it in
       // place unconfirmed is the state this whole mechanism exists to avoid.
-      io.kill(pid)
+      io.kill(servingPid)
       return {
         ...rollback(inFlight, dataDir),
         reason: `something answered as ${health.version}, but ${inFlight.toVersion} was installed`,
@@ -201,7 +224,7 @@ export async function restartInto(options: RestartOptions): Promise<RestartResul
     return { ok: true, pid, waitedMs: io.now() - started }
   }
 
-  io.kill(pid)
+  io.kill(servingPid)
   return {
     ...rollback(inFlight, dataDir),
     reason: `${inFlight.toVersion} did not answer within ${Math.round(timeoutMs / 1000)}s`,

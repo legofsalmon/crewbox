@@ -4,12 +4,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   OLD_SUFFIX,
@@ -18,6 +19,7 @@ import {
   dropBackup,
   inFlightPath,
   installBuild,
+  moveFile,
   readInFlight,
   recoverInterruptedInstall,
   sweepOldBinaries,
@@ -273,6 +275,37 @@ describe('going back', () => {
     expect(undoInstall(result.inFlight, dataDir)).toMatchObject({ ok: false })
   })
 
+  it('returns the failed build to the updates directory, so a retry is a rename', () => {
+    // The swap *moves* the download into place, so deleting the installed
+    // file on rollback threw away the only copy — and "Try again" then went
+    // looking for a file the install had consumed, turning every retry into
+    // another two hundred megabytes over a venue's uplink.
+    const result = install()
+    if (!result.ok) return
+    expect(existsSync(build)).toBe(false)
+    expect(undoInstall(result.inFlight, dataDir)).toEqual({ ok: true })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+    expect(readFileSync(build, 'utf8')).toBe('the new box')
+  })
+
+  it('rolls back anyway when the download cannot be returned', () => {
+    const result = install()
+    if (!result.ok) return
+    // The updates directory has gone — a tidy-up, a different disk. Getting
+    // the box back on its old binary still matters more than the retry.
+    rmSync(dirname(build), { recursive: true, force: true })
+    expect(undoInstall(result.inFlight, dataDir)).toEqual({ ok: true })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+  })
+
+  it('keeps a note of where the download was, across a power cut', () => {
+    // The marker is what a *different process* rolls back from, so a field
+    // the reader drops is a field the rollback does not have.
+    const result = install()
+    if (!result.ok) return
+    expect(readInFlight(dataDir)?.buildPath).toBe(build)
+  })
+
   it('drops the backup once the new box has proved itself', () => {
     const result = install()
     if (!result.ok) return
@@ -280,6 +313,61 @@ describe('going back', () => {
     expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(false)
     expect(existsSync(inFlightPath(dataDir))).toBe(false)
     expect(readFileSync(target, 'utf8')).toBe('the new box')
+  })
+})
+
+describe('moving a file the ordinary way will not', () => {
+  /**
+   * The updates directory and the binary do not have to share a filesystem.
+   *
+   * `/usr/local/bin/crewbox` with its data on `/home`, or on a USB stick, is
+   * an ordinary layout and an EXDEV every time — so the install simply could
+   * not happen, reported as a rename failure nobody would connect to the
+   * cause. Run against two real filesystems rather than a faked errno,
+   * because the thing being defended is what the kernel actually does.
+   */
+  const crossFs = (): string | null => {
+    // Linux gives a tmpfs at /dev/shm that is never the same filesystem as
+    // the temp dir here. Elsewhere there is no portable second one, and a
+    // test that quietly proves nothing is worse than one that says so.
+    try {
+      const probe = join('/dev/shm', `crewbox-xdev-${process.pid}`)
+      writeFileSync(probe, 'probe')
+      try {
+        renameSync(probe, join(dataDir, 'probe'))
+        return null // same filesystem: nothing to test here
+      } catch (err) {
+        return (err as NodeJS.ErrnoException).code === 'EXDEV' ? '/dev/shm' : null
+      } finally {
+        rmSync(probe, { force: true })
+        rmSync(join(dataDir, 'probe'), { force: true })
+      }
+    } catch {
+      return null
+    }
+  }
+
+  it('falls back to a copy when a rename crosses a filesystem', () => {
+    const other = crossFs()
+    if (!other) return
+    const from = join(other, `crewbox-xdev-build-${process.pid}`)
+    const to = join(dataDir, 'crewbox')
+    writeFileSync(from, 'the new box')
+    try {
+      // The bare rename is what used to happen, and it is why this exists.
+      expect(() => renameSync(from, to)).toThrow(/EXDEV/)
+      moveFile(from, to)
+      expect(readFileSync(to, 'utf8')).toBe('the new box')
+      expect(existsSync(from)).toBe(false)
+    } finally {
+      rmSync(from, { force: true })
+    }
+  })
+
+  it('passes any other rename failure straight through', () => {
+    // A missing source is not something to paper over with a copy that would
+    // fail the same way one line later.
+    expect(() => moveFile(join(dataDir, 'nothing.bin'), join(dataDir, 'x.bin'))).toThrow()
   })
 })
 

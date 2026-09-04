@@ -264,8 +264,13 @@ export class UpdateService {
         })`
       )
     }
+    // The snapshot is named rather than restored. A forward-only migration
+    // the new build ran is still in the database the old one is now serving,
+    // and putting a copy back over a live database while crew are typing into
+    // it is not a decision this can make on its own — but it is the one thing
+    // somebody would want to know where to find.
     const detail = restarted.rolledBack
-      ? 'the previous version has been put back'
+      ? `the previous version has been put back (its database is copied at ${snapshot.snapshot.path} if ${version} migrated anything)`
       : `the previous version could NOT be put back${
           restarted.rollbackError ? `: ${restarted.rollbackError}` : ''
         }`

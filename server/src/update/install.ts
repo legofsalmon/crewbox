@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { OLD_APP_SUFFIX, installMacApp, relaunchCommand, type MacIo } from './macapp.ts'
 
@@ -93,6 +101,18 @@ export interface InFlight {
   /** The database copy taken first, when there was one. */
   snapshotPath: string | null
   /**
+   * Where the verified download came from, when it is known.
+   *
+   * The swap is a rename, so after it there is no copy left in the updates
+   * directory — and a rollback that simply deleted the installed file threw
+   * away the one thing "Try again" needs, turning every retry into another
+   * two-hundred-megabyte download over a venue's uplink. `undoInstall` puts
+   * it back here instead. Optional because a marker written by an older box
+   * will not have it, and a marker that fails to parse is a rollback that
+   * cannot happen.
+   */
+  buildPath?: string
+  /**
    * How to start it again. A bare binary is its own launcher; a bundle has
    * to go through `open`, or LaunchServices never hears about it and the
    * menu bar never appears.
@@ -151,6 +171,7 @@ export function installBuild(options: InstallOptions): InstallResult {
     targetPath: target.path,
     backupPath,
     snapshotPath: options.snapshotPath ?? null,
+    buildPath,
     relaunch: { command: target.path, args: [] },
     startedAt: at,
   }
@@ -184,7 +205,9 @@ export function installBuild(options: InstallOptions): InstallResult {
   }
 
   try {
-    renameSync(buildPath, target.path)
+    // The one move here that can cross a filesystem: the download lives under
+    // the data directory and the binary does not have to.
+    moveFile(buildPath, target.path)
   } catch (err) {
     // Put it back rather than leaving a box with no binary at its own path.
     // This is the one failure that would otherwise be unrecoverable without
@@ -293,9 +316,26 @@ export function undoInstall(
     return { ok: false, reason: `there is no ${inFlight.backupPath} to go back to` }
   }
   try {
-    // The failed new build is in the way; it is verified and still in the
-    // updates directory, so losing this copy costs a rename, not a download.
-    rmSync(inFlight.targetPath, { force: true, recursive: true })
+    // The failed new build is in the way, and it is the only copy: the swap
+    // moved it out of the updates directory rather than copying it. Put it
+    // back there, so "Try again" is a rename and not another two hundred
+    // megabytes over a venue's uplink. A bundle has no download to return —
+    // `installMacApp` owns that path — and anything that goes wrong here is
+    // not worth failing a rollback over.
+    let returned = false
+    if (inFlight.kind !== 'app-bundle' && inFlight.buildPath) {
+      try {
+        // Windows will not rename onto an existing name, and the swap should
+        // have left nothing here anyway.
+        rmSync(inFlight.buildPath, { force: true })
+        moveFile(inFlight.targetPath, inFlight.buildPath)
+        returned = true
+      } catch {
+        // Out of space, or a directory that has gone. It is a download, and
+        // the box being on the right binary matters more.
+      }
+    }
+    if (!returned) rmSync(inFlight.targetPath, { force: true, recursive: true })
     renameSync(inFlight.backupPath, inFlight.targetPath)
     // A bundle has no single executable bit to put back — the signature and
     // the modes inside it came over with the directory.
@@ -363,6 +403,10 @@ export function readInFlight(dataDir: string): InFlight | null {
       targetPath: r.targetPath,
       backupPath: r.backupPath,
       snapshotPath: typeof r.snapshotPath === 'string' ? r.snapshotPath : null,
+      // Optional for the same reason as `relaunch`: a marker can outlive the
+      // build that wrote it. Without it a rollback deletes the download
+      // instead of returning it, which costs a retry and nothing else.
+      ...(typeof r.buildPath === 'string' ? { buildPath: r.buildPath } : {}),
       relaunch,
       startedAt: r.startedAt,
     }
@@ -393,6 +437,31 @@ export function clearInFlight(dataDir: string): void {
 export function sameVersion(a: string, b: string): boolean {
   const strip = (v: string) => v.replace(/^v/, '').split('+')[0]!.trim()
   return strip(a) === strip(b)
+}
+
+/**
+ * Move a file, including onto a different filesystem.
+ *
+ * `renameSync` is the whole reason an install is survivable — it is atomic,
+ * and it works on a file that is currently executing. But it only works
+ * within one filesystem, and the two paths here are the data directory and
+ * wherever the binary lives. A box with `/usr/local/bin/crewbox` and its data
+ * on `/home`, or on a USB stick, is an ordinary layout and an EXDEV every
+ * time: the update simply could not be installed, with a message about a
+ * rename nobody would connect to the cause.
+ *
+ * So: try the rename, and on EXDEV only, copy and remove. The copy is not
+ * atomic, which is why it is the fallback and not the method — every caller
+ * that can use a rename still does.
+ */
+export function moveFile(from: string, to: string): void {
+  try {
+    renameSync(from, to)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err
+    copyFileSync(from, to)
+    rmSync(from, { force: true })
+  }
 }
 
 export type RecoveryOutcome =

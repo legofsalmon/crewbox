@@ -40,11 +40,12 @@ const digest = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 
 type Answer = Awaited<ReturnType<DownloadIo['fetch']>>
 
-function releaseServer(asset: string): DownloadIo {
+function releaseServer(asset: string, fetched: string[] = []): DownloadIo {
   const manifest = `${digest(BODY)}  ${asset}\n`
   const signature = signWith(null, Buffer.from(manifest, 'utf8'), privateKey).toString('base64')
   return {
     fetch: (url) => {
+      fetched.push(url)
       const name = url.split('/').pop() ?? ''
       const body = name.endsWith('.sig')
         ? Buffer.from(signature)
@@ -103,7 +104,11 @@ function restartIo(answers: ({ ok: true; version: string } | null)[]): RestartIo
   }
 }
 
-const service = (answers: ({ ok: true; version: string } | null)[], packaged = true) =>
+const service = (
+  answers: ({ ok: true; version: string } | null)[],
+  packaged = true,
+  fetched: string[] = []
+) =>
   new UpdateService({
     dataDir: dir,
     dbPath,
@@ -121,7 +126,7 @@ const service = (answers: ({ ok: true; version: string } | null)[], packaged = t
     packaged,
     target: { kind: 'binary', path: target },
     keys: KEYS,
-    downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`),
+    downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`, fetched),
     restartIo: restartIo(answers),
     platform: 'linux',
     base: 'https://example.test',
@@ -300,6 +305,31 @@ describe('when the new box will not come up', () => {
     await s.install()
     expect(s.state().stage).toBe('failed')
     expect(s.state().error).toBeTruthy()
+  })
+
+  it('can install again after a rollback, without downloading again', async () => {
+    // The swap moves the download into place, so a rollback that deleted the
+    // installed file left "Try again" pointing at a file the install had
+    // consumed — every retry another two hundred megabytes over a venue's
+    // uplink, on a box that has just proved its uplink is what it is.
+    const s = service([])
+    s.start(VERSION)
+    await settle(s)
+    await s.install()
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+    s.reset()
+    expect(s.state().stage).toBe('ready')
+
+    events.length = 0
+    const fetched: string[] = []
+    const again = service([{ ok: true, version: '0.18.0' }], true, fetched)
+    again.start(VERSION)
+    await settle(again)
+    // The manifest and its signature again — cheap, and they are what prove
+    // the file on disk is still the right one — but not the build.
+    expect(fetched.some((u) => u.endsWith(`crewbox-linux-x64-${VERSION}`))).toBe(false)
+    expect(await again.install()).toEqual({ ok: true })
+    expect(readFileSync(target, 'utf8')).toBe('a plausible new crewbox')
   })
 
   it('can be reset back to the verified build, without downloading again', async () => {

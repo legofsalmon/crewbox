@@ -187,8 +187,29 @@ export async function downloadBuild(options: DownloadOptions): Promise<DownloadR
 
   // Written under `.part` and renamed only now. A file at the real name is a
   // file that passed every check — nothing downstream has to wonder.
-  await writeFile(partPath, asset.body)
-  renameSync(partPath, finalPath)
+  //
+  // Guarded because this function is documented never to throw and a build is
+  // the size of a full disk's worth of headroom: ENOSPC here would escape as
+  // an exception into a caller whose catch says "reaching here means a bug".
+  // A box that cannot fit the download should say so and keep serving.
+  try {
+    await writeFile(partPath, asset.body)
+    renameSync(partPath, finalPath)
+  } catch (err) {
+    try {
+      // Recursive, and inside its own try: whatever is at that path is not
+      // necessarily the file this expected, and a cleanup that throws would
+      // put the exception straight back into the caller this exists to spare.
+      rmSync(partPath, { force: true, recursive: true })
+    } catch {
+      // A `.part` that will not go is clutter. sweepPartials tries again.
+    }
+    return {
+      ok: false,
+      stage: 'asset',
+      reason: `could not save ${assetName}: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
   options.log?.info(`update ${version}: downloaded and verified (${assetName})`)
 
   return {
