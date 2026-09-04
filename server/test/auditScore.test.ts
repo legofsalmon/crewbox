@@ -45,6 +45,7 @@ const universe = (over: Partial<UniverseHealth> = {}): UniverseHealth => ({
 const ptp = (over: Partial<ClockStatus> = {}): ClockStatus => ({
   grandmasterId: '00:1d:c1:ff:fe:00:00:01',
   domain: 0,
+  domains: 1,
   priority1: 128,
   clockClass: 248,
   since: NOW - 3_600_000,

@@ -36,6 +36,16 @@ export const MAX_KEYS_PER_METRIC = 64
 export const MAX_EVENTS_PER_HOUR = 500
 
 /**
+ * Rows one `bundle` page may return.
+ *
+ * A festival's week is tens of thousands of per-minute rollups across a few
+ * dozen keys; serialising that in one go, on the loop the show runs on, is
+ * the whole reason this cap exists. Twenty thousand rows is a couple of
+ * megabytes of JSON — a request the box notices and recovers from.
+ */
+export const BUNDLE_PAGE = 20_000
+
+/**
  * Every metric the collector writes. The series endpoint validates against
  * this list, so a request can't turn arbitrary strings into table scans.
  */
@@ -163,14 +173,58 @@ export class MetricsStore {
   }
 
   /** Every series in one span — the export's single fetch. */
-  bundle(from: number, to: number): RollupRow[] {
+  /**
+   * A page of rollups, for an exporter.
+   *
+   * Bounded, and paged. It used to be one query for the whole span, built
+   * into one JSON response on the event loop, callable by any crew session
+   * — a festival's week of per-minute rollups across a few dozen metric
+   * keys is tens of thousands of rows to hundreds of megabytes of JSON, and
+   * the box serves the show from the same loop. One request could take
+   * comms down for as long as it took to serialise.
+   *
+   * `after` continues from the last row of the previous page, in the same
+   * (metric, key, ts) order the query is sorted by, so paging cannot skip
+   * or repeat a row even while the collector is still writing.
+   */
+  bundle(
+    from: number,
+    to: number,
+    limit = BUNDLE_PAGE,
+    after?: { metric: string; key: string; ts: number }
+  ): RollupRow[] {
+    const capped = Math.min(Math.max(1, Math.floor(limit)), BUNDLE_PAGE)
+    if (!after) {
+      return this.db
+        .prepare(
+          `SELECT ts, metric, key, min, avg, max, count FROM audit_metrics
+           WHERE ts >= ? AND ts <= ?
+           ORDER BY metric ASC, key ASC, ts ASC
+           LIMIT ?`
+        )
+        .all(from, to, capped) as unknown as MetricRow[]
+    }
     return this.db
       .prepare(
         `SELECT ts, metric, key, min, avg, max, count FROM audit_metrics
          WHERE ts >= ? AND ts <= ?
-         ORDER BY metric ASC, key ASC, ts ASC`
+           AND (metric > ?
+                OR (metric = ? AND key > ?)
+                OR (metric = ? AND key = ? AND ts > ?))
+         ORDER BY metric ASC, key ASC, ts ASC
+         LIMIT ?`
       )
-      .all(from, to) as unknown as MetricRow[]
+      .all(
+        from,
+        to,
+        after.metric,
+        after.metric,
+        after.key,
+        after.metric,
+        after.key,
+        after.ts,
+        capped
+      ) as unknown as MetricRow[]
   }
 
   recordEvent(event: Omit<AuditEvent, 'id'>): AuditEvent {

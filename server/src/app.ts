@@ -44,7 +44,7 @@ import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
-import { AUDIT_METRICS, type MetricsStore } from './audit/metrics.ts'
+import { AUDIT_METRICS, BUNDLE_PAGE, type MetricsStore } from './audit/metrics.ts'
 
 /**
  * How far back the comms-quality row looks.
@@ -1525,16 +1525,43 @@ export function buildApp({
     const bundleQuerySchema = z.object({
       from: z.coerce.number().int().min(0),
       to: z.coerce.number().int().min(0),
+      limit: z.coerce.number().int().min(1).optional(),
+      // The last row of the previous page, in the order the query sorts by.
+      afterMetric: z.string().max(64).optional(),
+      afterKey: z.string().max(128).optional(),
+      afterTs: z.coerce.number().int().min(0).optional(),
     })
 
+    /**
+     * The raw rollups, for an exporter.
+     *
+     * Admin, and paged. It was neither: any crew session could ask for a
+     * festival's week and the box would build the lot into one JSON
+     * response on the loop it serves the show from — tens of thousands of
+     * rows, hundreds of megabytes, comms down for as long as it took. The
+     * pane itself has never used this route; it exists for an export nobody
+     * has written yet, which is not a reason to leave it dangerous.
+     */
     fastify.get('/api/audit/bundle', (req, reply) => {
-      const user = authUser(req)
-      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      if (!authAdmin(req, reply)) return reply
       const parsed = bundleQuerySchema.safeParse(req.query)
       if (!parsed.success) return reply.code(400).send({ error: 'invalid query' })
-      const { from, to } = parsed.data
+      const { from, to, limit, afterMetric, afterKey, afterTs } = parsed.data
       const clampedFrom = Math.max(from, to - 7 * 24 * 60 * 60_000)
-      return { rows: metrics ? metrics.bundle(clampedFrom, to) : [] }
+      const after =
+        afterMetric !== undefined && afterKey !== undefined && afterTs !== undefined
+          ? { metric: afterMetric, key: afterKey, ts: afterTs }
+          : undefined
+      const rows = metrics ? metrics.bundle(clampedFrom, to, limit ?? BUNDLE_PAGE, after) : []
+      const last = rows.at(-1)
+      return {
+        rows,
+        // Present only when there may be more: the caller passes these three
+        // back as afterMetric/afterKey/afterTs.
+        ...(rows.length === Math.min(limit ?? BUNDLE_PAGE, BUNDLE_PAGE) && last
+          ? { next: { metric: last.metric, key: last.key, ts: last.ts } }
+          : {}),
+      }
     })
   }
 
@@ -2324,7 +2351,10 @@ export function buildApp({
               netwatch.ptp.status(Date.now()),
               netwatch.mdns.roster(),
               netwatch.sap.roster(),
-              Date.now()
+              Date.now(),
+              // A roster at its cap is a misbehaving network, and the list
+              // stops being the answer to "what is out there".
+              { devices: netwatch.mdns.overflow(), streams: netwatch.sap.overflow() }
             ),
           }
         : {}),

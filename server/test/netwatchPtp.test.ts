@@ -69,11 +69,16 @@ describe('parsing the wire', () => {
 
 describe('the grandmaster ledger', () => {
   it('one election at power-up is steady, not churn', () => {
+    // The first announce this box hears is the clock it arrived to, not a
+    // clock that moved. Recording it as a change meant the scorer graded
+    // every start as "the clock is moving" for ten minutes — on a network
+    // where nothing had happened at all. `since` carries when the reign
+    // began, which is the thing worth knowing.
     const state = new PtpState()
     for (let i = 0; i < 10; i++) state.apply(parsePtp(announce(GM_A))!, 1000 + i * 2000)
     const status = state.status(21_000)
     expect(status.grandmasterId).toBe('00:1d:c1:ff:fe:11:22:33')
-    expect(status.changes).toHaveLength(1) // the initial election only
+    expect(status.changes).toEqual([])
     expect(status.since).toBe(1000)
   })
 
@@ -84,7 +89,8 @@ describe('the grandmaster ledger', () => {
     state.apply(parsePtp(announce(GM_A))!, 9000)
     state.apply(parsePtp(announce(GM_B))!, 13_000)
     const status = state.status(14_000)
-    expect(status.changes).toHaveLength(4)
+    // Three handovers between four announces — the first is arrival.
+    expect(status.changes).toHaveLength(3)
     expect(status.changes[0]!.to).toBe('00:0a:92:ff:fe:44:55:66')
     // Two clocks announced within the timeout: the election is visibly live.
     expect(status.announcers).toBe(2)
@@ -96,8 +102,39 @@ describe('the grandmaster ledger', () => {
     state.sweep(1000 + GRANDMASTER_TIMEOUT_MS + 1)
     const status = state.status(1000 + GRANDMASTER_TIMEOUT_MS + 1)
     expect(status.grandmasterId).toBeNull()
-    // A powered-down rig is not an election war.
-    expect(status.changes).toHaveLength(1)
+    // A powered-down rig is not an election war — and neither was its
+    // arrival, so there is nothing in the ledger at all.
+    expect(status.changes).toEqual([])
+  })
+
+  it('does not read two stable domains as one clock changing hands', () => {
+    // Dante on domain 0 and a video reference on 127 is an ordinary rig.
+    // The ledger kept one grandmaster across every domain, so two clocks
+    // that never moved traded the crown at announce rate — several times a
+    // second, straight past "an election war", for a network where nothing
+    // was wrong.
+    const state = new PtpState()
+    for (let i = 0; i < 6; i++) {
+      state.apply(parsePtp(announce(GM_A, { domain: 0 }))!, 1000 + i * 1000)
+      state.apply(parsePtp(announce(GM_B, { domain: 127 }))!, 1500 + i * 1000)
+    }
+    const status = state.status(7000)
+    expect(status.changes).toEqual([])
+    expect(status.domains).toBe(2)
+    // Each domain has exactly one clock announcing, so no election either.
+    expect(status.announcers).toBe(1)
+  })
+
+  it('still catches a war inside one domain while another is quiet', () => {
+    const state = new PtpState()
+    state.apply(parsePtp(announce(GM_A, { domain: 0 }))!, 1000)
+    state.apply(parsePtp(announce(GM_A, { domain: 127 }))!, 1100)
+    state.apply(parsePtp(announce(GM_B, { domain: 127 }))!, 2000)
+    state.apply(parsePtp(announce(GM_A, { domain: 127 }))!, 3000)
+    const status = state.status(3500)
+    // The busiest domain is 127, and it really is trading hands.
+    expect(status.domain).toBe(127)
+    expect(status.changes).toHaveLength(2)
   })
 
   it('lets old changes age out of the story', () => {

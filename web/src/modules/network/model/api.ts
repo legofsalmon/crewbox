@@ -51,5 +51,8 @@ export function fetchBundle(
     count: number
   }>
 }> {
+  // Admin-gated and paged since the route could build a festival's week
+  // into one response on the box's own event loop. `next` in the reply
+  // carries the three values to pass back as the `after*` query parameters.
   return get(`/api/audit/bundle?from=${from}&to=${to}`, token)
 }

@@ -135,7 +135,20 @@ describe('/api/audit/series', () => {
 })
 
 describe('/api/audit/bundle', () => {
-  it('needs a session and returns every series in the span', async () => {
+  const asAdmin = async (name: string) => {
+    const token = await join_(name)
+    const unlock = await app.inject({
+      method: 'POST',
+      url: '/api/admin/unlock',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { password: ADMIN_PASSWORD },
+    })
+    expect(unlock.statusCode).toBe(200)
+    const { adminToken } = unlock.json() as { adminToken: string }
+    return { authorization: `Bearer ${token}`, 'x-admin-token': adminToken }
+  }
+
+  it('needs an admin and returns every series in the span', async () => {
     const now = Date.now()
     metrics.flush([
       { ts: now - 60_000, metric: 'crew.connections', key: '', min: 1, avg: 1, max: 1, count: 1 },
@@ -144,14 +157,63 @@ describe('/api/audit/bundle', () => {
     expect(
       (await app.inject({ method: 'GET', url: `/api/audit/bundle?from=0&to=${now}` })).statusCode
     ).toBe(401)
-    const token = await join_('Bo')
+    // A plain crew session is not enough any more: this route can build a
+    // festival's week into one response on the loop the show runs on.
+    const crew = await join_('Bo')
+    const denied = await app.inject({
+      method: 'GET',
+      url: `/api/audit/bundle?from=0&to=${now}`,
+      headers: { authorization: `Bearer ${crew}` },
+    })
+    expect([401, 403]).toContain(denied.statusCode)
+
     const res = await app.inject({
       method: 'GET',
       url: `/api/audit/bundle?from=0&to=${now}`,
-      headers: { authorization: `Bearer ${token}` },
+      headers: await asAdmin('Boss1'),
     })
     const body = res.json() as { rows: Array<{ metric: string }> }
     expect(body.rows.map((r) => r.metric).sort()).toEqual(['crew.connections', 'dmx.rateHz'])
+  })
+
+  it('pages rather than serialising a festival in one go', async () => {
+    const now = Date.now()
+    metrics.flush(
+      Array.from({ length: 12 }, (_, i) => ({
+        ts: now - (12 - i) * 60_000,
+        metric: 'crew.connections',
+        key: '',
+        min: i,
+        avg: i,
+        max: i,
+        count: 1,
+      }))
+    )
+    const headers = await asAdmin('Boss2')
+    const first = await app.inject({
+      method: 'GET',
+      url: `/api/audit/bundle?from=0&to=${now}&limit=5`,
+      headers,
+    })
+    const page1 = first.json() as {
+      rows: Array<{ ts: number }>
+      next?: { metric: string; key: string; ts: number }
+    }
+    expect(page1.rows).toHaveLength(5)
+    expect(page1.next).toBeTruthy()
+
+    const second = await app.inject({
+      method: 'GET',
+      url:
+        `/api/audit/bundle?from=0&to=${now}&limit=5&afterMetric=${page1.next!.metric}` +
+        `&afterKey=${page1.next!.key}&afterTs=${page1.next!.ts}`,
+      headers,
+    })
+    const page2 = second.json() as { rows: Array<{ ts: number }> }
+    expect(page2.rows).toHaveLength(5)
+    // Continues rather than repeating: no row appears in both pages.
+    const seen = new Set(page1.rows.map((r) => r.ts))
+    expect(page2.rows.every((r) => !seen.has(r.ts))).toBe(true)
   })
 })
 
