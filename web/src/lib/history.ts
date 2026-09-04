@@ -51,3 +51,26 @@ export function needsBackfill(
 ): string[] {
   return truncated.filter((id) => !messages[id]?.length)
 }
+
+/**
+ * Is this the same database the cache was built against?
+ *
+ * A resume cursor is a bare sequence number, and sequence numbers come from
+ * `MAX(seq)` over live rows — so restoring a backup, or swapping to the spare
+ * box, starts the count below every phone's cursor. The box then had nothing
+ * to say and the crew heard nothing, for as long as it took the counter to
+ * climb past a number nobody could see.
+ *
+ * The cached messages go with the cursors, because they are numbered against
+ * a database that is not here any more and two messages at the same seq are
+ * two different messages. The outbox does not: what somebody typed is theirs,
+ * and the box dedupes the replay by client id.
+ *
+ * Only a *changed* epoch resets anything. A phone that has never seen one —
+ * a first connection, or a box too old to send it — keeps what it has, which
+ * is the behaviour that was always right.
+ */
+export function databaseChanged(seen: string | null, offered: string | undefined): boolean {
+  if (!offered || !seen) return false
+  return seen !== offered
+}

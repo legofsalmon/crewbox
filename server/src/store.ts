@@ -52,6 +52,14 @@ interface MessageRow {
 }
 
 /** messages joined with their file attachment, aliased for toMessage. */
+/**
+ * The settings key holding this database's identity.
+ *
+ * Reaches a real box's database — do not rename it, or every phone on site
+ * drops its cache the next time it connects.
+ */
+export const DB_EPOCH_KEY = 'dbEpoch'
+
 const MSG_SELECT = `
   SELECT m.*, f.name AS file_name, f.mime AS file_mime, f.size AS file_size,
          f.width AS file_width, f.height AS file_height, f.thumb_path AS file_thumb
@@ -670,6 +678,28 @@ export class Store {
   // -- settings -------------------------------------------------------------
 
   /** Raw runtime setting, or undefined if never set (falls back to env/default). */
+  /**
+   * Which database this is, minted once and kept for its life.
+   *
+   * Restoring a backup or swapping to a spare box brings a *different*
+   * database, and the only thing that made them look the same was that
+   * nothing ever asked. Sequence numbers come from `MAX(seq)` over live rows,
+   * so a restored box counts from below every phone's cursor and every
+   * channel is skipped as "nothing new" — silently, on both sides. This
+   * travels in the welcome so a phone can tell.
+   *
+   * It comes back with the rows in a restore, which is the point: a restored
+   * database is the same database and keeps its epoch, while a spare box
+   * mints its own.
+   */
+  dbEpoch(): string {
+    const existing = this.getSetting(DB_EPOCH_KEY)
+    if (existing) return existing
+    const minted = newId()
+    this.setSetting(DB_EPOCH_KEY, minted)
+    return minted
+  }
+
   getSetting(key: string): string | undefined {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
       { value: string } | undefined

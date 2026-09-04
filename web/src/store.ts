@@ -23,7 +23,7 @@ import {
   type QueuedIncident,
 } from './modules/incident/model/outbox.ts'
 import { flushOrder, shouldDrop } from './lib/flush.ts'
-import { needsBackfill, pageFrom } from './lib/history.ts'
+import { databaseChanged, needsBackfill, pageFrom } from './lib/history.ts'
 import { WsClient } from './lib/ws.ts'
 import * as api from './lib/api.ts'
 import {
@@ -47,6 +47,13 @@ const THEME_KEY = 'crewbox:theme'
 const SSID_KEY = 'crewbox:wifi-ssid'
 const EVENT_NAME_KEY = 'crewbox:event-name'
 const MODULES_KEY = 'crewbox:modules'
+/**
+ * The database this phone's cached messages are numbered against.
+ *
+ * Reaches real devices — renaming it makes every phone on site drop its cache
+ * once. See the epoch check in handleWelcome.
+ */
+const DB_EPOCH_KEY = 'crewbox:db-epoch'
 const TYPING_TTL_MS = 4000
 const TYPING_THROTTLE_MS = 2500
 
@@ -503,11 +510,32 @@ export const useStore = create<AppState>()((set, get) => {
 
     // Channels where the replay was truncated have a gap between our cache
     // and the replayed batch — drop the stale cache, keep only the fresh tail.
-    const messages = { ...state.messages }
+    let messages = { ...state.messages }
     for (const channelId of msg.truncated) {
       messages[channelId] = []
       void cache.clearChannel(channelId)
     }
+
+    // Is this the same database it was?
+    //
+    // A resume cursor is a bare sequence number and sequence numbers come
+    // from `MAX(seq)` over live rows, so restoring a backup — or swapping to
+    // the spare box — starts the count below every phone's cursor. Every
+    // channel then looks like "nothing new" to the box and nothing to the
+    // crew, silently, for as long as it takes the counter to climb past a
+    // number nobody can see. The runbook promises phones "reconnect on their
+    // own and stay signed in", and they do; they just stop being told
+    // anything.
+    //
+    // Cached messages go with the cursors: they are numbered against a
+    // database that is not here any more, and two messages at the same seq
+    // are two different messages. The outbox stays — what somebody typed is
+    // theirs, and the box dedupes the replay by client id.
+    if (databaseChanged(localStorage.getItem(DB_EPOCH_KEY), msg.dbEpoch)) {
+      messages = {}
+      void cache.wipeMessagesOnly()
+    }
+    remember(DB_EPOCH_KEY, msg.dbEpoch)
 
     rememberConfig(msg.config)
     set({

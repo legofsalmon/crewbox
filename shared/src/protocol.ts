@@ -240,6 +240,26 @@ export interface WelcomeMessage {
   truncated: string[]
   /** Recently deleted messages, so returning clients drop stale cache entries. */
   deletions: { channelId: string; messageId: string }[]
+  /**
+   * Which database this box is serving.
+   *
+   * A resume cursor is a bare sequence number, and sequence numbers come from
+   * `MAX(seq)` over live rows — so restoring from a backup, or swapping to a
+   * spare box, puts the server's counter *below* every phone's cursor. Every
+   * channel is then skipped as "nothing new" and nobody notices, because
+   * nothing in the welcome said which database it came from. The runbook
+   * promises crew phones "reconnect on their own and stay signed in"; they
+   * did, and then saw nothing sent on the restored box until its counter
+   * climbed past a stale cursor, hours later.
+   *
+   * A phone that sees this change treats every cursor as zero and drops its
+   * cached messages — they are numbered against a database that is no longer
+   * there, and two of them at the same seq are two different messages.
+   *
+   * Optional: a box that predates it simply does not send it, and a client
+   * that sees none keeps whatever it had. No PROTOCOL_VERSION bump.
+   */
+  dbEpoch?: string
 }
 
 export interface MsgMessage {

@@ -445,7 +445,14 @@ export class Hub {
     // truncated, and the client backfills those channels over REST on demand.
     let budget = MISSED_TOTAL_LIMIT
     for (const channel of channels) {
-      const afterSeq = msg.cursors[channel.id] ?? 0
+      const claimed = msg.cursors[channel.id] ?? 0
+      // A cursor past the end of the channel is a cursor from another
+      // database — a restore, or a spare box. Believing it skips the channel
+      // silently, so it is treated as no cursor at all and the client gets
+      // the tail. `dbEpoch` above is how the client knows to drop what it was
+      // holding; this is what gets it something to replace it with, including
+      // on a client too old to read the epoch.
+      const afterSeq = claimed > channel.lastSeq ? 0 : claimed
       if (channel.lastSeq <= afterSeq) continue
       const perChannel = Math.min(MISSED_LIMIT, budget)
       if (perChannel <= 0) {
@@ -484,6 +491,9 @@ export class Hub {
         channels.map((c) => c.id),
         Date.now() - DELETION_REPLAY_MS
       ),
+      // Which database this is. A phone that sees it change knows its cursors
+      // and its cached messages belong to one that is no longer here.
+      dbEpoch: this.store.dbEpoch(),
     })
     // Straight after the welcome, and only when somebody is actually live:
     // a device joining mid-show has to arrive already knowing, or its red

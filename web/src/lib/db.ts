@@ -138,6 +138,17 @@ export const cache = {
   },
 
   /**
+   * Just the cached messages, for a box whose database changed underneath.
+   *
+   * A restore or a spare-box swap brings different rows at the same sequence
+   * numbers, so what is held is not stale — it is somebody else's. The
+   * snapshot and the outbox are not numbered that way and stay.
+   */
+  async wipeMessagesOnly(): Promise<void> {
+    await bestEffort(() => db.messages.clear())
+  },
+
+  /**
    * Everything except what has not been sent yet.
    *
    * For a session the box has rejected: the token is finished, but the

@@ -1584,3 +1584,83 @@ describe('a socket that has not said hello', () => {
     expect(error.code).toBe('auth')
   })
 })
+
+/**
+ * A box whose database went backwards.
+ *
+ * Restoring from a backup, or swapping to the spare box, brings a *different*
+ * database — and `seq` comes from `MAX(seq)` over live rows, so the counter
+ * starts below every phone's cursor. Every channel then looked like "nothing
+ * new" to the box and nothing at all to the crew, silently, for as long as it
+ * took the counter to climb past a number nobody could see. The runbook
+ * promises phones "reconnect on their own and stay signed in". They did.
+ */
+describe('a box whose database went backwards', () => {
+  /** Post `count` messages and hand back the channel and their real seqs. */
+  const fill = (count: number) => {
+    const general = store.getChannelByName('general')!
+    const seqs: number[] = []
+    for (let i = 0; i < count; i++) {
+      const { message } = store.appendMessage({
+        channelId: general.id,
+        authorId: null,
+        kind: 'text',
+        body: `m${i}`,
+      })
+      seqs.push(message.seq)
+    }
+    return { general, seqs }
+  }
+
+  it('sends the tail when a cursor is ahead of the whole channel', async () => {
+    const token = await join('Restored')
+    const { general } = fill(20)
+    // The phone's cursor from before the restore, far past this box's end.
+    const { welcome } = await connect(token, { [general.id]: 421 })
+    const replayed = welcome.missed.filter((m) => m.channelId === general.id)
+    // Everything the channel holds, ending where it really ends — not the
+    // silence the box used to answer with.
+    expect(replayed.length).toBeGreaterThan(0)
+    expect(replayed.at(-1)!.body).toBe('m19')
+    expect(replayed.map((m) => m.body)).toContain('m0')
+  })
+
+  it('says which database it is', async () => {
+    const token = await join('Epoch')
+    const { welcome } = await connect(token)
+    expect(welcome.dbEpoch).toBeTruthy()
+  })
+
+  it('keeps the same epoch across reconnects, so a phone is not reset for nothing', async () => {
+    const token = await join('Stable')
+    const first = await connect(token)
+    const second = await connect(token)
+    expect(second.welcome.dbEpoch).toBe(first.welcome.dbEpoch)
+  })
+
+  it('keeps it across a restore, because a restored database is the same one', () => {
+    // It travels with the rows, which is the point: a restore keeps its
+    // identity and a fresh box mints its own.
+    const epoch = store.dbEpoch()
+    const other = new Store(openDb(':memory:'))
+    other.createChannel('general', 'public', 'Everyone')
+    expect(other.dbEpoch()).not.toBe(epoch)
+    expect(store.dbEpoch()).toBe(epoch)
+  })
+
+  it('still honours a cursor that is merely behind', async () => {
+    // The clamp must not throw away ordinary resume.
+    const token = await join('Ordinary')
+    const { general, seqs } = fill(20)
+    const { welcome } = await connect(token, { [general.id]: seqs[14]! })
+    const replayed = welcome.missed.filter((m) => m.channelId === general.id)
+    expect(replayed.map((m) => m.body)).toEqual(['m15', 'm16', 'm17', 'm18', 'm19'])
+  })
+
+  it('sends nothing when the cursor is exactly the end', async () => {
+    const token = await join('Caught Up')
+    const { general, seqs } = fill(20)
+    const { welcome } = await connect(token, { [general.id]: seqs.at(-1)! })
+    expect(welcome.missed.filter((m) => m.channelId === general.id)).toEqual([])
+  })
+})
