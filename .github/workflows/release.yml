@@ -409,6 +409,14 @@ jobs:
             ./gradlew assembleDebug
             cp app/build/outputs/apk/debug/app-debug.apk ../../crewbox.apk
           fi
+      # Before it is published, not after 40 phones have installed it. The
+      # shipped manifest is ours merged with every library's, so a permission
+      # can go missing (voice was dead in the native app for a whole release
+      # that way — an undeclared permission is denied with no prompt, so
+      # there is nothing to see) or arrive uninvited, on a file crew are
+      # asked to sideload from a QR code in a tent.
+      - name: Check the APK's permissions
+        run: node scripts/check-apk-permissions.mjs crewbox.apk
       - uses: actions/upload-artifact@v4
         with:
           name: apk

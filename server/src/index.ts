@@ -27,6 +27,7 @@ import {
   startTrayHelper,
   stopRunningBox,
   writeBoxStatus,
+  type BoxStatus,
 } from './box.ts'
 import { startCaptive } from './captive.ts'
 import { certNames } from './environment.ts'
@@ -483,8 +484,37 @@ async function main(): Promise<void> {
     log: console,
   })
 
+  /**
+   * What the menu-bar and tray helpers read, kept current.
+   *
+   * The event name and the crew PIN are the two things on that menu anybody
+   * actually asks for, and both were written once at startup. Rename the
+   * event in the admin panel, or hand out a new PIN, and the helper on the
+   * box's own screen went on reading out the boot-time answer for the rest
+   * of the event — the one screen where being wrong is most convincing.
+   *
+   * The addresses aren't in here because they can't change without a
+   * restart; only what a human can edit is re-read. Null until listen() has
+   * returned, because the file existing is the promise that the box is
+   * answering, so nothing writes it before that is true.
+   */
+  let statusBase: Omit<BoxStatus, 'eventPin' | 'eventName' | 'update'> | null = null
+  let latestUpdate: BoxStatus['update']
+  const publishStatus = (): void => {
+    if (!statusBase) return
+    writeBoxStatus(dataDir, {
+      ...statusBase,
+      eventPin: store.getSetting('eventPin') ?? config.eventPin,
+      eventName: store.getSetting('eventName') ?? '',
+      ...(latestUpdate ? { update: latestUpdate } : {}),
+    })
+  }
+
   const app = buildApp({
     store,
+    // Setup and the admin panel change the event name and the PIN; the
+    // helper beside the box has to follow them.
+    ...(box ? { onSettingsChanged: publishStatus } : {}),
     // Whether this box may go off-site at all — the same switch as the
     // update check, which the environment sweep used to ignore.
     outbound: config.updateCheck ?? box,
@@ -769,22 +799,21 @@ async function main(): Promise<void> {
       ...(certName ? { hostname: certName } : {}),
       iface: boot.iface,
     })
-    const status = {
+    statusBase = {
       pid: process.pid,
       port: config.port,
       secure: Boolean(tls),
       joinUrl: urls[0] ?? origin,
       urls,
-      eventPin,
-      eventName,
       version: process.env.DEPLOY_VERSION ?? '',
     }
-    writeBoxStatus(dataDir, status)
+    publishStatus()
 
     // Rewrite it when the answer arrives, so the tray icon picks the news up
     // on its next poll without the helper knowing what GitHub is.
     updates?.onAnswer((update) => {
-      writeBoxStatus(dataDir, { ...status, ...(update ? { update } : {}) })
+      latestUpdate = update ?? undefined
+      publishStatus()
     })
 
     // After the status file, which is the only thing it reads.

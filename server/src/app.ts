@@ -433,6 +433,21 @@ export interface AppDeps {
    * Unset, the running order is read against the box's own process zone.
    */
   timeZone?: string
+  /**
+   * Called when a setting an outside reader shows has just changed.
+   *
+   * The one reader is the box-status file, which the macOS menu bar and the
+   * Windows tray poll: they show the event name and the crew PIN, and both
+   * were written once at startup and never again. So an admin who renamed
+   * the event or changed the PIN — the two settings whose whole purpose is
+   * being told to people — left the helper confidently reading out the old
+   * one for the rest of the shift, on the screen standing next to the box.
+   *
+   * A callback rather than app.ts writing the file itself: the file is a
+   * property of a *running box*, and buildApp is also every test and the
+   * e2e fixture, none of which have one.
+   */
+  onSettingsChanged?: () => void
   logger?: boolean
 }
 
@@ -483,6 +498,7 @@ export function buildApp({
   metrics,
   clock = () => new Date(),
   timeZone,
+  onSettingsChanged = () => {},
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -1105,6 +1121,10 @@ export function buildApp({
     // join, for the other way through this door.
     closeSetup()
     hub.announceConfig()
+    // Setup is where the event gets its name and its PIN in the first place,
+    // so before this the helper beside the box showed a blank name and the
+    // random boot PIN for the entire event.
+    onSettingsChanged()
     return reply.redirect('/connect')
   })
 
@@ -2482,6 +2502,7 @@ export function buildApp({
       reissued = adminTokens.issue()
     }
     hub.announceConfig()
+    onSettingsChanged()
     const config = publicConfig()
     return {
       settings: {

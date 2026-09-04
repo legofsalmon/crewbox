@@ -6,8 +6,11 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<!-- The name under the icon on the home screen. It said "Inter" — the
+	     placeholder Capacitor's template ships — so an iPhone that installed
+	     this showed a font name where the app's should be. -->
 	<key>CFBundleDisplayName</key>
-        <string>Inter</string>
+	<string>Crewbox</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -33,10 +36,18 @@
 	<string>Crewbox uses the microphone for push-to-talk crew voice.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- The crew server speaks plain HTTP on the local network only. -->
+		<!-- The crew server speaks plain HTTP on the local network only, and
+		     `NSAllowsLocalNetworking` is exactly that exemption: private
+		     addresses and .local names, nothing else.
+
+		     `NSAllowsArbitraryLoads` was set beside it, which is not "local
+		     only" — it turns App Transport Security off for every request the
+		     app makes, to anywhere, and takes precedence over the comment
+		     above it. It also draws a review question the app does not need
+		     an answer to. If a plain-HTTP box on a public address ever becomes
+		     a supported deployment, that is a decision to write down in
+		     native/ios/APP-STORE-CHECKLIST.md, not a key to leave switched on. -->
 		<key>NSAllowsLocalNetworking</key>
-		<true/>
-		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>

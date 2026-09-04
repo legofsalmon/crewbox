@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -44,6 +45,28 @@ public class AlertsService extends Service {
   private static final String CH_MENTIONS = "mentions";
   private static final int NOTIF_FOREGROUND = 1;
   private static final long RETRY_MS = 5000;
+  /**
+   * Longest gap between reconnect attempts.
+   *
+   * Five seconds for ever is right while a phone is walking past a dead AP
+   * and wrong once the box has been off for an hour: the service is holding
+   * a wake lock either way, and a battery is what it costs.
+   */
+  private static final long MAX_RETRY_MS = 60_000;
+
+  /**
+   * Where the last start's arguments live, so a restart can use them.
+   *
+   * `START_STICKY` brings the service back with a null intent after the OS
+   * has killed it. With nothing to read, it posted its foreground
+   * notification, found no server address, and sat on "Connecting to crew
+   * server…" for the rest of the shift — connected to nothing, alerting
+   * nobody, and looking exactly like a service that is working.
+   */
+  private static final String PREFS = "crewbox-alerts";
+  private static final String PREF_SERVER = "serverUrl";
+  private static final String PREF_TOKEN = "token";
+  private static final String PREF_NAME = "myName";
 
   /** Set by AlertsPlugin from activity lifecycle — no alerts while visible. */
   public static volatile boolean appVisible = false;
@@ -78,6 +101,9 @@ public class AlertsService extends Service {
    */
   private final Runnable reconnect = this::connect;
 
+  /** Current gap before the next reconnect attempt; doubles on each failure. */
+  private long retryMs = RETRY_MS;
+
   private String serverUrl = "";
   private String token = "";
   private String myName = "";
@@ -103,13 +129,36 @@ public class AlertsService extends Service {
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
+    SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     if (intent != null) {
       serverUrl = stringExtra(intent, EXTRA_SERVER);
       token = stringExtra(intent, EXTRA_TOKEN);
       myName = stringExtra(intent, EXTRA_MY_NAME);
-      mentionPattern = Pattern.compile(
-          "@(" + Pattern.quote(myName) + "|all|everyone|channel)", Pattern.CASE_INSENSITIVE);
+      prefs.edit()
+          .putString(PREF_SERVER, serverUrl)
+          .putString(PREF_TOKEN, token)
+          .putString(PREF_NAME, myName)
+          .apply();
+    } else {
+      // A restart the OS asked for. Everything this service needs came in on
+      // an intent it no longer has.
+      serverUrl = prefs.getString(PREF_SERVER, "");
+      token = prefs.getString(PREF_TOKEN, "");
+      myName = prefs.getString(PREF_NAME, "");
     }
+    if (serverUrl.isEmpty() || token.isEmpty()) {
+      // Nothing to connect to: a restart before anybody has ever signed in,
+      // or after a sign-out cleared the credentials. Stop, rather than
+      // holding a foreground notification that says "Connecting" for ever.
+      // The app starts the service again with a fresh token when somebody
+      // signs in.
+      stopSelf();
+      return START_NOT_STICKY;
+    }
+    mentionPattern = Pattern.compile(
+        "@(" + Pattern.quote(myName) + "|all|everyone|channel)", Pattern.CASE_INSENSITIVE);
+    stopped = false;
+    retryMs = RETRY_MS;
     startForeground(NOTIF_FOREGROUND, serviceNotification("Connecting to crew server…"));
     // Every start is a fresh attempt, including the redeliveries START_STICKY
     // brings after the OS has killed us, and the plugin's own restart when
@@ -118,13 +167,50 @@ public class AlertsService extends Service {
     return START_STICKY;
   }
 
+  /** Forget the credentials, so a sticky restart does not use a dead token. */
+  private static void forgetCredentials(Context ctx) {
+    ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        .remove(PREF_SERVER)
+        .remove(PREF_TOKEN)
+        .remove(PREF_NAME)
+        .apply();
+  }
+
   @Override
   public void onDestroy() {
     stopped = true;
     generation++;
     closeCurrent("service stopped");
+    // And every socket that is not the current one.
+    //
+    // `generation` stops a superseded socket's callbacks from *acting*, but
+    // the socket itself stays open — so after a sign-out the service was
+    // gone while its abandoned connections were still on the box's presence
+    // list, and still receiving the previous crew member's messages. This is
+    // the only call that reaches them.
+    http.dispatcher().cancelAll();
     handler.removeCallbacksAndMessages(null);
     super.onDestroy();
+  }
+
+  /**
+   * The box has refused this token, and no amount of retrying will help.
+   *
+   * A deleted account, an expired session, a box restored from a backup
+   * taken before this crew member joined. The service used to reconnect
+   * every five seconds for the rest of the shift, showing "Reconnecting to
+   * crew server…" — a notification that reads like a network problem and is
+   * not one. Stop, clear the notification, and let the app start us again
+   * with a fresh token when somebody signs in.
+   */
+  private void authRejected() {
+    stopped = true;
+    generation++;
+    handler.removeCallbacks(reconnect);
+    closeCurrent("auth rejected");
+    forgetCredentials(this);
+    stopForeground(true);
+    stopSelf();
   }
 
   @Override
@@ -164,7 +250,19 @@ public class AlertsService extends Service {
           JSONObject hello = new JSONObject();
           hello.put("type", "hello");
           hello.put("token", token);
-          hello.put("cursors", new JSONObject());
+          // The cursors this service already has.
+          //
+          // It sent `{}` while tracking `lastSeq` per channel, so every
+          // reconnect asked the box for the maximal welcome — up to a couple
+          // of hundred kilobytes of messages it deliberately throws away
+          // (see the baseline in `handleMessage`). A phone at the edge of an
+          // access point does that every few seconds, and the box builds and
+          // serialises every one of them.
+          JSONObject cursors = new JSONObject();
+          for (Map.Entry<String, Long> entry : lastSeq.entrySet()) {
+            cursors.put(entry.getKey(), entry.getValue());
+          }
+          hello.put("cursors", cursors);
           socket.send(hello.toString());
         } catch (Exception ignored) {
         }
@@ -187,7 +285,17 @@ public class AlertsService extends Service {
 
       @Override
       public void onClosed(WebSocket socket, int code, String reason) {
-        handler.post(() -> scheduleReconnect(mine));
+        handler.post(() -> {
+          if (mine != generation) return;
+          // 4001 is the box saying this token is finished — see the hub's
+          // `disconnectUser` and its auth error. Retrying is pointless and
+          // the notification saying we are trying is worse than pointless.
+          if (code == 4001) {
+            authRejected();
+            return;
+          }
+          scheduleReconnect(mine);
+        });
       }
     });
   }
@@ -199,7 +307,12 @@ public class AlertsService extends Service {
     ws = null;
     updateServiceNotification("Reconnecting to crew server…");
     handler.removeCallbacks(reconnect);
-    handler.postDelayed(reconnect, RETRY_MS);
+    handler.postDelayed(reconnect, retryMs);
+    // Backing off. Five seconds for ever is right while somebody walks past
+    // a dead access point and wrong once the box has been off for an hour —
+    // the radio comes up for every attempt, on a phone that has to last the
+    // shift. Reset by a welcome, which is the only proof of a live socket.
+    retryMs = Math.min(MAX_RETRY_MS, retryMs * 2);
   }
 
   // -- protocol -------------------------------------------------------------
@@ -224,6 +337,12 @@ public class AlertsService extends Service {
           lastSeq.put(ch.optString("id"), ch.optLong("lastSeq", 0));
         }
         updateServiceNotification("Connected to crew server");
+        // A welcome is the only proof the socket works, so it is the only
+        // thing that gets to say the backoff has done its job.
+        retryMs = RETRY_MS;
+      } else if ("error".equals(type) && "auth".equals(msg.optString("code"))) {
+        // The box refusing the token, said as a frame rather than a close.
+        authRejected();
       } else if ("channel".equals(type)) {
         rememberChannel(msg.getJSONObject("channel"));
       } else if ("user".equals(type)) {
@@ -298,7 +417,7 @@ public class AlertsService extends Service {
 
   private Notification serviceNotification(String text) {
     return new NotificationCompat.Builder(this, CH_SERVICE)
-        .setSmallIcon(R.mipmap.ic_launcher)
+        .setSmallIcon(R.drawable.ic_stat_crewbox)
         .setContentTitle("Crewbox")
         .setContentText(text)
         .setOngoing(true)
@@ -314,7 +433,7 @@ public class AlertsService extends Service {
   private void notifyMessage(String title, String body, boolean urgent) {
     NotificationManager nm = getSystemService(NotificationManager.class);
     Notification n = new NotificationCompat.Builder(this, urgent ? CH_MENTIONS : CH_MESSAGES)
-        .setSmallIcon(R.mipmap.ic_launcher)
+        .setSmallIcon(R.drawable.ic_stat_crewbox)
         .setContentTitle(title)
         .setContentText(body)
         .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
@@ -339,6 +458,12 @@ public class AlertsService extends Service {
   }
 
   static void stop(Context ctx) {
+    // Signing out ends the token, so the copy kept for sticky restarts goes
+    // with it — a phone handed to the next shift should not still hold the
+    // last person's session. Here rather than in `onDestroy`, which also
+    // runs when the OS kills a service it intends to bring back, and that is
+    // the case the stored copy exists for.
+    forgetCredentials(ctx);
     ctx.stopService(new Intent(ctx, AlertsService.class));
   }
 }

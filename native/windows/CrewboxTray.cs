@@ -19,6 +19,7 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
+using System.Threading;
 using System.Windows.Forms;
 
 /// <summary>A newer release the box heard about. Absent most of the time.</summary>
@@ -51,6 +52,8 @@ public class CrewboxTray : ApplicationContext
     private readonly Timer poll;
     private readonly string dataDir;
     private BoxStatus status;
+    /// <summary>Consecutive polls that found no running box.</summary>
+    private int misses;
 
     [STAThread]
     public static void Main(string[] args)
@@ -62,8 +65,44 @@ public class CrewboxTray : ApplicationContext
             : Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".crewbox", "data");
-        Application.EnableVisualStyles();
-        Application.Run(new CrewboxTray(dir));
+
+        // One tray icon per data directory.
+        //
+        // A self-update starts a new box, and the new box starts a tray
+        // helper — so an update left two icons in the tray, both claiming to
+        // be Crewbox, one of them belonging to a process that no longer
+        // exists. Named after the directory rather than the product, because
+        // two boxes on two data directories on one machine are two boxes.
+        //
+        // Session-scoped, not `Global\`: the duplicate always comes from a
+        // box restarting itself, which spawns its helper as its own child in
+        // its own session. A machine-wide name would instead need an ACL a
+        // second signed-in user could be refused by — and being refused
+        // throws, which would mean no tray icon at all rather than two.
+        // Backslashes and the drive colon go, because a mutex name cannot
+        // hold a path separator.
+        string key = "CrewboxTray:" + dir.Replace('\\', '_').Replace(':', '_');
+        Mutex only = null;
+        bool mine = true;
+        try
+        {
+            only = new Mutex(true, key, out mine);
+        }
+        catch (Exception)
+        {
+            // Whatever went wrong with the name, an extra icon beats none.
+            mine = true;
+        }
+        if (!mine) return;
+        try
+        {
+            Application.EnableVisualStyles();
+            Application.Run(new CrewboxTray(dir));
+        }
+        finally
+        {
+            if (only != null) only.Dispose();
+        }
     }
 
     public CrewboxTray(string dir)
@@ -91,8 +130,18 @@ public class CrewboxTray : ApplicationContext
         poll.Tick += (s, e) =>
         {
             Read();
-            if (status == null && !Directory.Exists(dataDir)) Quit();
-            if (status == null) { icon.Text = "Crewbox — not running"; Quit(); }
+            if (status != null) { misses = 0; return; }
+            // Three ticks, not one.
+            //
+            // `Read()`'s own comment says a half-written file or a lock is
+            // "nothing useful to report for one missed tick" — and then the
+            // very next line quit the helper on that one missed tick. The box
+            // rewrites this file whenever its status changes, so a reader
+            // that catches it mid-write took the tray icon away from a box
+            // that was running perfectly well.
+            misses++;
+            icon.Text = "Crewbox — not running";
+            if (misses >= 3) Quit();
         };
         poll.Start();
     }

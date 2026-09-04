@@ -32,6 +32,9 @@ jobs:
       - run: npm run build:native
       - run: ./gradlew assembleDebug
         working-directory: native/android
+      # Same check the release runs, here so a manifest change is caught by
+      # the workflow that a manifest change triggers.
+      - run: node scripts/check-apk-permissions.mjs native/android/app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
           name: crewbox-debug-apk
