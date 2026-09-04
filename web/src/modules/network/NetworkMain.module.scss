@@ -57,6 +57,13 @@
   font-size: 14px;
 }
 
+/* How old the verdict beside it is. Muted: it is context, not a finding. */
+.age {
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .body {
   display: flex;
   flex-direction: column;

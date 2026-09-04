@@ -35,3 +35,56 @@ export const saveFile = (filename: string, blob: Blob): boolean => {
 /** Same, for something already in hand as text. */
 export const saveText = (filename: string, mime: string, text: string): boolean =>
   saveFile(filename, new Blob([text], { type: mime }))
+
+/** What happened to a file the crew asked for. */
+export type Delivered = 'saved' | 'shared' | 'unavailable'
+
+/**
+ * Can this device hand a file to the share sheet?
+ *
+ * `canShare` with the actual file, not just a feature check: Android and iOS
+ * both refuse some types (and older WebViews refuse files entirely) and the
+ * only way to know is to ask about the file in hand.
+ */
+const canShareFile = (file: File): boolean => {
+  const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean }
+  return typeof nav.share === 'function' && Boolean(nav.canShare?.({ files: [file] }))
+}
+
+/**
+ * Get a file to the crew member, however this device can manage it.
+ *
+ * In a browser that is a download. Inside the Android and iOS shells there
+ * is no download handler at all, so the anchor click does nothing — but the
+ * share sheet works in both WebViews, and it is the better answer anyway:
+ * what somebody does with a network audit at a venue is send it to the
+ * venue's IT, and that is one tap from the share sheet and several from the
+ * downloads folder.
+ *
+ * `unavailable` means neither is possible, and the caller says so rather
+ * than announcing a success — the failure this whole module exists to stop.
+ */
+export async function deliverFile(filename: string, blob: Blob): Promise<Delivered> {
+  if (!isNative()) return saveFile(filename, blob) ? 'saved' : 'unavailable'
+  try {
+    const file = new File([blob], filename, { type: blob.type })
+    if (!canShareFile(file)) return 'unavailable'
+    await navigator.share({ files: [file], title: filename })
+    return 'shared'
+  } catch {
+    // Cancelling the share sheet rejects, which is not a failure to report
+    // — but there is nothing to announce either way, so it reads the same.
+    return 'unavailable'
+  }
+}
+
+/** Same, for something already in hand as text. */
+export const deliverText = (filename: string, mime: string, text: string): Promise<Delivered> =>
+  deliverFile(filename, new Blob([text], { type: mime }))
+
+/** What to tell somebody, for each of the three outcomes. */
+export const deliveredNote = (result: Delivered, what: string): string => {
+  if (result === 'saved') return `${what} downloaded`
+  if (result === 'shared') return `${what} ready to send`
+  return NO_DOWNLOADS
+}

@@ -6,7 +6,7 @@ import { setMetaField } from '../model/sheetDoc'
 import { setSheetDate, setSheetStage } from '../model/lineup'
 import { displayToIso, isoToDisplay } from '../model/date'
 import type { SheetAct, SheetSnapshot } from '../model/types'
-import { NO_DOWNLOADS } from '../../../lib/download.ts'
+import { deliveredNote, NO_DOWNLOADS } from '../../../lib/download.ts'
 import { downloadSheetCsv } from './download'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useToasts } from './toastContext'
@@ -74,12 +74,10 @@ export default function Toolbar({
     }
   })
 
-  const handleExport = () => {
-    if (downloadSheetCsv(snapshot, acts)) {
-      addToast('Export complete', 'Sheet downloaded as CSV', 'success')
-    } else {
-      addToast('Cannot save here', NO_DOWNLOADS, 'warning')
-    }
+  const handleExport = async () => {
+    const result = await downloadSheetCsv(snapshot, acts)
+    if (result === 'unavailable') addToast('Cannot save here', NO_DOWNLOADS, 'warning')
+    else addToast('Export complete', deliveredNote(result, 'Sheet CSV'), 'success')
   }
 
   return (
@@ -189,7 +187,7 @@ export default function Toolbar({
         <button
           type="button"
           className={styles.export}
-          onClick={handleExport}
+          onClick={() => void handleExport()}
           title="Export this sheet as CSV"
         >
           Export

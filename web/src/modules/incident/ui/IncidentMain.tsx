@@ -9,7 +9,7 @@ import {
   type IncidentSeverity,
 } from '@crewbox/shared'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
-import { NO_DOWNLOADS, saveText } from '../../../lib/download.ts'
+import { deliveredNote, deliverText } from '../../../lib/download.ts'
 import { useStore } from '../../../store.ts'
 import { byShowDay, clockOf, filterLog, loggedLate, type LogFilter } from '../model/log.ts'
 import { reportFilename, showReportHtml } from '../model/report.ts'
@@ -113,10 +113,10 @@ export default function IncidentMain() {
     [incidents]
   )
 
-  const download = () => {
+  const download = async () => {
     const html = showReportHtml({ eventName, entries: incidents, generatedAt: Date.now() })
-    const saved = saveText(reportFilename(eventName, Date.now()), 'text/html', html)
-    toast(saved ? 'Show report downloaded' : NO_DOWNLOADS)
+    const result = await deliverText(reportFilename(eventName, Date.now()), 'text/html', html)
+    toast(deliveredNote(result, 'Show report'))
   }
 
   return (

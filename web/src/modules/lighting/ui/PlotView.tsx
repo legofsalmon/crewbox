@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
-import { NO_DOWNLOADS, saveText } from '../../../lib/download.ts'
+import { deliveredNote, deliverText, type Delivered } from '../../../lib/download.ts'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import { registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
@@ -43,8 +43,8 @@ const TABS: Array<{ id: PlotTab; label: string }> = [
   { id: '3d', label: '3D' },
 ]
 
-const download = (filename: string, text: string): boolean =>
-  saveText(filename, 'text/csv;charset=utf-8', text)
+const download = (filename: string, text: string): Promise<Delivered> =>
+  deliverText(filename, 'text/csv;charset=utf-8', text)
 
 function PresenceAvatars({ plotId }: { plotId: string }) {
   const peers = usePlotRemotePeers(plotId)
@@ -276,7 +276,9 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
             type="button"
             className={styles.action}
             onClick={() => {
-              if (!download(plotCsvFilename(snapshot), plotToCsv(snapshot))) setFlash(NO_DOWNLOADS)
+              void download(plotCsvFilename(snapshot), plotToCsv(snapshot)).then((result) =>
+                setFlash(deliveredNote(result, 'Plot'))
+              )
             }}
           >
             Export

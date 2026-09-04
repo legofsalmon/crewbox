@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Channel, User } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
-import { NO_DOWNLOADS, saveFile } from '../lib/download.ts'
+import { deliveredNote, deliverFile, NO_DOWNLOADS } from '../lib/download.ts'
 import { adminError } from '../lib/adminerror.ts'
 import { adapterMissing, listeningMode } from '../lib/adminnetwork.ts'
 import UpdateSection from './UpdateSection.tsx'
@@ -55,7 +55,7 @@ export default function AdminPanel() {
     try {
       const blob = await api.adminExport(auth())
       const name = `crewbox-export-${new Date().toISOString().slice(0, 10)}.json`
-      setNote(saveFile(name, blob) ? 'Export downloaded' : NO_DOWNLOADS)
+      setNote(deliveredNote(await deliverFile(name, blob), 'Export'))
     } catch (err) {
       setNote(adminError(err, 'Export failed'))
     } finally {
@@ -248,10 +248,11 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
   async function downloadDns() {
     try {
       const blob = await api.adminDnsConfig(auth())
+      const result = await deliverFile('crewbox-dns.conf', blob)
       onNote(
-        saveFile('crewbox-dns.conf', blob)
-          ? 'DNS config downloaded — put it on the venue router'
-          : NO_DOWNLOADS
+        result === 'unavailable'
+          ? NO_DOWNLOADS
+          : `${deliveredNote(result, 'DNS config')} — put it on the venue router`
       )
     } catch (err) {
       onNote(adminError(err, 'Could not build the DNS config'))
