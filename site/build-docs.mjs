@@ -164,7 +164,9 @@ export function parseMarkdown(body, name = 'page') {
         // the band rather than fighting the formatter.
         const depth = m[1].length === 0 ? 0 : 1
         if (m[1].length === 1 || m[1].length > 4) fail('nested list items indent by 2-4 spaces')
-        items.push({ depth, text: m[3] })
+        // Its own marker, not the list's: a numbered sub-list under a
+        // bulleted one is a numbered sub-list.
+        items.push({ depth, ordered: /^\d+\./.test(m[2]), text: m[3] })
         i++
         // A wrapped continuation line (indented, no marker) joins the item.
         //
@@ -222,7 +224,11 @@ export function renderInline(text) {
     if (/^javascript:/i.test(href)) throw new Error(`refusing javascript: link "${href}"`)
     const external = /^https?:\/\//.test(href)
     const attrs = external ? ' rel="noopener noreferrer"' : ''
-    return `<a href="${escapeHtml(href)}"${attrs}>${label}</a>`
+    // Not escaped again. This pass runs *over already-escaped text*, so the
+    // captured href is attribute-safe already — a second pass turned every
+    // `&` in a query string into `&amp;amp;`, which the browser then renders
+    // as a literal "&amp;" in the address it follows.
+    return `<a href="${href}"${attrs}>${label}</a>`
   })
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/(^|[\s(])_([^_]+)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>')
@@ -289,17 +295,46 @@ export function renderBlocks(blocks, ctx) {
         break
       }
       case 'list': {
-        const tag = block.ordered ? 'ol' : 'ul'
-        let html = `<${tag}>`
-        let depth = 0
-        for (const item of block.items) {
-          if (item.depth > depth) html += `<${tag}>`
-          if (item.depth < depth) html += `</li></${tag}></li>`
-          else if (html !== `<${tag}>`) html += '</li>'
-          html += `<li>${renderInline(item.text)}`
-          depth = item.depth
+        /**
+         * One if/else-if/else chain, because the three cases are exclusive:
+         * open a nested list, close back out of one, or end the previous
+         * item. Written as two separate `if`s, opening a nested list *also*
+         * fell into the "end the previous item" branch and emitted a `</li>`
+         * immediately after the `<ul>` — a closing tag for an element that
+         * was never opened, right where the nesting starts.
+         *
+         * The stack also remembers what each level was opened as, so a
+         * numbered sub-list under a bulleted one renders as `<ol>`. It used
+         * to inherit the outer list's marker, silently renumbering the
+         * steps of every nested procedure into bullets.
+         */
+        const tagFor = (ordered) => (ordered ? 'ol' : 'ul')
+        const outer = tagFor(block.ordered)
+        if (block.items.length === 0) {
+          out.push(`<${outer}></${outer}>`)
+          break
         }
-        html += '</li>' + (depth > 0 ? `</${tag}></li>` : '') + `</${tag}>`
+        const open = [outer]
+        let html = `<${outer}>`
+        let first = true
+        for (const item of block.items) {
+          if (item.depth > open.length - 1) {
+            while (item.depth > open.length - 1) {
+              const nested = tagFor(item.ordered)
+              html += `<${nested}>`
+              open.push(nested)
+            }
+          } else if (item.depth < open.length - 1) {
+            while (open.length - 1 > item.depth) html += `</li></${open.pop()}>`
+            html += '</li>'
+          } else if (!first) {
+            html += '</li>'
+          }
+          html += `<li>${renderInline(item.text)}`
+          first = false
+        }
+        while (open.length > 1) html += `</li></${open.pop()}>`
+        html += `</li></${open.pop()}>`
         out.push(html)
         break
       }
@@ -350,14 +385,38 @@ export function extractText(blocks) {
   return spans.map((s) => ({
     heading: s.heading,
     anchor: s.anchor,
-    text: s.parts
-      .join(' ')
-      .replace(/[*_`>#|[\]]/g, '')
-      .replace(/\([^)]*\)/g, '')
+    text: plainText(s.parts.join(' ')).slice(0, 1200),
+  }))
+}
+
+/**
+ * Markdown reduced to the words somebody would search for.
+ *
+ * Structurally, not by deleting characters. Stripping the class `[*_`>#|[\]]`
+ * took the underscores out of every identifier on the site — `DATA_DIR`
+ * indexed as `DATADIR`, `CREWBOX_IFACE` as `CREWBOXIFACE` — so searching the
+ * docs for the environment variable the docs are about found nothing. And
+ * deleting every `(...)` to get rid of link targets took ordinary
+ * parentheses with it, so half the qualifying phrases on the site were not
+ * searchable either.
+ *
+ * The passes below mirror renderInline: code spans keep their contents
+ * verbatim, a link reduces to its label, and emphasis marks come off only
+ * where they are emphasis — which is exactly what leaves `DATA_DIR` alone.
+ */
+export function plainText(md) {
+  return (
+    md
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/!?\[([^\]]*)\]\([^)\s]+\)/g, '$1')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/(^|[\s(])_([^_]+)_(?=[\s).,;:!?]|$)/g, '$1$2')
+      // Leftover block punctuation, at the start of a line only: a `#` mid
+      // sentence is a channel name and a `>` is a quotation mark.
+      .replace(/^[>#|]+\s*/gm, '')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 1200),
-  }))
+  )
 }
 
 // ------------------------------------------------------------ assembling
@@ -499,13 +558,45 @@ export function buildPage(slug, src) {
       else if (m[1].startsWith('#')) selfAnchors.push(m[1].slice(1))
     }
   }
+  const LINK = /\[[^\]]+\]\(([^)\s]+)\)/
   for (const block of blocks) {
     if (block.type === 'paragraph' || block.type === 'callout') collect(block.text)
     if (block.type === 'list') block.items.forEach((x) => collect(x.text))
-    if (block.type === 'table') block.rows.flat().forEach(collect)
+    if (block.type === 'table') {
+      // The header row was never collected, so a link in one was invisible to
+      // the checker — it could point at a page that does not exist and the
+      // build would say nothing.
+      block.header.forEach(collect)
+      block.rows.flat().forEach(collect)
+    }
+    // A heading is already wrapped in its own anchor link, so a link inside
+    // one renders as an <a> inside an <a>: invalid, and the browser closes
+    // the outer one early. Refused rather than checked.
+    if (block.type === 'heading' && LINK.test(block.text)) {
+      throw new Error(
+        `${slug}: heading "${block.text}" contains a link, which would nest inside its own anchor`
+      )
+    }
   }
   const content = renderBlocks(blocks, { slug, anchors, shot })
   return { slug, meta, blocks, content, links, selfAnchors, shots, anchors }
+}
+
+/**
+ * Put page values into the template, literally.
+ *
+ * `String.replaceAll` with a *string* replacement interprets `$$`, `$&`,
+ * `` $` `` and `$'` in it — so a page that quotes a shell one-liner
+ * containing `$&` would have had the whole template spliced into itself at
+ * that point, and nobody would find out until that page was written. A
+ * function replacement has no such syntax: the value is the value.
+ */
+export function fillTemplate(template, values) {
+  let out = template
+  for (const [key, value] of Object.entries(values)) {
+    out = out.replaceAll(`{{${key}}}`, () => value)
+  }
+  return out
 }
 
 export function main() {
@@ -525,12 +616,13 @@ export function main() {
 
   mkdirSync(OUT_DIR, { recursive: true })
   for (const page of pages) {
-    const html = template
-      .replaceAll('{{title}}', escapeHtml(page.meta.title))
-      .replaceAll('{{blurb}}', escapeHtml(page.meta.blurb))
-      .replaceAll('{{sidebar}}', buildNav(pages, page.slug))
-      .replaceAll('{{content}}', page.content)
-      .replaceAll('{{prevnext}}', prevNext(pages, page.slug))
+    const html = fillTemplate(template, {
+      title: escapeHtml(page.meta.title),
+      blurb: escapeHtml(page.meta.blurb),
+      sidebar: buildNav(pages, page.slug),
+      content: page.content,
+      prevnext: prevNext(pages, page.slug),
+    })
     writeFileSync(join(OUT_DIR, `${page.slug}.html`), html)
   }
   writeFileSync(join(OUT_DIR, 'search-index.json'), JSON.stringify(buildSearchIndex(pages)))

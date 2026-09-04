@@ -9,12 +9,15 @@ import {
   buildSitemap,
   checkLinks,
   extractText,
+  fillTemplate,
   parseFrontMatter,
   parseMarkdown,
+  plainText,
   pngSize,
   renderInline,
   slugifyAnchor,
 } from './build-docs.mjs'
+import { deployed } from './preview.mjs'
 
 const FM = (over = {}) => {
   const meta = {
@@ -181,6 +184,43 @@ test('search index: one entry per H1/H2 span, deterministic', () => {
 test('extractText strips markup and caps length', () => {
   const spans = extractText(parseMarkdown('## H\n\nUse `code` and **bold** here.'))
   assert.equal(spans.at(-1).text, 'Use code and bold here.')
+
+  // The cap the name promises. A span is one heading's worth of a page, and
+  // the index ships to every reader on first search.
+  const long = extractText(parseMarkdown(`## H\n\n${'word '.repeat(400)}`))
+  assert.equal(long.at(-1).text.length, 1200)
+})
+
+test('the search index keeps the identifiers people search for', () => {
+  // The whole reason to search these docs is to find out what an environment
+  // variable does. Stripping the character class `[*_`>#|[\]]` took the
+  // underscore out of every one of them — DATA_DIR indexed as DATADIR — so
+  // the docs about DATA_DIR could not be found by typing DATA_DIR.
+  assert.equal(plainText('Set `DATA_DIR` and `CREWBOX_IFACE`.'), 'Set DATA_DIR and CREWBOX_IFACE.')
+
+  // And deleting every parenthesis to get rid of link targets took ordinary
+  // ones with it, along with the qualifying phrase inside.
+  assert.equal(plainText('DATA_DIR (the default)'), 'DATA_DIR (the default)')
+
+  // A link is its label; the target is not prose anybody searches for.
+  assert.equal(plainText('See [the admin panel](/docs/admin) first.'), 'See the admin panel first.')
+
+  // Emphasis comes off where it is emphasis, and nowhere else.
+  assert.equal(
+    plainText('**Bold** and _italic_ and snake_case_name.'),
+    'Bold and italic and snake_case_name.'
+  )
+})
+
+test('a template value is inserted literally, dollar signs and all', () => {
+  // `$&` in a *string* replacement means "the matched substring", so a page
+  // quoting a shell one-liner used to splice `{{content}}` back into itself.
+  assert.equal(
+    fillTemplate('<main>{{content}}</main>', { content: 'run `foo $& bar`' }),
+    '<main>run `foo $& bar`</main>'
+  )
+  assert.equal(fillTemplate('{{a}}', { a: "$`$'$$" }), "$`$'$$")
+  assert.equal(fillTemplate('{{a}} {{a}}', { a: 'x' }), 'x x')
 })
 
 // ------------------------------------------------------------------- links
@@ -215,4 +255,68 @@ test('sitemap lists the landing page and every docs page', () => {
   const xml = buildSitemap([a])
   assert.match(xml, /<loc>https:\/\/crewbox\.letissier\.ie\/<\/loc>/)
   assert.match(xml, /<loc>https:\/\/crewbox\.letissier\.ie\/docs<\/loc>/)
+})
+
+// -------------------------------------------------------------- rendering
+
+test('a nested list nests, and closes nothing it did not open', () => {
+  const { content } = buildPage('p', FM() + '- one\n  - inner\n- two')
+  // Written as two separate `if`s, opening the nested list also fell into
+  // the "close the previous item" branch and emitted a `</li>` immediately
+  // after the `<ul>` — a closing tag for an element that was never opened.
+  assert.equal(content, '<ul><li>one<ul><li>inner</li></ul></li><li>two</li></ul>')
+  assert.doesNotMatch(content, /<ul><\/li>/)
+})
+
+test('a numbered sub-list under a bulleted one is numbered', () => {
+  // The nested list inherited the outer list's marker, silently renumbering
+  // the steps of every nested procedure into bullets.
+  const { content } = buildPage('p', FM() + '- first\n  1. step one\n  2. step two')
+  assert.equal(content, '<ul><li>first<ol><li>step one</li><li>step two</li></ol></li></ul>')
+})
+
+test('a list that ends inside a nested level still closes both', () => {
+  const { content } = buildPage('p', FM() + '- one\n  - inner')
+  assert.equal(content, '<ul><li>one<ul><li>inner</li></ul></li></ul>')
+})
+
+test('an ampersand in a link target is escaped exactly once', () => {
+  // The link pass runs over already-escaped text, so escaping the captured
+  // href again turned every `&` into `&amp;amp;` — which the browser then
+  // shows as a literal "&amp;" in the address it follows.
+  assert.equal(
+    renderInline('[report](https://example.com/r?a=1&b=2)'),
+    '<a href="https://example.com/r?a=1&amp;b=2" rel="noopener noreferrer">report</a>'
+  )
+})
+
+// ------------------------------------------------------------ link checker
+
+test('a dead link in a table header is caught like any other', () => {
+  // The header row was never collected, so a link in one could point at a
+  // page that does not exist and the build said nothing.
+  const page = buildPage('p', FM() + '| [gone](/docs/nope) | b |\n| --- | --- |\n| 1 | 2 |')
+  const { problems } = checkLinks([page], '/definitely/missing')
+  assert.deepEqual(problems, ['p: dead link /docs/nope'])
+})
+
+test('a link inside a heading is refused, because it would nest in its own anchor', () => {
+  assert.throws(
+    () => buildPage('p', FM() + '## See [the panel](/docs/admin)'),
+    /contains a link, which would nest inside its own anchor/
+  )
+})
+
+// ----------------------------------------------------------------- preview
+
+test('the preview serves only what Vercel would deploy', () => {
+  // A preview that shows more than the deploy is not a preview — and this
+  // one bound every interface, so running it at a venue published the
+  // generator and the page sources to the whole crew network.
+  assert.equal(deployed('docs/admin.html'), true)
+  assert.equal(deployed('index.html'), true)
+  assert.equal(deployed('docs-src/admin.md'), false)
+  assert.equal(deployed('build-docs.mjs'), false)
+  assert.equal(deployed('preview.mjs'), false)
+  assert.equal(deployed('README.md'), false)
 })
