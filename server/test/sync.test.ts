@@ -869,6 +869,43 @@ describe('files and search', () => {
     expect(await search(tokenC)).toEqual(['the generator needs diesel'])
   })
 
+  it("finds a public message behind a wall of somebody else's DMs", () => {
+    // The membership check used to run on the newest 50 hits, so a word a
+    // crew member had used a lot in their own DMs pushed every public match
+    // out of the window: fifty rows fetched, fifty discarded, "no results"
+    // for a message sitting in #general. On a box that has run a festival
+    // that is most searches for a common word.
+    const general = store.getChannelByName('general')!
+    const inPublic = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'generator refuel at six',
+    }).message
+
+    const alex = store.createUser('Alex', 'x', 'member')
+    const sam = store.createUser('Sam', 'x', 'member')
+    const dm = store.getOrCreateDm(alex.id, sam.id)
+    for (let i = 0; i < 60; i++) {
+      store.appendMessage({
+        channelId: dm.id,
+        authorId: alex.id,
+        kind: 'text',
+        body: `generator chat ${i}`,
+      })
+    }
+
+    // A third person, in neither DM: they see the public one and nothing else.
+    const jo = store.createUser('Jo', 'x', 'member')
+    const hits = store.searchMessages('generator', jo.id, 25)
+    expect(hits.map((m) => m.id)).toContain(inPublic.id)
+    expect(hits.every((m) => m.channelId === general.id)).toBe(true)
+
+    // ...and the people in the DM still find their own.
+    const theirs = store.searchMessages('generator', alex.id, 25)
+    expect(theirs.some((m) => m.channelId === dm.id)).toBe(true)
+  })
+
   it('drops deleted messages from the search index', () => {
     const general = store.getChannelByName('general')!
     const kept = store.appendMessage({
@@ -883,13 +920,13 @@ describe('files and search', () => {
       kind: 'text',
       body: 'diesel spill cleanup',
     }).message
-    expect(store.searchMessages('diesel', 10).map((m) => m.id)).toEqual(
+    expect(store.searchMessages('diesel', 'anyone', 10).map((m) => m.id)).toEqual(
       expect.arrayContaining([kept.id, doomed.id])
     )
 
     db.prepare('DELETE FROM messages WHERE id = ?').run(doomed.id)
 
-    const hits = store.searchMessages('diesel', 10).map((m) => m.id)
+    const hits = store.searchMessages('diesel', 'anyone', 10).map((m) => m.id)
     expect(hits).toContain(kept.id)
     expect(hits).not.toContain(doomed.id)
 
@@ -901,8 +938,8 @@ describe('files and search', () => {
       kind: 'text',
       body: 'stage two lineup',
     }).message
-    expect(store.searchMessages('spill', 10)).toEqual([])
-    expect(store.searchMessages('lineup', 10).map((m) => m.id)).toEqual([successor.id])
+    expect(store.searchMessages('spill', 'anyone', 10)).toEqual([])
+    expect(store.searchMessages('lineup', 'anyone', 10).map((m) => m.id)).toEqual([successor.id])
   })
 })
 

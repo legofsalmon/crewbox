@@ -214,6 +214,64 @@ describe('the crew network line on a two-network box', () => {
     expect(check.detail).toContain('2.0.0.7')
   })
 
+  it('does not claim an adapter it never bound to, once the cable is back', () => {
+    // The dangerous direction: the crew adapter was down at boot, so the box
+    // bound every network. Reading the live adapters said "the box answers
+    // only there" as soon as the cable went back in — which is what an
+    // operator acts on, and the opposite of the truth. The lighting VLAN
+    // was reachable the whole time.
+    const check = find(
+      boxReadiness(
+        input({
+          iface: '192.168.1.50',
+          boundHost: '0.0.0.0',
+          addresses: ['192.168.1.50', '2.0.0.7'],
+        })
+      ),
+      'network'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('every network')
+    expect(check.fix).toMatch(/Restart/)
+  })
+
+  it('says when the box is bound to an address that has gone', () => {
+    // The other direction: bound at boot, adapter left since. It is not
+    // answering everywhere — it is answering nowhere.
+    const check = find(
+      boxReadiness(
+        input({ iface: '192.168.1.50', boundHost: '192.168.1.50', addresses: ['2.0.0.7'] })
+      ),
+      'network'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('answering nowhere')
+  })
+
+  it('is settled when the bind and the adapter agree', () => {
+    const check = find(
+      boxReadiness(
+        input({
+          iface: '192.168.1.50',
+          boundHost: '192.168.1.50',
+          addresses: ['192.168.1.50', '2.0.0.7'],
+        })
+      ),
+      'network'
+    )
+    expect(check.state).toBe('ok')
+    expect(check.detail).toMatch(/never see its traffic/)
+  })
+
+  it('points at https when the box has a certificate', () => {
+    // The line was hardcoded http://, so on a box with a certificate it sent
+    // whoever read it to a port that only speaks TLS.
+    const secure = find(boxReadiness(input({ secure: true, crewCount: 0 })), 'crew')
+    expect(secure.fix).toMatch(/^Show the QR at https:\/\//)
+    const plain = find(boxReadiness(input({ secure: false, crewCount: 0 })), 'crew')
+    expect(plain.fix).toMatch(/^Show the QR at http:\/\//)
+  })
+
   it('keeps quiet-and-green on a one-network machine', () => {
     const check = find(boxReadiness(input({ addresses: ['192.168.1.50'] })), 'network')
     expect(check.state).toBe('ok')

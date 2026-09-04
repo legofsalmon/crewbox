@@ -621,8 +621,17 @@ export class Store {
     return rows.map((r) => ({ channelId: r.channel_id, messageId: r.message_id }))
   }
 
-  /** Full-text search over message bodies, newest first. */
-  searchMessages(query: string, limit: number): Message[] {
+  /**
+   * Full-text search over message bodies this user can see, newest first.
+   *
+   * The membership check is in the query rather than after it. It used to be
+   * a `.filter()` on the newest 50 hits, so a word that a crew member had
+   * used a lot in their own DMs hid every public match behind them: fifty
+   * rows fetched, fifty rows discarded, "no results" for a message that is
+   * sitting in #general. On a box that has run a festival, that is most
+   * searches for a common word.
+   */
+  searchMessages(query: string, userId: string, limit: number): Message[] {
     // Quote each term so user input can't break FTS5 syntax; * = prefix match.
     const terms = query
       .split(/\s+/)
@@ -636,11 +645,15 @@ export class Store {
           `SELECT m.*, f.name AS file_name, f.mime AS file_mime, f.size AS file_size
            FROM messages_fts fts
            JOIN messages m ON m.rowid = fts.rowid
+           JOIN channels c ON c.id = m.channel_id
            LEFT JOIN files f ON f.id = m.file_id
            WHERE messages_fts MATCH ?
+             AND (c.kind = 'public'
+                  OR EXISTS (SELECT 1 FROM channel_members cm
+                             WHERE cm.channel_id = m.channel_id AND cm.user_id = ?))
            ORDER BY m.created_at DESC LIMIT ?`
         )
-        .all(terms, limit) as unknown as MessageRow[]
+        .all(terms, userId, limit) as unknown as MessageRow[]
       return rows.map(toMessage)
     } catch {
       return []

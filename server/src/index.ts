@@ -390,6 +390,9 @@ async function main(): Promise<void> {
 
   const app = buildApp({
     store,
+    // The address this process is actually listening on. The readiness row
+    // used to infer it from the adapters, which is a different question.
+    boundHost: bindHost,
     eventPin: config.eventPin,
     // So the control API reads the running order against the festival's wall
     // clock rather than the box's process timezone. See CREWBOX_TZ.

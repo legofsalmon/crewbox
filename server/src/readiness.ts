@@ -48,6 +48,17 @@ export interface ReadinessInput {
   /** CREWBOX_IFACE, when set: the adapter every crew-facing address uses. */
   iface?: string
   /**
+   * The address this process is actually listening on, decided once at boot.
+   *
+   * `'0.0.0.0'` (or absent) means every adapter. The distinction matters
+   * because the configuration and the bind can disagree in both directions:
+   * a crew adapter that was down at boot leaves the box answering
+   * everywhere even after the cable goes back in, and a box bound to an
+   * address that has since gone is answering nowhere. Both used to be read
+   * off the live adapters and reported as the opposite of what was true.
+   */
+  boundHost?: string
+  /**
    * This machine's LAN IPv4 addresses, best first — the first is what the
    * join QR points at. Passed in so the check is pure and the caller decides
    * when to enumerate.
@@ -130,6 +141,61 @@ function networkCheck(input: ReadinessInput): ReadinessCheck {
         'Join links already point at the saved crew network; the binding and the lighting ' +
         'listener change at the next start.',
       fix: 'Restart the box — close it and run it again. Nothing else is lost: crew rejoin automatically.',
+    }
+  }
+
+  // What the box is actually listening on. Absent (tests, nothing bound
+  // yet) means fall back to describing the configuration, as before.
+  const everywhere = !input.boundHost || input.boundHost === '0.0.0.0' || input.boundHost === '::'
+  const boundToIface = Boolean(input.iface) && input.boundHost === input.iface
+
+  if (input.iface && !everywhere && !boundToIface && input.boundHost) {
+    // Bound to something that is not the configured adapter — the saved
+    // setting changed without a restart, or the address moved.
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        `The box is answering on ${input.boundHost}, but crew join links point at ` +
+        `${input.iface}. It has been bound to that address since it started.`,
+      fix: 'Restart the box to bind the crew adapter. Crew rejoin automatically.',
+    }
+  }
+
+  if (input.iface && boundToIface) {
+    const present = addresses[0] === input.iface
+    return {
+      ...base,
+      state: present ? 'ok' : 'limited',
+      detail: present
+        ? `Crew join links point at ${input.iface}, and the box answers only there ` +
+          '(and on localhost). Other networks this machine is on never see its traffic.'
+        : `The box is bound to ${input.iface}, and no adapter has that address any more — ` +
+          'so it is answering nowhere. A pulled cable, or a DHCP lease that moved.',
+      ...(present
+        ? {}
+        : { fix: 'Put the cable back, or restart the box once the adapter has its address.' }),
+    }
+  }
+
+  if (input.iface && input.boundHost && everywhere) {
+    // Configured, but the adapter was not up when the box bound, so it fell
+    // back to every network. Saying "answers only there" once the cable is
+    // back in — which is what reading the live adapters did — is the answer
+    // an operator would act on and the wrong one.
+    const back = addresses[0] === input.iface
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        `${input.iface} was not up when the box started, so it is answering on every ` +
+        `network this machine is on` +
+        (back
+          ? ' — including the crew adapter, which is back now.'
+          : `${addresses.length > 0 ? ` and the join QR points at ${addresses[0]}` : ''}.`),
+      fix: back
+        ? 'Restart the box to answer only on the crew adapter. Crew rejoin automatically.'
+        : 'Check the cable and the adapter\u2019s IP, then restart the box.',
     }
   }
 
@@ -534,7 +600,11 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
         ? `${input.crewCount} ${input.crewCount === 1 ? 'person has' : 'people have'} joined.`
         : 'Nobody has joined yet.',
     fix:
-      input.crewCount > 0 ? undefined : `Show the QR at http://${input.host}/connect, or print it.`,
+      input.crewCount > 0
+        ? undefined
+        : // http:// was hardcoded, so on a box with a certificate this line
+          // sent whoever read it to a port that only speaks TLS.
+          `Show the QR at ${input.secure ? 'https' : 'http'}://${input.host}/connect, or print it.`,
   })
 
   return checks

@@ -71,7 +71,6 @@ import {
   newAdminPassword,
   newToken,
   RateLimiter,
-  verifyPin,
   verifyPinAsync,
 } from './auth.ts'
 import {
@@ -304,6 +303,22 @@ export interface AppDeps {
    */
   iface?: string
   /**
+   * The address this process is actually listening on, as index.ts resolved
+   * it at boot.
+   *
+   * Not the same question as `iface`, and the readiness row used to answer
+   * it by looking at the adapters as they are now. The bind was decided
+   * once: a crew adapter that was down at boot means the box is answering on
+   * *every* network, and once the cable is back in the old row said "the box
+   * answers only there" — which is the answer an operator would act on, and
+   * the wrong one. It lied in the other direction too, calling a box bound
+   * to a departed address "answering everywhere".
+   *
+   * Absent in tests and when nothing has bound yet, in which case the row
+   * falls back to describing the configuration.
+   */
+  boundHost?: string
+  /**
    * What this process actually booted with, and which pieces came from the
    * environment — so the panel can say "saved, applies on restart" only when
    * it is true, and mark env-pinned fields as not editable here.
@@ -407,6 +422,7 @@ export function buildApp({
   voiceFailure,
   captive,
   iface = '',
+  boundHost,
   network,
   sessionTtlMs,
   trustProxy = false,
@@ -633,6 +649,11 @@ export function buildApp({
     joinLimiter.sweep()
     pinLimiter.sweep()
     adminLimiter.sweep()
+    // Swept like the rest. It was not, so its map grew one entry per distinct
+    // caller for the process lifetime — bounded now by MAX_TRACKED_KEYS, but
+    // a bound reached by keeping every key is not the same as not keeping
+    // them.
+    controlLimiter.sweep()
     adminTokens.sweep()
   }, 5 * 60_000)
   limiterSweep.unref()
@@ -688,7 +709,13 @@ export function buildApp({
   // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
   // no CSRF surface on the crew LAN.
   void fastify.register(cors, { origin: true })
-  void fastify.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 2 } })
+  // `fields`, `fieldSize` and `parts` as well as the file caps: the handler
+  // reads exactly `width`, `height` and `thumb`, and busboy was otherwise
+  // happy to buffer as many form fields as a client cared to send, each
+  // unbounded, entirely in memory on a box that is also carrying the show.
+  void fastify.register(multipart, {
+    limits: { fileSize: MAX_UPLOAD_BYTES, files: 2, fields: 8, fieldSize: 256, parts: 12 },
+  })
 
   // The first-run setup page is a plain HTML form, so that it works before any
   // JavaScript has loaded and on whatever browser the box happened to open.
@@ -820,7 +847,12 @@ export function buildApp({
     // req.protocol is 'https' when this box serves TLS itself, and falls back
     // to x-forwarded-proto only when trustProxy is on. Hardcoding http here
     // would print a QR pointing at a port that only speaks TLS.
-    const proto = req.protocol
+    //
+    // ...except through the box's own loopback mirror, which is plain HTTP by
+    // construction — the tray and the setup page reach the box that way. The
+    // request says http and the crew's port says https, so a QR printed from
+    // the tray sent every phone to a port that would not talk to them.
+    const proto = tls ? 'https' : req.protocol
     const host = req.headers.host ?? 'localhost'
     if (!/^(localhost|127\.)/.test(host)) return `${proto}://${host}`
     const port = host.split(':')[1] ?? ''
@@ -908,6 +940,34 @@ export function buildApp({
     )
   })
 
+  /**
+   * Which field the setup form should point at.
+   *
+   * Every failure but the admin password used to read "Event PIN needs at
+   * least 4 characters", including a mistyped adapter address — so the one
+   * field that was correct was the one being blamed, on the first page a new
+   * admin ever sees.
+   */
+  const SETUP_FIELD_LABELS: Record<string, string> = {
+    adminPassword: 'The admin password needs at least 8 characters.',
+    eventPin: 'Event PIN needs at least 4 characters — everything else is optional.',
+    eventName: 'That event name is too long.',
+    wifiSsid: 'That Wi-Fi name is too long.',
+    crewIface: 'The crew adapter needs to be an IPv4 address, or left blank.',
+    dmxIface: 'The lighting adapter needs to be an IPv4 address, or left blank.',
+    dmxMode: 'Pick one of the lighting modes.',
+    dmxUniverses: 'Universes look like "1-16" or "1,5,9".',
+  }
+
+  const setupError = (issues: { path: PropertyKey[]; message: string }[]): string => {
+    // The admin password first, whatever else also failed: it is the one
+    // field the form clears on a re-render, so an unmentioned failure there
+    // is a form that rejects the same submission twice with no explanation.
+    const named = issues.find((i) => i.path[0] === 'adminPassword') ?? issues[0]
+    const field = named ? String(named.path[0] ?? '') : ''
+    return SETUP_FIELD_LABELS[field] ?? named?.message ?? 'Check the fields above.'
+  }
+
   fastify.post('/setup', (req, reply) => {
     if (!setupOpen()) return reply.redirect('/connect')
     const body = (req.body ?? {}) as Record<string, unknown>
@@ -939,9 +999,11 @@ export function buildApp({
             ...(envAdminHash ? {} : { adminPassword: typedAdminPassword }),
           },
           base: crewUrl(req),
-          error: parsed.error.issues.some((i) => i.path[0] === 'adminPassword')
-            ? 'The admin password needs at least 8 characters.'
-            : 'Event PIN needs at least 4 characters — everything else is optional.',
+          // Named by the field that actually failed. It used to blame the
+          // event PIN for everything except the admin password, so a typo in
+          // an adapter address sent whoever was setting the box up to stare
+          // at a PIN that was fine.
+          error: setupError(parsed.error.issues),
         })
       )
     }
@@ -1010,7 +1072,7 @@ export function buildApp({
       ? `<p class="pin">Event PIN: <strong>${escapeHtml(pin)}</strong></p>`
       : `<p class="meta">Ask the production office for the event PIN.</p>`
   }
-  ${apkAvailable() ? `<p class="meta">Android lock-screen alerts: <a href="${base}/crewbox.apk">download the Crewbox app</a></p>` : ''}
+  ${apkAvailable() ? `<p class="meta">Android lock-screen alerts: <a href="/crewbox.apk">download the Crewbox app</a></p>` : ''}
 </div></body></html>`
     return reply
       .header('content-type', 'text/html; charset=utf-8')
@@ -1330,11 +1392,10 @@ export function buildApp({
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
     const { q } = req.query as { q?: string }
     if (!q?.trim()) return { messages: [] }
-    const results = store
-      .searchMessages(q, 50)
-      .filter((m) => store.isMember(m.channelId, user.id))
-      .slice(0, 25)
-    return { messages: results }
+    // Limited in SQL, not after: the filter used to run on the newest 50
+    // hits, so a word somebody had used a lot in their own DMs pushed every
+    // public match out of the window and the answer was "nothing".
+    return { messages: store.searchMessages(q, user.id, 25) }
   })
 
   // -- network audit ---------------------------------------------------------
@@ -1795,9 +1856,10 @@ export function buildApp({
    * always belongs to somebody — and so this route is not reachable at all
    * from an unauthenticated internet client when the box is behind a tunnel.
    */
-  fastify.post('/api/admin/unlock', (req, reply) => {
+  fastify.post('/api/admin/unlock', async (req, reply) => {
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+    // Counted before the hash, so a burst cannot outrun the limiter.
     if (!adminLimiter.allow(limitKey(req))) {
       return reply
         .code(429)
@@ -1807,7 +1869,11 @@ export function buildApp({
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Enter the admin password.' })
     }
-    if (!verifyPin(parsed.data.password, adminPasswordHash())) {
+    // Async: scrypt is up to ~200 ms on an ARM box and this route is
+    // reachable by any crew member, so the synchronous form froze the one
+    // event loop the whole box shares — chat, DMX ticks and heartbeats —
+    // for every attempt, including every wrong one.
+    if (!(await verifyPinAsync(parsed.data.password, adminPasswordHash()))) {
       return reply.code(401).send({ error: "That's not the admin password." })
     }
     adminLimiter.clear(limitKey(req))
@@ -2125,7 +2191,12 @@ export function buildApp({
     const readiness = boxReadiness({
       // req.protocol is 'https' for a TLS connection, and honours
       // x-forwarded-proto only when this box is configured to trust a proxy.
-      secure: req.protocol === 'https',
+      //
+      // A box that serves TLS is secure whatever this particular request
+      // arrived on: the loopback mirror is plain HTTP by construction, so
+      // opening the panel from the tray reported the box as insecure and
+      // told the operator to get a certificate they already had.
+      secure: Boolean(tls) || req.protocol === 'https',
       voice: livekit?.embedded ? 'embedded' : livekit?.url ? 'external' : 'off',
       ...(sfu ? { sfu } : {}),
       ...(voiceFailure ? { voiceFailure } : {}),
@@ -2138,6 +2209,8 @@ export function buildApp({
       // Wi-Fi re-joined), and the panel exists to say what is true now.
       iface: effectiveIface(),
       addresses: lanIps(effectiveIface()),
+      // What the box is really answering on, not what the adapters suggest.
+      ...(boundHost ? { boundHost } : {}),
       restartNeeded: networkRestartNeeded(),
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,

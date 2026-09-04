@@ -243,6 +243,36 @@ describe('first-run setup, once somebody has joined', () => {
     expect(res.statusCode).toBe(200)
   })
 
+  it('names the field that actually failed, not the PIN', async () => {
+    // Every failure but the admin password used to read "Event PIN needs at
+    // least 4 characters", so a mistyped adapter address sent whoever was
+    // setting the box up to stare at the one field that was correct — on
+    // the first page a new admin ever sees.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup',
+      payload: {
+        eventName: 'Fine',
+        eventPin: '4242',
+        crewIface: 'not-an-address',
+        adminPassword: '',
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toContain('crew adapter')
+    expect(res.body).not.toContain('Event PIN needs at least 4 characters')
+  })
+
+  it('still says so when the PIN is the thing that is wrong', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup',
+      payload: { eventName: 'Fine', eventPin: '12', adminPassword: '' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toContain('Event PIN needs at least 4 characters')
+  })
+
   it('closes once the first person joins', async () => {
     expect((await joinAs('Alex')).statusCode).toBe(200)
     const res = await app.inject({ method: 'GET', url: '/setup' })
