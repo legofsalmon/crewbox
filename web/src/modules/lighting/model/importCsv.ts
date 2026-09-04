@@ -1,6 +1,6 @@
 import { isBlankRow, normalizeHeader } from '../../_shared/csv'
 import { parseAddress } from './addressing'
-import { matchTypeByName } from './fixtures'
+import { footprintFor, matchTypeByName } from './fixtures'
 import type { Fixture, FixtureStatus, FixtureType } from './types'
 
 /**
@@ -169,8 +169,17 @@ export const fixturesFromCsv = (rows: string[][], customTypes: FixtureType[]): I
       else fixture.typeName = cells.type
     }
 
+    // A typed number wins; otherwise the type says, which is the whole
+    // reason the type column was matched. Without this a 400-fixture
+    // Lightwright export arrived with every head one channel wide, so
+    // nothing collided, the address checker said the rig was clean, and the
+    // first fault anyone saw was on stage.
     const footprint = cells.footprint ? toNumber(cells.footprint) : null
     if (footprint !== null && footprint > 0) fixture.footprint = Math.floor(footprint)
+    else if (fixture.typeId) {
+      const implied = footprintFor(fixture.typeId, fixture.mode ?? '', customTypes)
+      if (implied !== null) fixture.footprint = implied
+    }
 
     const watts = cells.watts ? toNumber(cells.watts) : null
     if (watts !== null) fixture.watts = watts

@@ -8,6 +8,7 @@ import {
   addPosition,
   removePosition,
   snapshotPlot,
+  updateFixture,
   updatePosition,
   upsertFixtureType,
 } from '../model/plotDoc'
@@ -81,6 +82,12 @@ function importCsv(doc: Y.Doc, text: string): string {
  * MVR carries far more than a CSV: the fixture's own GDTF profile (so the
  * footprint is authoritative rather than guessed) and real coordinates,
  * which get fitted onto positions so the plot arrives placed.
+ *
+ * A second import of the same rig updates it rather than adding it again.
+ * Re-exporting after a change is how an MVR normally arrives twice — the
+ * designer moves a truss, repatches a block, sends the file — and the scene
+ * objects keep their uuids across that, so the fixtures that came from this
+ * file before can be found and moved instead of duplicated.
  */
 function importMvr(doc: Y.Doc, bytes: Uint8Array): string {
   const snapshot = snapshotPlot(doc)
@@ -88,6 +95,16 @@ function importMvr(doc: Y.Doc, bytes: Uint8Array): string {
   if (result.fixtures.length === 0) {
     return 'Nothing imported — that MVR has no fixtures in it.'
   }
+
+  // Only fixtures that came from an MVR can be matched, and only by the
+  // uuid they came with. Nothing here guesses: a fixture somebody typed by
+  // hand is theirs, and an import has no business claiming it.
+  const known = new Map(
+    snapshot.fixtures
+      .filter((fixture) => fixture.mvrUuid)
+      .map((fixture) => [fixture.mvrUuid!, fixture.id])
+  )
+  const seen = new Set<string>()
 
   for (const type of result.types) upsertFixtureType(doc, type)
 
@@ -108,6 +125,7 @@ function importMvr(doc: Y.Doc, bytes: Uint8Array): string {
 
   const existing = new Map(snapshot.positions.map((p) => [p.name.toLowerCase(), p.id]))
   const used = new Set<string>()
+  let updated = 0
 
   for (const [layer, group] of byLayer) {
     // `order` and `residual` are placement output, not document state.
@@ -130,11 +148,10 @@ function importMvr(doc: Y.Doc, bytes: Uint8Array): string {
 
     // Unit numbers follow the order along the bar, so the plot and the
     // paperwork agree with what someone counting along the truss sees.
-    addFixtures(
-      doc,
-      order.map((index, along) => {
-        const fixture = group[index]!
-        return {
+    const rows = order.map((index, along) => {
+      const fixture = group[index]!
+      return {
+        row: {
           channel: fixture.channel,
           universe: fixture.universe,
           address: fixture.address,
@@ -147,8 +164,24 @@ function importMvr(doc: Y.Doc, bytes: Uint8Array): string {
           x: fixture.x,
           y: fixture.y,
           z: fixture.z,
-        }
-      })
+          ...(fixture.uuid ? { mvrUuid: fixture.uuid } : {}),
+        },
+        alreadyHere: fixture.uuid ? known.get(fixture.uuid) : undefined,
+      }
+    })
+
+    for (const { row, alreadyHere } of rows) {
+      if (alreadyHere === undefined) continue
+      // Status and notes are the crew's, added on site after the file was
+      // exported, and the file has nothing to say about them. Everything
+      // else here is what the designer just changed.
+      updateFixture(doc, alreadyHere, row)
+      seen.add(alreadyHere)
+      updated++
+    }
+    addFixtures(
+      doc,
+      rows.filter(({ alreadyHere }) => alreadyHere === undefined).map(({ row }) => row)
     )
   }
 
@@ -157,9 +190,19 @@ function importMvr(doc: Y.Doc, bytes: Uint8Array): string {
   // fixtures' position out from under them.
   if (placeholder && !used.has(placeholder)) removePosition(doc, placeholder)
 
+  // Fixtures this plot got from an earlier MVR that the new file no longer
+  // has. Deleting them is the designer's call and not an import's: a rig
+  // sheet with a fixture too many is a question, one silently short is a
+  // dark stage. So they are counted and left where they are.
+  const dropped = [...known.values()].filter((id) => !seen.has(id)).length
+
+  const added = result.fixtures.length - updated
   return (
     `Imported ${result.fixtures.length} fixtures across ${byLayer.size} position${
       byLayer.size === 1 ? '' : 's'
-    }` + (result.warnings.length > 0 ? ` · ${result.warnings.join(' · ')}` : '')
+    }` +
+    (updated > 0 ? ` · ${updated} updated, ${added} new` : '') +
+    (dropped > 0 ? ` · ${dropped} already here are not in this file and were left alone` : '') +
+    (result.warnings.length > 0 ? ` · ${result.warnings.join(' · ')}` : '')
   )
 }

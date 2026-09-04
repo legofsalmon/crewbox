@@ -406,6 +406,7 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
         status: (['todo', 'rigged', 'ok', 'fault'] as const).includes(status as FixtureStatus)
           ? (status as FixtureStatus)
           : 'todo',
+        ...(str(json.mvrUuid) ? { mvrUuid: str(json.mvrUuid) } : {}),
       }
     }),
     customTypes: types.map((item): FixtureType => {
