@@ -11,6 +11,11 @@ on:
     paths:
       - 'native/**'
       - 'web/src/lib/server.ts'
+      # The permission check this job runs. Without it listed, a change to
+      # the checker itself is next exercised by a release build — which is
+      # the worst place to find out it is wrong, and is how a fix to it went
+      # unverified once already.
+      - 'scripts/check-apk-permissions.mjs'
       - '.github/workflows/native.yml'
 
 jobs:
