@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Channel, User } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
+import { NO_DOWNLOADS, saveFile } from '../lib/download.ts'
 import UpdateSection from './UpdateSection.tsx'
 
 const PIN_RE = /^\d{4,8}$/
@@ -51,13 +52,8 @@ export default function AdminPanel() {
     setExporting(true)
     try {
       const blob = await api.adminExport(auth())
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `crewbox-export-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      setNote('Export downloaded')
+      const name = `crewbox-export-${new Date().toISOString().slice(0, 10)}.json`
+      setNote(saveFile(name, blob) ? 'Export downloaded' : NO_DOWNLOADS)
     } catch (err) {
       setNote(err instanceof api.ApiError ? err.message : 'Export failed')
     } finally {
@@ -250,13 +246,11 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
   async function downloadDns() {
     try {
       const blob = await api.adminDnsConfig(auth())
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'crewbox-dns.conf'
-      a.click()
-      URL.revokeObjectURL(url)
-      onNote('DNS config downloaded — put it on the venue router')
+      onNote(
+        saveFile('crewbox-dns.conf', blob)
+          ? 'DNS config downloaded — put it on the venue router'
+          : NO_DOWNLOADS
+      )
     } catch (err) {
       onNote(err instanceof api.ApiError ? err.message : 'Could not build the DNS config')
     }

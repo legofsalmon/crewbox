@@ -9,6 +9,7 @@ import {
   type IncidentSeverity,
 } from '@crewbox/shared'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
+import { NO_DOWNLOADS, saveText } from '../../../lib/download.ts'
 import { useStore } from '../../../store.ts'
 import { byShowDay, clockOf, filterLog, loggedLate, type LogFilter } from '../model/log.ts'
 import { reportFilename, showReportHtml } from '../model/report.ts'
@@ -114,13 +115,8 @@ export default function IncidentMain() {
 
   const download = () => {
     const html = showReportHtml({ eventName, entries: incidents, generatedAt: Date.now() })
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = reportFilename(eventName, Date.now())
-    link.click()
-    URL.revokeObjectURL(url)
-    toast('Show report downloaded')
+    const saved = saveText(reportFilename(eventName, Date.now()), 'text/html', html)
+    toast(saved ? 'Show report downloaded' : NO_DOWNLOADS)
   }
 
   return (

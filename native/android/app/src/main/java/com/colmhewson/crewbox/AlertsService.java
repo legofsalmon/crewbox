@@ -53,6 +53,31 @@ public class AlertsService extends Service {
   private WebSocket ws;
   private boolean stopped = false;
 
+  /**
+   * Which attempt the live socket belongs to.
+   *
+   * Every socket's listener carries the number it was opened under, and a
+   * callback from an older one is dropped. Without it a superseded socket
+   * was still a live connection with a live listener: it raised its own
+   * notifications, and when it eventually failed it scheduled a reconnect of
+   * its own, so a phone that had moved between two APs on a site spent the
+   * rest of the show doubling its connections and its buzzes.
+   *
+   * Written on the main thread and read from OkHttp's, hence volatile. Every
+   * callback below hands its work to the handler for the same reason: the
+   * maps this service keeps are then touched by one thread only, and a
+   * handover between two sockets cannot interleave in them.
+   */
+  private volatile int generation = 0;
+
+  /**
+   * The pending reconnect, held so it can be cancelled.
+   *
+   * A method reference is a fresh object each time it is written, so
+   * `removeCallbacks(this::connect)` cancels nothing — one field, reused.
+   */
+  private final Runnable reconnect = this::connect;
+
   private String serverUrl = "";
   private String token = "";
   private String myName = "";
@@ -86,6 +111,9 @@ public class AlertsService extends Service {
           "@(" + Pattern.quote(myName) + "|all|everyone|channel)", Pattern.CASE_INSENSITIVE);
     }
     startForeground(NOTIF_FOREGROUND, serviceNotification("Connecting to crew server…"));
+    // Every start is a fresh attempt, including the redeliveries START_STICKY
+    // brings after the OS has killed us, and the plugin's own restart when
+    // the crew member signs in again with a new token.
     connect();
     return START_STICKY;
   }
@@ -93,7 +121,8 @@ public class AlertsService extends Service {
   @Override
   public void onDestroy() {
     stopped = true;
-    if (ws != null) ws.close(1000, "service stopped");
+    generation++;
+    closeCurrent("service stopped");
     handler.removeCallbacksAndMessages(null);
     super.onDestroy();
   }
@@ -105,13 +134,32 @@ public class AlertsService extends Service {
 
   // -- connection -----------------------------------------------------------
 
+  /** Drop whatever socket we currently hold, if any. */
+  private void closeCurrent(String why) {
+    WebSocket previous = ws;
+    ws = null;
+    if (previous != null) previous.close(1000, why);
+  }
+
   private void connect() {
     if (stopped || serverUrl.isEmpty()) return;
+    // Anything already open, and any reconnect already queued, belongs to a
+    // previous attempt and is abandoned here — one socket at a time is the
+    // whole invariant.
+    handler.removeCallbacks(reconnect);
+    generation++;
+    final int mine = generation;
+    closeCurrent("replaced");
+
     String wsBase = serverUrl.replaceFirst("^http", "ws");
     Request request = new Request.Builder().url(wsBase + "/ws").build();
     ws = http.newWebSocket(request, new WebSocketListener() {
       @Override
       public void onOpen(WebSocket socket, Response response) {
+        if (mine != generation) {
+          socket.close(1000, "superseded");
+          return;
+        }
         try {
           JSONObject hello = new JSONObject();
           hello.put("type", "hello");
@@ -124,26 +172,34 @@ public class AlertsService extends Service {
 
       @Override
       public void onMessage(WebSocket socket, String text) {
-        handleMessage(text);
+        // A superseded socket must not raise notifications: its frames are
+        // the same messages the live one is already delivering.
+        handler.post(() -> {
+          if (mine != generation) return;
+          handleMessage(text);
+        });
       }
 
       @Override
       public void onFailure(WebSocket socket, Throwable t, Response response) {
-        scheduleReconnect();
+        handler.post(() -> scheduleReconnect(mine));
       }
 
       @Override
       public void onClosed(WebSocket socket, int code, String reason) {
-        scheduleReconnect();
+        handler.post(() -> scheduleReconnect(mine));
       }
     });
   }
 
-  private void scheduleReconnect() {
-    if (stopped) return;
+  private void scheduleReconnect(int from) {
+    // Only the socket we are actually using gets to ask for a reconnect. An
+    // older one closing is the expected end of its life, not a fault.
+    if (stopped || from != generation) return;
     ws = null;
     updateServiceNotification("Reconnecting to crew server…");
-    handler.postDelayed(this::connect, RETRY_MS);
+    handler.removeCallbacks(reconnect);
+    handler.postDelayed(reconnect, RETRY_MS);
   }
 
   // -- protocol -------------------------------------------------------------

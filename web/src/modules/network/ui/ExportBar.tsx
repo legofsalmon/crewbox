@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../../../store.ts'
+import { NO_DOWNLOADS, saveText } from '../../../lib/download.ts'
 import { APP_VERSION } from '../../../lib/pwa.ts'
 import { auditFilename, buildAuditHtml } from '../model/export.ts'
 import type { AuditPayload, SeriesPoint } from '../model/types.ts'
@@ -31,13 +32,14 @@ export default function ExportBar({
       version: APP_VERSION,
       generatedAt: payload.report.generatedAt,
     })
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = auditFilename(payload.report.generatedAt)
-    link.click()
-    URL.revokeObjectURL(url)
+    const saved = saveText(
+      auditFilename(payload.report.generatedAt),
+      'text/html;charset=utf-8',
+      html
+    )
+    // Sharing the report to a channel works everywhere, and the button for
+    // it is right here, so the message points at what to do next.
+    if (!saved) setNote(`${NO_DOWNLOADS} Or share it to a channel.`)
   }
 
   const publicChannels = Object.values(channels)

@@ -6,6 +6,7 @@ import { setMetaField } from '../model/sheetDoc'
 import { setSheetDate, setSheetStage } from '../model/lineup'
 import { displayToIso, isoToDisplay } from '../model/date'
 import type { SheetAct, SheetSnapshot } from '../model/types'
+import { NO_DOWNLOADS } from '../../../lib/download.ts'
 import { downloadSheetCsv } from './download'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useToasts } from './toastContext'
@@ -74,8 +75,11 @@ export default function Toolbar({
   })
 
   const handleExport = () => {
-    downloadSheetCsv(snapshot, acts)
-    addToast('Export complete', 'Sheet downloaded as CSV', 'success')
+    if (downloadSheetCsv(snapshot, acts)) {
+      addToast('Export complete', 'Sheet downloaded as CSV', 'success')
+    } else {
+      addToast('Cannot save here', NO_DOWNLOADS, 'warning')
+    }
   }
 
   return (
