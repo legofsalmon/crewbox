@@ -1,4 +1,4 @@
-import type { PointerEvent } from 'react'
+import { useEffect, type PointerEvent } from 'react'
 import { channelLabel, useStore } from '../store.ts'
 
 /** Halo ring 8→30px with voice level; must mirror .ptt-btn.talking's resting shadow. */
@@ -20,6 +20,41 @@ export default function VoiceBar() {
   const setAudioSettingsOpen = useStore((s) => s.setAudioSettingsOpen)
   const resumeVoiceAudio = useStore((s) => s.resumeVoiceAudio)
 
+  const connected = voice.status === 'connected'
+  const latched = voice.latched
+
+  /**
+   * Close the mic when the thing holding it open goes away.
+   *
+   * The dock used to exist only while `status === 'connected'`, so a LiveKit
+   * reconnect unmounted the button *under somebody's finger*: the pointer-up
+   * landed on nothing, `talking` stayed true, and the reconcile that runs on
+   * `Reconnected` opened the mic again. Everything said after that went to
+   * the channel, from a person who had let go of the button.
+   *
+   * The dock now stays mounted and disabled through a reconnect, which fixes
+   * the unmount. This covers the rest: leaving voice, the tab going away, and
+   * the connection dropping. A latched mic is exempt — that is somebody
+   * deliberately locking it open, and it is theirs to unlock.
+   */
+  useEffect(() => {
+    if (connected || latched) return
+    setTalking(false)
+  }, [connected, latched, setTalking])
+
+  useEffect(() => {
+    // A pointer-up this window never sees — the app backgrounded, a call came
+    // in, the user swiped away — is still a finger off the button.
+    const release = () => {
+      if (!useStore.getState().voice.latched) setTalking(false)
+    }
+    window.addEventListener('blur', release)
+    return () => {
+      window.removeEventListener('blur', release)
+      release()
+    }
+  }, [setTalking])
+
   if (voice.channelId === null || voice.status === 'idle') return null
 
   const channel = channels[voice.channelId]
@@ -27,6 +62,7 @@ export default function VoiceBar() {
   const speaking = voice.participants.filter((p) => p.speaking)
 
   function pttDown(e: PointerEvent<HTMLButtonElement>) {
+    if (!connected) return
     e.currentTarget.setPointerCapture(e.pointerId)
     setTalking(true)
   }
@@ -75,7 +111,10 @@ export default function VoiceBar() {
         </button>
       </div>
 
-      {voice.status === 'connected' && (
+      {/* Mounted through a reconnect, not only while connected: unmounting
+          this under a finger is how the mic used to stick open. Disabled
+          instead, so the button is visibly there and does nothing. */}
+      {(connected || voice.status === 'reconnecting') && (
         <div className="ptt-dock">
           {/* Status pills float above the button; kept out of flow so they
               never shift the talk target under the user's finger. */}
@@ -112,9 +151,13 @@ export default function VoiceBar() {
             // Inline (not a CSS var): Chromium won't retarget a shadow
             // transition when only a var() inside it changes.
             style={voice.talking ? { boxShadow: talkingHalo(voice.micLevel) } : undefined}
+            disabled={!connected}
             onPointerDown={pttDown}
             onPointerUp={pttUp}
             onPointerCancel={pttUp}
+            // Capture lost to a scroll, a system gesture, or the element
+            // being disabled mid-press: all of them mean the finger is gone.
+            onLostPointerCapture={pttUp}
             onContextMenu={(e) => e.preventDefault()}
           >
             <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden>

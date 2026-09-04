@@ -1442,6 +1442,17 @@ ul {
     0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
+/* Through a reconnect. The button stays where it is — unmounting it under a
+   pressed finger is how the mic used to stick open — and says it is not
+   listening. Not `display: none`, and not moved: the target under the thumb
+   must be the same one it was a moment ago. */
+.ptt-btn:disabled {
+  opacity: 0.45;
+  border-color: var(--border);
+  color: var(--text-dim);
+  box-shadow: none;
+}
+
 .latch-btn {
   width: 40px;
   height: 40px;

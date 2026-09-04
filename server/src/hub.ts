@@ -163,6 +163,22 @@ interface Logger {
   error: (msg: string) => void
 }
 
+/**
+ * How long an on-air crew member may be off the network before the tally
+ * gives up on them.
+ *
+ * iOS closes a WebSocket about thirty seconds after the app goes to the
+ * background, and the person on camera is precisely the one not holding
+ * their phone — so "their last socket closed" is not "they left", and
+ * treating it as such made the red bar vanish for the whole crew mid-shot.
+ *
+ * Five minutes: longer than any shot plus the gap around it, short enough
+ * that somebody who has actually gone home is not still on air by the next
+ * scene. A vision desk can clear it at any point regardless; this is only
+ * about what happens when nobody does.
+ */
+export const TALLY_GRACE_MS = 5 * 60_000
+
 export class Hub {
   private conns = new Set<Conn>()
   /** userId → number of open sockets. */
@@ -189,6 +205,9 @@ export class Hub {
    */
   private tally: TallySource | undefined
 
+  /** Pending "they really have gone" timers, per user. See markOffline. */
+  private tallyGrace = new Map<string, NodeJS.Timeout>()
+
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
@@ -196,7 +215,9 @@ export class Hub {
     private readonly sessionTtlMs?: number,
     private readonly trustProxy = false,
     /** Lighting network, when this box was asked to listen to one. */
-    private readonly dmx?: DmxListener
+    private readonly dmx?: DmxListener,
+    /** Injectable so the tally grace is testable without waiting minutes. */
+    private readonly tallyGraceMs = TALLY_GRACE_MS
   ) {}
 
   /** Hand the audit collector what the crew's devices report. Off by default. */
@@ -239,7 +260,30 @@ export class Hub {
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.dmxTimer) clearInterval(this.dmxTimer)
     this.dmxTimer = null
+    for (const timer of this.tallyGrace.values()) clearTimeout(timer)
+    this.tallyGrace.clear()
     for (const conn of this.conns) conn.ws.terminate()
+  }
+
+  /** Start the countdown to forgetting an on-air crew member who dropped. */
+  private scheduleTallyForget(userId: string): void {
+    if (this.tally?.current().userId !== userId) return
+    this.clearTallyGrace(userId)
+    const timer = setTimeout(() => {
+      this.tallyGrace.delete(userId)
+      if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
+    }, this.tallyGraceMs)
+    // Never a reason to hold the process open — a box shutting down has no
+    // tally to clear.
+    timer.unref?.()
+    this.tallyGrace.set(userId, timer)
+  }
+
+  private clearTallyGrace(userId: string): void {
+    const timer = this.tallyGrace.get(userId)
+    if (!timer) return
+    clearTimeout(timer)
+    this.tallyGrace.delete(userId)
   }
 
   stats(): { connections: number; onlineUsers: number } {
@@ -361,6 +405,17 @@ export class Hub {
         conn.dmxLevels = msg.levels
         conn.dmxSent.clear()
         conn.dmxEverLit.clear()
+        // The summary too, or a subscription can get no reply at all.
+        //
+        // `pushDmx` only sends when the summary changed — which is right for
+        // a tick, and wrong for a *new* watch: re-watching a set of universes
+        // the box has never heard from produces the same summary as last
+        // time, so nothing goes out. The client has just set `listening:
+        // false` in its own cleanup, so the live bar reads "this box is not
+        // listening to Art-Net or sACN" while the admin panel says it is
+        // listening on sixteen universes. At get-in, before the desk is
+        // outputting, that is exactly where an LX programmer lands.
+        delete conn.dmxSummary
         this.pushDmx(conn)
         break
       case 'ping':
@@ -687,6 +742,10 @@ export class Hub {
 
   /** Close every socket for a user (their session tokens are now invalid). */
   disconnectUser(userId: string): void {
+    // An account being deleted is somebody leaving on purpose, so the tally
+    // goes now rather than waiting out the grace period below.
+    this.clearTallyGrace(userId)
+    if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
     for (const conn of this.conns) {
       if (conn.user?.id === userId) {
         this.send(conn.ws, { type: 'error', code: 'auth', message: 'account deleted' })
@@ -709,6 +768,8 @@ export class Hub {
   // -- presence -------------------------------------------------------------
 
   private markOnline(userId: string, remote: boolean): void {
+    // They are back, so whatever their last dropped socket started, stop it.
+    this.clearTallyGrace(userId)
     const wasRemoteOnly = this.isRemoteOnly(userId)
     const count = this.online.get(userId) ?? 0
     this.online.set(userId, count + 1)
@@ -736,10 +797,20 @@ export class Hub {
       this.online.delete(userId)
       this.localSockets.delete(userId)
       this.broadcastAll({ type: 'presence', userId, online: false })
+      // The tally waits.
+      //
       // A tally pointing at somebody who has left the event is a red bar
       // nobody can clear: not them, because they are gone, and not anyone
-      // else, because it is not their bar.
-      if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
+      // else, because it is not their bar. But "their last socket closed" is
+      // not "they left" — iOS closes one about thirty seconds after the app
+      // goes to the background, and the person on camera is precisely the one
+      // who is not holding their phone. So the bar was vanishing for the whole
+      // crew, mid-shot, because the subject pocketed a device.
+      //
+      // A grace period tells the two apart: long enough that a shot survives
+      // it, short enough that somebody who has gone home stops being on air
+      // before the next scene. Coming back cancels it. See TALLY_GRACE_MS.
+      this.scheduleTallyForget(userId)
     } else {
       this.online.set(userId, count - 1)
       // Their last on-site device left; they're still on from the office.
