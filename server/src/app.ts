@@ -745,6 +745,23 @@ export function buildApp({
     return store.getSessionUser(header.slice('Bearer '.length), sessionTtlMs)
   }
 
+  /**
+   * A short, stable name for the *device* a request came from.
+   *
+   * Derived from the session token, so it is the same across that device's
+   * reconnects and different on that person's other phone — and it is a
+   * hash, so nothing about the token travels with it. Used for the voice
+   * identity, where "one identity per person" was silently a rule of "one
+   * device per person": LiveKit disconnects the older participant when a
+   * second joins with the same identity, so a stage manager with a phone in
+   * a pocket and a tablet on the desk lost one of them to "Voice dropped"
+   * every time they used the other.
+   */
+  const deviceKey = (req: FastifyRequest): string => {
+    const header = req.headers.authorization ?? ''
+    return createHash('sha256').update(header).digest('base64url').slice(0, 10)
+  }
+
   fastify.get('/api/health', () => ({
     ok: true,
     version: APP_VERSION,
@@ -1370,10 +1387,22 @@ export function buildApp({
   })
 
   // Voice signalling, proxied so it shares the box's port and certificate.
+  //
+  // In its own scope with the body parsers taken off. Fastify parses a
+  // request body before the handler runs, so a JSON POST to the SFU arrived
+  // here already drained — `req.pipe(target)` then had nothing to send and
+  // the upstream request hung until it timed out — and anything else was
+  // answered 415 before the proxy saw it at all. A proxy has no business
+  // reading a body it is only carrying.
   if (livekit?.embedded) {
-    fastify.all(`${VOICE_PROXY_PATH}/*`, (req, reply) => {
-      proxyVoiceHttp(req.raw, reply.raw, livekit.port ?? LIVEKIT_PORT)
-      return reply
+    void fastify.register((instance, _opts, done) => {
+      instance.removeAllContentTypeParsers()
+      instance.addContentTypeParser('*', (_req, payload, next) => next(null, payload))
+      instance.all(`${VOICE_PROXY_PATH}/*`, (req, reply) => {
+        proxyVoiceHttp(req.raw, reply.raw, livekit.port ?? LIVEKIT_PORT)
+        return reply
+      })
+      done()
     })
   }
 
@@ -1390,7 +1419,10 @@ export function buildApp({
     }
     const { AccessToken } = await import('livekit-server-sdk')
     const at = new AccessToken(livekit!.key, livekit!.secret, {
-      identity: user.id,
+      // Per device, not per person — see `deviceKey`. Nothing on either side
+      // reads the user id back out of this: the room shows `name`, and the
+      // participant list keys on it only to tell chips apart.
+      identity: `${user.id}:${deviceKey(req)}`,
       name: user.name,
       ttl: '12h',
     })

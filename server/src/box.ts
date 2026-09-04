@@ -24,6 +24,12 @@ import { createServer } from 'node:net'
 interface SeaApi {
   isSea(): boolean
   getAsset(key: string, encoding?: 'utf8'): ArrayBuffer | string
+  /**
+   * The same bytes without the copy — a view into the blob already in the
+   * executable's memory. Optional so an older runtime falls back rather
+   * than failing.
+   */
+  getRawAsset?(key: string): ArrayBuffer
 }
 
 // The SEA bundle is CJS (require exists); under tsx/ESM this resolves null.
@@ -58,9 +64,35 @@ export function seaAsset(key: string): ArrayBuffer | null {
   const sea = seaApi()
   if (!sea) return null
   try {
-    return sea.getAsset(key) as ArrayBuffer
+    // Raw where the runtime has it: `getAsset` copies, and these assets are
+    // the whole web bundle and a ~40 MB SFU. Every caller writes the bytes
+    // straight to disk, so a view is all any of them ever needed.
+    return sea.getRawAsset ? sea.getRawAsset(key) : (sea.getAsset(key) as ArrayBuffer)
   } catch {
     return null
+  }
+}
+
+/**
+ * Whether this build carries an asset, without reading it.
+ *
+ * `hasEmbeddedLiveKit()` used to answer by fetching the SFU — forty
+ * megabytes allocated and thrown away, on the boot path, to learn a
+ * boolean. `getRawAsset` hands back a view rather than a copy, so this is
+ * a lookup; where the runtime lacks it there is nothing better to do than
+ * what was being done before.
+ */
+export function hasSeaAsset(key: string): boolean {
+  const sea = seaApi()
+  if (!sea) return false
+  try {
+    if (sea.getRawAsset) {
+      sea.getRawAsset(key)
+      return true
+    }
+    return sea.getAsset(key) !== undefined
+  } catch {
+    return false
   }
 }
 

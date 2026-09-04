@@ -68,6 +68,20 @@ const loiterStub = (): Buffer =>
       `process.on('SIGTERM', () => process.exit(0))\n`
   )
 
+/**
+ * A stub that takes the port and then ignores SIGTERM, as an SFU with rooms
+ * to close can. Two seconds, which is past the old fixed 500 ms wait.
+ */
+const stubbornStub = (): Buffer =>
+  Buffer.from(
+    `#!/usr/bin/env node\n` +
+      `require('node:http').createServer((req, res) => {\n` +
+      `  res.statusCode = req.url.startsWith('/rtc/validate') ? 200 : 404\n` +
+      `  res.end('success')\n` +
+      `}).listen(${LIVEKIT_PORT}, '0.0.0.0')\n` +
+      `process.on('SIGTERM', () => setTimeout(() => process.exit(0), 2000))\n`
+  )
+
 /** A stub that starts and dies, as a broken SFU would. */
 const crasherStub = (): Buffer =>
   Buffer.from(`#!/usr/bin/env node\nprocess.stderr.write('boom\\n')\nprocess.exit(3)\n`)
@@ -204,6 +218,48 @@ describe('orphaned SFU from a killed box', () => {
     expect(Number.isInteger(pid)).toBe(true)
     // Signal 0 proves the recorded pid is the process actually running.
     expect(() => process.kill(pid, 0)).not.toThrow()
+  }, 15_000)
+
+  it('is really finished when stop() resolves, not merely 500ms later', async () => {
+    // It used to resolve after a fixed sleep whether or not the child had
+    // gone, and the caller exits straight after — so the SFU was still
+    // holding :7880 as the box died, and the exit handler that removes the
+    // pid file often never ran at all. An SFU with rooms to close takes
+    // longer than that sleep, which is exactly when it matters.
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, stubbornStub(), 'k', 's')
+    const { sfu } = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    expect(sfu).not.toBeNull()
+    const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+
+    await sfu!.stop()
+    // No sleep here: both of these are what the caller's immediate exit
+    // depends on being true already.
+    expect(() => process.kill(pid, 0)).toThrow()
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  }, 20_000)
+
+  it('says why a binary would not run, rather than that it did not listen', async () => {
+    // The OS says EACCES, ENOEXEC or ENOENT and names the path; the reason
+    // was thrown away and the warning said "did not start listening", which
+    // is the least useful thing to say and not what happened.
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    chmodSync(binPath, 0o644) // no exec bit
+
+    const warnings: string[] = []
+    const started = Date.now()
+    const { sfu, failure } = await spawnLiveKit(
+      binPath,
+      configPath,
+      { key: 'k', secret: 's' },
+      { info: () => {}, warn: (m) => warnings.push(m) }
+    )
+    expect(sfu).toBeNull()
+    expect(failure).toBe('no-start')
+    expect(warnings.join(' ')).toMatch(/EACCES|ENOEXEC|permission/i)
+    // ...and it did not sit out the full eight-second port wait to say so.
+    expect(Date.now() - started).toBeLessThan(4000)
   }, 15_000)
 
   it('clears the record when the SFU stops cleanly', async () => {

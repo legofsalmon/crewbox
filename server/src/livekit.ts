@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
-import { seaAsset } from './box.ts'
+import { hasSeaAsset, seaAsset } from './box.ts'
 
 /**
  * The box runs its own LiveKit SFU.
@@ -37,7 +37,7 @@ const assetName = () => (process.platform === 'win32' ? 'livekit-server.exe' : '
 const PID_FILE = 'livekit.pid'
 
 /** Whether this build carries an SFU it can run. */
-export const hasEmbeddedLiveKit = (): boolean => seaAsset(`livekit/${assetName()}`) !== null
+export const hasEmbeddedLiveKit = (): boolean => hasSeaAsset(`livekit/${assetName()}`)
 
 export interface EmbeddedLiveKit {
   port: number
@@ -141,9 +141,15 @@ export function livekitCredentials(
 }
 
 /** Resolves once something is listening, or false if it never comes up. */
-async function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
+async function waitForPort(
+  port: number,
+  timeoutMs: number,
+  /** Give up early — the child is already gone and nothing will open it. */
+  abandoned: () => boolean = () => false
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
+    if (abandoned()) return false
     const open = await new Promise<boolean>((resolve) => {
       const socket = createConnection({ host: '127.0.0.1', port })
       const done = (result: boolean) => {
@@ -463,8 +469,19 @@ export async function spawnLiveKit(
   }
 
   let exited = false
-  child.on('error', () => {
+  /**
+   * Why the child never ran, when the OS said.
+   *
+   * `child.on('error')` carries the code, the syscall and the path — EACCES
+   * on a binary without the exec bit, ENOEXEC for the wrong architecture,
+   * ENOENT for a `CREWBOX_LIVEKIT_BIN` that is not there. It was thrown
+   * away, and the warning said only "did not start listening", which is
+   * both the least useful thing to say and not what happened.
+   */
+  let spawnError: Error | null = null
+  child.on('error', (err) => {
     exited = true
+    spawnError = err
   })
   child.on('exit', (code) => {
     exited = true
@@ -477,10 +494,18 @@ export async function spawnLiveKit(
     if (line) log.warn(`livekit: ${line}`)
   })
 
-  const up = await waitForPort(LIVEKIT_PORT, 8000)
+  // Stops as soon as the child is gone rather than sitting out the full
+  // eight seconds: a binary that cannot execute fails in milliseconds, and
+  // the box was waiting anyway before saying so.
+  const up = await waitForPort(LIVEKIT_PORT, 8000, () => exited)
   if (!up) {
     child.kill()
-    log.warn('voice: SFU did not start listening; voice stays off')
+    const why: Error | null = spawnError
+    log.warn(
+      why
+        ? `voice: could not start the SFU (${String(why)}); voice stays off`
+        : 'voice: SFU did not start listening; voice stays off'
+    )
     return { sfu: null, failure: 'no-start' }
   }
   if (exited) {
@@ -519,11 +544,24 @@ export async function spawnLiveKit(
       key: creds.key,
       secret: creds.secret,
       stop: async () => {
+        // The pid file goes here, synchronously, rather than in the exit
+        // handler: `stop()` used to resolve after a fixed 500 ms whether or
+        // not the child had gone, and the caller exits straight after — so
+        // on a normal shutdown the handler often never ran and every box
+        // left a stale pid behind for the next boot to reason about.
+        tidyPidFile(pidPath)
         if (exited) return
         child.kill('SIGTERM')
-        // Give it a moment to close rooms cleanly, then insist.
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        if (!exited) child.kill('SIGKILL')
+        // Waited for, not slept through: it takes a moment to close rooms,
+        // and returning while it is still holding :7880 hands the next
+        // start a port that is not free.
+        const gone = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+        const deadline = new Promise<void>((resolve) => setTimeout(resolve, 3000))
+        await Promise.race([gone, deadline])
+        if (!exited) {
+          child.kill('SIGKILL')
+          await Promise.race([gone, new Promise((resolve) => setTimeout(resolve, 500))])
+        }
       },
     },
   }

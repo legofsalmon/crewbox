@@ -1062,6 +1062,44 @@ describe('voice', () => {
     const denied = await mint(tokenC, dm.channel.id)
     expect(denied.statusCode).toBe(404)
   })
+
+  it('gives one person on two devices two identities', async () => {
+    // LiveKit disconnects the older participant when a second joins with
+    // the same identity, and the identity was the user id — so "one
+    // identity per person" was silently a rule of one device per person. A
+    // stage manager with a phone in a pocket and a tablet on the desk lost
+    // one of them to "Voice dropped" every time they used the other.
+    // Two joins under the same name and PIN — the same account, twice, which
+    // is exactly what a second device is.
+    const phone = await join('Two Devices')
+    const tablet = await join('Two Devices')
+    const general = store.getChannelByName('general')!
+
+    const identityFrom = async (token: string) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/voice/token',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { channelId: general.id },
+      })
+      expect(res.statusCode).toBe(200)
+      const { token: jwt } = res.json() as { token: string }
+      const claims = JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString()) as {
+        sub: string
+        name: string
+      }
+      return claims
+    }
+
+    const one = await identityFrom(phone)
+    const two = await identityFrom(tablet)
+    expect(one.sub).not.toBe(two.sub)
+    // Same person, so the room still shows one name.
+    expect(one.name).toBe(two.name)
+    // And the same device keeps its identity across reconnects, so a rejoin
+    // replaces its own stale participant rather than piling up chips.
+    expect((await identityFrom(phone)).sub).toBe(one.sub)
+  })
 })
 
 describe('admin', () => {
