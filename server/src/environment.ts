@@ -136,14 +136,14 @@ export const boxProbes = (dataDir: string | undefined): Probes => ({
  * whatever the last sweep found and says when it was taken; refreshing is the
  * admin's choice, because the answer only changes when the site does.
  */
-export function createEnvironmentCache(probes: Probes) {
+export function createEnvironmentCache(probes: Probes, outbound = true) {
   let report: EnvironmentReport | null = null
   let inFlight: Promise<EnvironmentReport> | null = null
 
   const refresh = (): Promise<EnvironmentReport> => {
     // One sweep at a time: a panel opened on three laptops shouldn't start
     // three sets of probes against the same network.
-    inFlight ??= probeEnvironment(probes)
+    inFlight ??= probeEnvironment(probes, outbound)
       .then((result) => {
         report = result
         return result
@@ -241,7 +241,23 @@ async function addressCheck(probes: Probes): Promise<EnvCheck> {
   }
 }
 
-async function internetCheck(probes: Probes): Promise<EnvCheck[]> {
+async function internetCheck(probes: Probes, outbound: boolean): Promise<EnvCheck[]> {
+  // The one switch that says "this box makes no outbound connections at
+  // all" is CREWBOX_UPDATE_CHECK=0, and this sweep ignored it: three
+  // connections off-site at every startup, on a box whose operator had
+  // explicitly asked for none. Saying it was not checked is the honest
+  // answer and costs nothing that anybody wanted.
+  if (!outbound) {
+    return [
+      {
+        id: 'internet',
+        label: 'Internet',
+        state: 'info',
+        detail: 'Not checked — this box is configured to make no outbound connections.',
+        fix: 'Nothing here needs it. Unset CREWBOX_UPDATE_CHECK=0 if you want the box to look.',
+      },
+    ]
+  }
   // Two well-known resolvers rather than one, so a single blocked address
   // doesn't read as "no internet".
   const reachable =
@@ -383,12 +399,16 @@ function clockCheck(probes: Probes): EnvCheck | null {
 }
 
 /** Probe the surroundings. Never throws; slow probes report rather than hang. */
-export async function probeEnvironment(probes: Probes = realProbes): Promise<EnvironmentReport> {
+export async function probeEnvironment(
+  probes: Probes = realProbes,
+  /** Whether this box is allowed off-site at all. See internetCheck. */
+  outbound = true
+): Promise<EnvironmentReport> {
   const addresses = probes.localAddresses().filter((a) => !LINK_LOCAL.test(a))
 
   const [address, internet, hostname] = await Promise.all([
     addressCheck(probes),
-    internetCheck(probes),
+    internetCheck(probes, outbound),
     hostnameCheck(probes, addresses),
   ])
 

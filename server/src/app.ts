@@ -368,6 +368,16 @@ export interface AppDeps {
    */
   updates?: UpdateChecker
   /**
+   * Whether this box may make outbound connections at all.
+   *
+   * The same switch as the update check — `CREWBOX_UPDATE_CHECK=0`, whose
+   * own documentation says "on a box whose network must make no outbound
+   * connections at all". The environment sweep ignored it and made three
+   * off-site connections at every startup regardless, so the promise was
+   * only ever true of the update check itself.
+   */
+  outbound?: boolean
+  /**
    * Downloading and installing one. Omit and the panel offers no button —
    * which is the right shape for a box running from source, where there is
    * no binary to swap.
@@ -434,6 +444,7 @@ export function buildApp({
   netwatch,
   video,
   updates,
+  outbound = true,
   updater,
   metrics,
   clock = () => new Date(),
@@ -541,7 +552,7 @@ export function buildApp({
   // Warmed at startup so the admin panel reads a result rather than waiting
   // on one; see the route below.
   const envProbes = probes ?? boxProbes(dataDir)
-  const environment = createEnvironmentCache(envProbes)
+  const environment = createEnvironmentCache(envProbes, outbound)
   void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)

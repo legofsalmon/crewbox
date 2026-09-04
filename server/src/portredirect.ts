@@ -33,7 +33,15 @@ export interface RedirectPlan {
   load: string
   /** Undo it. */
   unload: string
-  /** The Linux equivalent, for a box that can't be given the capability. */
+  /**
+   * The Linux equivalent, for a box that can't be given the capability.
+   *
+   * Three commands, not one. `nft add rule inet nat prerouting ...` fails
+   * with "No such file or directory" on a machine that has no `inet nat`
+   * table or no prerouting chain in it — which is most machines that are not
+   * already doing NAT, and every fresh Debian. The two `add` lines before it
+   * create them and are idempotent, so pasting the block twice is harmless.
+   */
   linux: string
 }
 
@@ -49,7 +57,11 @@ export function redirectPlan(opts: { iface: string; address: string; port: numbe
     rule,
     load: `echo "${rule}" | sudo pfctl -ef -`,
     unload: 'sudo pfctl -d',
-    linux: `sudo nft add rule inet nat prerouting iif ${iface} tcp dport 80 redirect to :${port}`,
+    linux: [
+      'sudo nft add table inet nat',
+      "sudo nft add chain inet nat prerouting '{ type nat hook prerouting priority -100; }'",
+      `sudo nft add rule inet nat prerouting iif ${iface} tcp dport 80 redirect to :${port}`,
+    ].join('\n'),
   }
 }
 
@@ -99,7 +111,8 @@ ${plan.rule}
 # and no redirect is needed at all:
 # sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox
 #
-# Failing that:
+# Failing that — the first two lines create the table and chain if this
+# machine has none, and do nothing if it has:
 ${plan.linux}
 
 # --- Or do it on the router -----------------------------------------------

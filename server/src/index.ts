@@ -94,6 +94,32 @@ async function main(): Promise<void> {
   const runningBox = readBoxStatus(dataDir)
   const supervisor = runningBox && runningBox.pid !== process.pid ? runningBox.pid : null
 
+  // Refuse a second box before it touches anything, not after.
+  //
+  // The port pre-flight further down was the only guard, and by the time it
+  // ran this process had already re-extracted the web bundle over the
+  // running box's, opened its database and migrated it, minted a PIN and
+  // created a channel in it. A second launch is a mistake somebody makes in
+  // a field — a double-click on a box already running from a terminal — and
+  // it should cost nothing.
+  //
+  // The pid, not the port: a port answers a different question, and on macOS
+  // two launches can resolve different bind addresses and miss each other
+  // entirely. `readBoxStatus` has already checked the pid is alive.
+  //
+  // The exception is the box an update has just launched, which is supposed
+  // to start beside its supervisor. An install in flight is what says so.
+  if (supervisor !== null && (box || canRunLiveKit())) {
+    const inFlight = box ? (await import('./update/install.ts')).readInFlight(dataDir) : null
+    if (!inFlight) {
+      console.error(
+        `a crewbox is already running here (pid ${supervisor}) and owns ${dataDir}. ` +
+          `Stop it first: ${process.argv[0]} --stop`
+      )
+      process.exit(1)
+    }
+  }
+
   if (box) {
     const { recoverInterruptedInstall, sweepOldBinaries } = await import('./update/install.ts')
     const outcome = recoverInterruptedInstall(dataDir, APP_VERSION, supervisor)
@@ -202,12 +228,24 @@ async function main(): Promise<void> {
   // A source rig told to supervise an SFU is in exactly the same position as
   // a packaged box, so it gets the same guard — and a source run that is not
   // supervising anything still starts freely, which is what development is.
-  if ((box || canRunLiveKit()) && (await portInUse(bindHost, config.port))) {
-    console.error(
-      `port ${config.port} is already in use on ${bindHost} — a crewbox is already running ` +
-        `here (stop it with: crewbox --stop), or something else holds the port. Not starting.`
-    )
-    process.exit(1)
+  //
+  // Both the resolved bind and the wildcard: a box answering on 0.0.0.0 does
+  // not collide with a probe of one specific address on macOS, so two
+  // launches that resolved different addresses could miss each other here
+  // and both come up.
+  if (box || canRunLiveKit()) {
+    const held = (await portInUse(bindHost, config.port))
+      ? bindHost
+      : bindHost !== '0.0.0.0' && (await portInUse('0.0.0.0', config.port))
+        ? 'this machine'
+        : null
+    if (held) {
+      console.error(
+        `port ${config.port} is already in use on ${held} — a crewbox is already running ` +
+          `here (stop it with: crewbox --stop), or something else holds the port. Not starting.`
+      )
+      process.exit(1)
+    }
   }
 
   // Voice. An explicit LIVEKIT_URL always wins — someone pointing at an SFU
@@ -390,6 +428,9 @@ async function main(): Promise<void> {
 
   const app = buildApp({
     store,
+    // Whether this box may go off-site at all — the same switch as the
+    // update check, which the environment sweep used to ignore.
+    outbound: config.updateCheck ?? box,
     // The address this process is actually listening on. The readiness row
     // used to infer it from the adapters, which is a different question.
     boundHost: bindHost,
