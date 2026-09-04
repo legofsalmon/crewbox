@@ -164,9 +164,12 @@ const MIGRATIONS: string[] = [
   // a rename or a departure. Both are cleared together when somebody deletes
   // their account, which keeps the record and drops the person.
   //
-  // Nothing here is ever UPDATEd by the app: a correction is a new row whose
-  // `amends` names the row it corrects. `at` and `logged_at` are separate
-  // because the show does not wait for anyone to get their phone out.
+  // No entry's content is ever UPDATEd: a correction is a new row whose
+  // `amends` names the row it corrects. The only write after INSERT is the
+  // one above — clearing author_id and author_name when somebody deletes
+  // their account (see Store.deleteUser) — which changes who filed an entry
+  // and never what it says. `at` and `logged_at` are separate because the
+  // show does not wait for anyone to get their phone out.
   `
   CREATE TABLE IF NOT EXISTS incidents (
     id            TEXT PRIMARY KEY,

@@ -2282,6 +2282,9 @@ export function buildApp({
       // What the box is really answering on, not what the adapters suggest.
       ...(boundHost ? { boundHost } : {}),
       restartNeeded: networkRestartNeeded(),
+      // The zone the running order is read against, so the panel can print
+      // the time the box thinks it is and an admin can check it in a glance.
+      ...(timeZone ? { timeZone } : {}),
       dataDir: dataDir ?? process.cwd(),
       crewCount: store.listUsers().length,
       host: hostOf(req),
