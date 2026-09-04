@@ -40,9 +40,17 @@ Two forgiving behaviours worth knowing:
 - **Broken or expired material never stops the box.** It logs why, serves
   plain HTTP, and the readiness list says what's wrong. A certificate
   problem on show day costs you browser mic, not comms.
-- With a certificate installed, the box **advertises its name first** —
-  the QR and join links lead with `https://chat.example.com` (raw IPs fail
-  the browser's name check) with the plain addresses still listed after.
+- With a certificate installed, the box **advertises its name first** — the
+  startup banner, the browser it opens for you and the menu-bar/tray item all
+  lead with `https://chat.example.com`, because raw IPs fail the browser's
+  name check. The plain addresses stay listed after it, since the name only
+  resolves once the network's DNS override exists.
+- **The `/connect` page is the exception, and deliberately so:** its QR
+  encodes whatever address you used to reach it. That is what makes it right
+  on a laptop, a phone and through a tunnel alike — but it means a poster
+  printed from `/connect` opened at `https://192.168.1.10:8787` sends crew to
+  an address their browsers will not give a microphone to. Open it at the
+  box's name before you print.
 
 ## Making the name resolve on site
 

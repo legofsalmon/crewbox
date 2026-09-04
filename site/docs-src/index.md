@@ -24,13 +24,15 @@ Start with whichever of these is you:
 
 ## What's in the app
 
-| Module           | What it does                                                                                                                        |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Chat**         | Channels, direct messages, file sharing, mentions and alerts — always on.                                                           |
-| **Voice**        | A push-to-talk intercom in any channel, running on the box itself.                                                                  |
-| **Patch sheets** | The festival master patch as a live grid every device can edit — with the stage patch derived from it, the lineup, and changeovers. |
-| **Lighting**     | Plots with fixtures, addressing, truss estimates, Plan/Front/3D drawings — and live DMX from the rig when the box is listening.     |
-| **Network**      | A continuous audit of the networks the box can see, graded for A/V use, with a report you can hand to venue IT.                     |
+| Module            | What it does                                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**          | Channels, direct messages, file sharing, mentions and alerts — always on. Push-to-talk voice lives here too, in any channel.        |
+| **Running order** | Who is on which stage when, and how long until the next changeover.                                                                 |
+| **Patch sheets**  | The festival master patch as a live grid every device can edit — with the stage patch derived from it, the lineup, and changeovers. |
+| **Lighting**      | Plots with fixtures, addressing, truss estimates, Plan/Front/3D drawings — and live DMX from the rig when the box is listening.     |
+| **Show log**      | What happened and when, written down at the time. Nothing is edited or deleted; the Monday's show report comes out of it.           |
+| **Video**         | LED processors watched, never driven: temperatures, fans, cabinets, and what the box will send before it sends it.                  |
+| **Network**       | A continuous audit of the networks the box can see, graded for A/V use, with a report you can hand to venue IT.                     |
 
 The box's admin chooses which modules are on; chat is always there.
 

@@ -129,7 +129,13 @@ box_answering() {
 }
 if box_answering; then
   echo "a box is already answering on port $PORT — stop it first:" >&2
-  echo "  sudo systemctl stop crewbox     (or quit Crewbox from the Dock)" >&2
+  # Not "quit it from the Dock": the box is a Node single-file executable
+  # that never links AppKit, so a double-clicked one has no Dock icon and no
+  # window. `--stop` is the answer on every platform, and the menu-bar item
+  # is the answer on the Mac.
+  echo "  sudo systemctl stop crewbox" >&2
+  echo "  crewbox --stop                  (any platform, including a .app)" >&2
+  echo "  or Crewbox in the menu bar → Stop Crewbox and quit" >&2
   exit 1
 fi
 

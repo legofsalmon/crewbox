@@ -933,10 +933,19 @@ export function buildApp({
   }
 
   /**
-   * First-run setup. Open only while nobody has joined — at that point anyone
-   * who can reach the box can join and become admin anyway, so this grants
-   * nothing extra; once the first person joins it closes for good and the
-   * admin panel takes over. See setup.ts.
+   * First-run setup. Open only while nobody has joined, and closed for good
+   * the moment somebody does; the admin panel takes over from there. See
+   * setup.ts.
+   *
+   * It can be open at all because a box with no crew on it is holding
+   * nothing: no messages, no accounts, no uploads. The alternative is a
+   * chicken and an egg — the page's whole job is to set the PIN that would
+   * otherwise be guarding it.
+   *
+   * (This used to say that whoever could reach the box "can join and become
+   * admin anyway, so this grants nothing extra". That stopped being true
+   * when the admin panel got its own password: joining makes you crew, not
+   * an admin. The latch below is what the argument rests on now.)
    *
    * **"For good" is what the latch is for.** This used to be `countUsers()
    * === 0` and nothing else, and `DELETE /api/me` really deletes the row —

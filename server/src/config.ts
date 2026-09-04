@@ -13,6 +13,16 @@ function positiveDays(value: string | undefined, fallback: number): number {
 }
 
 export const config = {
+  /**
+   * The bind address, and the one setting that outranks `CREWBOX_IFACE`.
+   *
+   * Set `HOST` and the box binds exactly it — no loopback mirror, no
+   * adapter preference, whatever `CREWBOX_IFACE` says. That is right for a
+   * container or a reverse proxy, and wrong for a festival box, where
+   * `CREWBOX_IFACE` is the setting you want: it binds *and* advertises the
+   * crew network. Documented here and in the runbook because a box with
+   * both set behaves like neither.
+   */
   host: process.env.HOST ?? '0.0.0.0',
   /** Whether HOST was set by hand, in which case it outranks CREWBOX_IFACE. */
   hostExplicit: process.env.HOST !== undefined,

@@ -196,6 +196,12 @@ CREWBOX_DMX=both
 CREWBOX_DMX_IFACE=2.0.0.50      # the lighting network — receive-only
 ```
 
+**Do not set `HOST` as well.** It is the bind address and it outranks
+`CREWBOX_IFACE`: with `HOST` set the box binds exactly that and nothing else
+— no localhost mirror, no adapter preference — which is right in a container
+and wrong on a rig, where the whole point of `CREWBOX_IFACE` is that it binds
+_and_ advertises the same network.
+
 `CREWBOX_IFACE` does two things: every advertised address (QR, banner,
 `/connect`, DNS suggestions) points at it, and the web server and the voice
 server's signalling **bind** to it (plus localhost), so neither answers on
@@ -419,8 +425,12 @@ site-only (LiveKit doesn't traverse the tunnel); remote users are text+files.
    - `EVENT_PIN`: treat it as a real secret now, not poster decoration —
      long and rotated per event. Remote staff get it by phone/text, not email
      blasts. **Required with the tunnel**: the server refuses to start when
-     `CREWBOX_TRUST_PROXY=1` and `EVENT_PIN` is unset, so it can never sit on
-     the internet on the public default PIN.
+     `CREWBOX_TRUST_PROXY=1` and `EVENT_PIN` is unset _or shorter than eight
+     characters_, so it can never sit on the internet on the four digits that
+     are right on a LAN and are ten thousand guesses through a tunnel.
+     `/connect` prints the PIN, and would otherwise have handed it to
+     anything that could reach the tunnel — it answers a private peer now and
+     redirects everybody else to the join page.
    - `CREWBOX_TRUST_PROXY=1` in the service env, so rate limits see real
      client IPs through the tunnel instead of one shared localhost bucket.
    - `SESSION_TTL_DAYS` (default 60) — idle sessions expire; prunes at boot.

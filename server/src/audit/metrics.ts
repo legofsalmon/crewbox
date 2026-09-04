@@ -172,7 +172,6 @@ export class MetricsStore {
       .all(metric, key, from, to) as unknown as MetricRow[]
   }
 
-  /** Every series in one span — the export's single fetch. */
   /**
    * A page of rollups, for an exporter.
    *

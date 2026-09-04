@@ -107,7 +107,13 @@ export class DocsRelay {
   }
 
   /**
-   * A room's document, if this box has ever relayed one.
+   * A room's document, if one is open on this box right now.
+   *
+   * Not "if it has ever relayed one": the last client out frees the doc (see
+   * the close handler below), because the durable copies live on the phones.
+   * So a caller gets a document while somebody has the pane open and null a
+   * few seconds after the last of them closed it — which is the honest
+   * answer, and the reason every caller here has a fallback.
    *
    * Read-only, and deliberately does *not* create the room — asking whether
    * anybody has put a running order on this box must not conjure an empty

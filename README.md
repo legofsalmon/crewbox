@@ -32,11 +32,18 @@ lives at <https://crewbox.letissier.ie/docs>, built from
 Crewbox is a shell (identity, chat, offline storage, routing) plus department
 modules. A box chooses which to run with `CREWBOX_MODULES`; chat is always on.
 
-| Module           | What it does                                                                                                                                                                                    |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Chat**         | Channels, DMs, mentions, files, push-to-talk voice. Always enabled.                                                                                                                             |
-| **Patch Sheets** | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                                                                                     |
-| **Lighting**     | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import. |
+Seven ship, and all seven are on unless a box says otherwise: the default is
+`schedule,patch,lighting,incident,video,network` on top of chat.
+
+| Module            | id         | What it does                                                                                                                                                                                    |
+| ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**          | `chat`     | Channels, DMs, mentions, files, push-to-talk voice. Always enabled; cannot be turned off.                                                                                                       |
+| **Running order** | `schedule` | The event's timetable — who is on which stage when, with the countdown to the next changeover.                                                                                                  |
+| **Patch Sheets**  | `patch`    | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                                                                                     |
+| **Lighting**      | `lighting` | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import. |
+| **Show log**      | `incident` | The record of what happened and when — append-only, corrected underneath rather than edited, exported as the show report.                                                                       |
+| **Video**         | `video`    | Read-only monitoring of LED processors: temperatures, fans, cabinets. It watches walls; it never drives them.                                                                                   |
+| **Network**       | `network`  | A continuous audit of the networks the box can see, graded for A/V use, with a report for venue IT.                                                                                             |
 
 ## Why it's built the way it is
 
@@ -103,9 +110,10 @@ install and no separate "full" edition.
 
 **`/setup`** is the first run: event name, Wi-Fi network and event PIN, asked
 once in a browser the box opens for you, then straight to the QR. It exists
-only while nobody has joined — at that point anyone who can reach the box can
-join and become admin anyway, so an open form grants nothing extra, and the
-moment someone joins it closes and the admin panel takes over.
+only while nobody has joined — a box with no crew on it is holding nothing to
+protect, and the page's whole job is to set the PIN that would otherwise be
+guarding it. The moment someone joins it closes, for good, and the admin
+panel takes over.
 
 **`/connect`** is the live onboarding page: a QR of the join URL (event PIN
 prefilled), the PIN in print, and the Android APK download when a
