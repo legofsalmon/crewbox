@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test'
-import { newDevice } from './helpers'
+import { expect } from '@playwright/test'
+import { newDevice, test } from './helpers'
 
 /**
  * What a returning crew member sees when the box genuinely goes away.

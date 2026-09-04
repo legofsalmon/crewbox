@@ -48,9 +48,24 @@ describe('the video module is structurally read-only', () => {
   })
 
   it('issues no HTTP verb other than GET', () => {
+    // An allowlist, not a blocklist of write verbs. The blocklist matched
+    // upper-case quoted literals only, so `method: 'post'`, a template
+    // literal, or a `method: verb` computed anywhere at all went straight
+    // through the one test that exists to stop it. Every `method:` in this
+    // directory has to be the literal 'GET' — including the ones in types,
+    // which is where the compiler's half of the guarantee lives.
+    let checked = 0
     for (const { name, text } of sources) {
-      expect(code(text), `${name} uses a write verb`).not.toMatch(/['"](POST|PUT|PATCH|DELETE)['"]/)
+      for (const use of code(text).matchAll(/\bmethod\s*:\s*([^,\n}]+)/g)) {
+        checked++
+        expect(use[1].trim(), `${name} sets an HTTP method that is not the literal 'GET'`).toBe(
+          "'GET'"
+        )
+      }
     }
+    // A rename that moved the fetch out of this directory would otherwise
+    // leave this loop with nothing to iterate and passing.
+    expect(checked).toBeGreaterThan(0)
   })
 
   it('never opens the register bus', () => {

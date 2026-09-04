@@ -26,8 +26,26 @@ import {
   undoInstall,
   writeInFlight,
   type InFlight,
+  type InstallResult,
 } from '../src/update/install.ts'
 import type { MacIo } from '../src/update/macapp.ts'
+
+/**
+ * The install succeeded — say so, then narrow the type.
+ *
+ * These tests were written as `if (!result.ok) return`, a type guard doing
+ * duty as an assertion. It is not one: a regression that made `installBuild`
+ * fail outright turned every test below into three lines that ran and
+ * passed, and the suite reported green on an updater that could not install
+ * anything at all.
+ */
+function assertInstalled(
+  result: InstallResult
+): asserts result is Extract<InstallResult, { ok: true }> {
+  if (!result.ok) {
+    throw new Error(`expected the install to succeed: ${result.stage} — ${result.reason}`)
+  }
+}
 import { schemaVersion, snapshotDb } from '../src/update/snapshot.ts'
 import { DatabaseSync } from 'node:sqlite'
 
@@ -138,7 +156,7 @@ describe('what is running, and how it gets replaced', () => {
     })
     expect(result.ok).toBe(true)
     expect(calls.some((c) => c.startsWith('ditto'))).toBe(true)
-    if (!result.ok) return
+    assertInstalled(result)
     expect(result.inFlight.kind).toBe('app-bundle')
     expect(result.inFlight.targetPath).toBe('/Applications/Crewbox.app')
   })
@@ -158,7 +176,7 @@ describe('what is running, and how it gets replaced', () => {
       dataDir,
       macIo: fakeMacIo([]),
     })
-    if (!result.ok) return
+    assertInstalled(result)
     expect(result.inFlight.relaunch).toEqual({
       command: 'open',
       args: ['-n', '/Applications/Crewbox.app'],
@@ -256,7 +274,7 @@ describe('going back', () => {
   it('restores the old box', () => {
     const result = install()
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    assertInstalled(result)
     expect(undoInstall(result.inFlight, dataDir)).toEqual({ ok: true })
     expect(readFileSync(target, 'utf8')).toBe('the old box')
     expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(false)
@@ -265,14 +283,14 @@ describe('going back', () => {
 
   it('leaves the restored box executable too', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     undoInstall(result.inFlight, dataDir)
     expect(statSync(target).mode & 0o111).toBeTruthy()
   })
 
   it('says why when there is nothing to go back to', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     rmSync(result.inFlight.backupPath)
     expect(undoInstall(result.inFlight, dataDir)).toMatchObject({ ok: false })
   })
@@ -283,7 +301,7 @@ describe('going back', () => {
     // looking for a file the install had consumed, turning every retry into
     // another two hundred megabytes over a venue's uplink.
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     expect(existsSync(build)).toBe(false)
     expect(undoInstall(result.inFlight, dataDir)).toEqual({ ok: true })
     expect(readFileSync(target, 'utf8')).toBe('the old box')
@@ -292,7 +310,7 @@ describe('going back', () => {
 
   it('rolls back anyway when the download cannot be returned', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     // The updates directory has gone — a tidy-up, a different disk. Getting
     // the box back on its old binary still matters more than the retry.
     rmSync(dirname(build), { recursive: true, force: true })
@@ -304,13 +322,13 @@ describe('going back', () => {
     // The marker is what a *different process* rolls back from, so a field
     // the reader drops is a field the rollback does not have.
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     expect(readInFlight(dataDir)?.buildPath).toBe(build)
   })
 
   it('drops the backup once the new box has proved itself', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     dropBackup(result.inFlight, dataDir)
     expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(false)
     expect(existsSync(inFlightPath(dataDir))).toBe(false)
@@ -378,7 +396,7 @@ describe('an install nobody ever confirmed', () => {
     // Power cut after the swap, before confirmation. The box came up on the
     // new version — rolling that back would be the bug.
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     expect(recoverInterruptedInstall(dataDir, '0.18.0')).toEqual({
       action: 'confirmed',
       toVersion: '0.18.0',
@@ -389,7 +407,7 @@ describe('an install nobody ever confirmed', () => {
 
   it('finishes the rollback when the old build came back up', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     const outcome = recoverInterruptedInstall(dataDir, '0.17.1')
     expect(outcome).toMatchObject({ action: 'rolled-back', database: 'kept' })
     expect(readFileSync(target, 'utf8')).toBe('the old box')
@@ -446,7 +464,7 @@ describe('an install nobody ever confirmed', () => {
     it('goes back with the binary', () => {
       makeDb(8, ['load in', 'doors'])
       const result = installWithSnapshot()
-      if (!result.ok) return
+      assertInstalled(result)
       // The new build came up far enough to migrate, then died.
       makeDb(9, ['written by the build that then died'])
 
@@ -463,7 +481,7 @@ describe('an install nobody ever confirmed', () => {
       // snapshot for no reason.
       makeDb(8, ['load in'])
       const result = installWithSnapshot()
-      if (!result.ok) return
+      assertInstalled(result)
       makeDb(8, ['sent while the update was being attempted'])
 
       const outcome = recoverInterruptedInstall(dataDir, '0.17.1', null, dbPath())
@@ -476,7 +494,7 @@ describe('an install nobody ever confirmed', () => {
       // the swap would look like it worked and change nothing.
       makeDb(8, ['load in'])
       const result = installWithSnapshot()
-      if (!result.ok) return
+      assertInstalled(result)
       makeDb(9, [])
 
       const outcome = recoverInterruptedInstall(dataDir, '0.17.1')
@@ -487,7 +505,7 @@ describe('an install nobody ever confirmed', () => {
     it('says so, and still puts the binary back, when the snapshot has gone', () => {
       makeDb(8, ['load in'])
       const result = installWithSnapshot()
-      if (!result.ok) return
+      assertInstalled(result)
       makeDb(9, [])
       rmSync(result.inFlight.snapshotPath!, { force: true })
 
@@ -500,7 +518,7 @@ describe('an install nobody ever confirmed', () => {
 
   it('refuses to guess when the running version is neither', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     const outcome = recoverInterruptedInstall(dataDir, '0.16.0')
     expect(outcome).toMatchObject({ action: 'failed' })
     // Nothing touched: a box nobody can reason about is one to leave alone.
@@ -524,7 +542,7 @@ describe('an install nobody ever confirmed', () => {
       dataDir,
       now: () => 1_700_000_000_000,
     })
-    if (!result.ok) return
+    assertInstalled(result)
     expect(recoverInterruptedInstall(dataDir, '0.18.0+def5678')).toEqual({
       action: 'confirmed',
       toVersion: 'v0.18.0',
@@ -540,7 +558,7 @@ describe('an install nobody ever confirmed', () => {
       dataDir,
       now: () => 1_700_000_000_000,
     })
-    if (!result.ok) return
+    assertInstalled(result)
     expect(recoverInterruptedInstall(dataDir, 'v0.17.1')).toMatchObject({
       action: 'rolled-back',
     })
@@ -571,7 +589,7 @@ describe('an install nobody ever confirmed', () => {
   describe('while another box is still supervising', () => {
     it('reports the supervisor and changes nothing', () => {
       const result = install()
-      if (!result.ok) return
+      assertInstalled(result)
       expect(recoverInterruptedInstall(dataDir, '0.18.0', 4242)).toEqual({
         action: 'supervised',
         pid: 4242,
@@ -586,7 +604,7 @@ describe('an install nobody ever confirmed', () => {
       // the supervisor check this took the 'confirmed' branch and dropped the
       // only file a rollback can use.
       const result = install()
-      if (!result.ok) return
+      assertInstalled(result)
       recoverInterruptedInstall(dataDir, '0.18.0', 4242)
       expect(existsSync(result.inFlight.backupPath)).toBe(true)
     })
@@ -595,7 +613,7 @@ describe('an install nobody ever confirmed', () => {
       // The marker is what stops the sweep, so leaving it in place is what
       // keeps `.old` on disk through the supervised boot.
       const result = install()
-      if (!result.ok) return
+      assertInstalled(result)
       recoverInterruptedInstall(dataDir, '0.18.0', 4242)
       expect(sweepOldBinaries(dataDir, target)).toEqual([])
       expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(true)
@@ -603,7 +621,7 @@ describe('an install nobody ever confirmed', () => {
 
     it('still recovers normally once nobody is watching', () => {
       const result = install()
-      if (!result.ok) return
+      assertInstalled(result)
       expect(recoverInterruptedInstall(dataDir, '0.18.0', null)).toMatchObject({
         action: 'confirmed',
       })
@@ -663,7 +681,7 @@ describe('sweeping up', () => {
     // That `.old` is the only way back. Sweeping it here would turn a
     // recoverable failure into a permanent one.
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     expect(sweepOldBinaries(dataDir, target)).toEqual([])
     expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(true)
   })

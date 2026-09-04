@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test'
-import { newDevice } from './helpers'
+import { expect } from '@playwright/test'
+import { newDevice, test } from './helpers'
 
 /**
  * The show log, on two real devices through a real box.

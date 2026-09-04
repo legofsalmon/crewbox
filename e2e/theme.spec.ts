@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { addAct } from './helpers'
+import { expect, type Page } from '@playwright/test'
+import { addAct, test } from './helpers'
 
 /**
  * Contrast guards for both themes.
@@ -107,8 +107,14 @@ for (const scheme of ['light', 'dark'] as const) {
     await expect(page.getByRole('heading', { name: 'Patch Sheets' })).toBeVisible()
 
     // Hero heading and the primary action: the two that were invisible.
-    expect(await textContrast(page, 'h1')).toBeGreaterThan(4.5)
-    const newSheet = 'button:has-text("New Sheet")'
+    //
+    // Scoped to `main`. `h1` alone takes the first one in the document,
+    // which is the sidebar brand — a heading in the shell's own colours that
+    // was never the thing at risk. This test was written to guard the patch
+    // module's hero, and for as long as the selector was unscoped it was
+    // measuring something that could not fail.
+    expect(await textContrast(page, 'main h1')).toBeGreaterThan(4.5)
+    const newSheet = 'main button:has-text("New Sheet")'
     expect(await textContrast(page, newSheet)).toBeGreaterThan(4.5)
 
     // ...and the grid chrome, whose act header painted text-on-text.
@@ -122,8 +128,8 @@ for (const scheme of ['light', 'dark'] as const) {
     // is checking.
     await addAct(page, 'Headliner')
 
-    expect(await textContrast(page, 'th:has-text("Headliner")')).toBeGreaterThan(4.5)
-    expect(await textContrast(page, 'th:has-text("CH")')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, 'main th:has-text("Headliner")')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, 'main th:has-text("CH")')).toBeGreaterThan(4.5)
 
     await context.close()
   })

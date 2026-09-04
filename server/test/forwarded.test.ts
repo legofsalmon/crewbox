@@ -112,6 +112,50 @@ describe('a box behind a tunnel', () => {
   })
 })
 
+/**
+ * The per-IP join limiter itself, which `playwright.config.ts` said "has its
+ * own coverage in the server integration tests" — and did not.
+ *
+ * Everything above drives it with a *wrong* PIN, so it proved the limiter
+ * counts failures and never that it counts arrivals. And nothing at all read
+ * `JOIN_RATE_LIMIT`, which is the one knob the whole e2e suite depends on:
+ * every simulated device joins from localhost, so without it the suite
+ * throttles itself. If the box stopped honouring the variable, sixty e2e
+ * specs would start failing at once with a 429 and no test would say why.
+ */
+describe('the join limiter', () => {
+  const joins = (name: string, peer: string) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/join',
+      remoteAddress: peer,
+      payload: { name, eventPin: EVENT_PIN, personalPin: '4321' },
+    })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('lets ten join from one address in a minute and refuses the eleventh', async () => {
+    app = build(false)
+    const codes: number[] = []
+    for (let i = 0; i < 11; i++) codes.push((await joins(`Crew ${i}`, '192.168.1.50')).statusCode)
+    expect(codes.slice(0, 10)).toEqual(Array(10).fill(200))
+    expect(codes[10]).toBe(429)
+    // And the crew member standing next to them is unaffected: real crew
+    // join from separate phones, which is the whole reason it is per IP.
+    expect((await joins('Someone else', '192.168.1.51')).statusCode).toBe(200)
+  })
+
+  it('raises the cap when JOIN_RATE_LIMIT says so', async () => {
+    vi.stubEnv('JOIN_RATE_LIMIT', '25')
+    app = build(false)
+    const codes: number[] = []
+    for (let i = 0; i < 15; i++) codes.push((await joins(`Crew ${i}`, '192.168.1.50')).statusCode)
+    expect(codes).toEqual(Array(15).fill(200))
+  })
+})
+
 describe('a box on the LAN alone', () => {
   beforeEach(() => {
     app = build(false)

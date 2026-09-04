@@ -44,8 +44,10 @@ export default defineConfig({
       ADMIN_PASSWORD: 'e2e-admin-password',
       // Every simulated device joins from localhost, so the per-IP join
       // limiter (10/min, right for real crew on separate phones) throttles
-      // the suite itself once it grows. The limiter has its own coverage in
-      // the server integration tests.
+      // the suite itself once it grows. The limiter, and this variable
+      // raising its cap, are covered in server/test/forwarded.test.ts — so a
+      // box that stopped reading it fails one unit test rather than sixty
+      // specs at once with an unexplained 429.
       JOIN_RATE_LIMIT: '1000',
       CREWBOX_MODULES: 'schedule,patch,lighting,incident,video,network',
       // The video module's scan needs an interface to sweep. Loopback, so a

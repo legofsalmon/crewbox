@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import {
   cell,
   commitCell,
@@ -6,6 +6,7 @@ import {
   newDevice,
   openPatch,
   openSheetByName,
+  test,
   uniqueName,
 } from './helpers'
 
@@ -300,6 +301,13 @@ test('the changeover between two acts comes across, and is checked', async ({ br
   // sheets, plots and log entries. It sat on the default timeout and fell
   // off it three times across two branches; the app is doing real work, so
   // the test gets the room rather than the app losing the feature.
+  //
+  // Half of that was not the app: every spec before this one left its
+  // browser contexts open, so by here Chromium was running thirty idle
+  // pages with live sockets. That is fixed (see `newDevice`), and this spec
+  // now takes about five seconds on its own. The margin stays until
+  // somebody has watched a few full runs — a timeout tightened on one
+  // measurement is how it came to be raised in the first place.
   await expect(page.locator('table')).toBeVisible({ timeout: 20_000 })
   await page.getByRole('button', { name: 'Lineup' }).click()
 

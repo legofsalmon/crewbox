@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test'
-import { uniqueName } from './helpers'
+import { expect } from '@playwright/test'
+import { test, uniqueName } from './helpers'
 
 /**
  * Touch targets. Platform guidance (iOS 44pt, Android 48dp) wants controls a

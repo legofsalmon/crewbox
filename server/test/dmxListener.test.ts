@@ -1,5 +1,5 @@
 import dgram from 'node:dgram'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   DmxListener,
   DmxTransmitAttempt,
@@ -208,26 +208,97 @@ describe('joining groups', () => {
 })
 
 /**
+ * Can this machine carry multicast to itself at all?
+ *
+ * Asked once, with plain sockets, before any of the tests below run — and
+ * deliberately without the product in it, so the answer is about the
+ * platform rather than about the code under test.
+ *
+ * The tests used to ask a different question. Each one sent packets, waited,
+ * and called `ctx.skip()` when none arrived — so a receive path that had
+ * genuinely broken skipped itself, and the suite reported green. Every
+ * regression in the one code path that reads a lighting network would have
+ * looked exactly like a container that does not do multicast.
+ *
+ * Now the platform decides once, up front. If it can loop multicast back,
+ * a packet that does not arrive is a failure and says so. If it cannot,
+ * the whole group is skipped by name rather than test by test — and
+ * `CREWBOX_TEST_REQUIRE_MULTICAST=1` turns that skip into a failure, so CI
+ * can insist these actually ran.
+ */
+const PROBE_GROUP = sacnGroup(60000)
+let multicastLoops = false
+
+beforeAll(async () => {
+  const rx = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+  const tx = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+  try {
+    // 0.0.0.0, the way the listener binds: on Linux, binding a multicast
+    // socket to a unicast address receives nothing at all.
+    await new Promise<void>((resolve, reject) => {
+      rx.once('error', reject)
+      rx.bind(SACN_PORT, resolve)
+    })
+    try {
+      rx.addMembership(PROBE_GROUP, '127.0.0.1')
+    } catch {
+      rx.addMembership(PROBE_GROUP)
+    }
+    await new Promise<void>((resolve, reject) => {
+      tx.once('error', reject)
+      tx.bind(0, resolve)
+    })
+    tx.setMulticastTTL(1)
+    tx.setMulticastLoopback(true)
+    try {
+      tx.setMulticastInterface('127.0.0.1')
+    } catch {
+      // The default interface may still deliver.
+    }
+    const heard = new Promise<boolean>((resolve) => {
+      rx.once('message', () => resolve(true))
+      setTimeout(() => resolve(false), 1500)
+    })
+    const beat = setInterval(() => tx.send(Buffer.from('probe'), SACN_PORT, PROBE_GROUP), 50)
+    multicastLoops = await heard
+    clearInterval(beat)
+  } catch {
+    multicastLoops = false
+  } finally {
+    for (const socket of [rx, tx]) {
+      try {
+        socket.close()
+      } catch {
+        // Never opened, or already closed.
+      }
+    }
+  }
+  if (!multicastLoops && process.env.CREWBOX_TEST_REQUIRE_MULTICAST === '1') {
+    throw new Error(
+      'CREWBOX_TEST_REQUIRE_MULTICAST=1, but this machine will not loop multicast back to ' +
+        'itself, so the sACN receive tests cannot run here.'
+    )
+  }
+})
+
+/**
  * Real sockets on loopback, verified to genuinely deliver here rather than
  * pass vacuously — the assertions were temporarily turned into throws to
  * check they were reached.
- *
- * Where a platform will not carry multicast to itself these mark themselves
- * **skipped**, not passed. A silent pass in CI would be a test that reports
- * success for never having run.
  */
 describe('reading a real socket', () => {
   it('picks up sACN sent to its multicast group', async (ctx) => {
+    if (!multicastLoops) ctx.skip()
     const listener = start({ mode: 'sacn', universes: [1] })
     await until(() => listener.snapshot().sacn.listening)
-    if (listener.snapshot().sacn.failed.length > 0) ctx.skip()
+    expect(listener.snapshot().sacn.failed).toEqual([])
 
     const tx = await sender()
     const packet = sacnData({ universe: 1, sourceName: 'Test Console', slots: [255, 0, 128] })
     const timer = setInterval(() => tx.send(packet, SACN_PORT, sacnGroup(1)), 50)
     const arrived = await until(() => listener.state.health().length > 0)
     clearInterval(timer)
-    if (!arrived) ctx.skip()
+    expect(arrived).toBe(true)
 
     const [health] = listener.state.health()
     expect(health.universe).toBe(1)
@@ -237,7 +308,7 @@ describe('reading a real socket', () => {
     expect(listener.state.verdict(1, 100, 4)).toBe('silent')
   })
 
-  it('picks up broadcast Art-Net and maps its universe', async (ctx) => {
+  it('picks up broadcast Art-Net and maps its universe', async () => {
     const listener = start({ mode: 'artnet', artnetBase: 1 })
     await until(() => listener.snapshot().artnet.listening)
 
@@ -247,7 +318,10 @@ describe('reading a real socket', () => {
     const timer = setInterval(() => tx.send(packet, ARTNET_PORT, '127.0.0.1'), 50)
     const arrived = await until(() => listener.state.health().length > 0)
     clearInterval(timer)
-    if (!arrived) ctx.skip()
+    // Plain unicast to 127.0.0.1, which every platform delivers — so a
+    // packet that does not arrive here is this listener's fault, not the
+    // machine's, and used to skip itself out of the report.
+    expect(arrived).toBe(true)
 
     const [health] = listener.state.health()
     expect(health.universe).toBe(1)
@@ -255,7 +329,7 @@ describe('reading a real socket', () => {
     expect(listener.state.levels(1)![2]).toBe(77)
   })
 
-  it('ignores traffic on the port that is not ours', async (ctx) => {
+  it('ignores traffic on the port that is not ours', async () => {
     const listener = start({ mode: 'artnet' })
     await until(() => listener.snapshot().artnet.listening)
 
@@ -266,13 +340,13 @@ describe('reading a real socket', () => {
     )
     const counted = await until(() => listener.snapshot().ignored > 0)
     clearInterval(timer)
-    if (!counted) ctx.skip()
+    expect(counted).toBe(true)
 
     expect(listener.snapshot().packets).toBe(0)
     expect(listener.state.health()).toHaveLength(0)
   })
 
-  it('holds Art-Net levels once an ArtSync reaches the socket', async (ctx) => {
+  it('holds Art-Net levels once an ArtSync reaches the socket', async () => {
     const listener = start({ mode: 'artnet', artnetBase: 1 })
     await until(() => listener.snapshot().artnet.listening)
 
@@ -284,7 +358,7 @@ describe('reading a real socket', () => {
     }, 50)
     const arrived = await until(() => listener.state.health()[0]?.sync === 'held')
     clearInterval(timer)
-    if (!arrived) ctx.skip()
+    expect(arrived).toBe(true)
 
     // The levels are readable and are not on stage. Both halves matter: a
     // monitor that reported one without the other would be lying by omission.
@@ -293,11 +367,12 @@ describe('reading a real socket', () => {
   })
 
   it('holds sACN levels once a synchronization packet reaches the group', async (ctx) => {
+    if (!multicastLoops) ctx.skip()
     // The sync universe has to be joined for its packets to arrive at all,
     // which is exactly why `unwatched` exists as a verdict.
     const listener = start({ mode: 'sacn', universes: [1, 7962] })
     await until(() => listener.snapshot().sacn.listening)
-    if (listener.snapshot().sacn.failed.length > 0) ctx.skip()
+    expect(listener.snapshot().sacn.failed).toEqual([])
 
     const tx = await sender()
     const data = sacnData({ universe: 1, syncAddress: 7962, slots: [255] })
@@ -308,16 +383,17 @@ describe('reading a real socket', () => {
     }, 50)
     const arrived = await until(() => listener.state.health()[0]?.sync === 'held')
     clearInterval(timer)
-    if (!arrived) ctx.skip()
+    expect(arrived).toBe(true)
 
     expect(listener.state.health()[0].syncAddress).toBe(7962)
     expect(listener.state.levels(1)![0]).toBe(255)
   })
 
   it('counts a synchronization packet as ours rather than as junk', async (ctx) => {
+    if (!multicastLoops) ctx.skip()
     const listener = start({ mode: 'sacn', universes: [7962] })
     await until(() => listener.snapshot().sacn.listening)
-    if (listener.snapshot().sacn.failed.length > 0) ctx.skip()
+    expect(listener.snapshot().sacn.failed).toEqual([])
 
     const tx = await sender()
     const timer = setInterval(
@@ -326,25 +402,26 @@ describe('reading a real socket', () => {
     )
     const counted = await until(() => listener.snapshot().packets > 0)
     clearInterval(timer)
-    if (!counted) ctx.skip()
+    expect(counted).toBe(true)
 
     expect(listener.snapshot().ignored).toBe(0)
   })
 
   it('hears a desk advertise itself on the discovery universe', async (ctx) => {
+    if (!multicastLoops) ctx.skip()
     // The box joins 64214 whether or not anybody listed it, because E1.31 §12
     // says discovery exists so a monitor does not have to join every group to
     // find out what is out there — and this box is that monitor.
     const listener = start({ mode: 'sacn', universes: [1] })
     await until(() => listener.snapshot().sacn.listening)
-    if (!listener.snapshot().sacn.discovery) ctx.skip()
+    expect(await until(() => listener.snapshot().sacn.discovery)).toBe(true)
 
     const tx = await sender()
     const packet = sacnDiscovery({ universes: [1, 2, 3, 8], sourceName: 'Main Stage MA3' })
     const timer = setInterval(() => tx.send(packet, SACN_PORT, sacnGroup(64214), () => {}), 50)
     const arrived = await until(() => listener.state.discovered().length > 0)
     clearInterval(timer)
-    if (!arrived) ctx.skip()
+    expect(arrived).toBe(true)
 
     const [found] = listener.state.discovered()
     expect(found.name).toBe('Main Stage MA3')

@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test'
-import { newDevice, uniqueName } from './helpers'
+import { expect } from '@playwright/test'
+import { newDevice, test, uniqueName } from './helpers'
 
 /** Shell regression guard: chat still works end to end around the module seam. */
 test('two crew members chat in #general and deep-link back into the channel', async ({

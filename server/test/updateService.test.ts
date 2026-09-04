@@ -285,6 +285,10 @@ describe('when the new box will not come up', () => {
     s.start(VERSION)
     await settle(s)
     const result = await s.install()
+    // Asserted, not assumed. `if (result.ok) return` is a type guard, and a
+    // regression that made the install succeed here would have skipped
+    // every line below it and passed.
+    expect(result).toMatchObject({ ok: false })
     if (result.ok) return
     expect(result.reason).toContain('did not answer')
     expect(result.reason).toContain('previous version has been put back')
@@ -336,6 +340,10 @@ describe('when the new box will not come up', () => {
     s.start(VERSION)
     await settle(s)
     const result = await s.install()
+    // Asserted, not assumed. `if (result.ok) return` is a type guard, and a
+    // regression that made the install succeed here would have skipped
+    // every line below it and passed.
+    expect(result).toMatchObject({ ok: false })
     if (result.ok) return
 
     expect(result.reason).toContain('RESTART THE BOX')
@@ -352,6 +360,10 @@ describe('when the new box will not come up', () => {
     s.start(VERSION)
     await settle(s)
     const result = await s.install()
+    // Asserted, not assumed. `if (result.ok) return` is a type guard, and a
+    // regression that made the install succeed here would have skipped
+    // every line below it and passed.
+    expect(result).toMatchObject({ ok: false })
     if (result.ok) return
     expect(result.reason).toContain('never migrated')
     expect(readPendingRestore(dir)).toBeNull()

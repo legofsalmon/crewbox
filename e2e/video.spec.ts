@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { newDevice } from './helpers'
+import { expect, type Page } from '@playwright/test'
+import { newDevice, test } from './helpers'
 
 /**
  * The LED pane, through a real box.

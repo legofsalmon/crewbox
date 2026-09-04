@@ -35,8 +35,15 @@ const SNMP_TABLE: Record<string, string | number> = {
 function fakeIo(hosts: Record<string, 'snmp' | 'http'>, log: string[]): WatcherIo {
   return {
     coex: {
-      fetch: (url) => {
+      fetch: (url, init) => {
         const host = new URL(url).hostname
+        // The runtime half of the read-only rule. videoReadOnly.test.ts reads
+        // the source, which catches what somebody writes on purpose; this
+        // catches what the watcher actually asks for while the poll loop is
+        // running, and lands in the same log every assertion below reads.
+        if (init.method !== 'GET' || init.redirect !== 'error') {
+          log.push(`NOT READ-ONLY: ${init.method} ${url} redirect=${init.redirect}`)
+        }
         log.push(`http ${host}`)
         if (hosts[host] !== 'http') {
           return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({}) })
@@ -116,6 +123,21 @@ describe('what the box contacts', () => {
     store.add({ host: '10.0.30.12', addedBy: 'Alex' })
     await watcher.tick()
     expect(log.every((line) => line.endsWith('10.0.30.11'))).toBe(true)
+  })
+
+  it('asks for a read, every time, over the whole poll', async () => {
+    // The source-level guard in videoReadOnly.test.ts catches the change
+    // somebody writes on purpose. This is the same rule asked of the running
+    // watcher: whatever the poll decided to do, every request it made was a
+    // GET that refuses redirects.
+    const { store, watcher, log } = setup({ '10.0.30.11': 'http', '10.0.30.12': 'snmp' })
+    arm(store, '10.0.30.11')
+    arm(store, '10.0.30.12')
+    await watcher.tick()
+    await watcher.tick()
+    expect(log.filter((line) => line.startsWith('NOT READ-ONLY'))).toEqual([])
+    // …and the loop did reach the network, so the line above means something.
+    expect(log.some((line) => line.startsWith('http '))).toBe(true)
   })
 
   it('stops the moment monitoring goes off', async () => {

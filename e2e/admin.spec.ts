@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test'
-import { newDevice } from './helpers.ts'
+import { expect } from '@playwright/test'
+import { newDevice, test } from './helpers.ts'
 
 /**
  * First-run setup, on a box nobody has joined yet.

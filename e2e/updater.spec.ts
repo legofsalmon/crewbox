@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { newDevice } from './helpers.ts'
+import { expect, type Page } from '@playwright/test'
+import { newDevice, test } from './helpers.ts'
 
 /**
  * Updating the box, from a browser.
