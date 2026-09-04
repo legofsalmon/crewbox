@@ -1,6 +1,6 @@
 import { useStore } from '../../store.ts'
 import { useAgenda } from '../../shell/timetable/hooks.ts'
-import { relative } from '@crewbox/shared'
+import { stageCountdown } from './model/countdown.ts'
 
 /** Four fits a phone sidebar without scrolling; the module has the rest. */
 const MAX_SIDEBAR_STAGES = 4
@@ -38,12 +38,7 @@ export default function ScheduleSidebar() {
             const playing = stage.onNow
             const upcoming = stage.next
             const who = playing?.act.name ?? upcoming?.act.name ?? '—'
-            const countdown =
-              playing?.endsIn != null
-                ? `off ${relative(playing.endsIn)}`
-                : upcoming?.startsIn != null
-                  ? relative(upcoming.startsIn)
-                  : 'done'
+            const countdown = stageCountdown(stage)
             return (
               <li key={stage.stage}>
                 <button

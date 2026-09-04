@@ -217,6 +217,40 @@ for (const scheme of ['light', 'dark'] as const) {
  * for as long as the bundle took over festival Wi-Fi. An inline script in
  * the head sets it before the stylesheet applies.
  */
+for (const scheme of ['light', 'dark'] as const) {
+  test(`the running order's editor buttons stay readable in ${scheme} theme`, async ({
+    browser,
+  }) => {
+    /**
+     * `--accent-text` does not exist and never did, so both of these were
+     * `#fff` — white on the amber accent, 1.79:1 in the dark theme, on the
+     * two controls somebody presses at a production desk to change the
+     * running order everybody else is reading.
+     */
+    const context = await browser.newContext({ colorScheme: scheme })
+    const page = await context.newPage()
+    page.on('pageerror', (e) => {
+      throw new Error(`Page error: ${e.message}`)
+    })
+
+    await page.goto('/?pin=4242')
+    await page.getByLabel('Your name').fill(`Sched ${scheme}`)
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join' }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+    await page.goto('/m/schedule')
+    await expect(page.getByRole('heading', { name: 'Running order' })).toBeVisible()
+    await page.getByRole('button', { name: 'Edit' }).click()
+
+    // The pressed toggle, and the primary action beneath it.
+    expect(await textContrast(page, 'button:has-text("Done")')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, 'button:has-text("Add act")')).toBeGreaterThan(4.5)
+
+    await context.close()
+  })
+}
+
 test('a light-theme device never paints dark first', async ({ browser }) => {
   const context = await browser.newContext({ colorScheme: 'light' })
   const page = await context.newPage()

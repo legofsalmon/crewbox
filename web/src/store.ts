@@ -100,6 +100,12 @@ export interface Pending {
   fileMime?: string
 }
 
+/**
+ * How many show-log entries a page holds — the server's own default, which
+ * is what a short page is measured against.
+ */
+const INCIDENT_PAGE = 200
+
 export type Theme = 'dark' | 'light'
 
 /**
@@ -175,6 +181,16 @@ export interface AppState {
   incidents: Incident[]
   /** True once the scrollback has been fetched at least once. */
   incidentsLoaded: boolean
+  /**
+   * The log held in memory reaches its beginning.
+   *
+   * The fetch takes the latest 200 entries and nothing paged, so a festival
+   * on its third night had a pane and a show report that silently began
+   * partway through Friday. The report is the one that matters: it is the
+   * document that gets mailed on, and there was nothing in it saying it was
+   * a fragment.
+   */
+  incidentsComplete: boolean
   pending: Record<string, Pending[]>
   typing: Record<string, Record<string, number>>
   activeChannelId: string | null
@@ -259,6 +275,10 @@ export interface AppState {
   logIncident: (entry: Omit<QueuedIncident, 'clientMsgId'>) => void
   /** Fetch the log's scrollback. Idempotent; the pane calls it on open. */
   loadIncidents: () => Promise<void>
+  /** Fetch one page older than the earliest held. False when there was none. */
+  loadEarlierIncidents: () => Promise<boolean>
+  /** Page all the way to the beginning — what the show report needs. */
+  loadWholeLog: () => Promise<void>
   sendFile: (channelId: string, file: File, caption?: string) => Promise<void>
   sendTyping: (channelId: string) => void
   setActiveChannel: (channelId: string) => void
@@ -664,6 +684,22 @@ export const useStore = create<AppState>()((set, get) => {
         .catch(() => {})
     }
 
+    /**
+     * Catch the show log up on whatever was filed while we were away.
+     *
+     * Entries arrive on the socket and are fetched once, when the pane
+     * mounts. A phone in a pocket through a changeover therefore missed
+     * every entry filed during it — permanently, as far as that pane was
+     * concerned, because the fetch does not happen again until somebody
+     * navigates away and back. The log is the record of the night; a hole
+     * in it that only some devices have is the worst shape it could take.
+     *
+     * Only once the log has been looked at: a phone whose owner has never
+     * opened the pane has nothing to catch up, and the fetch is a request
+     * per reconnect over festival Wi-Fi.
+     */
+    if (reconnected && get().incidentsLoaded) void get().loadIncidents()
+
     // Re-establish the lighting-network watch on this fresh connection. The
     // server tracks the subscription per connection, so a reconnect starts
     // with none; without this the live bar keeps showing the levels from
@@ -946,6 +982,7 @@ export const useStore = create<AppState>()((set, get) => {
     messages: {},
     incidents: [],
     incidentsLoaded: false,
+    incidentsComplete: false,
     pending: {},
     typing: {},
     activeChannelId: null,
@@ -1150,12 +1187,54 @@ export const useStore = create<AppState>()((set, get) => {
           // in the queue rather than here.
           const byId = new Map(state.incidents.map((e) => [e.id, e]))
           for (const entry of incidents) byId.set(entry.id, entry)
-          return { incidents: [...byId.values()], incidentsLoaded: true }
+          return {
+            incidents: [...byId.values()],
+            incidentsLoaded: true,
+            // A short page is the beginning of the log. A full one says
+            // nothing either way, so it stays unknown until somebody asks.
+            incidentsComplete: incidents.length < INCIDENT_PAGE,
+          }
         })
       } catch {
         // Offline, or a box with the module off. The pane says so rather
         // than spinning, and whatever is already in memory still shows.
         set({ incidentsLoaded: true })
+      }
+    },
+
+    async loadEarlierIncidents() {
+      const held = get().incidents
+      const earliest = held.reduce<number | null>(
+        (low, entry) => (low === null || entry.seq < low ? entry.seq : low),
+        null
+      )
+      // Nothing held means the first page has not been fetched; that is
+      // `loadIncidents`, not this.
+      if (earliest === null) return false
+      try {
+        const { incidents } = await api.fetchIncidents(getToken() ?? '', earliest)
+        set((state) => {
+          const byId = new Map(state.incidents.map((e) => [e.id, e]))
+          for (const entry of incidents) byId.set(entry.id, entry)
+          return {
+            incidents: [...byId.values()],
+            incidentsComplete: incidents.length < INCIDENT_PAGE,
+          }
+        })
+        return incidents.length > 0
+      } catch {
+        // Offline. What is held still shows, and the button stays.
+        return false
+      }
+    },
+
+    async loadWholeLog() {
+      // The report is a document that gets mailed on, so it has to be the
+      // whole night rather than the last two hundred entries of it. Bounded
+      // so a box with a pathological log cannot hang the export: fifty
+      // pages is ten thousand entries, which is more than a festival files.
+      for (let page = 0; page < 50 && !get().incidentsComplete; page++) {
+        if (!(await get().loadEarlierIncidents())) return
       }
     },
 

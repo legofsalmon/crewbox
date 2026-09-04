@@ -88,7 +88,14 @@ export default function VideoMain(_props: { subpath: string }) {
     setConfirmError('')
     try {
       if (pending.intent.action === 'scan') {
-        if (!adminToken) return
+        // The unlock can lapse between raising the intent and confirming it
+        // — reading what a sweep will send is exactly the pause where that
+        // happens. Returning silently left the dialog open with the button
+        // doing nothing, which reads as a broken box rather than a lock.
+        if (!adminToken) {
+          setConfirmError('The admin unlock has expired — unlock again and start over.')
+          return
+        }
         await runScan(adminToken, pending.intent.token)
       } else {
         await setWatching(pending.intent.processorId!, true, pending.intent.token)
@@ -145,7 +152,20 @@ export default function VideoMain(_props: { subpath: string }) {
         )}
       </header>
 
-      {error && state === null && <p className={styles.note}>Waiting for the box: {error}</p>}
+      {/*
+        Unconditional. It used to render only before the first successful
+        load, so once the pane had state a failed Remove or Stop, or a
+        refresh that had been failing for ten minutes, showed nothing at all
+        — the row simply did not change and the crew member pressed it
+        again. A pane about what the box can see has to say when it cannot
+        see.
+      */}
+      {error && (
+        <p className={styles.note} role="status">
+          {state === null ? 'Waiting for the box: ' : 'The box did not answer: '}
+          {error}
+        </p>
+      )}
 
       {state && (
         <div className={styles.body}>
