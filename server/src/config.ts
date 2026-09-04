@@ -188,6 +188,17 @@ export const config = {
    * event router's DNS sends them here, which an admin pastes deliberately
    * (see the file /api/admin/dns-config generates).
    */
+  /**
+   * The timezone the festival is in (`CREWBOX_TZ`), as an IANA name.
+   *
+   * Unset, the box uses its own process timezone, which is right on a box
+   * whose clock was set up on site. A box imaged with UTC and driven to a
+   * field is not: it would tell a production desk the headliner is on an
+   * hour from when every crew phone says, during the show. This is the one
+   * place to say so once.
+   */
+  timeZone: process.env.CREWBOX_TZ?.trim() || undefined,
+
   captive: {
     enabled:
       process.env.CREWBOX_CAPTIVE === '1'

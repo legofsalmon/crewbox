@@ -368,6 +368,11 @@ export interface AppDeps {
    * runner at four in the morning. Production passes nothing.
    */
   clock?: () => Date
+  /**
+   * The festival's timezone (`CREWBOX_TZ`), when the box has been told one.
+   * Unset, the running order is read against the box's own process zone.
+   */
+  timeZone?: string
   logger?: boolean
 }
 
@@ -406,6 +411,7 @@ export function buildApp({
   updater,
   metrics,
   clock = () => new Date(),
+  timeZone,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -1512,7 +1518,7 @@ export function buildApp({
     const interruption = () =>
       describeInterruption({
         ...hub.stats(),
-        board: stageBoard(readRunningOrder(docs.peek(TIMETABLE_ROOM)), clock()),
+        board: stageBoard(readRunningOrder(docs.peek(TIMETABLE_ROOM)), clock(), timeZone),
       })
 
     fastify.get('/api/admin/update', (req, reply) => {
@@ -1760,7 +1766,7 @@ export function buildApp({
     // for connected clients and nothing else, so an empty box genuinely does
     // not know the running order rather than knowing it is empty.
     const timetable = docs.peek(TIMETABLE_ROOM)
-    const board = stageBoard(readRunningOrder(timetable), clock())
+    const board = stageBoard(readRunningOrder(timetable), clock(), timeZone)
 
     return {
       event: publicConfig().eventName,

@@ -153,9 +153,16 @@ defaults to every department module the build ships, and chat is always on),
 `CREWBOX_CAPTIVE` (`0` turns the connectivity-probe responder off; it is on
 for a packaged box and off when running from source) and
 `CREWBOX_CAPTIVE_PORT` (pins the responder's port; left unset it tries 80 and
-drops to 8880 when it may not have it).
+drops to 8880 when it may not have it) and `CREWBOX_TZ` (the festival's
+timezone as an IANA name, e.g. `Europe/London`).
 Setting `LIVEKIT_URL` points voice at an SFU you run instead of the one
 inside the box.
+
+`CREWBOX_TZ` is worth setting on any box that was not set up on site. Crew
+phones read the running order against their own local time; without it the
+box reads it against its _process_ timezone, so a box imaged with UTC and
+driven to a field in July tells a production desk the headliner is on an hour
+from when every phone says — during the show, with nothing saying why.
 
 ## Load
 

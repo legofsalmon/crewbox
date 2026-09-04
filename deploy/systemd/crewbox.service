@@ -10,6 +10,11 @@ Environment=NODE_ENV=production
 Environment=CREWBOX_PORT=8787
 Environment=DATA_DIR=/var/lib/crewbox
 Environment=WEB_DIST=/opt/crewbox/web/dist
+# The festival's timezone, as an IANA name. Crew phones read the running order
+# against their own local time; without this the box reads it against its
+# process timezone, and a box imaged elsewhere disagrees with every phone about
+# when the headliner is on.
+Environment=CREWBOX_TZ=Europe/London
 # CHANGE THESE before the event:
 Environment=EVENT_PIN=2468
 Environment=LIVEKIT_URL=wss://chat.example.com/livekit

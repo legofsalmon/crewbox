@@ -649,13 +649,23 @@ export const snapshotSheet = (doc: Y.Doc): SheetSnapshot => {
  * The running order is not touched. A saved version is a version of *this
  * sheet*, and restoring one must not reach across and move set times for
  * every other department on the box.
+ *
+ * **Which is why `stage` and `date` are not restored either.** Those two are
+ * not the sheet's own content; they are the join to the running order — how
+ * the sheet finds its columns. Putting back an old pair while every act
+ * stayed where it is disconnects the sheet from its acts, and the result is
+ * a blank grid with nothing saying why. The toolbar can change them, and
+ * moves the acts when it does (see `setSheetDate` and `setSheetStage`); a
+ * restore has no business doing half of that.
+ *
+ * So a restore puts back what somebody actually saved a version of — the
+ * channels, the patch, the specs, the notes, the files — and leaves the sheet
+ * pointing at the stage and day it is currently for.
  */
 export const applySnapshot = (doc: Y.Doc, snapshot: SheetSnapshot): void => {
   const { meta, channels, subBoxes, extras, files, patches } = getSheetRoots(doc)
   transact(doc, () => {
     meta.set('title', snapshot.meta.title)
-    meta.set('stage', snapshot.meta.stage)
-    meta.set('date', snapshot.meta.date)
     meta.set('created', snapshot.meta.created)
     channels.delete(0, channels.length)
     channels.push(snapshot.channels.map((channel) => mapFrom({ ...channel })))

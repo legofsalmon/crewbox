@@ -317,6 +317,56 @@ describe('what a desk button shows', () => {
     expect(main?.next?.starts).toBe('in 21h 30m')
   })
 
+  it("reads the running order in the festival's timezone, not the box's", () => {
+    // The box is a computer in a field. Imaged with UTC and driven to a
+    // festival in July, it would tell a production desk the headliner is on
+    // an hour from when every crew phone says — during the show, with
+    // nothing saying why. The phones read their own local time, which on
+    // site is the festival's; CREWBOX_TZ is how the box is told the same.
+    const weekend = [
+      act({
+        name: 'Nine PM',
+        stage: 'Main Stage',
+        date: '2026-08-11',
+        start: '21:00',
+        end: '22:30',
+      }),
+    ]
+    // 20:30 UTC on 11 August is 21:30 in London — mid-set.
+    const utcEvening = new Date(Date.UTC(2026, 7, 11, 20, 30))
+    expect(stageBoard(weekend, utcEvening, 'Europe/London')[0]?.onNow?.name).toBe('Nine PM')
+    // And in a zone where it is not yet nine, the set has not started.
+    expect(stageBoard(weekend, utcEvening, 'UTC')[0]?.onNow).toBeNull()
+    expect(stageBoard(weekend, utcEvening, 'UTC')[0]?.next?.name).toBe('Nine PM')
+  })
+
+  it("crosses the show day in the festival's timezone", () => {
+    // 23:30 UTC on the 11th is 00:30 on the 12th in Berlin — which is still
+    // the 11th's show day, so an act dated the 11th is on.
+    const late = [
+      act({
+        name: 'Closer',
+        stage: 'Main Stage',
+        date: '2026-08-11',
+        start: '00:15',
+        end: '02:00',
+      }),
+    ]
+    const board = stageBoard(late, new Date(Date.UTC(2026, 7, 11, 23, 30)), 'Europe/Berlin')
+    expect(board[0]?.onNow?.name).toBe('Closer')
+  })
+
+  it('falls back to the box rather than refusing to say the time', () => {
+    // A typo in an environment variable must not stop a desk knowing who is
+    // on. Same answer as passing no zone at all.
+    const day = [
+      act({ name: 'Whoever', stage: 'Main Stage', date: '', start: '21:00', end: '22:30' }),
+    ]
+    const withJunk = stageBoard(day, at(21, 30), 'Not/AZone')
+    expect(withJunk[0]?.onNow?.name).toBe('Whoever')
+    expect(withJunk).toEqual(stageBoard(day, at(21, 30)))
+  })
+
   it('still says so after midnight', () => {
     const [main] = stageBoard(DAY, new Date(2026, 7, 12, 0, 30))
     expect(main?.onNow?.name).toBe('Night Bus')

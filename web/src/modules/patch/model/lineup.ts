@@ -66,3 +66,29 @@ export const setSheetStage = (
   if (from === to || !from) return
   for (const act of acts) updateAct(timetableDoc, act.id, { stage: to })
 }
+
+/**
+ * Move this sheet to another day, taking its acts with it.
+ *
+ * Exactly the same argument as `setSheetStage`, for the other half of what
+ * picks the columns — and it was missing. The date field decides which day's
+ * acts appear, so changing it on its own left every act filed under the old
+ * date and the grid blank, with nothing saying why. Somebody correcting a
+ * sheet dated the load-in day to the day it is actually about means "this
+ * sheet is the Saturday", not "throw this away".
+ *
+ * The same one exception too: a sheet with no date yet is showing every day,
+ * and dragging the whole festival onto one date would be a change to the
+ * event rather than to this sheet.
+ */
+export const setSheetDate = (
+  timetableDoc: Y.Doc,
+  meta: Pick<SheetMeta, 'date'>,
+  acts: SheetAct[],
+  next: string
+): void => {
+  const from = meta.date.trim()
+  const to = next.trim()
+  if (from === to || !from) return
+  for (const act of acts) updateAct(timetableDoc, act.id, { date: to })
+}

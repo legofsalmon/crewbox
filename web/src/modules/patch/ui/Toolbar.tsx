@@ -3,7 +3,7 @@ import type * as Y from 'yjs'
 import { useStageNames } from '../../../shell/timetable/hooks.ts'
 import { timetable } from '../../../shell/timetable/store.ts'
 import { setMetaField } from '../model/sheetDoc'
-import { setSheetStage } from '../model/lineup'
+import { setSheetDate, setSheetStage } from '../model/lineup'
 import { displayToIso, isoToDisplay } from '../model/date'
 import type { SheetAct, SheetSnapshot } from '../model/types'
 import { downloadSheetCsv } from './download'
@@ -60,9 +60,13 @@ export default function Toolbar({
     setSheetStage(timetable().doc, snapshot.meta, acts, next)
     setMetaField(doc, 'stage', next.trim())
   })
+  // The acts move with the date for the same reason they move with the
+  // stage: between them those two fields are how the sheet finds its
+  // columns, so changing one on its own empties the grid and says nothing.
   const date = useDraft(isoToDisplay(snapshot.meta.date), (next) => {
     const iso = displayToIso(next)
     if (iso) {
+      setSheetDate(timetable().doc, snapshot.meta, acts, iso)
       setMetaField(doc, 'date', iso)
     } else if (next.trim()) {
       addToast('Invalid date', 'Use DD/MM/YYYY — date left unchanged', 'warning')

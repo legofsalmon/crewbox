@@ -379,6 +379,9 @@ async function main(): Promise<void> {
   const app = buildApp({
     store,
     eventPin: config.eventPin,
+    // So the control API reads the running order against the festival's wall
+    // clock rather than the box's process timezone. See CREWBOX_TZ.
+    ...(config.timeZone ? { timeZone: config.timeZone } : {}),
     wifiSsid: config.wifiSsid,
     ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
     filesDir: join(dataDir, 'files'),

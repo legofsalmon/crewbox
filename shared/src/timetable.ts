@@ -166,25 +166,86 @@ export function toAgendaAct(input: Act): AgendaAct {
 export const nowMinutes = (now: Date): number => showMinutes(now.getHours() * 60 + now.getMinutes())
 
 /**
+ * Where the festival is, as a wall clock and a show day.
+ *
+ * Two things read a running order: every crew phone, and the box when a
+ * production desk asks over the control API. The phones read their own local
+ * time, which on site is the festival's. The box reads its *process*
+ * timezone — and a box imaged with UTC and driven to a field in July is an
+ * hour out, so the Stream Deck at front of house and every phone in the crew
+ * disagree about when the headliner is on, during the show, with nothing
+ * saying why.
+ *
+ * `timeZone` is an IANA name (`CREWBOX_TZ`). Unset, this is the process
+ * zone, which is today's behaviour and correct on a box whose clock is set
+ * up properly. A name Intl cannot read falls back to the same, because a
+ * typo in an environment variable must not stop a box telling anybody the
+ * time.
+ */
+export function wallClock(now: Date, timeZone?: string): { now: number; today: string } {
+  const parts = zoneParts(now, timeZone)
+  const clock = parts.hour * 60 + parts.minute
+  // Before the roll it is still the previous show day. Shifted through UTC
+  // so the arithmetic is a plain day and never lands on a clock change.
+  const at = Date.UTC(parts.year, parts.month - 1, parts.day)
+  const day = new Date(clock < DAY_ROLLS_AT ? at - 24 * 60 * 60_000 : at)
+  const month = String(day.getUTCMonth() + 1).padStart(2, '0')
+  const date = String(day.getUTCDate()).padStart(2, '0')
+  return { now: showMinutes(clock), today: `${day.getUTCFullYear()}-${month}-${date}` }
+}
+
+interface ZoneParts {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+}
+
+function zoneParts(now: Date, timeZone?: string): ZoneParts {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(now)
+      const value = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+      const read = {
+        year: value('year'),
+        month: value('month'),
+        day: value('day'),
+        hour: value('hour'),
+        minute: value('minute'),
+      }
+      if (!Object.values(read).some(Number.isNaN)) return read
+    } catch {
+      // An unusable zone name. Fall through to the process zone rather than
+      // refusing to say what time it is.
+    }
+  }
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+  }
+}
+
+/**
  * Which show day it is, as plain YYYY-MM-DD.
  *
  * The same 06:00 line as `showMinutes`, applied to the calendar: at half past
  * midnight on the Saturday it is still Friday's show day, because the set on
  * stage started at eleven on the Friday night. Without this, a timetable
  * would change day underneath the crew halfway through the headline slot.
- *
- * Local, deliberately, like `nowMinutes` — a festival's day is the day where
- * the festival is.
  */
-export function showDate(now: Date): string {
-  const local = new Date(now.getTime())
-  if (local.getHours() * 60 + local.getMinutes() < DAY_ROLLS_AT) {
-    local.setDate(local.getDate() - 1)
-  }
-  const month = String(local.getMonth() + 1).padStart(2, '0')
-  const day = String(local.getDate()).padStart(2, '0')
-  return `${local.getFullYear()}-${month}-${day}`
-}
+export const showDate = (now: Date, timeZone?: string): string => wallClock(now, timeZone).today
 
 /**
  * Whole days from one plain date to another, or null if either is unusable.

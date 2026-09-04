@@ -8,6 +8,7 @@ import {
   patchSubBoxDisplay,
   setPatchField,
   setActExtra,
+  setMetaField,
   setPatchSubBox,
   snapshotSheet,
 } from './sheetDoc'
@@ -45,6 +46,33 @@ describe('sheet versions', () => {
     const versions = listVersions(doc)
     expect(versions.map((v) => v.name)).toEqual(['Untitled version', 'first'])
     expect(versionSnapshot(versions[1]).meta.title).toBe('Versions Show')
+  })
+
+  it('leaves the sheet on the stage and day it is currently for', () => {
+    /**
+     * `stage` and `date` are not the sheet's own content — they are the join
+     * to the running order, and how the sheet finds its columns. Putting an
+     * old pair back while every act stayed where it is disconnects the sheet
+     * from its acts, and the result is a blank grid with nothing saying why.
+     *
+     * The toolbar can change them, and moves the acts when it does. A
+     * restore has no business doing half of that, and it is the same
+     * reasoning that already stops a restore touching the running order.
+     */
+    const { doc } = newSheet()
+    const saved = saveVersion(doc, 'before the day moved')
+
+    setMetaField(doc, 'date', '2026-07-26')
+    setMetaField(doc, 'stage', 'Second Stage')
+    setMetaField(doc, 'title', 'Renamed')
+
+    expect(restoreVersion(doc, saved.id)).toBe(true)
+    const after = snapshotSheet(doc)
+    // The join stays where the sheet is now.
+    expect(after.meta.date).toBe('2026-07-26')
+    expect(after.meta.stage).toBe('Second Stage')
+    // The sheet's own content comes back, title included.
+    expect(after.meta.title).toBe('Versions Show')
   })
 
   it('restores the sheet to exactly the saved state', () => {
