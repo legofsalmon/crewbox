@@ -421,6 +421,34 @@ describe('reconnect resync', () => {
     expect(replayed.at(-1)!.body).toBe('m249')
   })
 
+  it('serves the tail of a truncated channel over REST', async () => {
+    // The contract the client's backfill rests on. The hub's comment has
+    // always said "the client backfills those channels over REST on demand";
+    // the client had no such code, and this is what it now asks for — the
+    // newest page of a channel it holds nothing of, addressed by the
+    // `lastSeq` every welcome carries.
+    const token = await join('Alex')
+    const general = store.getChannelByName('general')!
+    for (let i = 0; i < 250; i++) {
+      store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: `m${i}` })
+    }
+    const { welcome } = await connect(token, { [general.id]: 1 })
+    const channel = welcome.channels.find((c) => c.id === general.id)!
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/channels/${general.id}/messages?beforeSeq=${channel.lastSeq + 1}&limit=100`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(200)
+    const { messages } = res.json() as { messages: { seq: number; body: string }[] }
+    expect(messages).toHaveLength(100)
+    // The newest hundred, ending at the true last message — so a phone with
+    // nothing gets the bottom of the channel, not the top.
+    expect(messages.at(-1)!.body).toBe('m249')
+    expect(messages.at(-1)!.seq).toBe(channel.lastSeq)
+  })
+
   it('bounds the whole welcome, not just each channel', async () => {
     // A fresh client on a box with several busy channels would otherwise get
     // 200 × every channel in one frame, stringified on the event loop. The

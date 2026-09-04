@@ -23,6 +23,7 @@ import {
   type QueuedIncident,
 } from './modules/incident/model/outbox.ts'
 import { flushOrder, shouldDrop } from './lib/flush.ts'
+import { needsBackfill, pageFrom } from './lib/history.ts'
 import { WsClient } from './lib/ws.ts'
 import * as api from './lib/api.ts'
 import {
@@ -392,6 +393,53 @@ export const useStore = create<AppState>()((set, get) => {
     void cache.deleteMessages([...ids])
   }
 
+  /**
+   * Fetch the tail of channels the welcome had no room for.
+   *
+   * The hub bounds the whole welcome with a global budget — twenty channels
+   * at two hundred messages each, stringified on the event loop and pushed
+   * over festival Wi-Fi to a hundred phones that all re-helloed when an
+   * access point blipped, is not a frame anybody wants to send. Anything past
+   * the budget comes back named in `truncated`, and the hub's comment says
+   * "the client backfills those channels over REST on demand".
+   *
+   * No such code existed. The client cleared the channel and its cache, and
+   * `loadOlder` pages backwards from the earliest message it holds — of which
+   * there were none — so it refused to run. The channel sat there reading "No
+   * messages yet" with an unread badge beside it until somebody posted
+   * something new. Any phone joining a box with a few hundred messages across
+   * its channels saw it.
+   *
+   * One request per channel and in order, because this is the same uplink the
+   * welcome just came over and these are the channels nobody is looking at.
+   */
+  async function backfillTruncated(channelIds: readonly string[]): Promise<void> {
+    for (const channelId of channelIds) {
+      const channel = get().channels[channelId]
+      if (!channel?.lastSeq) continue
+      try {
+        const { messages: tail } = await api.fetchHistory(
+          getToken() ?? '',
+          channelId,
+          channel.lastSeq + 1
+        )
+        if (!tail.length) continue
+        set({
+          messages: {
+            ...get().messages,
+            [channelId]: mergeMessages(get().messages[channelId], tail),
+          },
+        })
+        void cache.saveMessages(tail)
+      } catch {
+        // Offline, or the box is busy. `loadOlder` now covers the same ground
+        // the moment somebody opens the channel, and the next welcome tries
+        // again — neither is worth a banner about a channel nobody has looked
+        // at yet.
+      }
+    }
+  }
+
   function persistSnapshot(): void {
     const { me, users, channels, readState, mentionSeqs } = get()
     void cache.saveSnapshot({
@@ -480,6 +528,14 @@ export const useStore = create<AppState>()((set, get) => {
     ingestMessages(msg.missed)
     // Messages deleted while we were away must leave state and cache too.
     applyDeletions(msg.deletions ?? [])
+
+    // Truncated channels that the replay left with nothing at all — the box
+    // ran out of welcome budget before reaching them, so this phone holds no
+    // message for them and cannot scroll to get one. See backfillTruncated.
+    // A channel that was truncated but did get its tail is fine: `loadOlder`
+    // pages back from what it has.
+    const bare = needsBackfill(msg.truncated, get().messages)
+    if (bare.length) void backfillTruncated(bare)
 
     // And say so, once, if any of them were for this crew member.
     //
@@ -1179,17 +1235,22 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     async loadOlder(channelId) {
-      const { messages, loadingOlder } = get()
+      const { messages, channels, loadingOlder } = get()
       const list = messages[channelId] ?? []
       const earliest = list.find((m) => m.seq > 0)
-      if (loadingOlder || !earliest || earliest.seq <= 1) return
+      // An empty channel is not the same as a channel with no history. A
+      // welcome that ran out of budget leaves one behind, and this used to
+      // refuse to run on it — which is how a channel with three hundred
+      // messages in it showed "No messages yet" for ever. With nothing held,
+      // page from the top.
+      const before = pageFrom({
+        earliestSeq: earliest?.seq,
+        lastSeq: channels[channelId]?.lastSeq ?? 0,
+      })
+      if (loadingOlder || before === null) return
       set({ loadingOlder: true })
       try {
-        const { messages: older } = await api.fetchHistory(
-          getToken() ?? '',
-          channelId,
-          earliest.seq
-        )
+        const { messages: older } = await api.fetchHistory(getToken() ?? '', channelId, before)
         if (older.length) {
           set({
             messages: {
