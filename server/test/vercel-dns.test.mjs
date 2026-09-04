@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   apiUrl,
   certHostname,
+  chooseAddress,
+  defaultDataDir,
   listRecords,
+  localAddresses,
   planRecordChange,
   readResponse,
   splitHostname,
@@ -279,5 +282,87 @@ describe('the hostname to publish', () => {
     expect(certHostname(dir)).toBeNull()
     writeFileSync(join(dir, 'cert.pem'), 'not a certificate')
     expect(certHostname(dir)).toBeNull()
+  })
+})
+
+describe('finding the box data directory', () => {
+  /**
+   * The runbook's cron line is a bare `node deploy/vercel-dns.mjs` on the
+   * systemd rig, and cron's HOME is root's. The old default sent it to
+   * /root/.crewbox/data, where there is no certificate, so the job read no
+   * hostname and exited 2 every night into a mailbox nobody reads — while
+   * the record it exists to maintain quietly went stale.
+   */
+  it('prefers an explicit DATA_DIR, as the shell scripts do', () => {
+    expect(defaultDataDir({ DATA_DIR: '/srv/box', HOME: '/root' }, () => true)).toBe('/srv/box')
+  })
+
+  it('finds the service directory on the systemd rig', () => {
+    expect(defaultDataDir({ HOME: '/root' }, (p) => p === '/var/lib/crewbox')).toBe(
+      '/var/lib/crewbox'
+    )
+  })
+
+  it('falls back to the box default on a laptop', () => {
+    expect(defaultDataDir({ HOME: '/Users/colm' }, () => false)).toBe('/Users/colm/.crewbox/data')
+  })
+})
+
+describe('choosing the address to publish', () => {
+  /**
+   * A crewbox sits on the crew network *and* the lighting VLAN, and the
+   * lighting VLAN is exactly the address no phone can reach. This used to
+   * take whichever IPv4 the OS enumerated first, which is a coin toss — and
+   * a wrong answer is a public record pointing crew at nothing, discovered
+   * at the venue.
+   */
+  const ifaces = {
+    lo: [{ family: 'IPv4', address: '127.0.0.1', internal: true }],
+    eth0: [{ family: 'IPv4', address: '10.10.0.50', internal: false }],
+    eth1: [{ family: 'IPv4', address: '192.168.1.50', internal: false }],
+    eth2: [{ family: 'IPv6', address: 'fe80::1', internal: false }],
+  }
+
+  it('lists the routable IPv4 addresses and nothing else', () => {
+    expect(localAddresses(ifaces)).toEqual(['10.10.0.50', '192.168.1.50'])
+  })
+
+  it('skips a link-local address, which means DHCP never answered', () => {
+    expect(
+      localAddresses({
+        eth0: [{ family: 'IPv4', address: '169.254.7.7', internal: false }],
+      })
+    ).toEqual([])
+  })
+
+  it('follows CREWBOX_IFACE, which is how the box itself picks its adapter', () => {
+    expect(chooseAddress(localAddresses(ifaces), '192.168.1.50')).toEqual({
+      address: '192.168.1.50',
+    })
+  })
+
+  it('takes the only candidate when there is only one', () => {
+    expect(chooseAddress(['192.168.1.50'], undefined)).toEqual({ address: '192.168.1.50' })
+  })
+
+  it('refuses to guess between two networks', () => {
+    const chosen = chooseAddress(localAddresses(ifaces), '')
+    expect(chosen.address).toBeUndefined()
+    // Naming both is the point: whoever reads this knows which one is the
+    // lighting VLAN and can pass --ip in the same minute.
+    expect(chosen.error).toContain('10.10.0.50, 192.168.1.50')
+    expect(chosen.error).toContain('CREWBOX_IFACE')
+  })
+
+  it('says so when CREWBOX_IFACE names an address this machine does not have', () => {
+    // The adapter moved, or the pin was copied from the other box. Publishing
+    // some other address instead would be worse than stopping.
+    const chosen = chooseAddress(localAddresses(ifaces), '192.168.9.9')
+    expect(chosen.address).toBeUndefined()
+    expect(chosen.error).toContain('no adapter on this machine has that address')
+  })
+
+  it('says there is nothing to publish when the box is on no network at all', () => {
+    expect(chooseAddress([], undefined).error).toContain('No routable address')
   })
 })

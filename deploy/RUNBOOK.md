@@ -16,7 +16,8 @@ The one document to print and keep in the production office.
 - Enough Wi-Fi APs to cover stages/gates (wired backhaul if possible). A
   travel router covers a production office, not a site.
 - USB stick for backups, gaffer-taped to the server
-- Printed QR join posters (`node deploy/make-poster.mjs https://chat.<yourdomain> <EVENT_PIN>`)
+- Printed QR join posters (`node deploy/make-poster.mjs https://chat.<yourdomain>:8787 <EVENT_PIN>`
+  — the port matters: it goes on the poster exactly as typed here)
 - This runbook
 
 ## A laptop box — trials, small rooms, and the spare in the car
@@ -89,7 +90,9 @@ deployment choice.
    IP), not the public download site.
 
    **On a Mac box** (the laptop-that-travels setup): `deploy/cert-renew-mac.sh`
-   instead — lego with Vercel DNS, no sudo, everything under `$HOME`. It only
+   instead — lego with Vercel DNS, no sudo, everything under `$HOME`. Copy
+   that file to `~/certs/`; the plist below runs it by name, and running the
+   Linux one on a Mac fails at the first `sudo`. It only
    acts inside 30 days of expiry, so schedule it weekly and forget it. Use
    launchd, not cron: a laptop asleep at the scheduled minute gets the run on
    wake instead of a silent skip. `~/Library/LaunchAgents/com.crewbox.cert-renew.plist`:
@@ -101,7 +104,7 @@ deployment choice.
    <dict>
      <key>Label</key><string>com.crewbox.cert-renew</string>
      <key>ProgramArguments</key>
-     <array><string>/Users/YOU/certs/cert-renew.sh</string></array>
+     <array><string>/Users/YOU/certs/cert-renew-mac.sh</string></array>
      <key>StartCalendarInterval</key>
      <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
      <key>StandardOutPath</key><string>/Users/YOU/certs/renew.log</string>
@@ -248,7 +251,19 @@ team rather than a personal account.
   that directory to the USB stick gaffer-taped to the server.
 - **Re-run it when the address moves.** On someone else's DHCP it will. The
   script is idempotent and does nothing when the record is already right, so
-  cron it: `*/5 * * * * VERCEL_TOKEN=… node /opt/crewbox/deploy/vercel-dns.mjs`.
+  cron it:
+
+  ```
+  */5 * * * * DATA_DIR=/var/lib/crewbox VERCEL_TOKEN=… CREWBOX_IFACE=192.168.1.50 node /opt/crewbox/deploy/vercel-dns.mjs
+  ```
+
+  `DATA_DIR` because cron's `HOME` is root's, not the box's, and the
+  hostname is read from the certificate in the box's data directory.
+  `CREWBOX_IFACE` because a box on two networks has two addresses and the
+  lighting VLAN is the one no phone can reach — without it the script
+  refuses rather than guessing, which is the right way round but still a
+  job that does nothing.
+
 - **It can still be defeated**, and not visibly: consumer routers often drop
   public answers that point into private address space (DNS rebinding
   protection). If the name resolves nowhere from a phone, that is why, and
@@ -258,11 +273,53 @@ team rather than a personal account.
 Untested against the live API as of writing — do the `--dry-run` at the office,
 not in a field.
 
+## Backups and the swap
+
+`deploy/backup.sh` copies everything a spare machine needs to become this
+box: the database (a WAL-safe snapshot of a _running_ box, not a `cp`), the
+uploaded files, the TLS certificate and key, and the Android APK. It leaves a
+`MANIFEST.txt` saying what it got, and writes the time back to the box so
+**Admin → This box** can tell you when the last one was.
+
+```sh
+sudo -u crewbox deploy/backup.sh                     # nightly, and before teardown
+sudo -u crewbox BACKUP_DIR=/media/usb/crewbox-backups deploy/backup.sh
+```
+
+- **`BACKUP_DIR`** defaults to `/media/usb/crewbox-backups` when `/media/usb`
+  exists, and to `$HOME/crewbox-backups` when it does not — a laptop box, or
+  a rack box whose stick is not plugged in. The script says so at the end
+  when the backup landed on the same filesystem as the box's data, because
+  that copy does not survive the box.
+- **`BACKUP_KEEP`** is how many to keep (14 by default). Older ones go.
+- **A run that is interrupted leaves `<stamp>.partial`**, never a directory
+  that looks finished. The next run sweeps it.
+
+`deploy/restore.sh` goes the other way, onto the spare:
+
+```sh
+sudo deploy/restore.sh                    # the newest backup that finished and reads
+sudo deploy/restore.sh /media/usb/crewbox-backups/20260809-2100
+```
+
+It refuses to run while a box is answering on the port, moves any existing
+data directory aside rather than overwriting it, and checks each candidate
+before choosing: a directory with no `MANIFEST.txt` never finished, and a
+database that fails `PRAGMA integrity_check` is one that would start fine
+and fall over during the show. Both are passed over, out loud, for the
+newest backup that is sound.
+
+Rehearse it. An untested backup is not a backup — step 7 of _Before the
+event_ is ten minutes at home against an hour of guesswork in a field.
+
 ## Health checks
 
-- App: `curl -k https://chat.<yourdomain>/api/health` → `{"ok":true,...}`
+- App: `curl -k https://chat.<yourdomain>:8787/api/health` → `{"ok":true,...}`
   (shows live connection and online-user counts, plus `docs` room/connection
-  counts for patch-sheet sync)
+  counts for patch-sheet sync). **The port is part of it.** `CREWBOX_PORT`
+  is 8787 in the shipped unit file, and nothing in this rig redirects 443 to
+  it — so the same address without a port is a different check, and one that
+  fails on a perfectly healthy box. Use the same address on the posters.
 - Voice: **Admin → This box**. It reports whether the SFU is actually
   running, which `systemctl` cannot tell you now that it lives inside the
   box process.
@@ -334,10 +391,27 @@ site-only (LiveKit doesn't traverse the tunnel); remote users are text+files.
      credentials-file: /etc/cloudflared/<tunnel-id>.json
      ingress:
        - hostname: support.<your-domain>
-         service: http://localhost:8787
+         service: https://localhost:8787
+         originRequest:
+           # The box's certificate is for chat.<your-domain>, not localhost,
+           # so verifying it here fails on a correctly configured box. The
+           # hop is loopback on the same machine; there is nothing between
+           # cloudflared and the box to be in the middle of.
+           noTLSVerify: true
        - service: http_status:404
      ```
-   - `sudo cloudflared service install` (or use `deploy/systemd/crewbox-tunnel.service`).
+     **`https`, not `http`.** A box with a certificate serves TLS and nothing
+     else on that port, so the plain-http form 502s on exactly the rig this
+     section is written for. It works only when `CREWBOX_IFACE` is pinned —
+     that is what makes the box put a plain-http mirror on 127.0.0.1 — and
+     silently stops working the day somebody unpins it.
+   - `sudo cloudflared service install` (or use
+     `deploy/systemd/crewbox-tunnel.service`, which needs a `cloudflared`
+     user that owns `/etc/cloudflared`:
+     `sudo useradd --system --no-create-home --shell /usr/sbin/nologin cloudflared && sudo chown -R cloudflared:cloudflared /etc/cloudflared`.
+     The unit used to run under `DynamicUser=yes`, which gets a fresh uid on
+     every start and could never read the 0400-root credentials file it
+     exists to use.)
    - Ad-hoc alternative (no account, random URL, great for testing):
      `cloudflared tunnel --url http://localhost:8787`.
 

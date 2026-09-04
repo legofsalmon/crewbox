@@ -3,6 +3,12 @@
 // Usage: node deploy/soak.mjs [baseUrl] [clients] [seconds]
 // Verifies at the end that every client saw every message exactly once and
 // that every doc client converged on every doc edit.
+//
+// "Exactly once" is checked against the ids that were actually acknowledged,
+// not against each other. Comparing the clients' counts — which is all this
+// did — passes whenever they are wrong together, and a fan-out bug is
+// precisely the kind that is wrong for everyone at once: fifty clients each
+// missing the same message have identical counts and the soak said PASSED.
 // All clients join from one IP, which trips the per-IP join limiter — start
 // the TARGET server with JOIN_RATE_LIMIT=1000 (a scratch instance, never the
 // real event box; real crew join from distinct phone IPs and are unaffected).
@@ -17,6 +23,10 @@ const EVENT_PIN = process.env.EVENT_PIN ?? '1234'
 const wsBase = base.replace(/^http/, 'ws')
 
 const stats = { sent: 0, acked: 0, dupes: 0, errors: 0 }
+/** Every message the box confirmed it stored: the roll every client is called against. */
+const delivered = new Set()
+/** Channels a welcome said it could not fit. Unnoticed, they look like loss. */
+const truncations = []
 
 async function makeClient(i) {
   const res = await fetch(`${base}/api/join`, {
@@ -40,8 +50,18 @@ async function makeClient(i) {
         if (seen.has(m.id)) stats.dupes++
         seen.add(m.id)
       }
+      // The welcome is allowed to truncate — a fresh client on a busy box
+      // gets a budget and backfills the rest over REST. A soak client never
+      // backfills, so any truncation makes the delivery check meaningless
+      // rather than failed. Record it and say so at the end.
+      if (msg.truncated?.length) truncations.push(...msg.truncated)
     }
-    if (msg.type === 'ack') stats.acked++
+    if (msg.type === 'ack') {
+      stats.acked++
+      // The id the box assigned, which is what every other client will see.
+      const stored = msg.message ?? msg
+      if (stored.id) delivered.add(stored.id)
+    }
     if (msg.type === 'msg' || msg.type === 'ack') {
       const m = msg.message ?? msg
       if (seen.has(m.id)) stats.dupes++
@@ -111,11 +131,33 @@ const [min, max] = [Math.min(...counts), Math.max(...counts)]
 console.log(`sent=${stats.sent} acked=${stats.acked} dupes=${stats.dupes} errors=${stats.errors}`)
 console.log(`messages seen per client: min=${min} max=${max} (equal min/max = no loss)`)
 
+// Every client against the roll of what the box actually stored, rather than
+// against each other. This is the assertion the header has always claimed and
+// the one that catches a fan-out bug, which by its nature shortchanges every
+// client identically.
+const missing = clients
+  .map((c) => ({ name: c.name, lost: [...delivered].filter((id) => !c.seen.has(id)) }))
+  .filter((c) => c.lost.length > 0)
+for (const c of missing.slice(0, 5)) {
+  console.log(`  ${c.name} never saw ${c.lost.length} of ${delivered.size} messages`)
+}
+if (missing.length > 5) console.log(`  …and ${missing.length - 5} more clients`)
+if (truncations.length > 0) {
+  // Not a failure of the box — the welcome budget doing its job — but it
+  // makes the delivery check above unanswerable, so it cannot pass quietly.
+  console.log(
+    `  ${truncations.length} welcome(s) were truncated: a soak client never backfills, ` +
+      'so run against a fresh box or with fewer seconds.'
+  )
+}
+
 const ok =
   stats.dupes === 0 &&
   stats.errors === 0 &&
   stats.sent === stats.acked &&
   min === max &&
+  missing.length === 0 &&
+  truncations.length === 0 &&
   docsConverged
 console.log(ok ? 'SOAK PASSED' : 'SOAK FAILED')
 process.exit(ok ? 0 : 1)
