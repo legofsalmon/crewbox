@@ -17,6 +17,13 @@ import { ApiError } from '../lib/api.ts'
 export default function AdminUnlock() {
   const setAdminOpen = useStore((s) => s.setAdminOpen)
   const unlockAdmin = useStore((s) => s.unlockAdmin)
+  /**
+   * Why the panel locked itself, when it did rather than being locked by
+   * somebody. Without this the screen simply reappears mid-task, which reads
+   * as the box having thrown you out for no reason — most often it is a
+   * restart, which is exactly the thing worth saying.
+   */
+  const lockedReason = useStore((s) => s.adminLockedReason)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -66,6 +73,11 @@ export default function AdminUnlock() {
             placeholder="the box's admin password"
             onChange={(e) => setPassword(e.target.value)}
           />
+          {lockedReason && !error && (
+            <p className="admin-note" role="status">
+              {lockedReason}
+            </p>
+          )}
           {/* Not the event PIN, and people will try the event PIN first. */}
           <p className="admin-muted">
             Not the event PIN. The box printed this when it first started, and it can be changed

@@ -80,3 +80,36 @@ test('the admin panel is behind a password, and everyone can reach the door', as
 
   await crew.context().close()
 })
+
+/**
+ * The lighting fields an env-configured box used to hide.
+ *
+ * The panel edits saved settings; the box runs on the environment where one
+ * is set. This box is started with CREWBOX_DMX=sacn and nothing saved — the
+ * arrangement every deploy script produces — so the saved mode is empty, and
+ * a form reading that concluded lighting was off and hid the adapter and
+ * universes fields entirely. Those two are not pinned by the environment, so
+ * on such a box they were the only two an operator could set and the only
+ * two that disappeared.
+ */
+test('an env-configured box still shows the lighting fields it lets you change', async ({
+  browser,
+}) => {
+  const admin = await newDevice(browser, 'Networks Admin')
+  await admin.getByRole('button', { name: 'Admin panel' }).click()
+  await admin.getByLabel('Admin password').fill('e2e-admin-password')
+  await admin.getByRole('button', { name: 'Unlock' }).click()
+  await expect(admin.getByRole('heading', { name: 'Crew' })).toBeVisible()
+
+  // The mode itself is pinned, and the note now names what it is pinned to.
+  await expect(admin.getByText(/Set by CREWBOX_DMX in the environment to sacn/)).toBeVisible()
+
+  // And the sub-section exists at all, which is the thing that vanished:
+  // both rows are inside it, and neither was on the page before.
+  await expect(admin.getByText('Lighting network adapter')).toBeVisible()
+  await expect(admin.getByText('Set by CREWBOX_DMX_IFACE in the environment.')).toBeVisible()
+  await expect(admin.getByText('sACN universes')).toBeVisible()
+  await expect(admin.getByText('Set by CREWBOX_DMX_UNIVERSES in the environment.')).toBeVisible()
+
+  await admin.context().close()
+})

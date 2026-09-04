@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api.ts'
 import { nextPhase, shownStage, type UpdatePhase } from '../lib/updatewatch.ts'
+import { adminError } from '../lib/adminerror.ts'
 
 /**
  * Updating the box, from the panel.
@@ -60,7 +61,17 @@ export default function UpdateSection({
         // *which* failure it is decides an install, so it is passed on.
         const locked = err instanceof api.ApiError && err.status === 403
         if (watching) {
+          // Deliberately not `adminError`. While an install is being watched
+          // a 403 is the good news: unlocks live in one process's memory, so
+          // a box holding none of them is a box that restarted, which is the
+          // only positive evidence anywhere that the install worked. Giving
+          // the unlock back here would replace "the box came back on 0.19.0"
+          // with the password box.
           setPhase((p) => nextPhase(p, locked ? { kind: 'locked' } : { kind: 'silent' }))
+        } else if (locked) {
+          // Not watching: an ordinary dead unlock, and the rest of the panel
+          // is about to fail the same way.
+          adminError(err, '')
         }
       }
     },
@@ -117,7 +128,7 @@ export default function UpdateSection({
       await api.adminDownloadUpdate(auth(), available.version)
       await refresh()
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Could not start the download')
+      onNote(adminError(err, 'Could not start the download'))
     } finally {
       setBusy(false)
     }
@@ -129,7 +140,7 @@ export default function UpdateSection({
       const { intent: armed } = await api.adminArmUpdate(auth(), version)
       setIntent(armed)
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Could not prepare the update')
+      onNote(adminError(err, 'Could not prepare the update'))
     } finally {
       setBusy(false)
     }

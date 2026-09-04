@@ -848,6 +848,15 @@ export function buildApp({
     adapters: lanAdapters(),
     saved: storedNetwork(),
     fromEnv: network?.env ?? { iface: false, dmxMode: false, dmxIface: false, dmxUniverses: false },
+    // What the next start will actually run with: the environment where it
+    // has set something, the saved value otherwise.
+    //
+    // The panel needs this and not only `saved`. With CREWBOX_DMX pinning the
+    // mode and nothing ever saved through the panel, `saved.dmxMode` is
+    // empty — so a panel reading that alone concluded lighting was off and
+    // hid the adapter and universes fields, which the environment does *not*
+    // pin and are the two an operator on such a box actually has to set.
+    effective: nextBootNetwork(),
     advertised: lanIps(effectiveIface())[0] ?? '',
     restartNeeded: networkRestartNeeded(),
   })

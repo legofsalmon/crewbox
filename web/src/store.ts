@@ -270,8 +270,25 @@ export interface AppState {
   setAdminOpen: (open: boolean) => void
   /** Trade the admin password for a token; throws with the server's message. */
   unlockAdmin: (password: string) => Promise<void>
-  /** Give the unlock back — the panel's Lock button, and any 403 it meets. */
+  /** Give the unlock back and close the panel — the Lock button. */
   lockAdmin: () => void
+  /**
+   * The box has stopped honouring this unlock.
+   *
+   * A 403 from an admin route, which is a restart (unlocks live in one
+   * process's memory), an expiry, or another admin changing the password.
+   * The store's own comment said any 403 gave the unlock back, and nothing
+   * did: every button went on failing with the same message and the only way
+   * out was to reload the page.
+   *
+   * Unlike `lockAdmin` this leaves the panel open, so the unlock screen comes
+   * up in its place rather than the whole thing vanishing under somebody who
+   * did not ask for it to close. And it does not call `/api/admin/lock` —
+   * the token being handed back is one the box has just refused.
+   */
+  adminUnlockLost: (reason: string) => void
+  /** Why the panel locked itself, for the unlock screen to explain. */
+  adminLockedReason: string | null
   /**
    * Replace the unlock token. Changing the admin password revokes every
    * token including this device's, and the server hands back a replacement
@@ -924,6 +941,7 @@ export const useStore = create<AppState>()((set, get) => {
     searchOpen: false,
     adminOpen: false,
     adminToken: null,
+    adminLockedReason: null,
     audioSettingsOpen: false,
     latencyMs: null,
     updateReady: false,
@@ -1371,17 +1389,24 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     setAdminOpen(open) {
-      set({ adminOpen: open })
+      // Opening is a fresh attempt: whatever locked the panel last time is
+      // not what the unlock screen should be explaining now.
+      set({ adminOpen: open, ...(open ? { adminLockedReason: null } : {}) })
     },
 
     async unlockAdmin(password) {
       const { adminToken } = await api.adminUnlock(getToken() ?? '', password)
-      set({ adminToken })
+      set({ adminToken, adminLockedReason: null })
+    },
+
+    adminUnlockLost(reason) {
+      if (!get().adminToken) return
+      set({ adminToken: null, adminLockedReason: reason })
     },
 
     lockAdmin() {
       const adminToken = get().adminToken
-      set({ adminToken: null, adminOpen: false })
+      set({ adminToken: null, adminOpen: false, adminLockedReason: null })
       // Best effort: the token is already gone from this device, and the
       // server expires it anyway. A failed call must not keep the panel open.
       if (adminToken) void api.adminLock({ token: getToken() ?? '', adminToken }).catch(() => {})
