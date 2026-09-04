@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -16,7 +17,9 @@ import {
   livekitConfigYaml,
   livekitCredentials,
   probeSfu,
+  canRunLiveKit,
   reapOrphanLiveKit,
+  startEmbeddedLiveKit,
   sfuIdentity,
   spawnLiveKit,
   unpackLiveKit,
@@ -249,6 +252,81 @@ describe('orphaned SFU from a killed box', () => {
     expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
     expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
   })
+
+  it('runs an SFU named on disk when the build carries none', async () => {
+    // The systemd rig: installed from source, so nothing is embedded. It
+    // used to fall through to whatever LIVEKIT_URL the unit file carried,
+    // which shipped pointing at an example host with the dev credentials.
+    const dir = tempDir()
+    const onDisk = join(dir, 'livekit-server-from-the-distro')
+    writeFileSync(onDisk, listenerStub())
+    chmodSync(onDisk, 0o755)
+    process.env.CREWBOX_LIVEKIT_BIN = onDisk
+    try {
+      expect(canRunLiveKit()).toBe(true)
+      const outcome = await startEmbeddedLiveKit({
+        dataDir: dir,
+        key: 'k',
+        secret: 's',
+        log: silentLog,
+      })
+      expect(outcome.sfu).not.toBeNull()
+      running.push(outcome.sfu!)
+      // Configured and recorded in the box's own directory, so the reaper,
+      // the proxy and the readiness copy all read one place.
+      expect(existsSync(join(dir, 'livekit', 'livekit.yaml'))).toBe(true)
+      expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(true)
+      // And nothing was unpacked — the binary is the operator's.
+      expect(existsSync(join(dir, 'livekit', 'livekit-server'))).toBe(false)
+    } finally {
+      delete process.env.CREWBOX_LIVEKIT_BIN
+    }
+  }, 15_000)
+
+  it('offers no voice at all when nothing names an SFU', async () => {
+    // Better than the placeholder URL that shipped: the button is absent
+    // rather than minting tokens for a host that is not there.
+    delete process.env.CREWBOX_LIVEKIT_BIN
+    expect(canRunLiveKit()).toBe(false)
+    const outcome = await startEmbeddedLiveKit({
+      dataDir: tempDir(),
+      key: 'k',
+      secret: 's',
+      log: silentLog,
+    })
+    expect(outcome.sfu).toBeNull()
+    // Not a failure either — a deployment without voice is a choice.
+    expect(outcome.failure).toBeUndefined()
+  })
+
+  it('reaps an orphan of an SFU that lives outside the data directory', async () => {
+    const dir = tempDir()
+    const onDisk = join(dir, 'livekit-server-from-the-distro')
+    writeFileSync(onDisk, listenerStub())
+    chmodSync(onDisk, 0o755)
+    process.env.CREWBOX_LIVEKIT_BIN = onDisk
+    try {
+      const orphan = await startEmbeddedLiveKit({
+        dataDir: dir,
+        key: 'k',
+        secret: 's',
+        log: silentLog,
+      })
+      expect(orphan.sfu).not.toBeNull()
+      // Belt and braces: if the reap below fails, afterEach still takes the
+      // child with it rather than stranding a listener on :7880 for every
+      // test after this one.
+      running.push(orphan.sfu!)
+      const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+
+      // The identity check compares against the binary that is actually
+      // running, so it has to be told where that is.
+      expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog, null, onDisk)).toBe(true)
+      expect(() => process.kill(pid, 0)).toThrow()
+    } finally {
+      delete process.env.CREWBOX_LIVEKIT_BIN
+    }
+  }, 15_000)
 
   it('will not kill a process that has merely inherited the pid', async () => {
     // The one this is for: power cut, reboot, and 812 is now dnsmasq. The

@@ -162,7 +162,12 @@ deployment choice.
 2. Router: static IP for the server; `deploy/dnsmasq.conf` installed so
    `chat.<yourdomain>` → server IP; DHCP hands out the router as DNS.
 3. `systemctl status crewbox` — green. There is no separate voice service:
-   the SFU runs inside the box and starts and stops with it.
+   the SFU starts and stops with the box. The packaged box carries its own;
+   a rig installed from source needs `livekit-server` on the machine and
+   `CREWBOX_LIVEKIT_BIN` in the unit file pointing at it. Without that the
+   voice button is not offered at all — which is the honest state, and
+   better than the placeholder `LIVEKIT_URL` the unit used to ship with,
+   which advertised voice and minted tokens for a host that wasn't there.
 4. Phone test: scan poster → green padlock → join → send message → PTT to a
    second phone. **Do this before the crew arrives.**
 

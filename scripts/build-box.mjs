@@ -12,6 +12,8 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
@@ -130,6 +132,24 @@ writeFileSync(
 )
 execFileSync(process.execPath, ['--experimental-sea-config', seaConfigPath], { stdio: 'inherit' })
 
+/**
+ * The fuse Node looks for to decide whether it is a single executable.
+ *
+ * postject flips the byte after the colon from 0 to 1 as it injects, so the
+ * fuse is also the proof that it did: a binary carrying `:0` is plain Node
+ * wearing crewbox's name.
+ */
+const SEA_FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'
+
+/** Throw unless this file really is a single executable now. */
+function assertBlobInjected(path) {
+  const bytes = readFileSync(path)
+  const at = bytes.indexOf(`${SEA_FUSE}:`)
+  if (at === -1) throw new Error(`${path} has no SEA fuse — is the base Node the right build?`)
+  const flag = String.fromCharCode(bytes[at + SEA_FUSE.length + 1])
+  if (flag !== '1') throw new Error(`${path} has no blob injected — postject did not take`)
+}
+
 // 4. Copy the node binary and inject the blob.
 //
 // The blob holds JavaScript and assets, not machine code, so it can be
@@ -139,28 +159,58 @@ execFileSync(process.execPath, ['--experimental-sea-config', seaConfigPath], { s
 // The embedded livekit-server is native, so it has to be built for the same
 // target — see CREWBOX_TARGET_ARCH in scripts/fetch-livekit.mjs.
 const targetArch = process.env.CREWBOX_TARGET_ARCH ?? process.arch
+// An empty CREWBOX_BASE_NODE is a failure, not a default. `??` keeps the
+// empty string, which is what the release's Intel leg produces when
+// fetch-node fails inside a command substitution: bash masks that in
+// `VAR="$(...)" cmd`, so the build would carry on with nothing to inject
+// into. Say so here rather than several confusing steps later.
+if (process.env.CREWBOX_BASE_NODE !== undefined && !process.env.CREWBOX_BASE_NODE.trim()) {
+  console.error('CREWBOX_BASE_NODE is set but empty — the base Node was not fetched')
+  process.exit(1)
+}
 const baseNode = process.env.CREWBOX_BASE_NODE ?? process.execPath
 const exe = process.platform === 'win32' ? '.exe' : ''
 const binName = `crewbox-${process.platform}-${targetArch}${exe}`
 const binPath = join(outDir, binName)
-copyFileSync(baseNode, binPath)
-if (process.platform === 'darwin') {
-  execSync(`codesign --remove-signature "${binPath}"`)
-}
-const postjectArgs = [
-  'postject',
-  binPath,
-  'NODE_SEA_BLOB',
-  join(outDir, 'sea.blob'),
-  '--sentinel-fuse',
-  'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
-]
-if (process.platform === 'darwin') postjectArgs.push('--macho-segment-name', 'NODE_SEA')
-execFileSync('npx', postjectArgs, { stdio: 'inherit', shell: process.platform === 'win32' })
-if (process.platform === 'darwin') {
-  execSync(`codesign --sign - "${binPath}"`)
-} else if (process.platform !== 'win32') {
-  chmodSync(binPath, 0o755)
+
+/**
+ * Built under another name and moved into place at the very end.
+ *
+ * The release uploads `build/box/crewbox-*`, and the Intel leg is
+ * `continue-on-error` on purpose — one architecture is not worth failing a
+ * release over. But a step that died *between* the copy and the injection
+ * left `crewbox-darwin-x64` sitting there as an unmodified copy of Node,
+ * and the glob shipped it: someone downloaded the Intel box, ran it, and
+ * got a Node REPL. A skipped build has to be a missing asset, which is
+ * visible, and never a broken one, which is not.
+ */
+const partPath = `${binPath}.partial`
+rmSync(binPath, { force: true })
+rmSync(partPath, { force: true })
+try {
+  copyFileSync(baseNode, partPath)
+  if (process.platform === 'darwin') {
+    execSync(`codesign --remove-signature "${partPath}"`)
+  }
+  const postjectArgs = [
+    'postject',
+    partPath,
+    'NODE_SEA_BLOB',
+    join(outDir, 'sea.blob'),
+    '--sentinel-fuse',
+    SEA_FUSE,
+  ]
+  if (process.platform === 'darwin') postjectArgs.push('--macho-segment-name', 'NODE_SEA')
+  execFileSync('npx', postjectArgs, { stdio: 'inherit', shell: process.platform === 'win32' })
+  if (process.platform === 'darwin') {
+    execSync(`codesign --sign - "${partPath}"`)
+  } else if (process.platform !== 'win32') {
+    chmodSync(partPath, 0o755)
+  }
+  assertBlobInjected(partPath)
+  renameSync(partPath, binPath)
+} finally {
+  rmSync(partPath, { force: true })
 }
 
 const sizeMb = (statSync(binPath).size / 1024 / 1024).toFixed(0)

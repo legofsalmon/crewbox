@@ -15,11 +15,21 @@ Environment=WEB_DIST=/opt/crewbox/web/dist
 # process timezone, and a box imaged elsewhere disagrees with every phone about
 # when the headliner is on.
 Environment=CREWBOX_TZ=Europe/London
-# CHANGE THESE before the event:
+# CHANGE THIS before the event:
 Environment=EVENT_PIN=2468
-Environment=LIVEKIT_URL=wss://chat.example.com/livekit
-Environment=LIVEKIT_KEY=devkey
-Environment=LIVEKIT_SECRET=secret
+# Voice. A rig installed from source has no SFU inside it the way the
+# packaged box does, so point this at a livekit-server on the machine and
+# crewbox supervises it: same port, same credentials, behind the box's own
+# certificate, stopped when the box stops.
+#
+#   Environment=CREWBOX_LIVEKIT_BIN=/usr/local/bin/livekit-server
+#
+# Leave it unset and the voice button simply is not offered. That is the
+# honest state, and it is why LIVEKIT_URL is not set here any more: it used
+# to ship pointing at an example host with the dev credentials, so every
+# phone was told voice was available and every token was minted for an SFU
+# that did not exist. Set LIVEKIT_URL only to reach an SFU you already run
+# elsewhere — it turns off this box's own supervision entirely.
 ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=2

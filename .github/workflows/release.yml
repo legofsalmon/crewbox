@@ -139,9 +139,13 @@ jobs:
         run: |
           set -euo pipefail
           LIVEKIT_REFETCH=1 node scripts/fetch-livekit.mjs
-          CREWBOX_BASE_NODE="$(node scripts/fetch-node.mjs darwin x64)" \
-            node scripts/build-box.mjs
-          file build/box/crewbox-darwin-x64
+          # On its own line: bash masks a failing command substitution in
+          # `VAR="$(...)" cmd`, so a fetch that fell over used to hand the
+          # build an empty base and let it carry on.
+          base="$(node scripts/fetch-node.mjs darwin x64)"
+          CREWBOX_BASE_NODE="$base" node scripts/build-box.mjs
+          # Named x64 is not the same as being x64.
+          file build/box/crewbox-darwin-x64 | grep -q x86_64
       - uses: actions/upload-artifact@v4
         with:
           name: box-${{ matrix.os }}
@@ -222,9 +226,13 @@ jobs:
         run: |
           set -euo pipefail
           LIVEKIT_REFETCH=1 node scripts/fetch-livekit.mjs
-          CREWBOX_BASE_NODE="$(node scripts/fetch-node.mjs darwin x64)" \
-            node scripts/build-box.mjs
-          file build/box/crewbox-darwin-x64
+          # On its own line: bash masks a failing command substitution in
+          # `VAR="$(...)" cmd`, so a fetch that fell over used to hand the
+          # build an empty base and let it carry on.
+          base="$(node scripts/fetch-node.mjs darwin x64)"
+          CREWBOX_BASE_NODE="$base" node scripts/build-box.mjs
+          # Named x64 is not the same as being x64.
+          file build/box/crewbox-darwin-x64 | grep -q x86_64
       # The signing certificate lives in a throwaway keychain that dies with
       # the runner, so the private key never touches the default one.
       - name: Import signing certificate

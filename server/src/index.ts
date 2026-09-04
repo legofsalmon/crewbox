@@ -31,7 +31,7 @@ import {
 import { startCaptive } from './captive.ts'
 import { certNames } from './environment.ts'
 import {
-  hasEmbeddedLiveKit,
+  canRunLiveKit,
   livekitCredentials,
   startEmbeddedLiveKit,
   type EmbeddedLiveKit,
@@ -198,7 +198,11 @@ async function main(): Promise<void> {
   // server. Without this, the SFU reap in startEmbeddedLiveKit below would
   // kill *that* box's live SFU (taking voice down mid-show) and this start
   // would then die on the port bind regardless. Fail first, touch nothing.
-  if (box && (await portInUse(bindHost, config.port))) {
+  //
+  // A source rig told to supervise an SFU is in exactly the same position as
+  // a packaged box, so it gets the same guard — and a source run that is not
+  // supervising anything still starts freely, which is what development is.
+  if ((box || canRunLiveKit()) && (await portInUse(bindHost, config.port))) {
     console.error(
       `port ${config.port} is already in use on ${bindHost} — a crewbox is already running ` +
         `here (stop it with: crewbox --stop), or something else holds the port. Not starting.`
@@ -228,8 +232,12 @@ async function main(): Promise<void> {
    * and secret and the app's view of voice — fixed at boot — stays true.
    */
   let startVoice: ((owner?: number | null) => Promise<SpawnOutcome>) | undefined
-  if (box && !process.env.LIVEKIT_URL) {
-    if (hasEmbeddedLiveKit()) {
+  // Not `box &&`: a rig installed from source and run by systemd is the same
+  // product on better hardware, and `CREWBOX_LIVEKIT_BIN` lets it supervise
+  // an SFU on disk. Without this it fell through to whatever LIVEKIT_URL the
+  // unit file happened to carry — which shipped as an example host.
+  if (!process.env.LIVEKIT_URL) {
+    if (canRunLiveKit()) {
       const creds = livekitCredentials(
         (key) => store.getSetting(key),
         (key, value) => store.setSetting(key, value)
