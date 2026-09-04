@@ -39,6 +39,16 @@ import {
 import { preventSleep } from './nosleep.ts'
 import { loadTls } from './tls.ts'
 
+/**
+ * How long a release waits for the listener to actually let go.
+ *
+ * Generous, because the sockets have already been terminated by then and
+ * anything still holding the port is a surprise. It exists so that surprise
+ * is a failure the updater can roll back from, rather than a box that has
+ * swapped its binary and stopped answering with no way out.
+ */
+const RELEASE_TIMEOUT_MS = 5000
+
 // No top-level await: the single-binary build bundles this entry as CJS
 // (Node SEA requires a CommonJS main), so startup lives in an async main().
 async function main(): Promise<void> {
@@ -219,8 +229,11 @@ async function main(): Promise<void> {
   // exactly the way TLS does: one warning naming the fix, and a box that
   // works otherwise.
   const captiveOn = config.captive.enabled ?? box
-  const captive = captiveOn
-    ? await startCaptive({
+  // Kept so the responder can be started again after an update releases the
+  // port: a new box cannot take :80 while this process still holds it, and
+  // startCaptive deliberately does not retry EADDRINUSE.
+  const captiveOpts = captiveOn
+    ? {
         host: bindHost,
         port: config.captive.port,
         portFromEnv: config.captive.portFromEnv,
@@ -229,8 +242,9 @@ async function main(): Promise<void> {
         origin: certName
           ? `https://${certName}:${config.port}`
           : `${tls ? 'https' : 'http'}://${ifaceUp ? boot.iface : (lanIps()[0] ?? 'localhost')}:${config.port}`,
-      })
+      }
     : undefined
+  let captive = captiveOpts ? await startCaptive(captiveOpts) : undefined
 
   // Listening to the lighting network, when this box was asked to. Off by
   // default, and read-only however it is configured: the sockets it opens
@@ -382,25 +396,66 @@ async function main(): Promise<void> {
 
   // Bind the address resolved up top (see bindHost, before the voice block).
   await app.listen({ host: bindHost, port: config.port })
-  attachWs(app)
+  const ws = attachWs(app)
+
+  // Bound to one adapter, the box would lose localhost — which is the mic
+  // test, the health checks, and where a browser on the box itself goes. A
+  // small mirror keeps it. See mirrorOnLoopback.
+  let closeLoopback: (() => Promise<void>) | undefined
+  const openLoopback = async () => {
+    if (!ifaceUp || config.hostExplicit) return
+    try {
+      closeLoopback = await mirrorOnLoopback(app, config.port)
+    } catch (error) {
+      app.log.warn(`localhost mirror did not start (${String(error)}); use ${config.iface} locally`)
+    }
+  }
+  await openLoopback()
 
   // How an install lets go of the port, and takes it back if the new build
-  // never comes up. Assigned after listen() because there is nothing to close
-  // before it; the updater only ever calls these long afterwards.
+  // never comes up. Assigned after the mirror exists because it has to let go
+  // of that too; the updater only ever calls these long afterwards.
   //
-  // `closeAllConnections()` before `close()` is the part that matters.
-  // `close()` on its own stops accepting new connections and then waits for
-  // the existing ones to end — and crewbox's are WebSockets held open by
-  // every phone on site. Without this line an install would hang for ever on
+  // Three things hold a port between them, and a release that frees one of
+  // them is not a release:
+  //
+  // **The upgraded sockets go first.** `closeAllConnections()` looks like it
+  // covers this and does not — it only destroys connections the HTTP parser
+  // still owns, and every WebSocket has been detached from that list. Without
+  // terminating them `close()` waits for phones that will never hang up, on
   // exactly the box that has crew connected, which is every box worth
   // updating.
-  releaseListener = () =>
-    new Promise<void>((resolve, reject) => {
+  //
+  // **The mirror and the captive responder are ports too.** They live in this
+  // process, on 127.0.0.1 and on :80. A new box that finds either of them
+  // taken records the failure and gives up — `startCaptive` deliberately does
+  // not retry EADDRINUSE — so a box that updated would spend the rest of the
+  // event with no captive responder and no localhost.
+  //
+  // **It has to end.** A release that never returns leaves the binary already
+  // swapped and the box off the air with nothing to roll back to, so the wait
+  // is bounded and a timeout is a failure the updater can act on.
+  releaseListener = async () => {
+    ws.terminateUpgraded()
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`the port was still busy after ${RELEASE_TIMEOUT_MS} ms`)),
+        RELEASE_TIMEOUT_MS
+      )
       app.server.closeAllConnections()
-      app.server.close((err) => (err ? reject(err) : resolve()))
+      app.server.close((err) => {
+        clearTimeout(timer)
+        if (err) reject(err)
+        else resolve()
+      })
     })
-  regainListener = () =>
-    new Promise<void>((resolve, reject) => {
+    await closeLoopback?.()
+    closeLoopback = undefined
+    await captive?.portal?.close()
+    captive = undefined
+  }
+  regainListener = async () => {
+    await new Promise<void>((resolve, reject) => {
       const onError = (err: Error) => reject(err)
       app.server.once('error', onError)
       app.server.listen({ host: bindHost, port: config.port }, () => {
@@ -408,17 +463,8 @@ async function main(): Promise<void> {
         resolve()
       })
     })
-
-  // Bound to one adapter, the box would lose localhost — which is the mic
-  // test, the health checks, and where a browser on the box itself goes. A
-  // small mirror keeps it. See mirrorOnLoopback.
-  let closeLoopback: (() => Promise<void>) | undefined
-  if (ifaceUp && !config.hostExplicit) {
-    try {
-      closeLoopback = await mirrorOnLoopback(app, config.port)
-    } catch (error) {
-      app.log.warn(`localhost mirror did not start (${String(error)}); use ${config.iface} locally`)
-    }
+    await openLoopback()
+    if (captiveOpts) captive = await startCaptive(captiveOpts)
   }
 
   // After listen(), so a lighting network that refuses to open never stops
@@ -535,6 +581,14 @@ async function main(): Promise<void> {
       // First, so a helper watching this file stops offering to open a box
       // that is on its way down.
       if (box) clearBoxStatus(dataDir)
+      // Same reason as the release path: app.close() waits for every open
+      // connection, and a WebSocket is not something `closeAllConnections`
+      // can reach. `hub.close()` below terminates the chat sockets, but the
+      // docs relay closes its own gracefully — which waits for a phone to
+      // answer — and nothing at all closed the voice proxy's. Without this
+      // the 3 s fallback above is what ends the process, so the SFU is never
+      // stopped and the database never closed.
+      ws.terminateUpgraded()
       hub.close()
       netwatch?.stop()
       video?.stop()

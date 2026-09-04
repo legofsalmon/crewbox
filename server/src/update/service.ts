@@ -1,5 +1,11 @@
 import { downloadBuild, type DownloadIo } from './download.ts'
-import { detectTarget, installBuild, type InstallTarget } from './install.ts'
+import {
+  clearInFlight,
+  detectTarget,
+  installBuild,
+  undoInstall,
+  type InstallTarget,
+} from './install.ts'
 import { restartInto, type RestartIo } from './restart.ts'
 import { pruneSnapshots, snapshotDb } from './snapshot.ts'
 import { assetFor } from './verify.ts'
@@ -215,8 +221,23 @@ export class UpdateService {
     try {
       await this.options.releasePort()
     } catch (err) {
+      // The binary is already swapped, so this cannot just be reported: put
+      // the old one back and start answering again, or the box is left
+      // running a build it never launched with no marker to recover from.
+      const undone = undoInstall(installed.inFlight, this.options.dataDir)
+      clearInFlight(this.options.dataDir)
+      try {
+        await this.options.regainPort()
+      } catch {
+        // Already the bad case below; the reason says so.
+      }
+      const detail = undone.ok
+        ? 'the previous version is still in place'
+        : `the previous version could NOT be put back: ${undone.reason}`
       return this.failWith(
-        `could not free the port to restart: ${err instanceof Error ? err.message : String(err)}`
+        `could not free the port to restart (${
+          err instanceof Error ? err.message : String(err)
+        }) — ${detail}`
       )
     }
 

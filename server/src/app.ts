@@ -2151,8 +2151,28 @@ export function buildApp({
   })
 }
 
+export interface WsHandles {
+  /** The chat server. The hub is already attached to it. */
+  wss: WebSocketServer
+  /**
+   * Terminate every upgraded socket — chat, docs relay and voice proxy.
+   *
+   * `http.Server.closeAllConnections()` does not do this. It only destroys
+   * connections the HTTP parser still owns, and a socket handed to
+   * `handleUpgrade` has been detached from that list — so `close()` then
+   * waits for phones that are never going to hang up. Anything that needs
+   * the port back has to say so first.
+   *
+   * Deliberately not `hub.close()` / `docs.close()`: those also stop the
+   * heartbeats, and the port is released on a path (an update) that may hand
+   * it straight back. This severs the sockets and leaves the box able to
+   * serve again the moment it is listening.
+   */
+  terminateUpgraded: () => void
+}
+
 /** Wire the /ws (chat) and /ws/docs/<room> (shared docs) upgrade paths. */
-export function attachWs(app: App): WebSocketServer {
+export function attachWs(app: App): WsHandles {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 })
   app.hub.attach(wss)
   // Yjs updates are binary and can far exceed chat frames; own server, own cap.
@@ -2210,7 +2230,14 @@ export function attachWs(app: App): WebSocketServer {
     }
     socket.destroy()
   })
-  return wss
+  return {
+    wss,
+    terminateUpgraded: () => {
+      for (const server of [wss, docsWss, voiceWss]) {
+        for (const ws of server.clients) ws.terminate()
+      }
+    },
+  }
 }
 
 /**

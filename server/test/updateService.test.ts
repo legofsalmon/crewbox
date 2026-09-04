@@ -1,11 +1,20 @@
 import { createHash, generateKeyPairSync, sign as signWith } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DownloadIo } from '../src/update/download.ts'
 import type { RestartIo } from '../src/update/restart.ts'
+import { inFlightPath } from '../src/update/install.ts'
 import { listSnapshots } from '../src/update/snapshot.ts'
 import { UpdateService } from '../src/update/service.ts'
 
@@ -301,5 +310,77 @@ describe('when the new box will not come up', () => {
     s.reset()
     expect(s.state().stage).toBe('ready')
     expect(s.state().error).toBeNull()
+  })
+})
+
+/**
+ * The port itself refusing to come free.
+ *
+ * By the time `releasePort` is called the binary on disk is already the new
+ * one, so a release that throws is not a tidy "sorry, try later": the box is
+ * running a build it never launched, and the marker on disk says an install
+ * is in flight. Nothing else is coming to fix that — `restartInto`, which
+ * owns the other rollback, is never reached. So this path has to undo its own
+ * work.
+ */
+describe('when the port will not come free', () => {
+  const stuck = (answers: ({ ok: true; version: string } | null)[]) =>
+    new UpdateService({
+      dataDir: dir,
+      dbPath,
+      currentVersion: '0.17.1',
+      healthUrl: 'http://localhost:8787/api/health',
+      releasePort: () => {
+        events.push('releasePort')
+        return Promise.reject(new Error('the port was still busy after 5000 ms'))
+      },
+      regainPort: () => {
+        events.push('regainPort')
+        return Promise.resolve()
+      },
+      exit: () => events.push('exit'),
+      packaged: true,
+      target: { kind: 'binary', path: target },
+      keys: KEYS,
+      downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`),
+      restartIo: restartIo(answers),
+      platform: 'linux',
+      base: 'https://example.test',
+    })
+
+  const readyStuck = async () => {
+    const s = stuck([{ ok: true, version: '0.18.0' }])
+    s.start(VERSION)
+    await settle(s)
+    return s
+  }
+
+  it('puts the old binary back rather than leaving the swap standing', async () => {
+    const s = await readyStuck()
+    expect(await s.install()).toMatchObject({ ok: false })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+  })
+
+  it('never launches the new build', async () => {
+    // The point of failing here: a box that cannot free the port is a box the
+    // new process could not bind on either.
+    const s = await readyStuck()
+    await s.install()
+    expect(events).toEqual(['releasePort', 'regainPort'])
+  })
+
+  it('clears the in-flight marker, so the next boot does not roll back twice', async () => {
+    const s = await readyStuck()
+    await s.install()
+    expect(existsSync(inFlightPath(dir))).toBe(false)
+  })
+
+  it('says what failed and that the old version is still in place', async () => {
+    const s = await readyStuck()
+    const result = await s.install()
+    if (result.ok) throw new Error('the install should not have succeeded')
+    expect(result.reason).toContain('still busy after 5000 ms')
+    expect(result.reason).toContain('the previous version is still in place')
+    expect(s.state().stage).toBe('failed')
   })
 })
