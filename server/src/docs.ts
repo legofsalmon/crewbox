@@ -125,6 +125,17 @@ export class DocsRelay {
     this.alive.add(ws)
     ws.binaryType = 'arraybuffer'
 
+    // First, before anything can emit. `ws` raises `error` for a framing
+    // violation — a reserved bit set, invalid UTF-8, a frame over maxPayload
+    // — and an `error` event with no listener is rethrown by EventEmitter,
+    // which here means the whole box exits. The chat hub has always had this;
+    // the relay did not, so a phone with a large enough patch sheet could
+    // take the box down by accident and one bad frame could do it on purpose.
+    //
+    // Nothing is logged: this is reachable per frame, and a line per frame is
+    // a way to fill a disk. The close is the response.
+    ws.on('error', () => ws.close())
+
     ws.on('pong', () => this.alive.add(ws))
 
     ws.on('message', (data: Buffer | ArrayBuffer) => {

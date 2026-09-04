@@ -2187,7 +2187,21 @@ export function attachWs(app: App): WsHandles {
   }
 
   app.server.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url ?? '/', 'http://localhost')
+    // Parsed inside a guard, because this is the first thing an unauthenticated
+    // packet reaches and `new URL` is stricter than the HTTP parser that got us
+    // here. Node accepts an absolute-form request target — `GET http://[
+    // HTTP/1.1` is a valid enough request line for it — and WHATWG URL throws
+    // on it. Thrown from inside a socket's data callback there is nothing above
+    // to catch it: one packet, no token, and the box is gone in the middle of a
+    // show. The loopback mirror re-emits this same event, so it was two ways in
+    // rather than one.
+    let url: URL
+    try {
+      url = new URL(req.url ?? '/', 'http://localhost')
+    } catch {
+      socket.destroy()
+      return
+    }
     const { pathname } = url
     if (pathname === '/ws') {
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))

@@ -444,6 +444,37 @@ async function main(): Promise<void> {
   await app.listen({ host: bindHost, port: config.port })
   const ws = attachWs(app)
 
+  /**
+   * The net under everything, for a packaged box only.
+   *
+   * Node's default for an uncaught throw or an unhandled rejection is to
+   * exit, and most of the places one can come from here are socket callbacks
+   * with nothing above them to catch anything — which makes a single bug
+   * reachable from the network into a box that goes dark mid-show. Every one
+   * of those found so far is fixed where it happens, and that is the real
+   * work; this is what stops the next one being a festival's comms.
+   *
+   * Resuming from an unknown state is not something to be casual about, and
+   * Node's own advice is against it. The judgement here is the product's:
+   * crew on a working chat and a box that might be wrong somewhere beats a
+   * box that is definitely nothing. A `.app` somebody double-clicked has no
+   * supervisor to restart it either.
+   *
+   * Not armed from source, deliberately. In development a crash is
+   * information, and a box that swallowed it would hide the next one of
+   * these instead of surfacing it.
+   */
+  if (box) {
+    const survive = (what: string) => (err: unknown) => {
+      // console.error rather than app.log: the logger is one of the things
+      // that could be broken, and this line is the only record there will be.
+      console.error(`${what} — the box is still running, but something is wrong`)
+      console.error(err instanceof Error ? (err.stack ?? err.message) : String(err))
+    }
+    process.on('uncaughtException', survive('uncaught exception'))
+    process.on('unhandledRejection', survive('unhandled rejection'))
+  }
+
   // Bound to one adapter, the box would lose localhost — which is the mic
   // test, the health checks, and where a browser on the box itself goes. A
   // small mirror keeps it. See mirrorOnLoopback.
