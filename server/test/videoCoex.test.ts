@@ -107,6 +107,17 @@ describe('provisional field names', () => {
     expect(parseCabinets([{ id: 'C1' }])[0].online).toBe(true)
   })
 
+  it('does not read a numeric status as "offline"', () => {
+    // `status` is a code everywhere else in this API — an input's signal
+    // status is 0 not-connected, 1 present, 2 no-signal — and turning 0
+    // into `false` painted a working wall red on a firmware that reports
+    // cabinets that way.
+    expect(parseCabinets([{ id: 'E1', status: 0 }])[0].online).toBe(true)
+    expect(parseCabinets([{ id: 'E2', status: 1 }])[0].online).toBe(true)
+    // An unambiguous field is still believed.
+    expect(parseCabinets([{ id: 'E3', online: false }])[0].online).toBe(false)
+  })
+
   it('leaves a gap when no spelling matches, rather than guessing', () => {
     const [cabinet] = parseCabinets([{ id: 'D1', celsiusMaybe: 61 }])
     expect(cabinet.temperature).toBeUndefined()
@@ -203,6 +214,34 @@ describe('polling', () => {
     const reading = await reader.poll()
     expect(readingIsEmpty(reading)).toBe(true)
     expect(reading.errors.length).toBeGreaterThan(0)
+  })
+
+  it('does not call a processor absent because none of its answers parsed', async () => {
+    // "Nothing is there" used to be inferred from the fields: no cabinets,
+    // no inputs, no model, no temperature, no display mode. A controller
+    // answering every endpoint can land on all five — a wall not yet
+    // configured, a firmware whose model sits under a key we do not read —
+    // and was then reported as having no read path, which is the one
+    // verdict that means "this address is not a processor at all".
+    const reader = new CoexReader(
+      '10.0.30.11',
+      fakeIo({
+        '/api/v1/device': { code: 0, data: { somethingElse: 'yes' } },
+        '/api/v1/device/screen/list': { code: 0, data: { screens: [] } },
+        '/api/v1/device/snmpstate': { code: 0, data: {} },
+        '/api/v1/device/monitor/info': { code: 0, data: {} },
+        '/api/v1/device/screen/displaymode': { code: 0, data: {} },
+        '/api/v1/device/input/sources': { code: 0, data: { sources: [] } },
+        '/api/v1/device/backup': { code: 0, data: {} },
+      })
+    )
+    const reading = await reader.poll()
+    // Nothing recognisable came back...
+    expect(reading.model).toBeUndefined()
+    expect(reading.cabinets).toHaveLength(0)
+    expect(reading.inputs).toHaveLength(0)
+    // ...but the controller is plainly there and answering.
+    expect(readingIsEmpty(reading)).toBe(false)
   })
 })
 

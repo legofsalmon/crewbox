@@ -323,8 +323,13 @@ export async function readOverSnmp(session: SnmpSession, now: number): Promise<P
     ])
   } catch (err) {
     errors.push(`identity: ${err instanceof Error ? err.message : 'failed'}`)
+    reading.answered = 0
     return reading
   }
+  // The identity round came back. Whether any *varbind* was non-null is the
+  // question — an agent that answers with nulls for everything is answering,
+  // but has nothing behind these OIDs, and that is not a read path.
+  reading.answered = [...identity.values()].some((value) => value !== null) ? 1 : 0
 
   const model = asString(identity.get(oid.CONTROLLER_MODEL))
   const name = asString(identity.get(oid.CONTROLLER_NAME))

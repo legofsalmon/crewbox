@@ -115,15 +115,34 @@ export function isOwnBroadcast(host: string, interfaces: ScanIo['interfaces']): 
   return false
 }
 
-/** The broadcast address for an interface IP the box actually holds. */
-export function broadcastFor(ip: string, io: ScanIo): string | null {
+/** The netmask an interface IP the box actually holds is configured with. */
+function netmaskFor(ip: string, io: ScanIo): string | null {
   for (const addresses of Object.values(io.interfaces())) {
     for (const address of addresses ?? []) {
-      if (address.family !== 'IPv4' || address.address !== ip) continue
-      return subnetBroadcast(address.address, address.netmask)
+      if (address.family === 'IPv4' && address.address === ip) return address.netmask
     }
   }
   return null
+}
+
+/** The broadcast address for an interface IP the box actually holds. */
+export function broadcastFor(ip: string, io: ScanIo): string | null {
+  const mask = netmaskFor(ip, io)
+  return mask ? subnetBroadcast(ip, mask) : null
+}
+
+/**
+ * Is `host` on the same subnet as the adapter the scan was pointed at?
+ *
+ * The socket has to bind the wildcard to hear broadcast and multicast at
+ * all (see `scan`), which means it can also hear whatever arrives on the
+ * crew adapter. Nothing should be listed as a video processor because it
+ * answered on a network nobody pointed this at.
+ */
+export function onSameSubnet(host: string, interfaceIp: string, io: ScanIo): boolean {
+  const mask = netmaskFor(interfaceIp, io)
+  if (!mask) return false
+  return subnetBroadcast(host, mask) === subnetBroadcast(interfaceIp, mask)
 }
 
 /**
@@ -148,13 +167,24 @@ export async function scan(interfaceIp: string, io: ScanIo): Promise<ScanResult>
   try {
     await new Promise<void>((resolve, reject) => {
       socket.once('error', reject)
-      // Bind to the probe port so replies sent back to it arrive, and to the
-      // chosen interface so nothing leaves on the crew network by accident.
-      socket.bind(DISCOVERY_PORT, interfaceIp || undefined, () => resolve())
+      // The wildcard, not the adapter's own address.
+      //
+      // A socket bound to a unicast address does not receive datagrams sent
+      // to the subnet's broadcast address or to a multicast group — which
+      // is every reply this scan is waiting for. It bound the adapter to
+      // keep the probe off other networks; that is what
+      // `setMulticastInterface` and a *directed* broadcast do, and they do
+      // it without deafening the socket. What arrives is filtered by
+      // address below instead, so binding wide costs nothing.
+      socket.bind(DISCOVERY_PORT, () => resolve())
     })
 
     socket.on('message', (buf, rinfo) => {
       if (found.size >= MAX_FOUND) return
+      // Only the network this scan was pointed at. The socket can hear every
+      // adapter now, and a device answering on the crew LAN is not a video
+      // processor this box was asked about.
+      if (interfaceIp && !onSameSubnet(rinfo.address, interfaceIp, io)) return
       if (!buf.subarray(0, REPLY_PREFIX.length).equals(REPLY_PREFIX)) return
       const tail = buf.subarray(REPLY_PREFIX.length)
       const text = tail
@@ -168,6 +198,25 @@ export async function scan(interfaceIp: string, io: ScanIo): Promise<ScanResult>
     })
 
     socket.setBroadcast(true)
+    if (interfaceIp) {
+      // Egress for the multicast probe, in place of the bind that used to
+      // do this job badly. Broadcast needs no steering: it goes to the
+      // segment's own address, not 255.255.255.255.
+      try {
+        socket.setMulticastInterface(interfaceIp)
+      } catch (err) {
+        errors.push(`could not send multicast from ${interfaceIp}: ${String(err)}`)
+      }
+      // ...and membership, or a reply sent to the group is never delivered
+      // however it was addressed. The group was probed and never joined.
+      try {
+        socket.addMembership(DISCOVERY_GROUP, interfaceIp)
+      } catch {
+        // Not fatal: the broadcast half of the scan still works, and a
+        // processor that only answers to the group is rare enough that
+        // failing the whole scan over it would be worse.
+      }
+    }
     const targets = [broadcast, DISCOVERY_GROUP].filter((t): t is string => Boolean(t))
     for (const target of targets) {
       await new Promise<void>((resolve) => {

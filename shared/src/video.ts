@@ -149,6 +149,17 @@ export interface ProcessorReading {
   snmpEnabled?: boolean
   /** Endpoints that didn't answer, in words. Never thrown, always shown. */
   errors: string[]
+  /**
+   * How many endpoints answered at all, whatever they said.
+   *
+   * "Nothing is there" used to be inferred from the fields: no cabinets, no
+   * inputs, no model, no temperature, no display mode. A controller that
+   * answered every endpoint could still land on all five — a wall not yet
+   * configured, a firmware whose model string sits under a key we do not
+   * read — and was then reported as having no read path at all, which is
+   * the one verdict that says "this address is not a processor".
+   */
+  answered?: number
 }
 
 /** A processor plus what the box currently knows about it. */

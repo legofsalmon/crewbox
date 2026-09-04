@@ -200,7 +200,13 @@ export function parseCabinets(payload: unknown): CabinetReading[] {
   for (const [index, raw] of list.entries()) {
     if (!isObject(raw)) continue
     const id = str(pick(raw, ['id', 'cabinetId', 'sn', 'serialNumber'])) ?? String(index + 1)
-    const online = bool(pick(raw, ['online', 'isOnline', 'connected', 'status']))
+    // Not `status`: it is a *code* everywhere else in this API — an input's
+    // signal status is 0 not-connected, 1 present, 2 no-signal — and `bool`
+    // turns 0 into false, so a firmware reporting `status: 0` for a normal
+    // cabinet painted a working wall red. A cabinet that only says `status`
+    // now falls through to the module's own default for "the firmware
+    // didn't say", which is online.
+    const online = bool(pick(raw, ['online', 'isOnline', 'connected']))
     out.push({
       id,
       ...(str(pick(raw, ['screen', 'screenId', 'screenName'])) !== undefined
@@ -410,6 +416,7 @@ export class CoexReader {
       else if (num(role) !== undefined) reading.isBackup = num(role) === 1
     }
 
+    reading.answered = answered
     // Nothing answered: an empty reading, with no cached identity dressing it
     // up as a live one. The caller counts this as a miss.
     if (answered === 0) return reading
@@ -437,6 +444,9 @@ export class CoexReader {
  * second is worth telling somebody about.
  */
 export function readingIsEmpty(reading: ProcessorReading): boolean {
+  // The count when the reader kept one — "did anything answer" is the
+  // question, and it is not the same as "did we recognise any of it".
+  if (reading.answered !== undefined) return reading.answered === 0
   return (
     reading.cabinets.length === 0 &&
     reading.inputs.length === 0 &&
