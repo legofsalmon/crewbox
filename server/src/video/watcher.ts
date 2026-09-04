@@ -147,16 +147,25 @@ export class VideoWatcher {
       for (const [id] of this.watched) {
         if (!armed.some((p) => p.id === id)) this.watched.delete(id)
       }
-      for (const processor of armed) {
-        try {
-          await this.pollOne(processor)
-        } catch (err) {
-          // A reader that throws is a bug here, not a network condition —
-          // both clients are written to degrade. Log it and keep the rest of
-          // the wall on screen.
-          this.log?.warn(`video: polling ${processor.host} threw: ${String(err)}`)
-        }
-      }
+      // Concurrently, not one after another.
+      //
+      // A processor that has been unplugged costs the SNMP timeout plus the
+      // HTTP one — fifteen to thirty-five seconds — and serially that was
+      // fifteen to thirty-five seconds the *healthy* walls waited too. One
+      // dead cabinet at the back of a stage stalled the whole pane, and the
+      // longer the list the worse it got: the failure is exactly the case
+      // where somebody is staring at the screen wanting an answer.
+      //
+      // Each poll already contains its own failures, so `allSettled` is
+      // belt and braces for a reader that throws — which would be a bug
+      // here, not a network condition, since both clients degrade.
+      await Promise.allSettled(
+        armed.map((processor) =>
+          this.pollOne(processor).catch((err: unknown) => {
+            this.log?.warn(`video: polling ${processor.host} threw: ${String(err)}`)
+          })
+        )
+      )
     } finally {
       this.polling = false
     }

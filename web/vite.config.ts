@@ -58,7 +58,30 @@ export default defineConfig({
         // — the one that names the event and sets the PIN — was replaced by
         // the app shell, which then asked for a PIN nobody had been given.
         navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/connect/, /^\/setup/, /^\/crewbox\.apk/],
+        /**
+         * The voice chunk is fetched when somebody uses voice, not on install.
+         *
+         * It is the LiveKit SDK: 484 KB, nearly 40% of what a phone downloads,
+         * and it is already a lazy import — but the service worker precached
+         * it, so "loaded on demand" was true exactly once, on the very first
+         * page load, and false for every install after. Every crew member on
+         * a chat-only box paid for it, over festival Wi-Fi, at the moment
+         * everybody is joining at once.
+         *
+         * The runtime rule below puts it in the cache the first time it is
+         * actually used, so it stays available afterwards.
+         */
+        globIgnores: ['**/voice-*.js', '**/voice-*.js.br', '**/voice-*.js.gz'],
         runtimeCaching: [
+          {
+            // Content-hashed, so a cached copy can never be the wrong one.
+            urlPattern: ({ url }) => /\/assets\/voice-.*\.js$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'crewbox-voice',
+              expiration: { maxEntries: 4 },
+            },
+          },
           {
             // Uploaded files are content-addressed → cache forever once seen.
             urlPattern: ({ url }) => url.pathname.startsWith('/api/files/'),

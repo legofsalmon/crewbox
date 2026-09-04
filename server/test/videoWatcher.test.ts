@@ -125,6 +125,55 @@ describe('what the box contacts', () => {
     expect(log.every((line) => line.endsWith('10.0.30.11'))).toBe(true)
   })
 
+  it('polls every wall at once, so one dead one does not stall the others', async () => {
+    /**
+     * A processor that has been unplugged costs the SNMP timeout plus the
+     * HTTP one — fifteen to thirty-five seconds. Serially, the healthy walls
+     * waited that out too, so one dead cabinet at the back of a stage
+     * stalled the whole pane, and the longer the list the worse it got.
+     *
+     * Asserted by holding the first host's answer open: if the poll were
+     * serial the second host would not be contacted until it is released,
+     * and this would time out rather than fail.
+     */
+    const log: string[] = []
+    const rows = new Map<string, string>()
+    const store = new VideoStore(
+      { getSetting: (k) => rows.get(k), setSetting: (k, v) => void rows.set(k, v) },
+      () => 1_000
+    )
+    let release = (): void => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const io = fakeIo({ '10.0.30.11': 'http', '10.0.30.12': 'http' }, log)
+    const inner = io.coex.fetch
+    const watcher = new VideoWatcher({
+      store,
+      io: {
+        ...io,
+        coex: {
+          ...io.coex,
+          fetch: async (url, init) => {
+            if (new URL(url).hostname === '10.0.30.11') await held
+            return inner(url, init)
+          },
+        },
+      },
+    })
+    arm(store, '10.0.30.11')
+    arm(store, '10.0.30.12')
+
+    const polling = watcher.tick()
+    // A few turns of the loop for the second host to get going while the
+    // first is still waiting.
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(log.some((line) => line === 'http 10.0.30.12')).toBe(true)
+
+    release()
+    await polling
+  })
+
   it('asks for a read, every time, over the whole poll', async () => {
     // The source-level guard in videoReadOnly.test.ts catches the change
     // somebody writes on purpose. This is the same rule asked of the running

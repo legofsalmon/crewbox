@@ -14,6 +14,7 @@ import {
   type User,
 } from '@crewbox/shared'
 import type { DmxListener } from './dmx/listener.ts'
+import type { UniverseHealth } from './dmx/state.ts'
 import type { Store } from './store.ts'
 import { APP_VERSION } from './version.ts'
 
@@ -262,7 +263,18 @@ export class Hub {
     this.heartbeat.unref()
     if (this.dmx) {
       this.dmxTimer = setInterval(() => {
-        for (const conn of this.conns) if (conn.dmxUniverses.length > 0) this.pushDmx(conn)
+        // `health()` sorts every universe and rebuilds a public record for
+        // every source in each. It used to run once per watching socket, so
+        // a production desk, a lighting tablet and three phones watching the
+        // same rig cost five identical rebuilds four times a second. The
+        // answer is the same for all of them, so it is computed once and
+        // handed down.
+        const watching = [...this.conns].filter((conn) => conn.dmxUniverses.length > 0)
+        // Nobody is looking: a rig with no pane open costs nothing at all,
+        // which is most of the time on most boxes.
+        if (watching.length === 0 || !this.dmx) return
+        const health = new Map(this.dmx.state.health().map((u) => [u.universe, u]))
+        for (const conn of watching) this.pushDmx(conn, health)
       }, DMX_TICK_MS)
       this.dmxTimer.unref()
     }
@@ -865,14 +877,16 @@ export class Hub {
    * moved. A universe nobody is watching costs nothing, and a rig that is
    * sitting still costs one small state message a second.
    */
-  private pushDmx(conn: Conn): void {
+  private pushDmx(conn: Conn, shared: Map<number, UniverseHealth> | null = null): void {
     if (conn.ws.readyState !== conn.ws.OPEN) return
     if (!this.dmx) {
       this.send(conn.ws, { type: 'dmxState', listening: false, universes: [] })
       return
     }
 
-    const health = new Map(this.dmx.state.health().map((u) => [u.universe, u]))
+    // The tick computes this once for every watching socket. The fallback is
+    // for the one caller that is not the tick.
+    const health = shared ?? new Map(this.dmx.state.health().map((u) => [u.universe, u]))
     const universes: DmxUniverseWire[] = []
     let stateChanged = false
 

@@ -41,6 +41,8 @@ import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
 import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
 import { currentRoute, navigate, onRouteChange, type Route } from './shell/router.ts'
+import { capTranscript } from './lib/transcript.ts'
+import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
 const TOKEN_KEY = 'crewbox:token'
 const THEME_KEY = 'crewbox:theme'
@@ -54,6 +56,35 @@ const MODULES_KEY = 'crewbox:modules'
  * once. See the epoch check in handleWelcome.
  */
 const DB_EPOCH_KEY = 'crewbox:db-epoch'
+/**
+ * Live DMX levels, folded between paints. See levelBuffer.ts for why.
+ *
+ * Module-level rather than in the store, because the whole point is that
+ * incoming frames touch no store state until the frame flushes.
+ */
+const levelBuffer = new LevelBuffer()
+let levelFlush: number | null = null
+
+function scheduleLevels(): void {
+  if (levelFlush !== null) return
+  // `requestAnimationFrame`, so a backgrounded tab stops rendering rather
+  // than queueing work — the frames keep folding into the buffer and the
+  // first paint after it comes back shows the current look, not a backlog.
+  levelFlush = requestAnimationFrame(() => {
+    levelFlush = null
+    const levels = levelBuffer.take()
+    if (!levels) return
+    useStore.setState((state) => ({ dmx: { ...state.dmx, levels } }))
+  })
+}
+
+/** Drop everything staged — a reconnect, or nobody watching any more. */
+function forgetLevels(): void {
+  if (levelFlush !== null) cancelAnimationFrame(levelFlush)
+  levelFlush = null
+  levelBuffer.clear()
+}
+
 const TYPING_TTL_MS = 4000
 const TYPING_THROTTLE_MS = 2500
 
@@ -105,6 +136,15 @@ export interface Pending {
  * is what a short page is measured against.
  */
 const INCIDENT_PAGE = 200
+
+/**
+ * How many older messages one page-back asks for.
+ *
+ * Only the cache read uses it — the box picks its own page size — but it has
+ * to be the same order of magnitude, or a scroll that lands in the cache
+ * feels different from one that lands on the box.
+ */
+const HISTORY_PAGE = 50
 
 export type Theme = 'dark' | 'light'
 
@@ -446,6 +486,15 @@ export const useStore = create<AppState>()((set, get) => {
         pending[channelId] = pending[channelId].filter((p) => !settled.has(p.clientMsgId))
       }
     }
+    // Bound every channel but the one on screen. Cheap: a length check per
+    // channel, and a slice only when there is something to drop.
+    const active = state.activeChannelId
+    for (const channelId of Object.keys(messages)) {
+      // A gapped channel is holding a detached block of context, not a tail
+      // — trimming it would cut the very messages a search jump put there.
+      if (channelId === active || state.historyGapped[channelId]) continue
+      messages[channelId] = capTranscript(messages[channelId]!)
+    }
     set(
       mentionsChanged
         ? { messages, pending, channels, mentionSeqs }
@@ -549,7 +598,13 @@ export const useStore = create<AppState>()((set, get) => {
     if (seq <= current) return
     set({ readState: { ...get().readState, [channelId]: seq } })
     ws?.send({ type: 'markRead', channelId, seq })
-    persistSnapshot()
+    // Through the coalescer, which exists for exactly this. Every message
+    // arriving in the open channel marks it read, and this wrote the whole
+    // users-and-channels roster into IndexedDB synchronously each time — the
+    // one call site that skipped the timer put there to stop it. A busy
+    // #general on a hundred-person crew is a serialisation of the entire
+    // roster per message, on the phone in somebody's pocket.
+    schedulePersistSnapshot()
   }
 
   async function handleWelcome(msg: WelcomeMessage): Promise<void> {
@@ -705,6 +760,11 @@ export const useStore = create<AppState>()((set, get) => {
     // with none; without this the live bar keeps showing the levels from
     // before the drop as though the desk were still reaching us.
     if (dmxWatch.universes.length > 0) {
+      // Staged frames from before the drop go with it: the box sends a full
+      // snapshot per universe on a fresh subscription, so folding the new
+      // one on top of the old would leave a channel that has since gone out
+      // showing its last value until something else moved it.
+      forgetLevels()
       ws?.send({ type: 'dmxWatch', universes: dmxWatch.universes, levels: dmxWatch.levels })
     }
 
@@ -764,7 +824,7 @@ export const useStore = create<AppState>()((set, get) => {
     void paced(flushOrder(outbox, queuedIncidents()))
 
     persistSnapshot()
-    void cache.prune()
+    void cache.prune(Object.keys(get().channels))
   }
 
   function handleServer(msg: ServerMessage): void {
@@ -787,17 +847,13 @@ export const useStore = create<AppState>()((set, get) => {
         break
       }
       case 'dmxLevels': {
-        set((state) => {
-          const levels = new Map(state.dmx.levels)
-          // A full message is a snapshot; anything else is a change list, so
-          // the previous values have to survive it.
-          const slots = msg.full
-            ? new Uint8Array(512)
-            : new Uint8Array(levels.get(msg.universe) ?? new Uint8Array(512))
-          for (const [address, level] of msg.values) slots[address - 1] = level
-          levels.set(msg.universe, slots)
-          return { dmx: { ...state.dmx, levels } }
-        })
+        // Folded, not applied. One message per universe per tick, four times
+        // a second, each one previously copying the whole Map and rebuilding
+        // the plot's SVG scene — see levelBuffer.ts. The buffer publishes
+        // once per paint instead, which is the only moment a new identity
+        // does anybody any good.
+        levelBuffer.add(msg)
+        scheduleLevels()
         break
       }
       case 'incident': {
@@ -1444,6 +1500,24 @@ export const useStore = create<AppState>()((set, get) => {
       if (loadingOlder || before === null) return
       set({ loadingOlder: true })
       try {
+        // This phone first.
+        //
+        // The rows may already be on the device — seeded at boot, or trimmed
+        // out of memory when the crew member moved to another channel — and
+        // asking the box for what is on the disk in your hand is the wrong
+        // way round on a network that drops. A cache hit is instant and
+        // works with the box unreachable, which is the state this product is
+        // built for.
+        const cached = await cache.loadOlderInChannel(channelId, before, HISTORY_PAGE)
+        if (cached.length) {
+          set({
+            messages: {
+              ...get().messages,
+              [channelId]: mergeMessages(get().messages[channelId], cached),
+            },
+          })
+          return
+        }
         const { messages: older } = await api.fetchHistory(getToken() ?? '', channelId, before)
         if (older.length) {
           set({
@@ -1489,6 +1563,7 @@ export const useStore = create<AppState>()((set, get) => {
       dmxWatch = { universes, levels }
       ws?.send({ type: 'dmxWatch', universes, levels })
       if (universes.length === 0) {
+        forgetLevels()
         set({ dmx: { listening: false, universes: [], everLit: new Map(), levels: new Map() } })
       }
     },

@@ -193,7 +193,19 @@ export function createDocStore(config: DocStoreConfig): DocStore {
 
   let indexHandle: DocHandle | null = null
   const openIndex = (): DocHandle => {
-    if (!indexHandle) indexHandle = openRaw(INDEX_DOC_NAME)
+    /**
+     * `present: false`. Nobody is *in* the index.
+     *
+     * Every phone on site holds this open — it is what makes the selector
+     * list sheets that live on other devices — and each one used to announce
+     * itself into its awareness room. Awareness renews periodically and is
+     * broadcast to every peer, so N phones cost N² renewal messages across
+     * the crew Wi-Fi for a presence nothing renders: no pane shows who is
+     * "looking at the index", because there is nobody to look at.
+     *
+     * The document still syncs. This is only the announcement.
+     */
+    if (!indexHandle) indexHandle = openRaw(INDEX_DOC_NAME, false)
     return indexHandle
   }
 

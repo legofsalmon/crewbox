@@ -96,7 +96,7 @@ describe.each(['reject', 'throw'] as const)('when IndexedDB %ss', (mode) => {
     await expect(
       cache.saveSnapshot({ me: null, users: [], channels: [], readState: {} })
     ).resolves.toBeUndefined()
-    await expect(cache.prune()).resolves.toBeUndefined()
+    await expect(cache.prune(['general'])).resolves.toBeUndefined()
     await expect(cache.wipe()).resolves.toBeUndefined()
   })
 

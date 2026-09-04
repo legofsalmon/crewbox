@@ -40,6 +40,18 @@ db.version(1).stores({
 const KEEP_PER_CHANNEL = 300
 
 /**
+ * How often a prune is worth doing.
+ *
+ * It runs on every welcome, and a welcome is not a rare event: a phone at
+ * the edge of an access point reconnects every few seconds. Three hundred
+ * messages per channel is a cap, not a quota — being a few over it for a few
+ * minutes costs nothing, and pruning on every reconnect costs the device
+ * that can least afford it.
+ */
+const PRUNE_EVERY_MS = 5 * 60_000
+let lastPrune = 0
+
+/**
  * Nothing in here rejects.
  *
  * IndexedDB can refuse to open at all — a corrupted Chrome profile, a private
@@ -84,6 +96,29 @@ export const cache = {
     return orEmpty(() => db.messages.orderBy('[channelId+seq]').toArray(), [])
   },
 
+  /**
+   * A page of one channel's history, older than `before`.
+   *
+   * What `loadOlder` should ask before it asks the box. Scrolling back
+   * through a channel went straight to the network even when the rows were
+   * already on this phone — which on a festival network is the difference
+   * between instant and never. Offline is the default here; the cache is not
+   * only a boot accelerator.
+   */
+  loadOlderInChannel(channelId: string, before: number, limit: number): Promise<Message[]> {
+    return orEmpty(
+      () =>
+        db.messages
+          .where('[channelId+seq]')
+          .between([channelId, 0], [channelId, before], true, false)
+          .reverse()
+          .limit(limit)
+          .toArray()
+          .then((rows) => rows.reverse()),
+      []
+    )
+  },
+
   async clearChannel(channelId: string): Promise<void> {
     await bestEffort(() =>
       db.messages.where('[channelId+seq]').between([channelId, 0], [channelId, Infinity]).delete()
@@ -94,22 +129,37 @@ export const cache = {
     if (ids.length) await bestEffort(() => db.messages.bulkDelete(ids))
   },
 
-  /** Trim old messages so the cache doesn't grow without bound. */
-  async prune(): Promise<void> {
-    const all = await this.loadMessages()
-    const byChannel = new Map<string, Message[]>()
-    for (const m of all) {
-      const list = byChannel.get(m.channelId) ?? []
-      list.push(m)
-      byChannel.set(m.channelId, list)
+  /**
+   * Trim old messages so the cache doesn't grow without bound.
+   *
+   * Per channel, over the compound index, reading keys rather than rows.
+   * This used to load *every cached message on the device* — bodies and all,
+   * up to three hundred per channel across every channel a crew member is
+   * in — build a Map of them and throw the whole thing away. On a welcome.
+   * A phone flapping at the edge of an AP does a welcome every ten seconds,
+   * and that is the phone least able to afford it.
+   *
+   * `channelIds` because the caller knows them and the index does not offer
+   * a distinct-values scan worth having; a channel absent from the list is
+   * simply not pruned this pass, which the next one fixes.
+   */
+  async prune(channelIds: string[]): Promise<void> {
+    const now = Date.now()
+    if (now - lastPrune < PRUNE_EVERY_MS) return
+    lastPrune = now
+    for (const channelId of channelIds) {
+      await bestEffort(async () => {
+        const range = db.messages
+          .where('[channelId+seq]')
+          .between([channelId, 0], [channelId, Infinity])
+        const held = await range.count()
+        if (held <= KEEP_PER_CHANNEL) return
+        // The index is ordered by seq within the channel, so the first
+        // `excess` keys are the oldest — which is what a cap means here.
+        const stale = await range.limit(held - KEEP_PER_CHANNEL).primaryKeys()
+        if (stale.length) await db.messages.bulkDelete(stale)
+      })
     }
-    const stale: string[] = []
-    for (const list of byChannel.values()) {
-      if (list.length > KEEP_PER_CHANNEL) {
-        for (const m of list.slice(0, list.length - KEEP_PER_CHANNEL)) stale.push(m.id)
-      }
-    }
-    if (stale.length) await bestEffort(() => db.messages.bulkDelete(stale))
   },
 
   async putOutbox(entry: OutboxEntry): Promise<void> {
