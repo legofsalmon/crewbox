@@ -76,10 +76,8 @@ const release = await fetch(api, { headers }).then((r) => {
 
 if (fromSource) {
   // Pin to the same tag the other platforms download, so one release never
-  // ships three different SFU versions. The module path is the repo plus
-  // /cmd/server — the root package has no main.
+  // ships three different SFU versions.
   const version = release.tag_name
-  const module = `github.com/livekit/livekit-server/cmd/server@${version}`
 
   // CREWBOX_TARGET_ARCH cross-builds the Intel Mac SFU on an Apple Silicon
   // runner (see scripts/fetch-node.mjs), because GitHub is retiring its Intel
@@ -121,18 +119,35 @@ if (fromSource) {
   rmSync(outDir, { recursive: true, force: true })
   mkdirSync(outDir, { recursive: true })
 
-  // A GOPATH we own rather than GOBIN: `go install` refuses outright to write
-  // a cross-compiled binary when GOBIN is set, and a build that only works
-  // for the host architecture is no use here. Go verifies every module
-  // against sum.golang.org on the way in, which is a stronger integrity
-  // guarantee than the unsigned tarballs the other platforms get.
-  const gopath = join(root, 'build', 'gopath')
-  execFileSync('go', ['install', module], {
+  // From a checkout, not `go install pkg@version`.
+  //
+  // livekit's go.mod carries `replace` directives from v1.13 — its own forks
+  // of three pion modules — and Go refuses to `install` a module whose go.mod
+  // would be read differently as a dependency than as the main module. That
+  // is not a workaround to route around: those replaces are how the SFU is
+  // built, so the build has to happen inside the module, where they apply.
+  // v1.11 and v1.12 had none, which is why this worked until it didn't.
+  //
+  // What this costs, said plainly: `go install` resolved the module through
+  // the checksum database, and a clone does not. Every *dependency* is still
+  // verified against sum.golang.org, the forks included; livekit's own source
+  // now arrives over TLS at a tag, and the commit it resolved to is printed
+  // below so a release can be traced back to one.
+  const src = join(root, 'build', 'livekit-src')
+  rmSync(src, { recursive: true, force: true })
+  execFileSync(
+    'git',
+    ['clone', '--depth', '1', '--branch', version, 'https://github.com/livekit/livekit.git', src],
+    { stdio: 'inherit' }
+  )
+  const commit = execFileSync('git', ['-C', src, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  console.log(`livekit ${version} is ${commit}`)
+
+  execFileSync('go', ['build', '-o', target, './cmd/server'], {
+    cwd: src,
     stdio: 'inherit',
     env: {
       ...process.env,
-      GOPATH: gopath,
-      GOBIN: '',
       GOARCH: goarch,
       GOOS: 'darwin',
       // Explicit because it is load-bearing, not incidental: livekit's darwin
@@ -141,16 +156,10 @@ if (fromSource) {
     },
   })
 
-  // cmd/server builds as `server`. A cross-compile lands under
-  // bin/<goos>_<goarch>/; a native one goes straight into bin/.
-  const cross = join(gopath, 'bin', `darwin_${goarch}`, 'server')
-  const native = join(gopath, 'bin', 'server')
-  const built = existsSync(cross) ? cross : native
-  if (!existsSync(built)) {
-    console.error(`go install produced no binary at ${cross} or ${native}`)
+  if (!existsSync(target)) {
+    console.error(`go build produced no binary at ${target}`)
     process.exit(1)
   }
-  renameSync(built, target)
 
   console.log(`livekit-server ${version} ready at ${target}`)
   process.exit(0)
