@@ -21,7 +21,12 @@ export default function LightingMain({ subpath }: { subpath: string }) {
   }, [plotId])
 
   if (plotId) {
-    return <PlotView plotId={plotId} onClose={() => setActiveModule('lighting')} />
+    // Keyed by plot: switching plots from the sidebar is a different
+    // document, and everything the view holds about the one it was showing —
+    // an in-flight import's summary, the selected fixture, which tab is open
+    // — belongs to that plot and not to the next. Without the key React
+    // reuses the instance and carries all of it across.
+    return <PlotView key={plotId} plotId={plotId} onClose={() => setActiveModule('lighting')} />
   }
   return (
     <PlotSelector

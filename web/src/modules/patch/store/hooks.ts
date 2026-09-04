@@ -4,7 +4,7 @@ import { snapshotSheet } from '../model/sheetDoc'
 import type { SheetIndexEntry, SheetSnapshot } from '../model/types'
 import { sheetStore } from './docManager.ts'
 
-export { useDocSnapshot } from '../../../lib/docs/hooks.ts'
+export { useDocMissing, useDocSnapshot } from '../../../lib/docs/hooks.ts'
 
 /** Open a sheet doc for the component's lifetime and render its live snapshot. */
 export function useSheet(sheetId: string | null): {

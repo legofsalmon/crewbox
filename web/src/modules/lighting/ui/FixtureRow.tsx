@@ -43,6 +43,9 @@ function TextCell({
   )
 }
 
+/** Fields that count things rather than measure them. See `NumberCell`. */
+const WHOLE_FIELDS = new Set(['universe', 'address', 'footprint'])
+
 /** Numeric cell. Blank commits as null (unknown) rather than zero. */
 function NumberCell({
   doc,
@@ -78,7 +81,17 @@ function NumberCell({
     }
     const value = Number(trimmed)
     if (!Number.isFinite(value) || value < min) return
-    updateFixture(doc, fixture.id, { [field]: Math.floor(value * 100) / 100 })
+    /**
+     * Universe, address and footprint are counts of things, and a fraction
+     * of one is not a smaller thing — it is a value nothing on the network
+     * can be at. A typed "1.5" in the universe cell was stored as 1.5, and
+     * every consumer that keys live levels by universe number then missed:
+     * the plot's whole live view went dark, with no error and one cell out
+     * of hundreds to find. Watts and weight are genuine measurements and
+     * keep their two decimal places.
+     */
+    const rounded = WHOLE_FIELDS.has(field) ? Math.round(value) : Math.floor(value * 100) / 100
+    updateFixture(doc, fixture.id, { [field]: rounded })
   })
 
   return (

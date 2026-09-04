@@ -107,6 +107,16 @@ export interface DocStore {
  */
 const CLOSE_GRACE_MS = 10_000
 
+/**
+ * Has this document anything in it at all?
+ *
+ * A Y.Doc that has never been written to has no client entries. Any content
+ * from anywhere — this device, IndexedDB, the relay — puts one there, which
+ * makes this the honest test for "does this document exist", as opposed to
+ * "have we minted an empty one because somebody followed a link".
+ */
+export const docHasContent = (doc: Y.Doc): boolean => doc.store.clients.size > 0
+
 const INDEX_DOC_NAME = 'index'
 
 const hasIndexedDb = typeof indexedDB !== 'undefined'
@@ -207,9 +217,6 @@ export function createDocStore(config: DocStoreConfig): DocStore {
 
   const held = new Map<string, Held>()
 
-  /** Has this document anything in it at all? See `open`'s registry note. */
-  const hasContent = (doc: Y.Doc): boolean => doc.store.clients.size > 0
-
   /**
    * `present: false` syncs the document without announcing this device in it.
    * For a reader that opens documents nobody asked to see — the running order
@@ -256,7 +263,7 @@ export function createDocStore(config: DocStoreConfig): DocStore {
      */
     let remembered = false
     const remember = () => {
-      if (remembered || !hasContent(doc)) return
+      if (remembered || !docHasContent(doc)) return
       remembered = true
       const ids = readRegistry()
       if (!ids.includes(id)) writeRegistry([...ids, id])

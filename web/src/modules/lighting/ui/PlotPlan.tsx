@@ -31,6 +31,12 @@ interface Drag {
   dy: number
 }
 
+/** The last snapped point a drag actually committed. See `moveDrag`. */
+interface Committed {
+  x: number
+  y: number
+}
+
 const statusClass: Record<Fixture['status'], string> = {
   todo: styles.fxTodo!,
   rigged: styles.fxRigged!,
@@ -58,6 +64,9 @@ export default function PlotPlan({
   const svgRef = useRef<SVGSVGElement>(null)
   const [zoom, setZoom] = useState(1)
   const [drag, setDrag] = useState<Drag | null>(null)
+  // A ref, not state: it is read and written inside one pointermove and must
+  // not schedule a render of its own.
+  const committed = useRef<Committed | null>(null)
 
   /** Bounds in metres, padded, so the whole rig fits whatever its extent. */
   const bounds = useMemo(() => {
@@ -102,6 +111,7 @@ export default function PlotPlan({
     const point = toMetres(e.clientX, e.clientY)
     if (!point) return
     e.currentTarget.setPointerCapture(e.pointerId)
+    committed.current = { x: position.x, y: position.y }
     setDrag({
       positionId: position.id,
       pointerId: e.pointerId,
@@ -117,13 +127,26 @@ export default function PlotPlan({
     // Snap to 0.25 m — fine enough to look deliberate, coarse enough that
     // two people dragging don't fight over sub-millimetre differences.
     const snap = (value: number) => Math.round(value * 4) / 4
-    updatePosition(doc, drag.positionId, {
-      x: snap(point.x - drag.dx),
-      y: snap(point.y - drag.dy),
-    })
+    const next = { x: snap(point.x - drag.dx), y: snap(point.y - drag.dy) }
+    /**
+     * Only when the snapped point has actually moved.
+     *
+     * A pointermove fires per frame, and at 0.25 m snapping most of them
+     * land on the square the last one did. Each one was a Yjs transaction
+     * plus an index-doc write, so a two-second drag of one truss put a
+     * hundred-odd updates on the relay and into IndexedDB, and every other
+     * device in the plot re-rendered for each — for a position that spent
+     * most of that drag exactly where it already was.
+     */
+    if (next.x === committed.current?.x && next.y === committed.current.y) return
+    committed.current = next
+    updatePosition(doc, drag.positionId, next)
   }
 
-  const endDrag = () => setDrag(null)
+  const endDrag = () => {
+    committed.current = null
+    setDrag(null)
+  }
 
   const conflicted = (fixtureId: string) =>
     issues.conflicts.has(fixtureId) || issues.overruns.has(fixtureId)

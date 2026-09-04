@@ -87,6 +87,23 @@ export const parseMvrMatrix = (text: string): { x: number; y: number; z: number 
 }
 
 /**
+ * The largest entry worth inflating.
+ *
+ * Generous — a big rig's scene description runs to a few megabytes, and a
+ * GDTF profile with its models can be tens — so the only thing this refuses
+ * is an entry whose declared size is not a real file's. A zip's header is
+ * whatever wrote it, and a crew member opening a file somebody emailed them
+ * should not be able to be handed a gigabyte to inflate on a phone.
+ */
+const MAX_ENTRY_BYTES = 256 * 1024 * 1024
+
+/** An unzip filter: this name, and a size that could be a real file. */
+const wantedEntry =
+  (name: RegExp) =>
+  (file: { name: string; originalSize: number }): boolean =>
+    name.test(file.name) && file.originalSize <= MAX_ENTRY_BYTES
+
+/**
  * Build a crewbox fixture type from an embedded .gdtf archive.
  *
  * The channel maps come back attached to every mode; `parseMvr` strips them
@@ -95,7 +112,14 @@ export const parseMvrMatrix = (text: string): { x: number; y: number; z: number 
  * document that syncs to every phone on site.
  */
 const typeFromGdtf = (id: string, gdtfBytes: Uint8Array): FixtureType | null => {
-  const inner = unzipSync(gdtfBytes)
+  // The one file in here that is wanted.
+  //
+  // The outer archive is filtered for exactly this reason and the inner one
+  // was not, so every embedded profile's 3D models, gobo wheel images and
+  // thumbnails were inflated in full to reach one XML — several megabytes
+  // per fixture type, on the phone somebody is holding at the top of a
+  // ladder. Nothing draws any of it.
+  const inner = unzipSync(gdtfBytes, { filter: wantedEntry(/description\.xml$/i) })
   const descriptionBytes = findEntry(inner, (name) => name.endsWith('description.xml'))
   if (!descriptionBytes) return null
 
@@ -193,9 +217,7 @@ export function parseMvr(data: Uint8Array): MvrResult {
   // 10 MB festival rig carried 218 of them against a single scene XML — and
   // inflating those costs seconds on a laptop and far worse on the phone
   // someone is actually holding. We never draw them.
-  const files = unzipSync(data, {
-    filter: (file) => /\.(xml|gdtf)$/i.test(file.name),
-  })
+  const files = unzipSync(data, { filter: wantedEntry(/\.(xml|gdtf)$/i) })
 
   const sceneBytes = findEntry(files, (name) => name.endsWith('generalscenedescription.xml'))
   if (!sceneBytes) {

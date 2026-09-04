@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type * as Y from 'yjs'
 import { snapshotIndex, type DocIndexEntry } from './indexDoc.ts'
-import type { DocHandle, DocStore } from './store.ts'
+import { docHasContent, type DocHandle, type DocStore } from './store.ts'
 import { syncManager, type RemotePeer, type SyncStatus } from './sync.ts'
 
 /**
@@ -130,6 +130,43 @@ export function useDocIndex(store: DocStore): { entries: DocIndexEntry[]; loaded
       .map((id) => ({ id, title: `${store.defaultTitle} (local)`, lastModified: '', meta: {} })),
   ]
   return { entries: merged, loaded }
+}
+
+/**
+ * Has this document turned out not to exist?
+ *
+ * Following a link to a document that has been deleted, or one from a box
+ * this device is not on, mints an empty Y.Doc — which looks exactly like a
+ * document that is still loading, so the pane sat on "Opening…" for ever and
+ * the "not found" branch beneath it was unreachable.
+ *
+ * Emptiness alone is not the answer either: IndexedDB resolves before the
+ * relay has said anything, so a document that is about to arrive is briefly
+ * indistinguishable from one that never will. Hence the wait — short enough
+ * that nobody stares at a spinner, long enough to hear from a box on the
+ * same LAN — and any content at all, from anywhere, settles it immediately.
+ */
+export function useDocMissing(doc: Y.Doc | null, loaded: boolean, graceMs = 2500): boolean {
+  const [missing, setMissing] = useState(false)
+
+  useEffect(() => {
+    setMissing(false)
+    if (!doc || !loaded) return
+    if (docHasContent(doc)) return
+
+    const timer = setTimeout(() => setMissing(true), graceMs)
+    const onUpdate = () => {
+      clearTimeout(timer)
+      setMissing(false)
+    }
+    doc.on('update', onUpdate)
+    return () => {
+      clearTimeout(timer)
+      doc.off('update', onUpdate)
+    }
+  }, [doc, loaded, graceMs])
+
+  return missing
 }
 
 export const useSyncStatus = (): SyncStatus =>

@@ -4,7 +4,7 @@ import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useToasts } from './toastContext.ts'
-import { useSheet } from '../store/hooks'
+import { useDocMissing, useSheet } from '../store/hooks'
 import { useSheetPeers, useSheetRemotePeers, useSyncStatus } from '../store/useSync'
 import { useUndoRedo } from '../store/useUndo'
 import { useDraft } from '../../_shared/ui/useDraft'
@@ -132,6 +132,15 @@ function ShareMenu({
 
 export default function SheetView({ sheetId, onClose }: { sheetId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = useSheet(sheetId)
+  /**
+   * A link to a sheet that is not there.
+   *
+   * `useSheet` always hands back a Y.Doc, so a deleted sheet, or a link
+   * pasted from a different box, minted an empty one and sat on "Loading
+   * sheet…" for the rest of the session — with the sheet's own id in the
+   * URL, which reads as the box having lost it.
+   */
+  const missing = useDocMissing(doc, loaded)
   const { canUndo, canRedo, undo, redo } = useUndoRedo(undoManager)
   // The acts are the event's, not the sheet's: this stage's slots out of the
   // running order, merged with the spec and notes the sheet keeps about them.
@@ -222,6 +231,13 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   // come from it: rendering a beat early would draw the grid with no acts,
   // flash "nothing is on this sheet", and then mount every cell a second
   // time under whatever finger was already typing into the first one.
+  if (missing) {
+    return (
+      <div className={styles.loading}>
+        Sheet not found. It may have been deleted, or this link may be from a different box.
+      </div>
+    )
+  }
   if (!doc || !snapshot || !loaded || !timetableLoaded) {
     return <div className={styles.loading}>Loading sheet…</div>
   }

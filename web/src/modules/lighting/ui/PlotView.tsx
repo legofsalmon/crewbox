@@ -10,6 +10,7 @@ import { addFixture, setPlotMeta } from '../model/plotDoc'
 import { DMX_UNIVERSE_SIZE } from '../model/types'
 import { importPlotFile, takeImportFlash } from '../store/importFile'
 import {
+  useDocMissing,
   usePlot,
   usePlotIssues,
   usePlotPeers,
@@ -118,6 +119,14 @@ function PlotDropZone({
 
 export default function PlotView({ plotId, onClose }: { plotId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = usePlot(plotId)
+  /**
+   * `loaded` alone was the test, and it is not one: `useStoreDoc` always
+   * hands back a Y.Doc, so a link to a plot that has been deleted (or one
+   * from a different box) minted an empty document, reported it loaded, and
+   * rendered a blank plot rather than saying anything. The "Plot not found"
+   * branch beneath was unreachable.
+   */
+  const missing = useDocMissing(doc, loaded)
   const issues = usePlotIssues(snapshot)
   const [tab, setTab] = useState<PlotTab>('fixtures')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -171,8 +180,15 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
     [issues.usage]
   )
 
-  if (!doc || !snapshot) {
-    return <div className={styles.loading}>{loaded ? 'Plot not found.' : 'Opening plot…'}</div>
+  if (missing) {
+    return (
+      <div className={styles.loading}>
+        Plot not found. It may have been deleted, or this link may be from a different box.
+      </div>
+    )
+  }
+  if (!doc || !snapshot || !loaded) {
+    return <div className={styles.loading}>Opening plot…</div>
   }
 
   const showInList = (id: string) => {
