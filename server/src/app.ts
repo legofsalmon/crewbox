@@ -8,6 +8,7 @@ import {
   rmSync,
 } from 'node:fs'
 import { createServer } from 'node:http'
+import { isIP } from 'node:net'
 import { rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -81,7 +82,7 @@ import {
   Tally,
   TIMETABLE_ROOM,
 } from './control.ts'
-import { Hub } from './hub.ts'
+import { Hub, isPrivateIp } from './hub.ts'
 import type { VideoService } from './video/service.ts'
 import type { UpdateChecker } from './update/check.ts'
 import type { UpdateService } from './update/service.ts'
@@ -387,6 +388,14 @@ export type App = FastifyInstance & {
   voiceProxyPort?: number
 }
 
+/**
+ * The setting that closes first-run setup for good.
+ *
+ * Reaches a real box's database — do not rename it, or every box in the
+ * field re-opens its setup page the next time its crew list empties.
+ */
+export const SETUP_DONE_KEY = 'setupDone'
+
 export function buildApp({
   store,
   eventPin,
@@ -424,11 +433,22 @@ export function buildApp({
     // and unattended on the festival box.
     forceCloseConnections: true,
     // Behind cloudflared/Caddy the socket peer is localhost; without this
-    // every remote user shares one rate-limit bucket. Trust exactly ONE hop
-    // (the tunnel), never trust:true — trust-all would take the left-most,
-    // client-supplied X-Forwarded-For entry as req.ip, letting anyone forge
-    // a fresh IP per request and walk straight past the PIN-guess limiter.
-    trustProxy: trustProxy ? 1 : false,
+    // every remote user shares one rate-limit bucket.
+    //
+    // **By address, not by hop count.** A number here does not mean "trust
+    // one hop" — Fastify compiles it to "take index 0 of the address chain",
+    // whoever the peer is. So with `trustProxy: 1` a crew phone talking
+    // straight to the box on the festival Wi-Fi had its *own*
+    // `X-Forwarded-For` believed: `req.ip` became whatever it wrote, a fresh
+    // value per request walked past all three per-IP limiters, and a junk
+    // value became an unvalidated map key. Verified on this Fastify: from a
+    // non-loopback peer, `trustProxy: 1` returned the forged header and the
+    // address form returned the peer's real address.
+    //
+    // Naming the loopback addresses says what was meant all along: the
+    // tunnel arrives on 127.0.0.1, so its header is the real client and
+    // everything else's is a phone's opinion about itself.
+    trustProxy: trustProxy ? '127.0.0.1,::1' : false,
   })
 
   // Effective public settings: DB override wins over the deploy-time default.
@@ -570,6 +590,19 @@ export function buildApp({
   }
   // Per-IP: every phone has its own LAN IP, so 10/min only throttles
   // PIN-guessing, not a crew rush after a briefing.
+  /**
+   * The address to hold a rate limit against.
+   *
+   * `req.ip` is `X-Forwarded-For` when the box trusts a proxy, and that is a
+   * string a client wrote — Fastify does not validate it, and Node will
+   * carry up to 16 KB of header. Used raw it was both a way to get a fresh
+   * limiter bucket per request and a way to fill the box's memory with map
+   * keys. Address-based trust closes the LAN route to it; this closes the
+   * rest, by refusing to key on anything that is not an address.
+   */
+  const limitKey = (req: FastifyRequest): string =>
+    isIP(req.ip) ? req.ip : (req.socket.remoteAddress ?? 'unknown')
+
   const joinLimiter = new RateLimiter(Number(process.env.JOIN_RATE_LIMIT ?? 10), 60_000)
   // Per-ACCOUNT failed-login throttle: the IP limiter above doesn't stop a
   // multi-IP (botnet) attack on one crew member's short personal PIN once the
@@ -763,8 +796,27 @@ export function buildApp({
    * who can reach the box can join and become admin anyway, so this grants
    * nothing extra; once the first person joins it closes for good and the
    * admin panel takes over. See setup.ts.
+   *
+   * **"For good" is what the latch is for.** This used to be `countUsers()
+   * === 0` and nothing else, and `DELETE /api/me` really deletes the row —
+   * so when the last account removed itself (the admin after testing, or the
+   * whole crew at load-out, which the App Store requirement means the app
+   * offers) the door swung back open on a box full of the event's messages.
+   * Anyone who could reach it could then set a new event PIN and a new admin
+   * password and read everything.
    */
-  const setupOpen = (): boolean => store.countUsers() === 0
+  const setupOpen = (): boolean =>
+    store.getSetting(SETUP_DONE_KEY) !== '1' && store.countUsers() === 0
+
+  /** Close it, permanently. Cheap and idempotent; called wherever it is true. */
+  const closeSetup = (): void => {
+    if (store.getSetting(SETUP_DONE_KEY) !== '1') store.setSetting(SETUP_DONE_KEY, '1')
+  }
+
+  // A box that already has a crew has already been set up, whether or not it
+  // was this build that did it. One write at boot is what closes the door on
+  // every box already in the field.
+  if (store.countUsers() > 0) closeSetup()
 
   const setupNetwork = () => {
     const saved = storedNetwork()
@@ -869,6 +921,9 @@ export function buildApp({
       mintedAdminPassword = undefined
       adminTokens.revokeAll()
     }
+    // Setup has been completed, so it is over — the same latch as a first
+    // join, for the other way through this door.
+    closeSetup()
     hub.announceConfig()
     return reply.redirect('/connect')
   })
@@ -882,7 +937,22 @@ export function buildApp({
     const config = publicConfig()
     const pin = effectiveEventPin()
     const base = crewUrl(req)
-    const joinUrl = `${base}/?pin=${encodeURIComponent(pin)}`
+    /**
+     * Whether this request is close enough to be shown the PIN.
+     *
+     * The page is a poster for a wall — a QR with the PIN prefilled, and the
+     * PIN in print underneath, because somebody has to be able to type it.
+     * That is right for a phone on the festival Wi-Fi looking at a screen in
+     * the production office.
+     *
+     * It is not right for the internet. The runbook's tunnel section tells
+     * operators to treat the event PIN as a real secret, while this page was
+     * handing it, prefilled, to anybody who asked. So off the LAN the poster
+     * still works — the QR, the URL, the Wi-Fi guidance — and the PIN is
+     * something you have to already know.
+     */
+    const local = isPrivateIp(req.socket.remoteAddress ?? '') && isPrivateIp(req.ip)
+    const joinUrl = local ? `${base}/?pin=${encodeURIComponent(pin)}` : `${base}/`
     const qr = new QRCode({ content: joinUrl, padding: 2, width: 260, height: 260 }).svg()
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -897,7 +967,11 @@ export function buildApp({
   ${config.wifiSsid ? `<p class="meta">1. Join Wi-Fi: <strong>${escapeHtml(config.wifiSsid)}</strong>&nbsp;&nbsp;2. Scan&nbsp;&nbsp;3. Pick a name</p>` : ''}
   <div class="qr">${qr}</div>
   <p class="url"><a href="${escapeHtml(joinUrl)}">${escapeHtml(base.replace(/^https?:\/\//, ''))}</a></p>
-  <p class="pin">Event PIN: <strong>${escapeHtml(pin)}</strong></p>
+  ${
+    local
+      ? `<p class="pin">Event PIN: <strong>${escapeHtml(pin)}</strong></p>`
+      : `<p class="meta">Ask the production office for the event PIN.</p>`
+  }
   ${apkAvailable() ? `<p class="meta">Android lock-screen alerts: <a href="${base}/crewbox.apk">download the Crewbox app</a></p>` : ''}
 </div></body></html>`
     return reply
@@ -909,7 +983,7 @@ export function buildApp({
   // Join doubles as login: a known name + matching personal PIN gets a new
   // session; an unknown name + correct event PIN creates the user.
   fastify.post('/api/join', async (req, reply) => {
-    if (!joinLimiter.allow(req.ip)) {
+    if (!joinLimiter.allow(limitKey(req))) {
       return reply.code(429).send({ error: 'Too many attempts — wait a minute and try again' })
     }
     const parsed = joinBodySchema.safeParse(req.body)
@@ -921,13 +995,24 @@ export function buildApp({
     const existing = store.getUserByName(name)
     if (existing) {
       const accountKey = name.trim().toLowerCase()
-      if (pinLimiter.blocked(accountKey)) {
+      // Counted on arrival, not after the check.
+      //
+      // `verifyPinAsync` is scrypt: ~100 ms, deliberately. Recording the
+      // attempt only afterwards left that whole window open, so every guess
+      // that arrived inside it was verified before any of them had been
+      // counted — forty simultaneous wrong PINs got forty 401s and not one
+      // 429. On the LAN the per-IP limiter contains that; through the tunnel,
+      // where the attacker chooses the address, it did not.
+      //
+      // `allow` is the arrival-counting form, and a correct PIN clears the
+      // count below — so a crew member who fumbles their PIN twice and then
+      // gets it right is not carrying two strikes into the evening.
+      if (!pinLimiter.allow(accountKey)) {
         return reply
           .code(429)
           .send({ error: 'Too many wrong PINs for that name — wait a few minutes and try again.' })
       }
       if (!(await verifyPinAsync(personalPin, existing.pinHash))) {
-        pinLimiter.record(accountKey)
         return reply.code(401).send({
           error:
             "That name is taken and the PIN doesn't match. Pick another name, or use your PIN.",
@@ -948,6 +1033,9 @@ export function buildApp({
     // the box permanently to whoever happened to scan the poster first, and
     // took it away for good if they ever deleted their account.
     const user = store.createUser(name, await hashPinAsync(personalPin), 'member')
+    // Somebody has joined, so setup is over — and stays over even if every
+    // account is later deleted. See setupOpen.
+    closeSetup()
     const token = newToken()
     store.createSession(token, user.id)
 
@@ -1666,7 +1754,7 @@ export function buildApp({
   fastify.post('/api/admin/unlock', (req, reply) => {
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
-    if (!adminLimiter.allow(req.ip)) {
+    if (!adminLimiter.allow(limitKey(req))) {
       return reply
         .code(429)
         .send({ error: 'Too many attempts — wait a few minutes and try again.' })
@@ -1678,7 +1766,7 @@ export function buildApp({
     if (!verifyPin(parsed.data.password, adminPasswordHash())) {
       return reply.code(401).send({ error: "That's not the admin password." })
     }
-    adminLimiter.clear(req.ip)
+    adminLimiter.clear(limitKey(req))
     fastify.log.info(`admin panel unlocked by ${user.name}`)
     return { adminToken: adminTokens.issue() }
   })
@@ -1702,7 +1790,7 @@ export function buildApp({
     if (keyMatches(keyFromHeaders(req.headers as Record<string, unknown>), controlKey(store))) {
       return true
     }
-    if (!controlLimiter.allow(req.ip)) {
+    if (!controlLimiter.allow(limitKey(req))) {
       void reply.code(429).send({ error: 'too many bad keys — wait a minute and try again' })
       return false
     }

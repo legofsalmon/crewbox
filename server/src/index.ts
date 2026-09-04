@@ -422,7 +422,11 @@ async function main(): Promise<void> {
   })
   const hub = app.hub
 
-  const fatal = warnOnDefaults(app.log, Boolean(store.getSetting('eventPin')))
+  const fatal = warnOnDefaults(
+    app.log,
+    Boolean(store.getSetting('eventPin')),
+    store.getSetting('eventPin') ?? config.eventPin
+  )
   if (fatal) {
     app.log.error(fatal)
     process.exit(1)
