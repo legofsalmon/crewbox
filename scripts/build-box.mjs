@@ -17,6 +17,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -189,11 +190,14 @@ rmSync(binPath, { force: true })
 rmSync(partPath, { force: true })
 try {
   copyFileSync(baseNode, partPath)
+  // execFileSync, not execSync: a path is an argument, not a fragment of
+  // shell. A checkout under "/Users/Some One/…" — the default shape of a Mac
+  // home directory with a space in the owner's name — went through cmd.exe
+  // and /bin/sh as two words.
   if (process.platform === 'darwin') {
-    execSync(`codesign --remove-signature "${partPath}"`)
+    execFileSync('codesign', ['--remove-signature', partPath], { stdio: 'inherit' })
   }
   const postjectArgs = [
-    'postject',
     partPath,
     'NODE_SEA_BLOB',
     join(outDir, 'sea.blob'),
@@ -201,9 +205,16 @@ try {
     SEA_FUSE,
   ]
   if (process.platform === 'darwin') postjectArgs.push('--macho-segment-name', 'NODE_SEA')
-  execFileSync('npx', postjectArgs, { stdio: 'inherit', shell: process.platform === 'win32' })
+  // The CLI directly rather than through `npx`. `npx` on Windows is a .cmd,
+  // which needed `shell: true` — and with a shell the arguments are re-parsed
+  // by cmd.exe, so an unquoted path with a space in it arrived as two.
+  // Resolving the module and running it under this Node needs no shell on any
+  // platform, and picks the version in the lockfile rather than whatever npx
+  // decides to fetch.
+  const postject = createRequire(import.meta.url).resolve('postject/dist/cli.js')
+  execFileSync(process.execPath, [postject, ...postjectArgs], { stdio: 'inherit' })
   if (process.platform === 'darwin') {
-    execSync(`codesign --sign - "${partPath}"`)
+    execFileSync('codesign', ['--sign', '-', partPath], { stdio: 'inherit' })
   } else if (process.platform !== 'win32') {
     chmodSync(partPath, 0o755)
   }

@@ -220,6 +220,14 @@ DATA_DIR="$DATA_ARG" "$BIN" --status >/dev/null 2>&1 ||
 pass "--status reports the running box"
 
 DATA_DIR="$DATA_ARG" "$BIN" --stop >/dev/null 2>&1 || fail "--stop failed"
+# Checked the moment it returns, with no grace period. `--stop` promises to
+# wait for the box to be gone — the caller's next move is usually to replace
+# the binary or take the port — and it used to wait for the *status file*,
+# which the shutdown handler removes before it closes anything. Sleeping here
+# would hide exactly the defect this line exists to catch.
+if kill -0 "$PID" 2>/dev/null; then
+  fail "--stop returned while the box process was still alive"
+fi
 if curl -fsS --max-time 3 "$BASE/api/health" >/dev/null 2>&1; then
   fail "--stop returned but the box is still serving"
 fi

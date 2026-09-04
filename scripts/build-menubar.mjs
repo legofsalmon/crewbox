@@ -11,8 +11,8 @@
 // .app already needs for codesign.
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, renameSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -69,7 +69,15 @@ export function buildMenuBar(out, archs = ['arm64', 'x86_64']) {
   return out
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))) {
+// Run directly, rather than imported.
+//
+// `import.meta.url.endsWith(argv[1])` compared a percent-encoded file URL
+// with a raw filesystem path, so a checkout under a directory with a space
+// or an accent in it never matched — and the script did nothing at all,
+// silently, reporting success. That is the CI entry point for the Windows
+// tray and the macOS menu bar: a build would come out without one and
+// nothing would say so.
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   if (process.platform !== 'darwin') {
     console.error('build-menubar.mjs only runs on macOS')
     process.exit(1)

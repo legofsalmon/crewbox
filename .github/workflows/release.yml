@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      livekit: ${{ steps.sfu.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,6 +70,33 @@ jobs:
           echo "Publishing $VERSION from ${BUILD_SHA:0:12}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      # The SFU version, resolved once for the whole release.
+      #
+      # Each platform job used to ask GitHub for livekit's `latest` on its
+      # own, at whatever minute it happened to start — so a release cut
+      # across an upstream release would ship a Linux box and a macOS box
+      # carrying different SFUs, with nothing in the release saying so.
+      # Voice between two boxes on different versions is exactly the kind of
+      # thing nobody tests until a show.
+      - name: Resolve the LiveKit version
+        id: sfu
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PINNED: ${{ vars.LIVEKIT_VERSION }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PINNED:-}" ]; then
+            echo "pinned to $PINNED by the LIVEKIT_VERSION repository variable"
+            echo "version=$PINNED" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TAG="$(curl -fsS -H "user-agent: crewbox-build" \
+            -H "authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/repos/livekit/livekit/releases/latest |
+            node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const t=JSON.parse(s).tag_name;if(!t)throw new Error('no tag_name');process.stdout.write(t)})")"
+          echo "livekit $TAG for every box in this release"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
   box:
     name: Box binary (${{ matrix.os }})
     needs: validate
@@ -102,6 +130,7 @@ jobs:
       - run: node scripts/fetch-livekit.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          LIVEKIT_VERSION: ${{ needs.validate.outputs.livekit }}
       - run: node scripts/build-box.mjs
       # Start the box we just built and use it. A box can build perfectly and
       # still ship without working voice — a missing asset, an SFU that won't
@@ -136,6 +165,7 @@ jobs:
         env:
           CREWBOX_TARGET_ARCH: x64
           GITHUB_TOKEN: ${{ github.token }}
+          LIVEKIT_VERSION: ${{ needs.validate.outputs.livekit }}
         run: |
           set -euo pipefail
           LIVEKIT_REFETCH=1 node scripts/fetch-livekit.mjs
@@ -144,8 +174,15 @@ jobs:
           # build an empty base and let it carry on.
           base="$(node scripts/fetch-node.mjs darwin x64)"
           CREWBOX_BASE_NODE="$base" node scripts/build-box.mjs
-          # Named x64 is not the same as being x64.
-          file build/box/crewbox-darwin-x64 | grep -q x86_64
+          # Named x64 is not the same as being x64 — and this whole step is
+          # `continue-on-error`, so a failure here would otherwise leave the
+          # wrong binary sitting under the right name for the upload glob,
+          # the app bundle and the release to pick up. Take it with us.
+          if ! file build/box/crewbox-darwin-x64 | grep -q x86_64; then
+            echo "::error::the cross-built Intel box is not x86_64"
+            rm -f build/box/crewbox-darwin-x64
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: box-${{ matrix.os }}
@@ -170,18 +207,14 @@ jobs:
     # and then notarises — a round trip to Apple and the slowest step in a
     # release. Still far short of the six-hour default a wedged runner burns.
     timeout-minutes: 75
-    # Only the trust step needs Apple credentials; the packaging runs either
-    # way so the path is exercised on every release rather than first tried
-    # on the day the certificate arrives.
-    env:
-      MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
-      MAC_NOTARY_APPLE_ID: ${{ secrets.MAC_NOTARY_APPLE_ID }}
-      MAC_NOTARY_PASSWORD: ${{ secrets.MAC_NOTARY_PASSWORD }}
-      MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
-      # Job-level so the import step's `if:` can see it — a step's own env
-      # block is not in scope for that step's own condition.
-      MAC_SIGN_CERT_P12: ${{ secrets.MAC_SIGN_CERT_P12 }}
-      MAC_SIGN_CERT_PASSWORD: ${{ secrets.MAC_SIGN_CERT_PASSWORD }}
+    # Apple credentials are scoped to the two steps that use them, not to the
+    # job. At job level they were in the environment of `npm ci` — and every
+    # lifecycle script of every dependency it installs — plus esbuild, the Go
+    # toolchain and `go install`, all of which run before anything is signed.
+    # The signing key and an Apple ID password have no business being visible
+    # to a postinstall script. Packaging still runs without them, so the
+    # unsigned path is exercised on every release rather than first tried on
+    # the day the certificate arrives.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -203,6 +236,7 @@ jobs:
       - run: node scripts/fetch-livekit.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          LIVEKIT_VERSION: ${{ needs.validate.outputs.livekit }}
       - run: node scripts/build-box.mjs
       # Start the box we just built and use it. A box can build perfectly and
       # still ship without working voice — a missing asset, an SFU that won't
@@ -223,6 +257,7 @@ jobs:
         env:
           CREWBOX_TARGET_ARCH: x64
           GITHUB_TOKEN: ${{ github.token }}
+          LIVEKIT_VERSION: ${{ needs.validate.outputs.livekit }}
         run: |
           set -euo pipefail
           LIVEKIT_REFETCH=1 node scripts/fetch-livekit.mjs
@@ -233,10 +268,31 @@ jobs:
           CREWBOX_BASE_NODE="$base" node scripts/build-box.mjs
           # Named x64 is not the same as being x64.
           file build/box/crewbox-darwin-x64 | grep -q x86_64
+      # Whether there is a certificate to import, asked in a step that does
+      # nothing else.
+      #
+      # A step's own `env:` block is not in scope for that step's own `if:`,
+      # which is the whole reason the secrets used to sit at job level. This
+      # takes the one secret the condition needs, reduces it to a boolean,
+      # and lets the import step gate on that instead.
+      - name: Is there a signing certificate?
+        id: cert
+        env:
+          MAC_SIGN_CERT_P12: ${{ secrets.MAC_SIGN_CERT_P12 }}
+        run: |
+          if [ -n "${MAC_SIGN_CERT_P12:-}" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::No signing certificate — building an unsigned app.'
+          fi
       # The signing certificate lives in a throwaway keychain that dies with
       # the runner, so the private key never touches the default one.
       - name: Import signing certificate
-        if: env.MAC_SIGN_CERT_P12 != ''
+        if: steps.cert.outputs.present == 'true'
+        env:
+          MAC_SIGN_CERT_P12: ${{ secrets.MAC_SIGN_CERT_P12 }}
+          MAC_SIGN_CERT_PASSWORD: ${{ secrets.MAC_SIGN_CERT_PASSWORD }}
         run: |
           set -euo pipefail
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
@@ -259,6 +315,11 @@ jobs:
       # this still produces a working Apple Silicon app instead of failing.
       # build-mac-app.mjs takes one binary or two.
       - run: node scripts/build-mac-app.mjs build/box/crewbox-darwin-*
+        env:
+          MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+          MAC_NOTARY_APPLE_ID: ${{ secrets.MAC_NOTARY_APPLE_ID }}
+          MAC_NOTARY_PASSWORD: ${{ secrets.MAC_NOTARY_PASSWORD }}
+          MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
       # Run the universal box from inside the built app, not just the binaries
       # that went into it. lipo has to preserve each slice's injected SEA
       # section; if it doesn't, the app can't find its own payload and this is
@@ -396,9 +457,19 @@ jobs:
           mv crewbox-win32-x64.exe "crewbox-win32-x64-$V.exe"
           mv crewbox-linux-x64 "crewbox-linux-x64-$V"
           mv crewbox-darwin-arm64 "crewbox-darwin-arm64-$V"
-          mv crewbox-darwin-x64 "crewbox-darwin-x64-$V"
           mv Crewbox.dmg "Crewbox-$V.dmg"
           mv crewbox.apk "crewbox-$V.apk"
+          # The Intel Mac box is the one asset allowed to be absent: its
+          # cross-build is `continue-on-error` because GitHub is retiring
+          # Intel runners and shipping four architectures beats failing a
+          # release over one. That was only half true — the `mv` below was
+          # unconditional, so a skipped cross-build failed the release here,
+          # two jobs later, with a "no such file" and no mention of Intel.
+          if [ -f crewbox-darwin-x64 ]; then
+            mv crewbox-darwin-x64 "crewbox-darwin-x64-$V"
+          else
+            echo "::warning::No Intel Mac box in this release — the cross-build did not produce one. Intel Macs can run the .dmg, which is universal."
+          fi
 
       # Signed before the asset check, so the manifest and its signature are
       # two of the assets that check covers. The box verifies the signature
@@ -416,7 +487,14 @@ jobs:
           V: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
-          EXPECTED="Crewbox-$V.dmg crewbox-darwin-arm64-$V crewbox-darwin-x64-$V crewbox-linux-x64-$V crewbox-win32-x64-$V.exe crewbox-$V.apk SHA256SUMS-$V SHA256SUMS-$V.sig"
+          # Required, and then the one optional asset appended only if it is
+          # there. Still an exact match either way: this check exists so a
+          # release never quietly ships a short set, and "one of these may be
+          # missing" would give that away.
+          EXPECTED="Crewbox-$V.dmg crewbox-darwin-arm64-$V crewbox-linux-x64-$V crewbox-win32-x64-$V.exe crewbox-$V.apk SHA256SUMS-$V SHA256SUMS-$V.sig"
+          if [ -f "artifacts/crewbox-darwin-x64-$V" ]; then
+            EXPECTED="$EXPECTED crewbox-darwin-x64-$V"
+          fi
           ACTUAL="$(cd artifacts && ls | sort | tr '\n' ' ' | sed 's/ $//')"
           SORTED_EXPECTED="$(echo "$EXPECTED" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
           echo "assets: $ACTUAL"

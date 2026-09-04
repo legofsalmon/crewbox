@@ -62,12 +62,20 @@ jobs:
             sleep 1
           done
 
+      # Through `env:`, not interpolated into the script. A workflow_dispatch
+      # input is a free-text field on a form: substituted into a `run:` block
+      # it is shell source, so "50; curl …" runs on a runner holding this
+      # repo's token. The release workflow's validate step already does it
+      # this way.
       - name: Soak
         env:
           EVENT_PIN: '1234'
-        run: |
-          node deploy/soak.mjs http://127.0.0.1:8787 \
-            "${{ inputs.clients || '50' }}" "${{ inputs.seconds || '120' }}"
+          # Not `SECONDS`: bash keeps that one for itself (seconds since the
+          # shell started), so an assignment to it is either ignored or a
+          # very confusing number.
+          SOAK_CLIENTS: ${{ inputs.clients || '50' }}
+          SOAK_SECONDS: ${{ inputs.seconds || '120' }}
+        run: node deploy/soak.mjs http://127.0.0.1:8787 "$SOAK_CLIENTS" "$SOAK_SECONDS"
 
       # Always, so a failed soak still shows what the server was doing —
       # which is usually more informative than the client-side assertion.

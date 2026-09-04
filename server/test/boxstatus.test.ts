@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +7,7 @@ import {
   clearBoxStatus,
   readBoxStatus,
   statusPath,
+  stopRunningBox,
   writeBoxStatus,
   type BoxStatus,
 } from '../src/box.ts'
@@ -96,5 +98,87 @@ describe('box status file', () => {
     const notADir = join(dir, 'regular-file')
     writeFileSync(notADir, 'x')
     expect(() => writeBoxStatus(notADir, sample())).not.toThrow()
+  })
+})
+
+/**
+ * `crewbox --stop`, which is the one stop mechanism that works everywhere —
+ * a headless box in a shed has no tray to click.
+ *
+ * The thing worth testing is what it means when it *returns*. Its own
+ * comment says the caller's next move is usually to replace the binary, and
+ * on Windows that fails while the old process still holds it — so returning
+ * early is not a nicety, it is the promise being broken.
+ *
+ * A real child process, because the question is about a real one going away.
+ */
+describe('stopping a running box', () => {
+  let dir: string
+  let child: ChildProcess | undefined
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'crewbox-stop-'))
+  })
+
+  afterEach(() => {
+    child?.kill('SIGKILL')
+    child = undefined
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  const status = (pid: number): BoxStatus => ({
+    pid,
+    port: 8787,
+    secure: false,
+    joinUrl: 'http://192.168.1.10:8787',
+    urls: ['http://192.168.1.10:8787'],
+    eventPin: '4242',
+    eventName: 'Test Fest',
+    version: '0.18.0',
+  })
+
+  it('says nothing is running when nothing is', async () => {
+    expect(await stopRunningBox(dir)).toBe(0)
+  })
+
+  it('does not return until the process has actually gone', async () => {
+    // A child that takes its time on SIGTERM and removes the status file
+    // first — which is exactly what the box does, deliberately, so no helper
+    // offers to open a box that is on its way down. Everything that makes
+    // waiting worth doing happens afterwards: the sockets, the SFU, the
+    // database.
+    child = spawn(
+      process.execPath,
+      [
+        '-e',
+        `const { rmSync } = require('node:fs')
+         process.on('SIGTERM', () => {
+           rmSync(process.argv[1], { force: true })
+           setTimeout(() => process.exit(0), 600)
+         })
+         setInterval(() => {}, 1000)`,
+        statusPath(dir),
+      ],
+      { stdio: 'ignore' }
+    )
+    const pid = child.pid!
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    writeBoxStatus(dir, status(pid))
+
+    const started = Date.now()
+    expect(await stopRunningBox(dir)).toBe(0)
+    // It waited for the process rather than for the file, which the child
+    // deleted immediately. Waiting on the file returned inside a few
+    // milliseconds — and the box's port, database and SFU were all still
+    // open at that point.
+    expect(Date.now() - started).toBeGreaterThan(400)
+    expect(() => process.kill(pid, 0)).toThrow()
+  })
+
+  it('reports a status file left behind by a power cut as nothing to stop', () => {
+    // The pid is checked rather than trusted, so a stale file does not send
+    // a signal to whatever inherited the number.
+    writeBoxStatus(dir, status(0x7fffffff))
+    expect(readBoxStatus(dir)).toBeNull()
   })
 })

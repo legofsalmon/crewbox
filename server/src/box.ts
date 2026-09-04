@@ -419,11 +419,18 @@ export async function stopRunningBox(dataDir: string): Promise<number> {
     // "permission denied" on your own machine is otherwise baffling.
     return 1
   }
-  // Wait rather than returning optimistically: the caller's next move is
-  // usually to replace the binary, and on Windows that fails while the old
-  // process still holds it.
+  // Wait for the *process*, not for the status file.
+  //
+  // The reason to wait at all is that the caller's next move is usually to
+  // replace the binary or take the port, and on Windows a file cannot be
+  // replaced while the process still holds it. The shutdown handler removes
+  // the status file *first* — deliberately, so no helper offers to open a
+  // box that is on its way down — and everything that actually matters
+  // happens afterwards: the sockets, the SFU, the database. So waiting for
+  // the file to vanish returned within milliseconds of the signal, before
+  // any of it, and the promise in this comment was not kept.
   for (let i = 0; i < 100; i++) {
-    if (!readBoxStatus(dataDir)) {
+    if (!running(status.pid)) {
       console.log(`Stopped ${label}.`)
       return 0
     }
@@ -431,6 +438,23 @@ export async function stopRunningBox(dataDir: string): Promise<number> {
   }
   console.error(`${label} (pid ${status.pid}) did not stop within 10s.`)
   return 1
+}
+
+/**
+ * Is this pid still a process?
+ *
+ * Signal 0 tests for existence without delivering anything. ESRCH means gone.
+ * EPERM means the pid exists and belongs to somebody else — which, one line
+ * after a SIGTERM we were allowed to send, means ours has gone and the number
+ * has been recycled.
+ */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
