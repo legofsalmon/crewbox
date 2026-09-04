@@ -1,6 +1,16 @@
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+
+/**
+ * How a session token is stored: SHA-256 of the bearer string, as hex.
+ *
+ * Unsalted on purpose. A token is 256 bits of `randomBytes`, so there is no
+ * dictionary to run against it, and the lookup has to be one indexed
+ * equality on every authenticated request.
+ */
+export const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex')
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -12,6 +22,9 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
+  /* Renamed to token_sha, and hashed, by migration v10. SCHEMA is the
+     original v0 shape and every box — fresh or in the field — walks the
+     migrations from its own user_version, so this stays as it was. */
   token      TEXT PRIMARY KEY,
   user_id    TEXT NOT NULL REFERENCES users(id),
   created_at INTEGER NOT NULL,
@@ -57,7 +70,15 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
  * Numbered migrations applied on top of the base schema, tracked with
  * PRAGMA user_version. Append only — never edit an existing entry.
  */
-const MIGRATIONS: string[] = [
+/**
+ * A migration: SQL, or a function for the ones SQL cannot express.
+ *
+ * SQLite has no hash function, so v10 has to compute one in JS. Each runs
+ * inside its own transaction.
+ */
+type Migration = string | ((db: DatabaseSync) => void)
+
+const MIGRATIONS: Migration[] = [
   // v1: files + message attachments + full-text search
   `
   CREATE TABLE IF NOT EXISTS files (
@@ -208,7 +229,79 @@ const MIGRATIONS: string[] = [
     SELECT COALESCE(MAX(seq), 0) FROM messages WHERE messages.channel_id = channels.id
   );
   `,
+  // v10: session tokens are stored hashed.
+  //
+  // They were the bearer credential itself, in plain text, in the row. So
+  // every backup on a USB stick, every `VACUUM INTO` snapshot the updater
+  // takes and every copy of the database anybody has ever made carried a
+  // live login for every crew member on the box — usable from any phone on
+  // the network, as them, until the session's TTL ran out.
+  //
+  // A token is 256 bits of `randomBytes`, so an unsalted SHA-256 is the
+  // right shape: there is nothing to guess, and the lookup has to be one
+  // indexed equality on every authenticated request.
+  //
+  // A function rather than SQL because SQLite has no sha256 — and the
+  // alternative, dropping the table, would sign out every phone on site at
+  // the moment an admin pressed Install. That is a worse thing to do than
+  // the outage the update already costs.
+  (db) => {
+    db.exec(`
+      CREATE TABLE sessions_hashed (
+        token_sha  TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id),
+        created_at INTEGER NOT NULL,
+        last_seen  INTEGER NOT NULL
+      );
+    `)
+    const rows = db
+      .prepare('SELECT token, user_id, created_at, last_seen FROM sessions')
+      .all() as unknown as {
+      token: string
+      user_id: string
+      created_at: number
+      last_seen: number
+    }[]
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO sessions_hashed (token_sha, user_id, created_at, last_seen)
+       VALUES (?, ?, ?, ?)`
+    )
+    for (const row of rows) {
+      insert.run(hashToken(row.token), row.user_id, row.created_at, row.last_seen)
+    }
+    db.exec('DROP TABLE sessions')
+    db.exec('ALTER TABLE sessions_hashed RENAME TO sessions')
+  },
 ]
+
+/**
+ * Walk a database up from its own `user_version` to the current schema.
+ *
+ * Separate from `openDb` so a test can hand it a database built the way an
+ * older box's was and check what happens to the rows in it — which for v10,
+ * where somebody's session either survives or does not, is the only thing
+ * worth asserting.
+ */
+export function runMigrations(db: DatabaseSync): void {
+  const { user_version: version } = db.prepare('PRAGMA user_version').get() as unknown as {
+    user_version: number
+  }
+  let migrated = false
+  for (let v = version; v < MIGRATIONS.length; v++) {
+    const migration = MIGRATIONS[v]!
+    db.exec('BEGIN')
+    if (typeof migration === 'string') db.exec(migration)
+    else migration(db)
+    db.exec(`PRAGMA user_version = ${v + 1}`)
+    db.exec('COMMIT')
+    migrated = true
+  }
+  // Once, after any upgrade, and outside the transaction because VACUUM
+  // cannot run inside one. It rewrites the file, which is the only way the
+  // pages a migration freed stop carrying what used to be in them — v10
+  // exists precisely because one of those things was a live credential.
+  if (migrated) db.exec('VACUUM')
+}
 
 export function openDb(path: string): DatabaseSync {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
@@ -220,15 +313,7 @@ export function openDb(path: string): DatabaseSync {
     PRAGMA busy_timeout = 5000;
   `)
   db.exec(SCHEMA)
-  const { user_version: version } = db.prepare('PRAGMA user_version').get() as unknown as {
-    user_version: number
-  }
-  for (let v = version; v < MIGRATIONS.length; v++) {
-    db.exec('BEGIN')
-    db.exec(MIGRATIONS[v]!)
-    db.exec(`PRAGMA user_version = ${v + 1}`)
-    db.exec('COMMIT')
-  }
+  runMigrations(db)
   return db
 }
 

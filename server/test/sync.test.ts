@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
-import type { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import {
@@ -13,7 +13,7 @@ import {
   type ServerMessage,
   type WelcomeMessage,
 } from '@crewbox/shared'
-import { openDb } from '../src/db.ts'
+import { openDb, runMigrations } from '../src/db.ts'
 import { Store } from '../src/store.ts'
 import { isPrivateIp, isRemoteConnection } from '../src/hub.ts'
 import type { IncomingMessage } from 'node:http'
@@ -995,6 +995,57 @@ describe('remote access', () => {
     expect(store.getSessionUser(token)).toBeDefined() // no TTL → still valid
     expect(store.pruneSessions(60_000)).toBe(1)
     expect(store.getSessionUser(token)).toBeUndefined()
+  })
+
+  it('never writes a session token down', async () => {
+    /**
+     * The token is the bearer credential. Stored in plain text it went into
+     * every backup on a USB stick, every `VACUUM INTO` snapshot the updater
+     * takes and every copy of the database anybody has ever made — a live
+     * login for every crew member on the box, usable from any phone on the
+     * network, as them.
+     */
+    const token = await join('Alex')
+    const rows = db.prepare('SELECT * FROM sessions').all() as unknown as Record<string, unknown>[]
+    expect(rows).toHaveLength(1)
+    // Not under any column name, whatever the schema comes to look like.
+    expect(JSON.stringify(rows[0])).not.toContain(token)
+    // And what is there is the hash, which is what the lookup uses.
+    expect(rows[0]!.token_sha).toBe(createHash('sha256').update(token).digest('hex'))
+    expect(store.getSessionUser(token)?.name).toBe('Alex')
+  })
+
+  it('carries existing sessions through the hashing migration', async () => {
+    /**
+     * The alternative — dropping the table — would sign out every phone on
+     * site at the moment an admin pressed Install, which is a worse thing to
+     * do than the outage the update already costs.
+     */
+    const older = new DatabaseSync(':memory:')
+    older.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member',
+        pin_hash TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
+      CREATE TABLE sessions (
+        token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+        created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL
+      );
+      INSERT INTO users VALUES ('u1', 'Alex', 'member', 'x', 1);
+      INSERT INTO sessions VALUES ('a-real-token', 'u1', 1, 1);
+      PRAGMA user_version = 9;
+    `)
+    runMigrations(older)
+
+    const rows = older.prepare('SELECT token_sha, user_id FROM sessions').all() as unknown as {
+      token_sha: string
+      user_id: string
+    }[]
+    expect(rows).toEqual([
+      { token_sha: createHash('sha256').update('a-real-token').digest('hex'), user_id: 'u1' },
+    ])
+    // The phone holding that token is still signed in.
+    expect(new Store(older).getSessionUser('a-real-token')?.name).toBe('Alex')
   })
 
   it('marks users connected only from off-site, clearing when a LAN socket appears', async () => {

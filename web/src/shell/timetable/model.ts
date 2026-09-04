@@ -136,7 +136,24 @@ export const upsertAct = (
   if (!existing) return addAct(doc, fields)
   const id = existing.get('id') as string
   doc.transact(() => {
-    for (const [key, value] of Object.entries(fields)) existing.set(key, value)
+    for (const [key, value] of Object.entries(fields)) {
+      /**
+       * The identity keeps the spelling it already had.
+       *
+       * The match is case-insensitive — "MAIN STAGE" and "Main Stage" are
+       * one stage to a crew — but writing the file's spelling back renamed
+       * the stage for everybody. And a patch sheet finds its columns by
+       * comparing its own `meta.stage` to the act's *exactly*, so an import
+       * typed in capitals silently emptied the grid of every sheet already
+       * pointing at that stage. Nothing said why; the acts were still
+       * there, under a name the sheet no longer recognised.
+       *
+       * `date` matched exactly, so skipping it changes nothing; `name` and
+       * `stage` are the two that can differ by case.
+       */
+      if (key === 'name' || key === 'stage' || key === 'date') continue
+      existing.set(key, value)
+    }
   }, LOCAL_ORIGIN)
   return id
 }

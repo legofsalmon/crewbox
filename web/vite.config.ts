@@ -52,7 +52,12 @@ export default defineConfig({
       workbox: {
         // The app shell loads offline; live data comes over our own WS/API
         // (with its own Dexie cache), so never let the SW intercept those.
-        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/connect/, /^\/crewbox\.apk/],
+        // Server-rendered pages, which the app shell must never stand in
+        // for. `/setup` is the one that bit: a box reused for a second event
+        // has a service worker cached from the first, so its first-run page
+        // — the one that names the event and sets the PIN — was replaced by
+        // the app shell, which then asked for a PIN nobody had been given.
+        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/connect/, /^\/setup/, /^\/crewbox\.apk/],
         runtimeCaching: [
           {
             // Uploaded files are content-addressed → cache forever once seen.

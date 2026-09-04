@@ -14,7 +14,7 @@ import type {
   Role,
   User,
 } from '@crewbox/shared'
-import { transaction } from './db.ts'
+import { hashToken, transaction } from './db.ts'
 
 interface UserRow {
   id: string
@@ -255,11 +255,20 @@ export class Store {
 
   // -- sessions -------------------------------------------------------------
 
+  /**
+   * Start a session.
+   *
+   * Only the hash is stored. The token itself goes to the phone and is never
+   * written down here — see migration v10 for why: the row ends up in every
+   * backup, every snapshot and every USB stick anybody carries off site.
+   */
   createSession(token: string, userId: string): void {
     const now = Date.now()
     this.db
-      .prepare('INSERT INTO sessions (token, user_id, created_at, last_seen) VALUES (?, ?, ?, ?)')
-      .run(token, userId, now, now)
+      .prepare(
+        'INSERT INTO sessions (token_sha, user_id, created_at, last_seen) VALUES (?, ?, ?, ?)'
+      )
+      .run(hashToken(token), userId, now, now)
   }
 
   getSessionUser(token: string, ttlMs?: number): User | undefined {
@@ -267,14 +276,16 @@ export class Store {
     const row = this.db
       .prepare(
         `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token = ? AND s.last_seen >= ?`
+         WHERE s.token_sha = ? AND s.last_seen >= ?`
       )
-      .get(token, cutoff) as UserRow | undefined
+      .get(hashToken(token), cutoff) as UserRow | undefined
     return row ? toUser(row) : undefined
   }
 
   touchSession(token: string): void {
-    this.db.prepare('UPDATE sessions SET last_seen = ? WHERE token = ?').run(Date.now(), token)
+    this.db
+      .prepare('UPDATE sessions SET last_seen = ? WHERE token_sha = ?')
+      .run(Date.now(), hashToken(token))
   }
 
   /** Drop sessions idle past the TTL; run at startup so the table can't grow forever. */

@@ -855,6 +855,17 @@ export const useStore = create<AppState>()((set, get) => {
         set({ pending })
         get().toast(`Message not delivered: ${msg.reason}`)
         void cache.deleteOutbox(msg.clientMsgId)
+        /**
+         * And the show-log queue, which is a different store.
+         *
+         * A permanently refused entry — a timestamp the box will not accept,
+         * a body over the limit — stayed in localStorage and was re-sent on
+         * every reconnect, refused again, for the life of the device. The
+         * pane showed it as waiting the whole time, so the crew member who
+         * filed it believed the box had it. A no-op for a chat id, which is
+         * what most of these are.
+         */
+        unqueueIncident(msg.clientMsgId)
         break
       }
       case 'tally':
