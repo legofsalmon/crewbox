@@ -28,6 +28,8 @@ import {
   type InFlight,
 } from '../src/update/install.ts'
 import type { MacIo } from '../src/update/macapp.ts'
+import { schemaVersion, snapshotDb } from '../src/update/snapshot.ts'
+import { DatabaseSync } from 'node:sqlite'
 
 /**
  * Swapping the binary, and getting back.
@@ -389,8 +391,111 @@ describe('an install nobody ever confirmed', () => {
     const result = install()
     if (!result.ok) return
     const outcome = recoverInterruptedInstall(dataDir, '0.17.1')
-    expect(outcome).toMatchObject({ action: 'rolled-back' })
+    expect(outcome).toMatchObject({ action: 'rolled-back', database: 'kept' })
     expect(readFileSync(target, 'utf8')).toBe('the old box')
+  })
+
+  describe('and the database the new build migrated', () => {
+    /**
+     * Migrations are forward-only. Putting the old binary back in front of a
+     * database the new build has already migrated does not crash — it opens
+     * happily, runs nothing, and serves a schema it does not understand. The
+     * snapshot exists to prevent exactly that, and for the life of the
+     * updater nothing ever read it back.
+     */
+    const dbPath = () => join(dataDir, 'crewbox.db')
+
+    const makeDb = (userVersion: number, rows: string[]) => {
+      const db = new DatabaseSync(dbPath())
+      try {
+        db.exec('CREATE TABLE IF NOT EXISTS notes (body TEXT)')
+        db.exec(`PRAGMA user_version = ${userVersion}`)
+        for (const row of rows) db.prepare('INSERT INTO notes (body) VALUES (?)').run(row)
+      } finally {
+        db.close()
+      }
+    }
+
+    const rows = (path: string): string[] => {
+      const db = new DatabaseSync(path, { readOnly: true })
+      try {
+        return (
+          db.prepare('SELECT body FROM notes ORDER BY rowid').all() as { body: string }[]
+        ).map((r) => r.body)
+      } finally {
+        db.close()
+      }
+    }
+
+    /** Install, having taken a snapshot first, the way the service does. */
+    const installWithSnapshot = () => {
+      const snapshot = snapshotDb({ dbPath: dbPath(), dataDir, version: '0.17.1' })
+      expect(snapshot.ok).toBe(true)
+      if (!snapshot.ok) throw new Error(snapshot.reason)
+      return installBuild({
+        target: { kind: 'binary', path: target },
+        buildPath: build,
+        fromVersion: '0.17.1',
+        toVersion: '0.18.0',
+        dataDir,
+        snapshotPath: snapshot.snapshot.path,
+        now: () => 1_700_000_000_000,
+      })
+    }
+
+    it('goes back with the binary', () => {
+      makeDb(8, ['load in', 'doors'])
+      const result = installWithSnapshot()
+      if (!result.ok) return
+      // The new build came up far enough to migrate, then died.
+      makeDb(9, ['written by the build that then died'])
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1', null, dbPath())
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'restored' })
+      expect(readFileSync(target, 'utf8')).toBe('the old box')
+      expect(schemaVersion(dbPath())).toBe(8)
+      expect(rows(dbPath())).toEqual(['load in', 'doors'])
+    })
+
+    it('is left alone when the new build never migrated', () => {
+      // The common rollback: the build would not start at all. Replacing the
+      // database there would throw away every message sent since the
+      // snapshot for no reason.
+      makeDb(8, ['load in'])
+      const result = installWithSnapshot()
+      if (!result.ok) return
+      makeDb(8, ['sent while the update was being attempted'])
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1', null, dbPath())
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'kept' })
+      expect(rows(dbPath())).toContain('sent while the update was being attempted')
+    })
+
+    it('is left alone when the caller is in no position to replace it', () => {
+      // A caller that has the database open must not pass a path: on POSIX
+      // the swap would look like it worked and change nothing.
+      makeDb(8, ['load in'])
+      const result = installWithSnapshot()
+      if (!result.ok) return
+      makeDb(9, [])
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1')
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'kept' })
+      expect(schemaVersion(dbPath())).toBe(9)
+    })
+
+    it('says so, and still puts the binary back, when the snapshot has gone', () => {
+      makeDb(8, ['load in'])
+      const result = installWithSnapshot()
+      if (!result.ok) return
+      makeDb(9, [])
+      rmSync(result.inFlight.snapshotPath!, { force: true })
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1', null, dbPath())
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'failed' })
+      // The binary is the half that can still be fixed, so it is.
+      expect(readFileSync(target, 'utf8')).toBe('the old box')
+    })
   })
 
   it('refuses to guess when the running version is neither', () => {

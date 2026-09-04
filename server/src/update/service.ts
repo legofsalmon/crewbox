@@ -1,7 +1,7 @@
 import { downloadBuild, type DownloadIo } from './download.ts'
 import { detectTarget, installBuild, undoInstall, type InstallTarget } from './install.ts'
 import { restartInto, type RestartIo } from './restart.ts'
-import { pruneSnapshots, snapshotDb } from './snapshot.ts'
+import { databaseAheadOf, pruneSnapshots, snapshotDb, writePendingRestore } from './snapshot.ts'
 import { assetFor } from './verify.ts'
 
 /**
@@ -194,7 +194,8 @@ export class UpdateService {
     if (!snapshot.ok) {
       return this.failWith(`could not copy the database first: ${snapshot.reason}`)
     }
-    pruneSnapshots(this.options.dataDir)
+    // Never the one just taken — see `pruneSnapshots`.
+    pruneSnapshots(this.options.dataDir, undefined, snapshot.snapshot.path)
     this.options.log?.info(`update: database copied to ${snapshot.snapshot.name}`)
 
     const installed = installBuild({
@@ -264,16 +265,36 @@ export class UpdateService {
         })`
       )
     }
-    // The snapshot is named rather than restored. A forward-only migration
-    // the new build ran is still in the database the old one is now serving,
-    // and putting a copy back over a live database while crew are typing into
-    // it is not a decision this can make on its own — but it is the one thing
-    // somebody would want to know where to find.
-    const detail = restarted.rolledBack
-      ? `the previous version has been put back (its database is copied at ${snapshot.snapshot.path} if ${version} migrated anything)`
-      : `the previous version could NOT be put back${
-          restarted.rollbackError ? `: ${restarted.rollbackError}` : ''
-        }`
+    // The database is not restored here, on purpose: this process has it
+    // open and crew are typing into it, so replacing the file would take
+    // whoever is on shift with it — and on POSIX would not even change what
+    // this process goes on writing to. What can be done is answer the
+    // question rather than hedge it. If the build that just failed got far
+    // enough to migrate, the old box is now serving a schema it does not
+    // understand, which does not crash and does not announce itself; the
+    // debt is written down and the next start, which runs before anything
+    // opens the database, pays it.
+    let detail: string
+    if (!restarted.rolledBack) {
+      detail = `the previous version could NOT be put back${
+        restarted.rollbackError ? `: ${restarted.rollbackError}` : ''
+      }`
+    } else if (databaseAheadOf(this.options.dbPath, snapshot.snapshot.path) === true) {
+      const noted = writePendingRestore(this.options.dataDir, {
+        snapshotPath: snapshot.snapshot.path,
+        fromVersion: this.options.currentVersion,
+        toVersion: version,
+        at: Date.now(),
+      })
+      detail = noted
+        ? `the previous version has been put back, but ${version} had already migrated the database — ` +
+          `RESTART THE BOX and it will be restored from ${snapshot.snapshot.name}`
+        : `the previous version has been put back, but ${version} had already migrated the database ` +
+          `and the restore could not be noted — restore ${snapshot.snapshot.path} by hand`
+      this.options.log?.warn(`update: ${detail}`)
+    } else {
+      detail = `the previous version has been put back (the database was never migrated; a copy from before the attempt is at ${snapshot.snapshot.path})`
+    }
     return this.failWith(`${restarted.reason} — ${detail}`)
   }
 

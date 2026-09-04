@@ -122,11 +122,29 @@ async function main(): Promise<void> {
 
   if (box) {
     const { recoverInterruptedInstall, sweepOldBinaries } = await import('./update/install.ts')
-    const outcome = recoverInterruptedInstall(dataDir, APP_VERSION, supervisor)
+    // The database path, because a rollback has to put the data back too and
+    // this is the last moment at which it can: `openDb` is further down.
+    const outcome = recoverInterruptedInstall(
+      dataDir,
+      APP_VERSION,
+      supervisor,
+      join(dataDir, 'crewbox.db')
+    )
     if (outcome.action === 'rolled-back') {
       console.warn(
         `update to ${outcome.toVersion} was interrupted — put ${outcome.fromVersion} back`
       )
+      if (outcome.database === 'restored') {
+        console.warn(`the database was restored to match — ${outcome.databaseDetail}`)
+      } else if (outcome.database === 'failed') {
+        // The one combination worth shouting about: the old binary is back in
+        // front of a database a newer build migrated, which does not crash —
+        // it serves a schema it does not understand.
+        console.error(
+          `the database could NOT be restored: ${outcome.databaseDetail} — ` +
+            `this box is running ${outcome.fromVersion} against data migrated by ${outcome.toVersion}`
+        )
+      }
     } else if (outcome.action === 'confirmed') {
       console.log(`update to ${outcome.toVersion} completed`)
     } else if (outcome.action === 'supervised') {
@@ -134,6 +152,45 @@ async function main(): Promise<void> {
     } else if (outcome.action === 'failed') {
       console.warn(`update recovery: ${outcome.reason}`)
     }
+    // A database restore the running box could not do itself.
+    //
+    // An in-process rollback leaves the binary right and the database wrong:
+    // the failed build had already migrated it, and the box that put itself
+    // back had it open with crew typing into it. This is the moment that is
+    // safe — before `openDb` below — and the version guard is what keeps it
+    // safe: only the build the snapshot belongs to may be restored to, or a
+    // box someone later installed the new version on by hand would have its
+    // schema pulled backwards underneath it.
+    const { clearPendingRestore, readPendingRestore, restoreSnapshot } =
+      await import('./update/snapshot.ts')
+    const owed = readPendingRestore(dataDir)
+    if (owed) {
+      const { sameVersion } = await import('./update/install.ts')
+      if (!sameVersion(APP_VERSION, owed.fromVersion)) {
+        console.warn(
+          `a database restore to ${owed.fromVersion} was owed, but this box is running ` +
+            `${APP_VERSION} — leaving ${owed.snapshotPath} alone`
+        )
+        clearPendingRestore(dataDir)
+      } else {
+        const restored = restoreSnapshot({
+          dbPath: join(dataDir, 'crewbox.db'),
+          snapshotPath: owed.snapshotPath,
+        })
+        if (!restored.ok) {
+          console.error(`could not restore the database after rolling back: ${restored.reason}`)
+        } else {
+          if (restored.restored) {
+            console.warn(
+              `restored the database from before ${owed.toVersion} — ` +
+                `the migrated one is at ${restored.supersededPath}`
+            )
+          }
+          clearPendingRestore(dataDir)
+        }
+      }
+    }
+
     // Windows cannot delete the image it is running, so the previous binary
     // survives until a later start clears it. Never while an install is in
     // flight — that file is the only way back, and under a supervisor the

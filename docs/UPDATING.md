@@ -138,9 +138,25 @@ a rollback keeps its own, and the verified download is put back under
 `<data dir>/updates/` so trying again costs a rename rather than the whole
 transfer over the venue's uplink.
 
-The one thing a rollback does not undo is a migration the new build ran. The
-copy from step 1 is named in the failure, because putting a database back over
-a live one while crew are typing into it is a decision for a person.
+**And the database goes back too.** Which half of the rollback does it depends
+on where the rollback happens.
+
+If the box has already restarted — a power cut mid-install, or any rollback
+finished by a later start — the restore happens there, before anything opens
+the database: the copy from step 1 goes back in place and the migrated one is
+moved aside to `crewbox.db.superseded-<timestamp>` (with its `-wal` and
+`-shm`, so the set stays openable). Nothing is deleted.
+
+If the rollback happens in the running box, it will not touch the database
+there: crew are typing into it and that process has it open, so replacing the
+file would take whoever is on shift with it. Instead the debt is written to
+`<data dir>/restore-db.json` and the panel says to restart the box, which is
+what pays it.
+
+Either way it only happens when the failed build actually migrated something.
+Most rollbacks are of a build that never got as far as opening the database,
+and replacing it there would throw away every message sent since the copy was
+taken for no reason at all. The schema number is the test.
 
 ### On a Mac, the whole app is replaced
 
@@ -161,11 +177,19 @@ All of that works with no internet, because the release is stapled.
 **The new box will not start and the rollback failed.** The old binary is at
 `<name>.old` beside it. Rename it back and start it.
 
-**The database is wrong after a rollback.** Snapshots are in
+**The database is wrong after a rollback.** Restart the box first — if the
+rollback happened in the running process it left the restore owed, and the
+next start does it. If that is not it, snapshots are in
 `<data dir>/snapshots/`, newest first, named with the version they belong to.
 Stop the box, copy the one matching your binary's version over
 `<data dir>/crewbox.db`, and start it. Delete any `crewbox.db-wal` and
 `crewbox.db-shm` beside it first.
+
+**Getting back what the failed build wrote.** A restore never deletes: the
+database it replaced is beside the live one as
+`crewbox.db.superseded-<timestamp>`. It is a normal SQLite file and can be
+opened with any tool, which is the way to recover anything sent in the minutes
+the new build was up.
 
 **An update was interrupted by a power cut.** Nothing to do. On the next start
 the box reads its own marker, compares it against the version it is actually

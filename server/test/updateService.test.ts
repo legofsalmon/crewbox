@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DownloadIo } from '../src/update/download.ts'
 import type { RestartIo } from '../src/update/restart.ts'
 import { inFlightPath } from '../src/update/install.ts'
-import { listSnapshots } from '../src/update/snapshot.ts'
+import { listSnapshots, readPendingRestore, schemaVersion } from '../src/update/snapshot.ts'
 import { UpdateService } from '../src/update/service.ts'
 
 /**
@@ -288,6 +288,73 @@ describe('when the new box will not come up', () => {
     if (result.ok) return
     expect(result.reason).toContain('did not answer')
     expect(result.reason).toContain('previous version has been put back')
+  })
+
+  it('writes down a database restore it cannot safely do itself', async () => {
+    /**
+     * The build got far enough to migrate and then died. The old box is now
+     * serving a schema it does not understand — which does not crash and
+     * does not announce itself — and it cannot fix that here: crew are
+     * typing into that database and this process has it open, so replacing
+     * the file would take whoever is on shift with it and, on POSIX, not
+     * even change what this process goes on writing to. So it says so, and
+     * the next start pays it.
+     */
+    let clock = 0
+    const s = new UpdateService({
+      dataDir: dir,
+      dbPath,
+      currentVersion: '0.17.1',
+      healthUrl: 'http://localhost:8787/api/health',
+      releasePort: () => Promise.resolve(),
+      regainPort: () => Promise.resolve(),
+      exit: () => {},
+      packaged: true,
+      target: { kind: 'binary', path: target },
+      keys: KEYS,
+      downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`),
+      restartIo: {
+        launch: () => 4242,
+        probe: () => {
+          // What the new build does on its way up, before it fails.
+          const db = new DatabaseSync(dbPath)
+          db.exec('PRAGMA user_version = 9')
+          db.close()
+          return Promise.resolve(null)
+        },
+        kill: () => {},
+        // The clock has to move, or the probe deadline never arrives.
+        now: () => clock,
+        sleep: (ms) => {
+          clock += ms
+          return Promise.resolve()
+        },
+      },
+      platform: 'linux',
+      base: 'https://example.test',
+    })
+    s.start(VERSION)
+    await settle(s)
+    const result = await s.install()
+    if (result.ok) return
+
+    expect(result.reason).toContain('RESTART THE BOX')
+    const owed = readPendingRestore(dir)
+    expect(owed).toMatchObject({ fromVersion: '0.17.1', toVersion: VERSION })
+    expect(schemaVersion(owed!.snapshotPath)).toBe(0)
+    // Not restored here — that is the next start's job, and this process
+    // still has the database open.
+    expect(schemaVersion(dbPath)).toBe(9)
+  })
+
+  it('owes nothing when the failed build never migrated', async () => {
+    const s = service([])
+    s.start(VERSION)
+    await settle(s)
+    const result = await s.install()
+    if (result.ok) return
+    expect(result.reason).toContain('never migrated')
+    expect(readPendingRestore(dir)).toBeNull()
   })
 
   it('regains the port after rolling back, in that order', async () => {

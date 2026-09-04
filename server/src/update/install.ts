@@ -9,6 +9,7 @@ import {
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { OLD_APP_SUFFIX, installMacApp, relaunchCommand, type MacIo } from './macapp.ts'
+import { restoreSnapshot } from './snapshot.ts'
 
 /**
  * Putting a verified build in place of the running one, and being able to
@@ -468,7 +469,23 @@ export type RecoveryOutcome =
   | { action: 'none' }
   | { action: 'supervised'; pid: number; toVersion: string }
   | { action: 'confirmed'; toVersion: string }
-  | { action: 'rolled-back'; toVersion: string; fromVersion: string }
+  | {
+      action: 'rolled-back'
+      toVersion: string
+      fromVersion: string
+      /**
+       * What happened to the database.
+       *
+       * `restored` — the new build had migrated it and the snapshot went back
+       * in its place. `kept` — it was never migrated, so the old build can
+       * read what is already there and nothing was touched. `failed` — the
+       * binary went back and the database could not, which is the one
+       * combination a person has to be told about.
+       */
+      database: 'restored' | 'kept' | 'failed'
+      /** Why, when there is anything to say. */
+      databaseDetail?: string
+    }
   | { action: 'failed'; reason: string }
 
 /**
@@ -508,7 +525,18 @@ export function recoverInterruptedInstall(
   dataDir: string,
   runningVersion: string,
   /** Another crewbox already running and watching this one, if there is one. */
-  supervisor: number | null = null
+  supervisor: number | null = null,
+  /**
+   * The live database, when the caller is in a position to have it replaced.
+   *
+   * Only a caller that has not yet opened it may pass this: on POSIX a
+   * process holding an open handle goes on writing to the file a restore
+   * replaces, so a rollback there would look like it worked and change
+   * nothing. Startup is such a caller and is the one that matters — every
+   * rollback that ends with a box running the old build comes back through
+   * here. Omitted, the database is left exactly as it is.
+   */
+  dbPath: string | null = null
 ): RecoveryOutcome {
   const inFlight = readInFlight(dataDir)
   if (!inFlight) return { action: 'none' }
@@ -522,6 +550,23 @@ export function recoverInterruptedInstall(
     return { action: 'confirmed', toVersion: inFlight.toVersion }
   }
   if (sameVersion(runningVersion, inFlight.fromVersion)) {
+    // The database before the binary. If the restore is going to fail it
+    // should fail while the old build is still the one on disk, rather than
+    // after a swap that leaves the box on a binary that cannot read its data.
+    let database: 'restored' | 'kept' | 'failed' = 'kept'
+    let databaseDetail: string | undefined
+    if (dbPath && inFlight.snapshotPath) {
+      const restored = restoreSnapshot({ dbPath, snapshotPath: inFlight.snapshotPath })
+      if (!restored.ok) {
+        database = 'failed'
+        databaseDetail = restored.reason
+      } else if (restored.restored) {
+        database = 'restored'
+        databaseDetail = `the migrated database is at ${restored.supersededPath}`
+      } else {
+        databaseDetail = restored.reason
+      }
+    }
     const undone = undoInstall(inFlight, dataDir)
     if (!undone.ok) {
       clearInFlight(dataDir)
@@ -531,6 +576,8 @@ export function recoverInterruptedInstall(
       action: 'rolled-back',
       toVersion: inFlight.toVersion,
       fromVersion: inFlight.fromVersion,
+      database,
+      ...(databaseDetail ? { databaseDetail } : {}),
     }
   }
   clearInFlight(dataDir)
