@@ -77,23 +77,36 @@ async function main(): Promise<void> {
   // at exactly the wrong moment. Which way to jump is decided by the version
   // now running, not by guesswork; see recoverInterruptedInstall.
   //
+  // It is also reached, every single time, by the box an update has just
+  // launched — which is why the supervisor is looked up first. That process
+  // is still alive and still deciding; anything this box did to the marker or
+  // the backup would be taken out from under it.
+  //
   // Only for a packaged box: from source there is no binary to swap, and a
   // marker in a developer's data directory would be somebody else's leftovers.
   if (box) {
     const { recoverInterruptedInstall, sweepOldBinaries } = await import('./update/install.ts')
-    const outcome = recoverInterruptedInstall(dataDir, APP_VERSION)
+    // A status file naming a live pid that is not ours. `readBoxStatus`
+    // already checks the process exists, so a hard power cut leaves nothing
+    // to mistake for a supervisor.
+    const running = readBoxStatus(dataDir)
+    const supervisor = running && running.pid !== process.pid ? running.pid : null
+    const outcome = recoverInterruptedInstall(dataDir, APP_VERSION, supervisor)
     if (outcome.action === 'rolled-back') {
       console.warn(
         `update to ${outcome.toVersion} was interrupted — put ${outcome.fromVersion} back`
       )
     } else if (outcome.action === 'confirmed') {
       console.log(`update to ${outcome.toVersion} completed`)
+    } else if (outcome.action === 'supervised') {
+      console.log(`installing ${outcome.toVersion}, watched by pid ${outcome.pid}`)
     } else if (outcome.action === 'failed') {
       console.warn(`update recovery: ${outcome.reason}`)
     }
     // Windows cannot delete the image it is running, so the previous binary
     // survives until a later start clears it. Never while an install is in
-    // flight — that file is the only way back.
+    // flight — that file is the only way back, and under a supervisor the
+    // marker is still there precisely so this does nothing.
     sweepOldBinaries(dataDir, process.execPath)
     const { sweepPartials } = await import('./update/download.ts')
     sweepPartials(dataDir)

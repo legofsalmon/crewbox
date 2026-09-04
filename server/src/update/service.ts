@@ -1,11 +1,5 @@
 import { downloadBuild, type DownloadIo } from './download.ts'
-import {
-  clearInFlight,
-  detectTarget,
-  installBuild,
-  undoInstall,
-  type InstallTarget,
-} from './install.ts'
+import { detectTarget, installBuild, undoInstall, type InstallTarget } from './install.ts'
 import { restartInto, type RestartIo } from './restart.ts'
 import { pruneSnapshots, snapshotDb } from './snapshot.ts'
 import { assetFor } from './verify.ts'
@@ -223,9 +217,11 @@ export class UpdateService {
     } catch (err) {
       // The binary is already swapped, so this cannot just be reported: put
       // the old one back and start answering again, or the box is left
-      // running a build it never launched with no marker to recover from.
+      // running a build it never launched. `undoInstall` clears the marker
+      // when it succeeds and deliberately leaves it when it does not — that
+      // file is then the only description of what is actually on disk, and
+      // the next start is the right place to read it.
       const undone = undoInstall(installed.inFlight, this.options.dataDir)
-      clearInFlight(this.options.dataDir)
       try {
         await this.options.regainPort()
       } catch {

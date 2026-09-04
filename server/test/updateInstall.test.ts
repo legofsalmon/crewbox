@@ -318,6 +318,42 @@ describe('an install nobody ever confirmed', () => {
     expect(recoverInterruptedInstall(dataDir, '0.17.1')).toEqual({ action: 'none' })
   })
 
+  it('compares a release tag against a build version, not string against string', () => {
+    // The shapes that actually occur: a marker records the tag it was asked
+    // to install, and a running box reports its own build. Compared raw these
+    // match neither branch, so every real interrupted install took the
+    // "cannot reason about this" path and cleared the marker.
+    const result = installBuild({
+      target: { kind: 'binary', path: target },
+      buildPath: build,
+      fromVersion: '0.17.1+abc1234',
+      toVersion: 'v0.18.0',
+      dataDir,
+      now: () => 1_700_000_000_000,
+    })
+    if (!result.ok) return
+    expect(recoverInterruptedInstall(dataDir, '0.18.0+def5678')).toEqual({
+      action: 'confirmed',
+      toVersion: 'v0.18.0',
+    })
+  })
+
+  it('rolls back on a tagged marker too', () => {
+    const result = installBuild({
+      target: { kind: 'binary', path: target },
+      buildPath: build,
+      fromVersion: '0.17.1+abc1234',
+      toVersion: 'v0.18.0',
+      dataDir,
+      now: () => 1_700_000_000_000,
+    })
+    if (!result.ok) return
+    expect(recoverInterruptedInstall(dataDir, 'v0.17.1')).toMatchObject({
+      action: 'rolled-back',
+    })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+  })
+
   it('tolerates a marker that is junk', () => {
     writeFileSync(inFlightPath(dataDir), 'not json')
     expect(readInFlight(dataDir)).toBeNull()
@@ -327,6 +363,58 @@ describe('an install nobody ever confirmed', () => {
   it('tolerates a marker missing the fields it needs', () => {
     writeFileSync(inFlightPath(dataDir), JSON.stringify({ toVersion: '0.18.0' }))
     expect(readInFlight(dataDir)).toBeNull()
+  })
+
+  /**
+   * The case that is not an interruption at all.
+   *
+   * Every successful update runs this function, in the box the updater has
+   * just launched, while the process that launched it is still watching. That
+   * process owns the marker and the backup and is about to use one or the
+   * other. A new box that helpfully "recovered" would delete the backup out
+   * from under it, and a build that then failed its health probe would have
+   * nothing to go back to — an unbootable box, from a working update.
+   */
+  describe('while another box is still supervising', () => {
+    it('reports the supervisor and changes nothing', () => {
+      const result = install()
+      if (!result.ok) return
+      expect(recoverInterruptedInstall(dataDir, '0.18.0', 4242)).toEqual({
+        action: 'supervised',
+        pid: 4242,
+        toVersion: '0.18.0',
+      })
+      expect(existsSync(inFlightPath(dataDir))).toBe(true)
+      expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(true)
+    })
+
+    it('leaves the backup alone even when this box is the new build', () => {
+      // The exact shape of the bug: the running version matches, so without
+      // the supervisor check this took the 'confirmed' branch and dropped the
+      // only file a rollback can use.
+      const result = install()
+      if (!result.ok) return
+      recoverInterruptedInstall(dataDir, '0.18.0', 4242)
+      expect(existsSync(result.inFlight.backupPath)).toBe(true)
+    })
+
+    it('leaves the sweep nothing to take either', () => {
+      // The marker is what stops the sweep, so leaving it in place is what
+      // keeps `.old` on disk through the supervised boot.
+      const result = install()
+      if (!result.ok) return
+      recoverInterruptedInstall(dataDir, '0.18.0', 4242)
+      expect(sweepOldBinaries(dataDir, target)).toEqual([])
+      expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(true)
+    })
+
+    it('still recovers normally once nobody is watching', () => {
+      const result = install()
+      if (!result.ok) return
+      expect(recoverInterruptedInstall(dataDir, '0.18.0', null)).toMatchObject({
+        action: 'confirmed',
+      })
+    })
   })
 
   it('round-trips a marker', () => {

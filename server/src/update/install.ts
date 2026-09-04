@@ -379,8 +379,25 @@ export function clearInFlight(dataDir: string): void {
   }
 }
 
+/**
+ * Are these two strings the same crewbox version?
+ *
+ * Three notations for one thing are in play and none of them can be compared
+ * raw. A release is tagged `v0.19.0`; the in-flight marker stores whatever
+ * tag it was asked to install; a running box reports `0.19.0+def5678`,
+ * because the commit is part of what it is. Comparing the numeric version
+ * only is deliberate — the suffix is not knowable from a tag, and a box that
+ * installed perfectly but reported an unexpected one would otherwise be
+ * treated as a stranger.
+ */
+export function sameVersion(a: string, b: string): boolean {
+  const strip = (v: string) => v.replace(/^v/, '').split('+')[0]!.trim()
+  return strip(a) === strip(b)
+}
+
 export type RecoveryOutcome =
   | { action: 'none' }
+  | { action: 'supervised'; pid: number; toVersion: string }
   | { action: 'confirmed'; toVersion: string }
   | { action: 'rolled-back'; toVersion: string; fromVersion: string }
   | { action: 'failed'; reason: string }
@@ -388,10 +405,21 @@ export type RecoveryOutcome =
 /**
  * What to do about an install nobody ever confirmed.
  *
- * Reached when the supervising process died between swapping the binary and
- * seeing the new one answer — a power cut, or somebody closing the lid at
- * exactly the wrong moment. The question is whether the box now starting is
- * the new build or the old one, and **the running version answers it**:
+ * **First: is anybody already doing it?** Every successful update reaches
+ * this function, because the box the updater has just launched runs the same
+ * startup as any other — and that box must not touch a thing. The process
+ * that swapped the binary is alive, holds the only reference to the backup,
+ * and is at this moment polling `/api/health` to decide whether to keep this
+ * build or put the old one back. A newly launched box that "recovered" would
+ * delete the backup out from under the one process that can still use it, and
+ * a build that then failed its probe would have nothing to go back to. So a
+ * live supervisor means: report it, and leave.
+ *
+ * Otherwise this is the case the name describes — the supervising process
+ * died between swapping the binary and seeing the new one answer, a power cut
+ * or somebody closing the lid at exactly the wrong moment. The question is
+ * whether the box now starting is the new build or the old one, and **the
+ * running version answers it**:
  *
  *  - Running the new version: the swap worked and the box is up. Nobody
  *    confirmed it, but it is plainly alive — clear the marker and keep the
@@ -401,19 +429,30 @@ export type RecoveryOutcome =
  *
  * Anything else — a version matching neither — is a box nobody can reason
  * about from here, so it says so rather than guessing which way to jump.
+ *
+ * The comparison is `sameVersion`, not `===`: a marker records the release
+ * tag it was asked to install (`v0.19.0`) and a running box reports its own
+ * build (`0.19.0+def5678`). Comparing those raw matches neither branch, which
+ * sent every interrupted install down the "cannot reason about this" path.
  */
 export function recoverInterruptedInstall(
   dataDir: string,
-  runningVersion: string
+  runningVersion: string,
+  /** Another crewbox already running and watching this one, if there is one. */
+  supervisor: number | null = null
 ): RecoveryOutcome {
   const inFlight = readInFlight(dataDir)
   if (!inFlight) return { action: 'none' }
 
-  if (runningVersion === inFlight.toVersion) {
+  if (supervisor !== null) {
+    return { action: 'supervised', pid: supervisor, toVersion: inFlight.toVersion }
+  }
+
+  if (sameVersion(runningVersion, inFlight.toVersion)) {
     dropBackup(inFlight, dataDir)
     return { action: 'confirmed', toVersion: inFlight.toVersion }
   }
-  if (runningVersion === inFlight.fromVersion) {
+  if (sameVersion(runningVersion, inFlight.fromVersion)) {
     const undone = undoInstall(inFlight, dataDir)
     if (!undone.ok) {
       clearInFlight(dataDir)

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { dropBackup, undoInstall, type InFlight } from './install.ts'
+import { dropBackup, sameVersion, undoInstall, type InFlight } from './install.ts'
 
 /**
  * Starting the new box, watching it, and putting the old one back if it does
@@ -118,14 +118,12 @@ export function statusFileProbe(
  * Does this health answer come from the build we installed?
  *
  * `/api/health` reports `0.18.0+abc1234` while a release is tagged `v0.18.0`,
- * so neither string is usable raw. Comparing the numeric version only —
- * rather than requiring an exact match — is deliberate: the commit suffix is
- * not knowable from a release tag, and a box that installed correctly but
- * reported an unexpected suffix would otherwise be rolled back for no reason.
+ * so neither string is usable raw. `sameVersion` says how they are compared
+ * and why; this name says what the comparison is *for*, which is deciding
+ * whether to roll a box back.
  */
 export function healthMatches(reported: string, expected: string): boolean {
-  const strip = (v: string) => v.replace(/^v/, '').split('+')[0]!.trim()
-  return strip(reported) === strip(expected)
+  return sameVersion(reported, expected)
 }
 
 export type RestartResult =
