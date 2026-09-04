@@ -52,6 +52,23 @@ export const REQUIRED = [
 export const ALLOWED_EXTRA = ['android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS']
 
 /**
+ * Permissions the build writes rather than the manifest declaring them.
+ *
+ * `<applicationId>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` is added by the
+ * manifest merger for androidx.core's `registerReceiver` shim. It is
+ * signature-level and scoped to this app's own package: it grants nothing
+ * over the device, it guards this app's dynamically registered receivers
+ * against other apps, and signature permissions are not shown on the install
+ * screen. Neither ours to declare nor anything a crew member could see — but
+ * it is in the built APK, so the check has to know about it or fail every
+ * build. A pattern rather than a literal because the name is built from the
+ * application id.
+ *
+ * Anything else arriving uninvited is still a failure. That is the point.
+ */
+export const ALLOWED_PATTERNS = [/^[\w.]+\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION$/]
+
+/**
  * Pull the permission names out of an aapt dump.
  *
  * Deliberately tolerant about the shape: aapt and aapt2 have both printed
@@ -71,12 +88,17 @@ export function permissionsIn(dump) {
 }
 
 /** What is wrong with this APK, if anything. */
-export function verdict(found, { required = REQUIRED, allowed = ALLOWED_EXTRA } = {}) {
+export function verdict(
+  found,
+  { required = REQUIRED, allowed = ALLOWED_EXTRA, patterns = ALLOWED_PATTERNS } = {}
+) {
   const held = new Set(found)
   const expected = new Set([...required, ...allowed])
   return {
     missing: required.filter((name) => !held.has(name)),
-    unexpected: found.filter((name) => !expected.has(name)),
+    unexpected: found.filter(
+      (name) => !expected.has(name) && !patterns.some((pattern) => pattern.test(name))
+    ),
   }
 }
 

@@ -90,6 +90,39 @@ describe('judging what the APK holds', () => {
     expect(verdict(held).unexpected).toEqual(['android.permission.ACCESS_FINE_LOCATION'])
   })
 
+  it('passes the real APK, which carries one the build writes itself', () => {
+    // Exactly what the debug APK asked for on CI. The last one is the
+    // manifest merger's: signature-level, scoped to this app's own package,
+    // not shown on an install screen, and not in our manifest to declare.
+    // Without an allowance for it, every build fails this check — and a
+    // check that fails on every green build teaches people to ignore it.
+    const built = [
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
+      'android.permission.INTERNET',
+      'android.permission.MODIFY_AUDIO_SETTINGS',
+      'android.permission.POST_NOTIFICATIONS',
+      'android.permission.RECORD_AUDIO',
+      'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+      'com.colmhewson.crewbox.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
+    ]
+    expect(verdict(built)).toEqual({ missing: [], unexpected: [] })
+  })
+
+  it('allows that one under any application id, and nothing else like it', () => {
+    // The name is built from the application id, so a rename or a flavour
+    // must not start failing builds.
+    expect(
+      verdict([...REQUIRED, 'com.example.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'])
+        .unexpected
+    ).toEqual([])
+    // But it is a specific permission, not a licence for the suffix.
+    expect(
+      verdict([...REQUIRED, 'com.colmhewson.crewbox.DYNAMIC_RECEIVER_EXPORTED_PERMISSION'])
+        .unexpected
+    ).toEqual(['com.colmhewson.crewbox.DYNAMIC_RECEIVER_EXPORTED_PERMISSION'])
+  })
+
   it('is not satisfied by an empty dump', () => {
     // If the tool changed its output and nothing parsed, the answer must be
     // "everything is missing" rather than "nothing is wrong".
