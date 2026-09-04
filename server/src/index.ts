@@ -131,7 +131,11 @@ async function main(): Promise<void> {
   const webDist = box ? extractWebDist(dataDir, APP_VERSION) : config.webDist
 
   const db = openDb(join(dataDir, 'crewbox.db'))
-  const store = new Store(db)
+  // The files directory goes to the store as well as the app: it is how a
+  // blob is located from its sha, rather than from an absolute path a
+  // different rig wrote. See Store.blobPath.
+  const filesDir = join(dataDir, 'files')
+  const store = new Store(db, filesDir)
   // Audit history (network module). index owns db; Store keeps its own.
   const metrics = new MetricsStore(db)
 
@@ -384,7 +388,7 @@ async function main(): Promise<void> {
     ...(config.timeZone ? { timeZone: config.timeZone } : {}),
     wifiSsid: config.wifiSsid,
     ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
-    filesDir: join(dataDir, 'files'),
+    filesDir,
     livekit,
     ...(voiceFailure ? { voiceFailure } : {}),
     ...(captive

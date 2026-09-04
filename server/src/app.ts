@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import {
   createReadStream,
   createWriteStream,
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -630,6 +631,37 @@ export function buildApp({
   }, 5 * 60_000)
   limiterSweep.unref()
   fastify.addHook('onClose', () => clearInterval(limiterSweep))
+  /**
+   * Where a stored file actually is, now.
+   *
+   * Not `files.path`, which is absolute and was written by whichever box did
+   * the upload. `deploy/restore.sh` explicitly supports restoring onto a
+   * *different* rig — that is what a spare box is for — and a different rig
+   * has a different data directory, so every attachment and every thumbnail
+   * 404'd on the box the crew had just switched to.
+   *
+   * The layout has always been `<filesDir>/<sha256>`, so the path is a fact
+   * about this box and the sha, not something worth carrying in a row. The
+   * column stays: an older build reading a newer database still finds what it
+   * expects, and `thumb_path` remains the flag for "a thumbnail was made".
+   */
+  const blobPath = (sha256: string): string | undefined =>
+    filesDir ? join(filesDir, sha256) : undefined
+
+  /**
+   * Both resolvers answer "does *this* box hold these bytes", not "was a row
+   * written for them" — so a database restored without its files directory
+   * 404s the attachment instead of 500ing on a read of something absent.
+   */
+  const fileOnDisk = (sha256: string): string | undefined => {
+    const path = blobPath(sha256)
+    return path && existsSync(path) ? path : undefined
+  }
+  const thumbOnDisk = (sha256: string): string | undefined => {
+    const path = blobPath(sha256)
+    return path && existsSync(`${path}.thumb`) ? `${path}.thumb` : undefined
+  }
+
   if (filesDir) {
     mkdirSync(filesDir, { recursive: true })
     // Sweep half-written uploads left by a client that dropped mid-transfer
@@ -1136,17 +1168,16 @@ export function buildApp({
       }
 
       const { size } = await stat(main.tmpPath)
-      const existingPath = store.findPathBySha(main.sha256)
-      let path: string
-      if (existingPath) {
-        await unlink(main.tmpPath)
-        pendingTmp = null
-        path = existingPath
-      } else {
-        path = join(filesDir, main.sha256)
-        await rename(main.tmpPath, path)
-        pendingTmp = null
-      }
+      // Content-addressed, so where these bytes belong is decided by their
+      // hash and nothing else. Dedupe used to ask the database instead, and
+      // on a restored box that answered with the *old* rig's absolute path —
+      // a directory that does not exist here, so the thumbnail write below
+      // threw and re-sharing an already-shared photo 500'd. Renaming into
+      // place unconditionally is atomic, needs no query, and repairs a blob
+      // that went missing under a row that survived.
+      const path = join(filesDir, main.sha256)
+      await rename(main.tmpPath, path)
+      pendingTmp = null
 
       // Dimensions and thumbnails only make sense for images; ignore otherwise.
       const isImage = main.mime.startsWith('image/')
@@ -1180,7 +1211,10 @@ export function buildApp({
   fastify.get('/api/files/:id/thumb', (req, reply) => {
     const { id } = req.params as { id: string }
     const row = store.getFileRow(id)
-    if (!row?.thumb_path) return reply.code(404).send({ error: 'not found' })
+    // `thumb_path` is the flag — a thumbnail was made — and the path comes
+    // from this box, not from whichever one wrote the row. See fileOnDisk.
+    const path = row?.thumb_path ? thumbOnDisk(row.sha256) : undefined
+    if (!path) return reply.code(404).send({ error: 'not found' })
     return (
       reply
         .header('content-type', 'image/jpeg')
@@ -1188,7 +1222,7 @@ export function buildApp({
         // The thumb bytes are the client's JPEG, but nosniff costs nothing and
         // keeps the whole file surface consistent.
         .header('x-content-type-options', 'nosniff')
-        .send(createReadStream(row.thumb_path))
+        .send(createReadStream(path))
     )
   })
 
@@ -1199,6 +1233,10 @@ export function buildApp({
     const { id } = req.params as { id: string; name: string }
     const row = store.getFileRow(id)
     if (!row) return reply.code(404).send({ error: 'not found' })
+    // Resolved against this box's data directory, not the row's absolute
+    // path — see fileOnDisk. A restore onto a spare rig used to 404 here.
+    const path = fileOnDisk(row.sha256)
+    if (!path) return reply.code(404).send({ error: 'not found' })
     // The mime came from the uploader and the file lives on the app's own
     // origin, so a crew member (anyone with the poster PIN) could upload an
     // HTML page or a scripted SVG and, when another phone opens the link,
@@ -1226,9 +1264,9 @@ export function buildApp({
         .code(206)
         .header('content-range', `bytes ${range.start}-${range.end}/${row.size}`)
         .header('content-length', String(range.end - range.start + 1))
-        .send(createReadStream(row.path, { start: range.start, end: range.end }))
+        .send(createReadStream(path, { start: range.start, end: range.end }))
     }
-    return reply.header('content-length', String(row.size)).send(createReadStream(row.path))
+    return reply.header('content-length', String(row.size)).send(createReadStream(path))
   })
 
   // Remove a shared file: the message, its blob (dedup-safe) and a system

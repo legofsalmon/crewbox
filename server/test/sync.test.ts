@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
@@ -1662,5 +1663,130 @@ describe('a box whose database went backwards', () => {
     const { general, seqs } = fill(20)
     const { welcome } = await connect(token, { [general.id]: seqs.at(-1)! })
     expect(welcome.missed.filter((m) => m.channelId === general.id)).toEqual([])
+  })
+})
+
+/**
+ * A restore onto a different rig.
+ *
+ * `deploy/restore.sh` explicitly supports it — that is what a spare box is
+ * for, and swapping to one is the whole reason the backups exist. But
+ * `files.path` was written absolute by whichever box did the upload, so on a
+ * rig whose data directory differs every attachment and every thumbnail
+ * 404'd: a crew switched boxes to save the event and lost their photographs
+ * of the patch.
+ */
+describe('files after a restore onto another rig', () => {
+  const upload = async (token: string) => {
+    const body =
+      '--x\r\nContent-Disposition: form-data; name="file"; filename="plot.txt"\r\n' +
+      'Content-Type: text/plain\r\n\r\nchannel 12 is dark\r\n--x--\r\n'
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/files',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'multipart/form-data; boundary=x',
+      },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    return (res.json() as { file: { id: string; name: string } }).file
+  }
+
+  /** Make a row look like one another box wrote, before it was restored here. */
+  const asRestoredFromElsewhere = (fileId: string) => {
+    db.prepare('UPDATE files SET path = ?, thumb_path = ? WHERE id = ?').run(
+      '/var/lib/a-different-box/files/deadbeef',
+      '/var/lib/a-different-box/files/deadbeef.thumb',
+      fileId
+    )
+  }
+
+  it('serves an attachment whose row points at a data directory that is not here', async () => {
+    const token = await join('Restorer')
+    const file = await upload(token)
+    asRestoredFromElsewhere(file.id)
+
+    const res = await fetch(`${baseUrl}/api/files/${file.id}/${encodeURIComponent(file.name)}`)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('channel 12 is dark')
+  })
+
+  it('serves a byte range from it too', async () => {
+    // iOS refuses to play media without 206s, and the range path reads the
+    // file by its own route.
+    const token = await join('Ranger')
+    const file = await upload(token)
+    asRestoredFromElsewhere(file.id)
+
+    const res = await fetch(`${baseUrl}/api/files/${file.id}/${encodeURIComponent(file.name)}`, {
+      headers: { range: 'bytes=0-6' },
+    })
+    expect(res.status).toBe(206)
+    expect(await res.text()).toBe('channel')
+  })
+
+  it('takes a re-upload of content whose row points somewhere else', async () => {
+    // Dedupe used to hand back the row's path, so the thumbnail was written
+    // into the old rig's directory and re-sharing a photo already on the box
+    // 500'd. A one-pixel GIF, because a thumbnail is only made for images.
+    const token = await join('Rephotographer')
+    const gif = Buffer.from('R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==', 'base64')
+    const shareTheGif = async () => {
+      const head =
+        '--x\r\nContent-Disposition: form-data; name="width"\r\n\r\n1\r\n' +
+        '--x\r\nContent-Disposition: form-data; name="height"\r\n\r\n1\r\n' +
+        '--x\r\nContent-Disposition: form-data; name="thumb"; filename="t.gif"\r\n' +
+        'Content-Type: image/gif\r\n\r\n'
+      const mid =
+        '\r\n--x\r\nContent-Disposition: form-data; name="file"; filename="rig.gif"\r\n' +
+        'Content-Type: image/gif\r\n\r\n'
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/files',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'multipart/form-data; boundary=x',
+        },
+        payload: Buffer.concat([
+          Buffer.from(head),
+          gif,
+          Buffer.from(mid),
+          gif,
+          Buffer.from('\r\n--x--\r\n'),
+        ]),
+      })
+      return res
+    }
+
+    const first = await shareTheGif()
+    expect(first.statusCode).toBe(200)
+    asRestoredFromElsewhere((first.json() as { file: { id: string } }).file.id)
+
+    const second = await shareTheGif()
+    expect(second.statusCode).toBe(200)
+    const again = (second.json() as { file: { id: string } }).file
+    const thumb = await fetch(`${baseUrl}/api/files/${again.id}/thumb`)
+    expect(thumb.status).toBe(200)
+  })
+
+  it('404s an attachment whose bytes did not come along with the database', async () => {
+    // A restore that brought the database and not the files directory: the
+    // row is there and the blob is not. 404, not a read of something absent.
+    const token = await join('Halfrestorer')
+    const file = await upload(token)
+    rmSync(pathJoin(filesDir, createHash('sha256').update('channel 12 is dark').digest('hex')), {
+      force: true,
+    })
+
+    const res = await fetch(`${baseUrl}/api/files/${file.id}/${encodeURIComponent(file.name)}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('still 404s a file that genuinely is not there', async () => {
+    // Resolving by content must not turn a missing id into a 200.
+    const res = await fetch(`${baseUrl}/api/files/no-such-id/anything.txt`)
+    expect(res.status).toBe(404)
   })
 })

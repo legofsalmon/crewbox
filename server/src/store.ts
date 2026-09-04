@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { unlinkSync } from 'node:fs'
+import { join } from 'node:path'
 import { newId } from '@crewbox/shared'
 import type {
   Channel,
@@ -72,6 +73,8 @@ interface FileRow {
   name: string
   mime: string
   size: number
+  /** The content's digest — and, with the box's files directory, its location. */
+  sha256: string
   path: string
   width: number | null
   height: number | null
@@ -165,7 +168,30 @@ function toIncident(row: IncidentRow): Incident {
 }
 
 export class Store {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    /**
+     * Where this box keeps uploaded blobs, when it takes uploads.
+     *
+     * Passed rather than read from a row, because a row's `path` was written
+     * by whichever box did the upload — and `deploy/restore.sh` explicitly
+     * supports restoring onto a *different* rig. See `blobPath`.
+     */
+    private readonly filesDir?: string
+  ) {}
+
+  /**
+   * Where a blob is on *this* box.
+   *
+   * The layout has always been `<filesDir>/<sha256>`, so the location is a
+   * fact about this box and the content, not something worth carrying in a
+   * row. Storing it absolute meant every attachment and thumbnail 404'd after
+   * a restore onto a spare rig, which is the one moment a crew most needs
+   * their photographs of the patch.
+   */
+  blobPath(sha256: string): string | undefined {
+    return this.filesDir ? join(this.filesDir, sha256) : undefined
+  }
 
   // -- users ----------------------------------------------------------------
 
@@ -508,7 +534,7 @@ export class Store {
    * uploads are deduped by content, so a path can back several file rows.
    */
   deleteMessage(id: string): boolean {
-    const orphanedPath = transaction(this.db, () => {
+    const orphaned = transaction(this.db, () => {
       const row = this.db
         .prepare('SELECT channel_id, file_id FROM messages WHERE id = ?')
         .get(id) as { channel_id: string; file_id: string | null } | undefined
@@ -524,30 +550,37 @@ export class Store {
         .prepare('SELECT COUNT(*) AS refs FROM messages WHERE file_id = ?')
         .get(row.file_id) as { refs: number }
       if (refs > 0) return undefined
-      const file = this.db.prepare('SELECT path FROM files WHERE id = ?').get(row.file_id) as
-        { path: string } | undefined
+      const file = this.db
+        .prepare('SELECT path, sha256 FROM files WHERE id = ?')
+        .get(row.file_id) as { path: string; sha256: string } | undefined
       if (!file) return undefined
       this.db.prepare('DELETE FROM files WHERE id = ?').run(row.file_id)
+      // Counted by content, not by the absolute path a row happens to carry:
+      // after a restore onto another rig two rows for the same blob can hold
+      // two different paths, and deleting one would take the other's bytes.
       const { siblings } = this.db
-        .prepare('SELECT COUNT(*) AS siblings FROM files WHERE path = ?')
-        .get(file.path) as { siblings: number }
-      return siblings === 0 ? file.path : undefined
+        .prepare('SELECT COUNT(*) AS siblings FROM files WHERE sha256 = ?')
+        .get(file.sha256) as { siblings: number }
+      return siblings === 0 ? file : undefined
     })
-    if (orphanedPath === undefined) {
+    if (orphaned === undefined) {
       // Either the message never existed — report that — or no blob cleanup.
       return (
         this.db.prepare('SELECT 1 FROM deleted_messages WHERE message_id = ?').get(id) !== undefined
       )
     }
-    try {
-      unlinkSync(orphanedPath)
-    } catch {
-      // Blob already gone — the DB rows are the source of truth.
-    }
-    try {
-      unlinkSync(`${orphanedPath}.thumb`)
-    } catch {
-      // No thumbnail for this blob.
+    // Where it is now first, then where the row says it was. The second is
+    // for a box that never moved and rows written before `blobPath`; both are
+    // best-effort, because the database is the source of truth about what
+    // exists and a blob left behind is disk, not a bug.
+    for (const path of new Set([this.blobPath(orphaned.sha256), orphaned.path].filter(Boolean))) {
+      for (const target of [path as string, `${path as string}.thumb`]) {
+        try {
+          unlinkSync(target)
+        } catch {
+          // Already gone, or never there.
+        }
+      }
     }
     return true
   }
@@ -640,13 +673,6 @@ export class Store {
   getFileRow(id: string): FileRow | undefined {
     return this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as
       FileRow | undefined
-  }
-
-  /** Existing stored blob with identical content, for dedupe. */
-  findPathBySha(sha256: string): string | undefined {
-    const row = this.db.prepare('SELECT path FROM files WHERE sha256 = ? LIMIT 1').get(sha256) as
-      { path: string } | undefined
-    return row?.path
   }
 
   countAfter(channelId: string, afterSeq: number): number {
