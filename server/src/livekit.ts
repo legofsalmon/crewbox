@@ -169,6 +169,11 @@ export interface StartLiveKitOptions {
    * reach the SFU at 127.0.0.1.
    */
   iface?: string
+  /**
+   * Another crewbox already running, when there is one — see
+   * `reapOrphanLiveKit`, which will not touch that box's SFU.
+   */
+  owner?: number | null
   log: BoxLog
 }
 
@@ -231,9 +236,25 @@ export function unpackLiveKit(
  * served by a process holding the previous run's keys, so tokens minted by
  * the new box are rejected and nobody can talk.
  *
+ * **Only when nothing else is running the box.** The pid file says which
+ * process owns 7880, not whether that owner is finished with it, and there is
+ * one moment when it is very much not: an update launches a new box while the
+ * old one is alive, supervising, and able to put itself back. Reaping there
+ * kills the *supervisor's* SFU, so a rollback returned a box that kept
+ * minting tokens for a process this one had killed and every voice join
+ * failed until somebody restarted it by hand. A box started by hand beside
+ * another is the same picture with a shorter story. So a live owner means
+ * leave it alone; a force-quit box leaves a status file whose pid is dead,
+ * which is exactly the case this function is for.
+ *
  * Returns true if it reaped something, so the caller can say so.
  */
-export async function reapOrphanLiveKit(dir: string, log: BoxLog): Promise<boolean> {
+export async function reapOrphanLiveKit(
+  dir: string,
+  log: BoxLog,
+  /** Another crewbox already running, if there is one. */
+  owner: number | null = null
+): Promise<boolean> {
   const pidPath = join(dir, PID_FILE)
   let pid: number
   try {
@@ -253,8 +274,15 @@ export async function reapOrphanLiveKit(dir: string, log: BoxLog): Promise<boole
     }
   }
 
+  // Before the owner check, so a stale file is always tidied: the update path
+  // stops its own SFU on the way out, which leaves exactly this — a live box
+  // and a pid that is already gone.
   if (!alive()) {
     rmSync(pidPath, { force: true })
+    return false
+  }
+  if (owner !== null) {
+    log.warn(`voice: an SFU is running (pid ${pid}) and box ${owner} still has it — leaving it`)
     return false
   }
 
@@ -394,7 +422,7 @@ export async function startEmbeddedLiveKit(options: StartLiveKitOptions): Promis
   // unpacking first fails with ETXTBSY and voice stays off for good. Clearing
   // it first also frees the port, which the orphan would otherwise hold while
   // answering with the previous run's keys.
-  await reapOrphanLiveKit(join(options.dataDir, 'livekit'), options.log)
+  await reapOrphanLiveKit(join(options.dataDir, 'livekit'), options.log, options.owner ?? null)
 
   let unpacked: { binPath: string; configPath: string }
   try {

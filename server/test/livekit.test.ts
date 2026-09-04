@@ -248,6 +248,40 @@ describe('orphaned SFU from a killed box', () => {
     expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
     expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
   })
+
+  it('will not kill an SFU another running box still owns', async () => {
+    // Mid-update this is the supervisor's SFU. Reaping it meant a box that
+    // rolled back went on minting tokens for a process it had killed, and
+    // every voice join failed until somebody restarted the box by hand.
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    const owned = (await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog))
+      .sfu
+    expect(owned).not.toBeNull()
+    const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+
+    const warnings: string[] = []
+    const reaped = await reapOrphanLiveKit(
+      join(dir, 'livekit'),
+      { info: () => {}, warn: (m) => warnings.push(m) },
+      process.pid
+    )
+    expect(reaped).toBe(false)
+    expect(warnings.join(' ')).toMatch(/still has it/)
+    // Still there, which is the whole point.
+    expect(() => process.kill(pid, 0)).not.toThrow()
+    await owned!.stop()
+  }, 15_000)
+
+  it('still tidies a dead record even with a box running', async () => {
+    // What the update path actually leaves behind: it stops its own SFU
+    // before launching the new box, so the file names a pid that has gone.
+    const dir = tempDir()
+    mkdirSync(join(dir, 'livekit'), { recursive: true })
+    writeFileSync(join(dir, 'livekit', 'livekit.pid'), '2147483646')
+    expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog, process.pid)).toBe(false)
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
 })
 
 describe('probing whatever holds the SFU port', () => {

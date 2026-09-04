@@ -36,6 +36,7 @@ import {
   startEmbeddedLiveKit,
   type EmbeddedLiveKit,
   type SfuFailure,
+  type SpawnOutcome,
 } from './livekit.ts'
 import { preventSleep } from './nosleep.ts'
 import { loadTls } from './tls.ts'
@@ -85,13 +86,16 @@ async function main(): Promise<void> {
   //
   // Only for a packaged box: from source there is no binary to swap, and a
   // marker in a developer's data directory would be somebody else's leftovers.
+  // Another crewbox already running: mid-update this is the process that
+  // launched us and is waiting to see whether we serve, and it still owns
+  // the way back. `readBoxStatus` checks the pid is alive, so a hard power
+  // cut leaves nothing to mistake for one. Read before the recovery below
+  // and before voice, both of which would otherwise take something of its.
+  const runningBox = readBoxStatus(dataDir)
+  const supervisor = runningBox && runningBox.pid !== process.pid ? runningBox.pid : null
+
   if (box) {
     const { recoverInterruptedInstall, sweepOldBinaries } = await import('./update/install.ts')
-    // A status file naming a live pid that is not ours. `readBoxStatus`
-    // already checks the process exists, so a hard power cut leaves nothing
-    // to mistake for a supervisor.
-    const running = readBoxStatus(dataDir)
-    const supervisor = running && running.pid !== process.pid ? running.pid : null
     const outcome = recoverInterruptedInstall(dataDir, APP_VERSION, supervisor)
     if (outcome.action === 'rolled-back') {
       console.warn(
@@ -204,18 +208,41 @@ async function main(): Promise<void> {
   let livekit: { url: string; key: string; secret: string; embedded?: boolean } = config.livekit
   let embedded: EmbeddedLiveKit | null = null
   let voiceFailure: SfuFailure | undefined
+  /**
+   * Start this box's own SFU, when the build carries one.
+   *
+   * A closure rather than a straight call because an update has to be able to
+   * do it again. The SFU holds 7880 and writes a pid file, and the box the
+   * updater launches reaps whatever that file names — which, mid-update, is
+   * the *supervising* process's SFU, still serving. So the release stops it
+   * (there is then nothing to reap, and the port is free for the new box) and
+   * a rollback starts it again. Without that, a box that rolled back kept
+   * minting tokens for an SFU somebody else had killed, and every voice join
+   * failed until a restart by hand.
+   *
+   * The credentials are persisted settings, so a restart gets the same key
+   * and secret and the app's view of voice — fixed at boot — stays true.
+   */
+  let startVoice: ((owner?: number | null) => Promise<SpawnOutcome>) | undefined
   if (box && !process.env.LIVEKIT_URL) {
     if (hasEmbeddedLiveKit()) {
       const creds = livekitCredentials(
         (key) => store.getSetting(key),
         (key, value) => store.setSetting(key, value)
       )
-      const outcome = await startEmbeddedLiveKit({
-        dataDir,
-        ...creds,
-        ...(ifaceUp ? { iface: boot.iface } : {}),
-        log: console,
-      })
+      // `owner` only on the first start: mid-update the supervisor's SFU is
+      // its own and must not be reaped. By the time this is called again the
+      // box has rolled back, that process is this process, and the pid file
+      // names an SFU it stopped itself.
+      startVoice = (owner: number | null = null) =>
+        startEmbeddedLiveKit({
+          dataDir,
+          ...creds,
+          ...(ifaceUp ? { iface: boot.iface } : {}),
+          owner,
+          log: console,
+        })
+      const outcome = await startVoice(supervisor)
       embedded = outcome.sfu
       // Carried into the admin panel: "voice is off" with no reason reads as
       // a build limitation, and the fix for a held port is nothing like the
@@ -451,6 +478,12 @@ async function main(): Promise<void> {
   // not retry EADDRINUSE — so a box that updated would spend the rest of the
   // event with no captive responder and no localhost.
   //
+  // **So is the SFU.** It holds 7880 and a pid file, and the new box reaps
+  // whatever that file names — which mid-update is this process's SFU. See
+  // startVoice: stopping it here means there is nothing to reap and nothing
+  // held, and a rollback gets its voice back rather than minting tokens for a
+  // process somebody else killed.
+  //
   // **It has to end.** A release that never returns leaves the binary already
   // swapped and the box off the air with nothing to roll back to, so the wait
   // is bounded and a timeout is a failure the updater can act on.
@@ -472,6 +505,8 @@ async function main(): Promise<void> {
     closeLoopback = undefined
     await captive?.portal?.close()
     captive = undefined
+    await embedded?.stop()
+    embedded = null
   }
   regainListener = async () => {
     await new Promise<void>((resolve, reject) => {
@@ -484,6 +519,22 @@ async function main(): Promise<void> {
     })
     await openLoopback()
     if (captiveOpts) captive = await startCaptive(captiveOpts)
+    // Only when voice was this box's to run. `livekit.embedded` was decided
+    // at boot and is what the app was built with, so starting an SFU it does
+    // not know about would be worse than leaving voice off.
+    //
+    // The panel is not told the new reason, and does not need to be: it
+    // probes the SFU live on every open, so a rollback that lost voice shows
+    // up there whatever this says. The warning is for whoever has a terminal.
+    if (livekit.embedded && startVoice) {
+      const again = await startVoice()
+      embedded = again.sfu
+      if (!embedded) {
+        app.log.warn(
+          `voice: the SFU did not come back after the rollback (${again.failure ?? 'no reason given'}) — restart the box`
+        )
+      }
+    }
   }
 
   // After listen(), so a lighting network that refuses to open never stops
