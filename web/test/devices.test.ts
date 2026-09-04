@@ -1,4 +1,9 @@
+// @vitest-environment happy-dom
+//
+// canSelectOutput reads navigator and HTMLMediaElement, which is the whole
+// question it answers.
 import { beforeEach, describe, expect, it } from 'vitest'
+import { mixConflictsWithOutputPicker } from '../src/lib/voice-playback.ts'
 import {
   canSelectOutput,
   isIOSFrom,
@@ -54,8 +59,21 @@ describe('resolveDevice (headset unplugged mid-shift)', () => {
 })
 
 describe('canSelectOutput', () => {
-  it('is false without setSinkId support (node / iOS Safari)', () => {
-    expect(canSelectOutput()).toBe(false)
+  it('is false on iOS, where the system owns output routing', () => {
+    // Was "false in node, which has no HTMLMediaElement" — true, but it was
+    // testing the absence of a DOM rather than the rule. With a DOM present
+    // the rule is what decides, so say which rule.
+    const nav = globalThis.navigator as unknown as { userAgent: string }
+    const original = Object.getOwnPropertyDescriptor(nav, 'userAgent')
+    Object.defineProperty(nav, 'userAgent', {
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605',
+      configurable: true,
+    })
+    try {
+      expect(canSelectOutput()).toBe(false)
+    } finally {
+      if (original) Object.defineProperty(nav, 'userAgent', original)
+    }
   })
 })
 
@@ -73,5 +91,54 @@ describe('isIOSFrom', () => {
 
   it('is false for a real desktop Mac (no touch points)', () => {
     expect(isIOSFrom(MAC, 'MacIntel', 0)).toBe(false)
+  })
+})
+
+describe('never offering a picker the mix would break', () => {
+  const withUa = (ua: string, sinkId: boolean, fn: () => void) => {
+    const nav = globalThis.navigator as unknown as { userAgent: string; platform: string }
+    const originalUa = Object.getOwnPropertyDescriptor(nav, 'userAgent')
+    Object.defineProperty(nav, 'userAgent', { value: ua, configurable: true })
+    const had = 'setSinkId' in HTMLMediaElement.prototype
+    if (sinkId && !had) {
+      Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', {
+        value: () => Promise.resolve(),
+        configurable: true,
+      })
+    }
+    try {
+      fn()
+    } finally {
+      if (originalUa) Object.defineProperty(nav, 'userAgent', originalUa)
+      if (sinkId && !had) delete (HTMLMediaElement.prototype as { setSinkId?: unknown }).setSinkId
+    }
+  }
+
+  const SAFARI =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15'
+  const CHROME =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+
+  it('hides the speaker menu on desktop Safari, which mixes through Web Audio', () => {
+    // The hole in the invariant voice-playback.ts calls unreachable: it is
+    // unreachable on iOS because the picker is hidden there, and desktop
+    // Safari both mixes *and*, since Safari 17, reports setSinkId on media
+    // elements. Both were true, and the speaker menu threw when used.
+    withUa(SAFARI, true, () => {
+      expect(canSelectOutput()).toBe(false)
+      expect(
+        mixConflictsWithOutputPicker({
+          ios: false,
+          safari: true,
+          canSelectOutput: canSelectOutput(),
+        })
+      ).toBe(false)
+    })
+  })
+
+  it('still offers it where nothing is mixed', () => {
+    withUa(CHROME, true, () => {
+      expect(canSelectOutput()).toBe(true)
+    })
   })
 })

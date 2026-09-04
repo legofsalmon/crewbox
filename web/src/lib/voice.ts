@@ -74,6 +74,51 @@ function toQuality(q: ConnectionQuality): VoiceQuality {
  * Owns the LiveKit room across channel switches — an intercom stays live
  * while you read other channels. UI state flows out through `publish`.
  */
+/**
+ * One audio receiver's raw inbound-rtp counters.
+ *
+ * `getReceiverStats()` is the SDK's own trimmed object, and it does not
+ * carry `packetsLost` or `packetsReceived` — so the loss figure computed
+ * from it was always exactly zero, on every reading, for every crew member,
+ * and the voice-quality line said "clean" through a show that was breaking
+ * up. The browser's own report has the counters; this reads that and keeps
+ * the SDK's object as the fallback for anything that will not answer.
+ */
+async function inboundAudioSample(track: RemoteAudioTrack): Promise<ReceiverSample | undefined> {
+  const receiver = (track as { receiver?: RTCRtpReceiver }).receiver
+  if (typeof receiver?.getStats === 'function') {
+    try {
+      const report = await receiver.getStats()
+      for (const entry of report.values()) {
+        const stat = entry as RTCStats & Record<string, number | string | undefined>
+        if (stat.type !== 'inbound-rtp' || stat.kind !== 'audio') continue
+        return {
+          timestamp: Number(stat.timestamp),
+          ...(typeof stat.packetsLost === 'number' ? { packetsLost: stat.packetsLost } : {}),
+          ...(typeof stat.packetsReceived === 'number'
+            ? { packetsReceived: stat.packetsReceived }
+            : {}),
+          ...(typeof stat.concealedSamples === 'number'
+            ? { concealedSamples: stat.concealedSamples }
+            : {}),
+          ...(typeof stat.totalSamplesDuration === 'number'
+            ? { totalSamplesDuration: stat.totalSamplesDuration }
+            : {}),
+          ...(typeof stat.jitter === 'number' ? { jitter: stat.jitter } : {}),
+        }
+      }
+    } catch {
+      // Fall through to the SDK's own object.
+    }
+  }
+  if (typeof track.getReceiverStats !== 'function') return undefined
+  try {
+    return (await track.getReceiverStats()) as ReceiverSample | undefined
+  } catch {
+    return undefined
+  }
+}
+
 export class VoiceManager {
   private room: Room | null = null
   private channelId: string | null = null
@@ -119,6 +164,8 @@ export class VoiceManager {
       webAudioMix: shouldMixThroughWebAudio({ ios: isIOS(), safari: isSafari() }),
     })
     this.room = room
+    /** Set once `connect()` has resolved — see the Disconnected handler. */
+    let joined = false
 
     room
       .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
@@ -170,7 +217,13 @@ export class VoiceManager {
         // Only an *unexpected* drop reaches this: `leave()` nulls `this.room`
         // before disconnecting, so a deliberate exit fails this guard and
         // stays silent.
-        if (this.room === room) {
+        //
+        // `joined` is the other half. A *failed* connect also fires this,
+        // with `this.room` still set — so every join against an unreachable
+        // SFU told the crew member they had been dropped off the intercom
+        // they had never been on, on top of the join error they were
+        // already being shown. Two toasts, one of them false.
+        if (this.room === room && joined) {
           this.reset()
           // Being dropped off comms without being told is worse than a failed
           // join. A failed join is at least visibly nothing happening — this
@@ -188,6 +241,7 @@ export class VoiceManager {
           setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS)
         ),
       ])
+      joined = true
       // Deliberately not awaited into the join's failure path. Blocked
       // autoplay is the *normal* first join on iOS, and treating it as a
       // failed join was worse than useless: the crew member was told the
@@ -241,7 +295,11 @@ export class VoiceManager {
       await Promise.race([
         (async () => {
           await room.localParticipant.setMicrophoneEnabled(true)
-          await room.localParticipant.setMicrophoneEnabled(false)
+          // Whatever the crew member is asking for *now*, not a hardcoded
+          // false: the capture takes a moment, and a push-to-talk press
+          // inside that window was undone by this line — the button held
+          // down, the mic shut, and nothing saying so.
+          await room.localParticipant.setMicrophoneEnabled(this.talking)
         })(),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('mic timeout')), CONNECT_TIMEOUT_MS)
@@ -351,6 +409,13 @@ export class VoiceManager {
       // If the chosen device vanished (headset unplugged), fall back loudly.
       for (const kind of ['audioinput', 'audiooutput'] as const) {
         const available = kind === 'audioinput' ? inputs : outputs
+        // An empty list is "this browser will not tell us", not "your
+        // headset is gone". Before the microphone permission is granted,
+        // enumerateDevices returns entries with blank ids that the filter
+        // above drops — so this ran on every join, decided the saved device
+        // had vanished, and erased it. The crew member's chosen headset was
+        // forgotten before they were even asked for permission to use it.
+        if (available.length === 0) continue
         const { fellBack } = resolveDevice(savedDeviceId(kind), available)
         if (fellBack) {
           saveDeviceId(kind, null)
@@ -420,10 +485,10 @@ export class VoiceManager {
         // remote track — and an older client may not carry the stats call at
         // all, which is a missing graph rather than a broken intercom.
         const track = publication.track as RemoteAudioTrack | undefined
-        if (typeof track?.getReceiverStats !== 'function') continue
+        if (!track) continue
         seen.add(publication.trackSid)
         try {
-          const next = (await track.getReceiverStats()) as ReceiverSample | undefined
+          const next = await inboundAudioSample(track)
           if (!next) continue
           const prev = this.qosPrevious.get(publication.trackSid)
           this.qosPrevious.set(publication.trackSid, next)
