@@ -135,8 +135,11 @@ describe('taking a backup', () => {
     // stick, holding half a database — the one directory nobody would
     // question at 3am.
     //
-    // Forced here with a `node` that refuses, so the snapshot step fails
-    // where a full disk would.
+    // Forced here by making the snapshot step refuse, where a full disk
+    // would. Both tools, because the script prefers sqlite3 and falls back
+    // to node: sabotaging only one passes or fails depending on what the
+    // machine running the tests happens to have installed, which is how
+    // this passed here and failed on CI.
     const root = scratch()
     const dataDir = makeBox(root)
     const backupDir = join(root, 'backups')
@@ -144,8 +147,10 @@ describe('taking a backup', () => {
 
     const bin = join(root, 'bin')
     mkdirSync(bin)
-    writeFileSync(join(bin, 'node'), '#!/bin/sh\nexit 1\n')
-    chmodSync(join(bin, 'node'), 0o755)
+    for (const tool of ['sqlite3', 'node']) {
+      writeFileSync(join(bin, tool), '#!/bin/sh\nexit 1\n')
+      chmodSync(join(bin, tool), 0o755)
+    }
 
     const result = run('backup.sh', [], {
       DATA_DIR: dataDir,

@@ -19,7 +19,6 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
-using System.Threading;
 using System.Windows.Forms;
 
 /// <summary>A newer release the box heard about. Absent most of the time.</summary>
@@ -81,12 +80,17 @@ public class CrewboxTray : ApplicationContext
         // throws, which would mean no tray icon at all rather than two.
         // Backslashes and the drive colon go, because a mutex name cannot
         // hold a path separator.
+        //
+        // `System.Threading.Mutex` is written out rather than imported: this
+        // file's poll timer is a `System.Windows.Forms.Timer`, and a `using
+        // System.Threading` makes the bare name `Timer` ambiguous between the
+        // two — which csc refuses, and which is how this first reached CI.
         string key = "CrewboxTray:" + dir.Replace('\\', '_').Replace(':', '_');
-        Mutex only = null;
+        System.Threading.Mutex only = null;
         bool mine = true;
         try
         {
-            only = new Mutex(true, key, out mine);
+            only = new System.Threading.Mutex(true, key, out mine);
         }
         catch (Exception)
         {
