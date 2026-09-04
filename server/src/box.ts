@@ -1,4 +1,13 @@
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -55,18 +64,117 @@ export function seaAsset(key: string): ArrayBuffer | null {
   }
 }
 
-/** Extract the embedded web bundle under dataDir; returns the dist path. */
-export function extractWebDist(dataDir: string): string {
+/** Where extracted web bundles live, one directory per version. */
+export const WEB_DIST_DIR = 'web-dist'
+
+/**
+ * A version turned into a directory name.
+ *
+ * `0.19.0+def5678` is already legal on every filesystem crewbox runs on, so
+ * this is not really about escaping — it is about a version string arriving
+ * from `DEPLOY_VERSION`, which is an environment variable and therefore
+ * whatever somebody put in it. Anything outside the safe set becomes an
+ * underscore, and a name that would not start with a letter or digit gets a
+ * `v`, so `..` cannot address the parent directory.
+ */
+export function webDistName(version: string): string {
+  const safe = version.replace(/[^A-Za-z0-9.+_-]/g, '_')
+  return /^[A-Za-z0-9]/.test(safe) ? safe : `v${safe}`
+}
+
+/** How the embedded bundle is read. A parameter so extraction is testable. */
+export interface WebBundle {
+  manifest(): string[]
+  file(rel: string): ArrayBuffer
+}
+
+function seaBundle(): WebBundle {
   const sea = seaApi()
   if (!sea) throw new Error('extractWebDist called outside the box binary')
-  const manifest = JSON.parse(sea.getAsset('dist-manifest.json', 'utf8') as string) as string[]
-  const root = join(dataDir, 'web-dist')
-  for (const rel of manifest) {
-    const target = join(root, rel)
-    mkdirSync(dirname(target), { recursive: true })
-    writeFileSync(target, Buffer.from(sea.getAsset(`dist/${rel}`) as ArrayBuffer))
+  return {
+    manifest: () => JSON.parse(sea.getAsset('dist-manifest.json', 'utf8') as string) as string[],
+    file: (rel) => sea.getAsset(`dist/${rel}`) as ArrayBuffer,
+  }
+}
+
+/**
+ * Extract the embedded web bundle for one version; returns the dist path.
+ *
+ * **Per version, because two builds share this disk.** An update launches the
+ * new box while the old process is still alive and still able to put itself
+ * back, and `@fastify/static` reads from disk on every request — so a single
+ * shared `web-dist` meant the new box overwrote the client the old one
+ * serves. A rollback then left v0.18.0's server handing out v0.19.0's
+ * JavaScript: an index.html naming assets built against a different API, on
+ * the one path where everything else was carefully reversible. A new box that
+ * ran out of disk halfway through was worse again — half of each build, and
+ * nothing that boots.
+ *
+ * **Present means complete.** Files are written to a `.partial` sibling and
+ * the directory is moved into place only once every one of them has landed,
+ * so an interrupted extraction leaves something to clean up rather than
+ * something to serve. That is also what makes the second boot of a version
+ * free: the directory is already there, and there is nothing to write.
+ */
+export function extractWebDist(
+  dataDir: string,
+  version: string,
+  bundle: WebBundle = seaBundle()
+): string {
+  const root = join(dataDir, WEB_DIST_DIR, webDistName(version))
+  if (existsSync(join(root, 'index.html'))) return root
+
+  const staging = `${root}.partial`
+  rmSync(staging, { recursive: true, force: true })
+  try {
+    for (const rel of bundle.manifest()) {
+      const target = join(staging, rel)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, Buffer.from(bundle.file(rel)))
+    }
+    mkdirSync(dirname(root), { recursive: true })
+    rmSync(root, { recursive: true, force: true })
+    renameSync(staging, root)
+  } catch (err) {
+    // The likeliest reason to be here is a full disk, so leaving what was
+    // written to sit on it until the next start would be a poor way to
+    // report that. Give the space back and let the failure be the failure.
+    rmSync(staging, { recursive: true, force: true })
+    throw err
   }
   return root
+}
+
+/**
+ * Delete every extracted bundle except the one named, and returns what went.
+ *
+ * The caller decides when this is safe, and there is only one moment that it
+ * is: a box starting with no install in flight and nobody supervising it.
+ * While either is true the other version's directory is the client a rollback
+ * would need. Also clears the flat layout boxes built before v0.19.0 left
+ * behind, which is why it removes files as well as directories.
+ */
+export function pruneWebDists(dataDir: string, keep: string): string[] {
+  const root = join(dataDir, WEB_DIST_DIR)
+  const kept = webDistName(keep)
+  const removed: string[] = []
+  let entries: string[]
+  try {
+    entries = readdirSync(root)
+  } catch {
+    return removed
+  }
+  for (const entry of entries) {
+    if (entry === kept) continue
+    try {
+      rmSync(join(root, entry), { recursive: true, force: true })
+      removed.push(entry)
+    } catch {
+      // Locked, or not ours. Stale files beside a working box are clutter,
+      // not a problem; the next start tries again.
+    }
+  }
+  return removed
 }
 
 /**

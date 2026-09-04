@@ -17,6 +17,7 @@ import {
   lanIps,
   clearBoxStatus,
   extractWebDist,
+  pruneWebDists,
   isBox,
   openBrowser,
   portInUse,
@@ -110,6 +111,11 @@ async function main(): Promise<void> {
     sweepOldBinaries(dataDir, process.execPath)
     const { sweepPartials } = await import('./update/download.ts')
     sweepPartials(dataDir)
+    // The extracted web bundles the other builds were serving, on the same
+    // terms: only once this box is the only one running and nothing is
+    // half-installed is the other version's client safe to delete.
+    const { readInFlight } = await import('./update/install.ts')
+    if (supervisor === null && !readInFlight(dataDir)) pruneWebDists(dataDir, APP_VERSION)
   }
 
   // Imported here rather than at the top so `--stop` and `--status` never
@@ -118,7 +124,7 @@ async function main(): Promise<void> {
   const { openDb } = await import('./db.ts')
   const { Store } = await import('./store.ts')
   const { MetricsStore } = await import('./audit/metrics.ts')
-  const webDist = box ? extractWebDist(dataDir) : config.webDist
+  const webDist = box ? extractWebDist(dataDir, APP_VERSION) : config.webDist
 
   const db = openDb(join(dataDir, 'crewbox.db'))
   const store = new Store(db)
