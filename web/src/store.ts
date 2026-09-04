@@ -2,8 +2,10 @@ import { create } from 'zustand'
 import {
   HOME_CHANNEL,
   newId,
+  OUTBOX_FLUSH_GAP_MS,
   PROTOCOL_VERSION,
   type Channel,
+  type ClientMessage,
   type DmxUniverseWire,
   type Message,
   type Incident,
@@ -19,11 +21,13 @@ import {
   unqueueIncident,
   type QueuedIncident,
 } from './modules/incident/model/outbox.ts'
+import { flushOrder, shouldDrop } from './lib/flush.ts'
 import { WsClient } from './lib/ws.ts'
 import * as api from './lib/api.ts'
 import {
   isMentioned,
   notify,
+  summariseMissed,
   playAlert,
   requestNotificationPermission,
   setSoundsEnabled,
@@ -260,6 +264,19 @@ export interface AppState {
 }
 
 let ws: WsClient | null = null
+
+/**
+ * Which outbox flush is the current one.
+ *
+ * A flush is paced over seconds, so a reconnect part-way through would
+ * otherwise start a second one running alongside the first — at twice the
+ * rate, into the flood guard the pacing exists to stay under. Each welcome
+ * takes the next number; a flush stops the moment it is not the newest.
+ */
+let flushGeneration = 0
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
 /**
  * The lighting-network watch this client currently wants, so it can be
  * re-established after a websocket reconnect. The subscription lives on the
@@ -405,6 +422,8 @@ export const useStore = create<AppState>()((set, get) => {
 
   async function handleWelcome(msg: WelcomeMessage): Promise<void> {
     const state = get()
+    /** A welcome that is not this session's first — see the missed alert. */
+    const reconnected = state.hasConnected
 
     // Local read state may be ahead (user read messages while offline).
     const readState: Record<string, number> = { ...msg.readState }
@@ -459,6 +478,32 @@ export const useStore = create<AppState>()((set, get) => {
     // Messages deleted while we were away must leave state and cache too.
     applyDeletions(msg.deletions ?? [])
 
+    // And say so, once, if any of them were for this crew member.
+    //
+    // The chirp lived only on the live `msg` path, so a DM that arrived
+    // while the socket was up rang and one that arrived during an
+    // access-point roam did not. On a site those are the same event from the
+    // sender's side and the second is the one where somebody has been trying
+    // for a while. `reconnected` is what keeps a cold app open quiet: a
+    // phone somebody has just picked up and unlocked does not need telling
+    // what is on its own screen.
+    if (reconnected) {
+      const focused = document.hasFocus() ? (get().activeChannelId ?? undefined) : undefined
+      const alert = summariseMissed({
+        missed: msg.missed,
+        myId: msg.me.id,
+        myName: msg.me.name,
+        channels: get().channels,
+        users: get().users,
+        readState,
+        focusedChannelId: focused,
+      })
+      if (alert) {
+        playAlert()
+        notify(alert.title, alert.body)
+      }
+    }
+
     // Android wrapper: hand the session to the foreground service so the
     // phone buzzes for messages while the app is backgrounded or locked.
     const alerts = nativeAlerts()
@@ -504,21 +549,32 @@ export const useStore = create<AppState>()((set, get) => {
     }
 
     // Flush the outbox: everything unacked goes out again (server dedupes).
-    const outbox = await cache.loadOutbox()
-    for (const entry of outbox) {
-      ws?.send({
-        type: 'send',
-        clientMsgId: entry.clientMsgId,
-        channelId: entry.channelId,
-        body: entry.body,
-        fileId: entry.fileId,
-      })
+    //
+    // Paced, because the box's flood guard counts frames per socket and does
+    // not care that these are a replay: a phone back from a dead spot with
+    // thirty-five queued messages sent all thirty-five at once and the box
+    // refused five of them. The gap comes from the guard's own numbers (see
+    // OUTBOX_FLUSH_GAP_MS) rather than a constant here that could drift away
+    // from it.
+    //
+    // `generation` is what stops two flushes overlapping. A reconnect during
+    // a flush would otherwise run a second one alongside the first, at twice
+    // the rate, which is the thing being avoided.
+    const mine = ++flushGeneration
+    const paced = async (frames: ClientMessage[]): Promise<void> => {
+      for (let i = 0; i < frames.length; i++) {
+        // A drop mid-flush leaves the rest queued, which is where they
+        // belong: the next welcome starts again from the outbox.
+        if (mine !== flushGeneration || get().connection !== 'online') return
+        ws?.send(frames[i]!)
+        if (i < frames.length - 1) await sleep(OUTBOX_FLUSH_GAP_MS)
+      }
     }
 
-    // The show log's own queue: entries typed with no signal, kept in
-    // localStorage so they survive the phone giving up and reloading. The
-    // box dedupes on clientMsgId, so re-sending one it already has is free.
-    for (const entry of queuedIncidents()) ws?.send({ type: 'logIncident', ...entry })
+    const outbox = await cache.loadOutbox()
+    // The show log's own queue goes through the same pacing, because it
+    // shares the same counter — see flushOrder.
+    void paced(flushOrder(outbox, queuedIncidents()))
 
     persistSnapshot()
     void cache.prune()
@@ -597,6 +653,14 @@ export const useStore = create<AppState>()((set, get) => {
         markRead(msg.message.channelId, msg.message.seq)
         break
       case 'rejected': {
+        // `retry` means the box could not take it *now* — only the flood
+        // guard says that. Deleting those was how a phone replaying an
+        // outbox after a dead spot lost everything past the thirtieth, on
+        // the screen that had just promised nothing would be. Keep it
+        // queued, keep it on screen as pending, and say nothing: the flush
+        // is paced now, so the next one gets through and a toast per message
+        // would be thirty-five toasts about a delay nobody chose.
+        if (!shouldDrop(msg)) break
         const pending = { ...get().pending }
         for (const channelId of Object.keys(pending)) {
           pending[channelId] = pending[channelId].filter((p) => p.clientMsgId !== msg.clientMsgId)

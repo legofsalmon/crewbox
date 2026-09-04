@@ -4,7 +4,14 @@ import { join as pathJoin } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { newId, type ServerMessage, type WelcomeMessage } from '@crewbox/shared'
+import {
+  newId,
+  OUTBOX_FLUSH_GAP_MS,
+  SEND_LIMIT,
+  SEND_WINDOW_MS,
+  type ServerMessage,
+  type WelcomeMessage,
+} from '@crewbox/shared'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
 import { isPrivateIp, isRemoteConnection } from '../src/hub.ts'
@@ -1374,5 +1381,93 @@ describe('onboarding & runtime settings', () => {
     // The download is named after the real file — the version survives onto
     // the phone — while the URL never changes, so posters don't go stale.
     expect(res.headers.get('content-disposition')).toBe('attachment; filename="crewbox-v9.9.9.apk"')
+  })
+})
+
+/**
+ * The outbox a phone brings back from a dead spot.
+ *
+ * The flood guard exists to stop one authenticated socket fanning out
+ * unbounded traffic, and thirty messages in ten seconds is implausibly fast
+ * for a human. A phone flushing an outbox is not a human. It came back from
+ * a dead spot with everything the crew member had typed, sent it in one go,
+ * and every frame past the thirtieth was refused — by a limit that has
+ * nothing to say about whether the message was any good.
+ *
+ * The client then deleted each rejection from IndexedDB, so those messages
+ * were gone, on the screen that had promised "Nothing is lost while this
+ * lasts". `retry` is what tells it the difference.
+ */
+describe('replaying more than the flood guard allows', () => {
+  const replay = async (count: number) => {
+    const token = await join('Dead Spot')
+    const { client, welcome } = await connect(token)
+    const channelId = welcome.channels[0]!.id
+    const ids = Array.from({ length: count }, () => newId())
+    for (const clientMsgId of ids) {
+      client.send({ type: 'send', clientMsgId, channelId, body: `queued ${clientMsgId}` })
+    }
+    return { client, ids }
+  }
+
+  it('refuses the ones past the limit, as it always did', async () => {
+    const { client } = await replay(SEND_LIMIT + 5)
+    await client.waitFor((m): m is ServerMessage => m.type === 'rejected')
+    const rejected = client.received.filter((m) => m.type === 'rejected')
+    expect(rejected.length).toBeGreaterThan(0)
+  })
+
+  it('marks every one of them retryable, so nothing is thrown away', async () => {
+    // The whole fix in one assertion: the client keeps what carries `retry`.
+    const { client } = await replay(SEND_LIMIT + 5)
+    await client.waitFor((m): m is ServerMessage => m.type === 'rejected')
+    await new Promise((r) => setTimeout(r, 100))
+    const rejected = client.received.filter(
+      (m): m is ServerMessage & { retry?: true } => m.type === 'rejected'
+    )
+    expect(rejected.length).toBe(5)
+    for (const r of rejected) expect(r.retry).toBe(true)
+  })
+
+  it('still takes the ones inside the limit', async () => {
+    const { client, ids } = await replay(SEND_LIMIT + 5)
+    await client.waitFor((m): m is ServerMessage => m.type === 'rejected')
+    await new Promise((r) => setTimeout(r, 100))
+    const acked = client.received.filter((m) => m.type === 'ack')
+    expect(acked.length).toBe(SEND_LIMIT)
+    // And the rejected ones are the tail, not an arbitrary five.
+    const rejectedIds = new Set(
+      client.received.filter((m) => m.type === 'rejected').map((m) => m.clientMsgId)
+    )
+    expect([...rejectedIds]).toEqual(ids.slice(SEND_LIMIT))
+  })
+
+  it('does not mark a real refusal retryable', async () => {
+    // A message to a channel that does not exist is a fact about the
+    // message: waiting changes nothing, and keeping it queued for ever would
+    // be worse than dropping it. Only the flood guard is temporary.
+    const token = await join('No Such Channel')
+    const { client } = await connect(token)
+    client.send({
+      type: 'send',
+      clientMsgId: newId(),
+      channelId: newId(),
+      body: 'into the void',
+    })
+    const rejected = await client.waitFor(
+      (m): m is ServerMessage & { retry?: true } => m.type === 'rejected'
+    )
+    expect(rejected.reason).toContain('channel not found')
+    expect(rejected.retry).toBeUndefined()
+  })
+
+  it('paces a replay under the limit, given the gap the client uses', () => {
+    // The client's gap is derived from these numbers rather than guessed, so
+    // this is the arithmetic that keeps them honest: a full window of
+    // replayed frames has to fit inside the allowance with headroom for the
+    // crew member typing while their phone catches up.
+    const inOneWindow = Math.floor(SEND_WINDOW_MS / OUTBOX_FLUSH_GAP_MS)
+    expect(inOneWindow).toBeLessThan(SEND_LIMIT)
+    expect(SEND_LIMIT - inOneWindow).toBeGreaterThanOrEqual(10)
   })
 })

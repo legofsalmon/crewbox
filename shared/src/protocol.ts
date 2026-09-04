@@ -10,6 +10,27 @@ import {
 export const MAX_MESSAGE_LENGTH = 4000
 
 /**
+ * Max `send` frames one socket may emit per window before being throttled.
+ *
+ * Shared so the client can pace a reconnect replay under it rather than
+ * discovering it the hard way. A human hitting thirty messages in ten
+ * seconds is already implausibly fast; a phone flushing an outbox is not a
+ * human, and it was being judged as one.
+ */
+export const SEND_LIMIT = 30
+export const SEND_WINDOW_MS = 10_000
+
+/**
+ * Gap between replayed outbox entries on reconnect.
+ *
+ * Two thirds of the limit, not all of it: the crew member whose phone is
+ * reconnecting is very often typing while it happens, and their live
+ * messages share this socket's allowance. Leaving ten sends of headroom is
+ * what stops the replay stealing the message somebody is writing now.
+ */
+export const OUTBOX_FLUSH_GAP_MS = Math.ceil(SEND_WINDOW_MS / (SEND_LIMIT * (2 / 3)))
+
+/**
  * Wire-protocol generation. Bump on breaking changes to the shapes in this
  * file; a client that sees a different value in `welcome` prompts a reload
  * (server and web bundle deploy in lockstep, so reloading converges).
@@ -233,11 +254,31 @@ export interface AckMessage {
   message: Message
 }
 
-/** Permanent rejection of a send — the client should drop it from its outbox. */
+/** Rejection of a send. Permanent unless `retry` says otherwise. */
 export interface RejectedMessage {
   type: 'rejected'
   clientMsgId: string
   reason: string
+  /**
+   * The box could not take it *now*, and the client should keep it.
+   *
+   * Only the flood guard sets this, and only it should: everything else that
+   * rejects a send is a fact about the message — too long, no such channel,
+   * a channel that has been retired — and no amount of waiting changes any of
+   * them, so dropping those is right.
+   *
+   * The guard is different, and the difference cost real messages. A phone
+   * that has been out of signal comes back with an outbox, replays it in one
+   * go, and the thirty-first frame is refused — by a limit that exists to
+   * stop one socket fanning out unbounded traffic, not to say the message
+   * was bad. The client deleted every rejection from IndexedDB, so a crew
+   * member who typed thirty-five messages in a dead spot got thirty, and the
+   * screen that had promised "nothing is lost while this lasts" was wrong.
+   *
+   * Additive: a box that does not send it, and a client that does not read
+   * it, both behave exactly as before. No PROTOCOL_VERSION bump.
+   */
+  retry?: true
 }
 
 export interface PresenceMessage {

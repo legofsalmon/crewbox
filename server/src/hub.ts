@@ -3,6 +3,8 @@ import type { WebSocket, WebSocketServer } from 'ws'
 import {
   clientMessageSchema,
   PROTOCOL_VERSION,
+  SEND_LIMIT,
+  SEND_WINDOW_MS,
   type Channel,
   type ClientMessage,
   type DmxUniverseWire,
@@ -45,10 +47,6 @@ interface Conn {
   /** Cheap fingerprint of the last state message, to avoid resending it. */
   dmxSummary?: string
 }
-
-/** Max `send` messages one socket may emit per window before being throttled. */
-const SEND_LIMIT = 30
-const SEND_WINDOW_MS = 10_000
 
 /**
  * How far from the box's clock a show-log entry's time may be.
@@ -310,10 +308,15 @@ export class Hub {
         const now = Date.now()
         conn.sends = conn.sends.filter((t) => now - t < SEND_WINDOW_MS)
         if (conn.sends.length >= SEND_LIMIT) {
+          // `retry`, because this is the box saying "not now" rather than
+          // anything about the message. Without it the client deleted the
+          // entry, and a phone replaying an outbox after a dead spot lost
+          // everything past the thirtieth. See RejectedMessage.
           this.send(conn.ws, {
             type: 'rejected',
             clientMsgId: msg.clientMsgId,
             reason: 'slow down — too many messages',
+            retry: true,
           })
           break
         }
@@ -387,6 +390,7 @@ export class Hub {
             type: 'rejected',
             clientMsgId: msg.clientMsgId,
             reason: 'slow down — too many entries',
+            retry: true,
           })
           break
         }

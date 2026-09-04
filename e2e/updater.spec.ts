@@ -55,7 +55,12 @@ test('the tray link opens the panel and then gets out of the address bar', async
 
   // And the parameter is gone, so a reload does not reopen a panel somebody
   // deliberately closed.
-  await expect(admin).toHaveURL(/\/$/)
+  //
+  // Asserted as "no ?admin" rather than "the URL is exactly /": the welcome
+  // navigates to the landing channel a moment later, so racing that was a
+  // flake that only appeared under load — and the URL being `/c/<id>` is not
+  // a failure of anything this test is about.
+  await expect(admin).not.toHaveURL(/[?&]admin\b/)
 
   await admin.context().close()
 })
