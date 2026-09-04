@@ -20,7 +20,20 @@ export const isoToDisplay = (iso: string): string => {
   return `${m[3]}/${m[2]}/${m[1]}`
 }
 
-/** DD/MM/YYYY → YYYY-MM-DD, or null if the input isn't a valid date. */
+/**
+ * DD/MM/YYYY → YYYY-MM-DD, or null if the input isn't a valid date.
+ *
+ * "Valid" means the calendar's answer, not a range check: 31 and 12 both pass
+ * a range check, and 31/02 and 31/04 are not days. A sheet dated 2026-02-31
+ * matches no act on the timetable and never will, so the grid comes up empty
+ * with nothing anywhere saying why — the same failure the join key has every
+ * other way of producing.
+ *
+ * The round-trip through UTC is the check: `Date.UTC` rolls an overflowing
+ * day into the next month, so a date that comes back with the month it went
+ * in with is a date that exists. UTC, not local, because the arithmetic must
+ * not land on a clock change.
+ */
 export const displayToIso = (display: string): string | null => {
   const m = DISPLAY_RE.exec(display.trim())
   if (!m) return null
@@ -28,5 +41,9 @@ export const displayToIso = (display: string): string | null => {
   const month = Number(m[2])
   const year = Number(m[3])
   if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900) return null
+  const at = new Date(Date.UTC(year, month - 1, day))
+  if (at.getUTCFullYear() !== year || at.getUTCMonth() !== month - 1 || at.getUTCDate() !== day) {
+    return null
+  }
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }

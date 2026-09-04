@@ -59,9 +59,27 @@ function findLayout(rows: string[][]): Layout | null {
   return null
 }
 
-/** Is this the row of act names, rather than the set times or the spec line? */
+/**
+ * "19:00 - 20:00" — the only shape the parse below can actually read.
+ *
+ * Shared with `readActHeaders` on purpose: a row classified as set times by
+ * one rule and then parsed by a stricter one is a row whose times are
+ * silently dropped, and whose act names go with them.
+ */
+const CLOCK_RANGE = /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
+
+/**
+ * Is this the row of set times, rather than the act names or the spec line?
+ *
+ * `\d\s*[-–]\s*\d` was the test, which is any digit, a dash, any digit —
+ * so an act called "Sunset 6-8", a slot named "3-11" or a DJ billed "1-800"
+ * classified its own row as the set times. The walk up then took the row
+ * *above* as the names, and every act on the sheet came out named after
+ * whatever was there, or as "Act 1", "Act 2", "Act 3". The whole running
+ * order, from one band with a number in its name.
+ */
 const looksLikeTimes = (cell: string): boolean =>
-  norm(cell).includes('startend') || /\d\s*[-–]\s*\d/.test(cell)
+  norm(cell).includes('startend') || CLOCK_RANGE.test(cell)
 
 const looksLikeSpec = (cell: string): boolean => norm(cell).startsWith('spec')
 
@@ -109,7 +127,7 @@ function readActHeaders(
   const acts = layout.groups.map((c, i) => {
     const raw = (timesRow?.[c + 1] ?? '').trim()
     // "19:00 - 20:00" is a set time; "Start - End" is the empty template.
-    const times = /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/.exec(raw)
+    const times = CLOCK_RANGE.exec(raw)
     const spec = (specRow?.[c + 1] ?? '').trim()
     return {
       name: (nameRow?.[c + 1] ?? '').trim() || `Act ${i + 1}`,

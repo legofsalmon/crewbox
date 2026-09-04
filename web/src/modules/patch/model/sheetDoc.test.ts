@@ -34,15 +34,25 @@ import { addAct, snapshotTimetable } from '../../../shell/timetable/model.ts'
 const newSheet = () => {
   const doc = new Y.Doc()
   const events = new Y.Doc()
-  initSheet(doc, events, {
+  initSheet(doc, {
     title: 'Test Show',
     date: '2026-07-23',
     now: '2026-07-23T10:00:00.000Z',
   })
+  // A sheet no longer seeds an act — the running order is the whole event's
+  // (see `initSheet`) — so a test that needs a column puts one there itself,
+  // which is what the lineup does.
+  addAct(events, {
+    name: 'Act 1',
+    stage: 'Test Show',
+    date: '2026-07-23',
+    start: '19:00',
+    end: '20:00',
+  })
   return { doc, events }
 }
 
-/** The first act `initSheet` put on the running order. */
+/** The act these tests put on the running order for the sheet to show. */
 const firstAct = (events: Y.Doc) => snapshotTimetable(events).acts[0]!.id
 
 /** Exchange updates both ways so two docs converge. */
@@ -64,18 +74,29 @@ describe('initSheet', () => {
     expect(snap.extras).toEqual({})
   })
 
-  it('puts the sheet first act on the running order, under the sheet stage', () => {
-    // A sheet with no acts is a grid with no columns, and the first thing
-    // anyone does with a new sheet is patch somebody.
-    const { events } = newSheet()
-    const [act] = snapshotTimetable(events).acts
-    expect(act?.name).toBe('Act 1')
-    expect(act?.start).toBe('19:00')
-    // The stage defaults to the title, because the stage is how the sheet
-    // finds its acts again — sharing a blank one with every other sheet on
-    // the box would put everybody else's acts in this grid.
-    expect(act?.stage).toBe('Test Show')
-    expect(act?.date).toBe('2026-07-23')
+  it('writes nothing to the running order', () => {
+    /**
+     * It used to seed an "Act 1", on the reasoning that a sheet with no acts
+     * is a grid with no columns. But the running order is the whole event's —
+     * the schedule module reads it, so does the countdown in every crew
+     * member's sidebar, so does the production desk over the control API — so
+     * making a patch sheet was adding a band called "Act 1" to the festival,
+     * on a stage nobody had booked, in front of everyone. Renaming the stage
+     * then dragged the placeholder onto a real one, and deleting the sheet
+     * left it there for good: the act was never the sheet's to remove.
+     */
+    const doc = new Y.Doc()
+    const events = new Y.Doc()
+    initSheet(doc, { title: 'Second Stage', date: '2026-07-23' })
+    expect(snapshotTimetable(events).acts).toEqual([])
+  })
+
+  it('still records the stage, which is how the sheet finds its acts', () => {
+    // The stage defaults to the title. Sharing a blank one with every other
+    // sheet on the box would put everybody else's acts in this grid.
+    const doc = new Y.Doc()
+    initSheet(doc, { title: 'Second Stage', date: '2026-07-23' })
+    expect(snapshotSheet(doc).meta.stage).toBe('Second Stage')
   })
 })
 
@@ -141,9 +162,9 @@ describe('what a sheet keeps about an act', () => {
     const audio = new Y.Doc()
     const lighting = new Y.Doc()
     const events = new Y.Doc()
-    initSheet(audio, events, { title: 'Main Audio' })
-    initSheet(lighting, events, { title: 'Main LX' })
-    const act = firstAct(events)
+    initSheet(audio, { title: 'Main Audio' })
+    initSheet(lighting, { title: 'Main LX' })
+    const act = addAct(events, { name: 'The Band', stage: 'Main Audio' })
 
     setActExtra(audio, act, 'spec', '24 inputs')
     setActExtra(lighting, act, 'spec', 'no strobes')
@@ -305,6 +326,29 @@ describe('copyPatchesFromAct', () => {
     const after = snapshotSheet(doc)
     expect(after.patches[patchKey(target, channelA)].input).toBe('Vocals')
     expect(after.patches[patchKey(target, channelB)].micDi).toBe('SM58')
+  })
+
+  it('clears channels the source leaves empty, rather than merging', () => {
+    // The button says "copy from the act before", and what an engineer means
+    // by that is "this act is on the same rig". Skipping the empty channels
+    // left a support band's four-channel patch sitting on top of the
+    // headliner's thirty-six, which looks like a rig nobody ever patched.
+    const { doc, events } = newSheet()
+    const snap = snapshotSheet(doc)
+    const source = firstAct(events)
+    const target = addAct(events, { name: 'Headliner' })
+    const channelA = snap.channels[0].id
+    const channelB = snap.channels[1].id
+
+    setPatchField(doc, target, channelA, 'input', 'Kick')
+    setPatchField(doc, target, channelB, 'input', 'Snare')
+    // The source has one channel patched and nothing on the other.
+    setPatchField(doc, source, channelA, 'input', 'Vocals')
+
+    copyPatchesFromAct(doc, source, target)
+    const after = snapshotSheet(doc)
+    expect(after.patches[patchKey(target, channelA)].input).toBe('Vocals')
+    expect(after.patches[patchKey(target, channelB)]).toBeUndefined()
   })
 })
 

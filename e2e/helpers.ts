@@ -39,6 +39,24 @@ export const createSheet = async (page: Page, name: string) => {
   await page.locator('#new-sheet-name').fill(name)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page.locator('table')).toBeVisible()
+  // A new sheet has no columns. It used to seed an "Act 1" onto the event's
+  // running order, which put a band nobody had booked in front of every
+  // department on the box — so the act comes from the lineup now, the way a
+  // real one does. Named, because the grid's cells are labelled by act.
+  await addAct(page, 'Act 1')
+}
+
+/** Put an act on the running order from the sheet's own Lineup popover. */
+export const addAct = async (page: Page, name: string) => {
+  // Exact: the empty grid's own prompt reads "add one in the lineup".
+  await page.getByRole('button', { name: 'Lineup', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Lineup' })).toBeVisible()
+  await page.getByRole('button', { name: '+ Add Act' }).click()
+  const field = page.getByLabel('Act name').last()
+  await field.fill(name)
+  await field.blur()
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByRole('dialog', { name: 'Lineup' })).toBeHidden()
 }
 
 export const openSheetByName = async (page: Page, name: string) => {

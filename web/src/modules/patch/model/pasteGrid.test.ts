@@ -9,12 +9,13 @@ import {
   type PasteColumn,
 } from './sheetDoc'
 import { PATCH_FIELDS, patchKey } from './types'
-import { snapshotTimetable } from '../../../shell/timetable/model.ts'
+import { addAct, snapshotTimetable } from '../../../shell/timetable/model.ts'
 
 const newSheet = (channelCount = 4) => {
   const doc = new Y.Doc()
   const events = new Y.Doc()
-  initSheet(doc, events, { title: 'Paste', date: '2026-07-24', channelCount })
+  initSheet(doc, { title: 'Paste', date: '2026-07-24', channelCount })
+  addAct(events, { name: 'Act 1', stage: 'Paste', date: '2026-07-24' })
   return { doc, act: snapshotTimetable(events).acts[0]!.id }
 }
 

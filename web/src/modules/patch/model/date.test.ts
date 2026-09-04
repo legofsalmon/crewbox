@@ -35,4 +35,20 @@ describe('displayToIso', () => {
     expect(displayToIso('2026-07-23')).toBeNull()
     expect(displayToIso('hello')).toBeNull()
   })
+
+  it('rejects days that are in range but not in the month', () => {
+    // 31 and 12 both pass a range check. The date is a join key against the
+    // timetable, so a sheet dated 2026-02-31 matches no act and never will —
+    // the grid simply comes up empty with nothing saying why.
+    expect(displayToIso('31/02/2026')).toBeNull()
+    expect(displayToIso('31/04/2026')).toBeNull()
+    expect(displayToIso('30/02/2026')).toBeNull()
+  })
+
+  it('knows which Februaries have a 29th', () => {
+    expect(displayToIso('29/02/2024')).toBe('2024-02-29')
+    expect(displayToIso('29/02/2026')).toBeNull()
+    // 2100 is not a leap year; a range check and a naive %4 both say it is.
+    expect(displayToIso('29/02/2100')).toBeNull()
+  })
 })

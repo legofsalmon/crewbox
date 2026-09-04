@@ -77,16 +77,23 @@ export default function SheetSelector({
         return
       }
       const title = file.name.replace(/\.csv$/i, '').trim() || 'Imported Sheet'
-      const { sheetId } = createSheetFromImport(title, data)
+      const { sheetId, report } = createSheetFromImport(title, data)
       const summary = [`${data.channels.length} channels, ${data.acts.length} act(s)`]
       if (skippedColumns.length > 0) {
         summary.push(`skipped columns: ${skippedColumns.join(', ')}`)
+      }
+      // A file with "Changeover" twice, or a band playing an early and a late
+      // set, gets a column each — which is right, and is not what somebody
+      // scanning the running order for a name they typed once expects.
+      if (report.duplicateActs.length > 0) {
+        summary.push(`kept separate columns for repeated names: ${report.duplicateActs.join(', ')}`)
       }
       // A sheet whose changeovers disagree with its own set times still
       // imports — it is the crew's sheet and both numbers are theirs. Saying
       // so at the moment they open it is the whole value.
       summary.push(...(warnings ?? []))
-      const off = skippedColumns.length > 0 || (warnings?.length ?? 0) > 0
+      const off =
+        skippedColumns.length > 0 || (warnings?.length ?? 0) > 0 || report.duplicateActs.length > 0
       addToast('Imported', summary.join(' · '), off ? 'warning' : 'success')
       onOpen(sheetId)
     } catch (error) {

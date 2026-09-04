@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { addAct } from './helpers'
 
 /**
  * Contrast guards for both themes.
@@ -116,7 +117,12 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(page.locator('table')).toBeVisible()
 
-    expect(await textContrast(page, 'th:has-text("Act 1")')).toBeGreaterThan(4.5)
+    // A new sheet books nothing on the running order, so the grid has no
+    // columns until somebody adds an act — and the act header is what this
+    // is checking.
+    await addAct(page, 'Headliner')
+
+    expect(await textContrast(page, 'th:has-text("Headliner")')).toBeGreaterThan(4.5)
     expect(await textContrast(page, 'th:has-text("CH")')).toBeGreaterThan(4.5)
 
     await context.close()

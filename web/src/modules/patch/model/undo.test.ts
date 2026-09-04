@@ -10,16 +10,17 @@ import {
   snapshotSheet,
 } from './sheetDoc'
 import { patchKey } from './types'
-import { snapshotTimetable } from '../../../shell/timetable/model.ts'
+import { addAct, snapshotTimetable } from '../../../shell/timetable/model.ts'
 
 const newSheet = () => {
   const doc = new Y.Doc()
   const events = new Y.Doc()
-  initSheet(doc, events, {
+  initSheet(doc, {
     title: 'Undo Show',
     date: '2026-07-24',
     now: '2026-07-24T10:00:00.000Z',
   })
+  addAct(events, { name: 'Act 1', stage: 'Undo Show', date: '2026-07-24' })
   return { doc, act: snapshotTimetable(events).acts[0]!.id }
 }
 

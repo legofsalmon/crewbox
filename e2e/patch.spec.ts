@@ -26,6 +26,49 @@ test('sheet edits persist across reload and the URL deep-links the sheet', async
   await expect(cell(page, 'Act 1', '2', 'Description')).toHaveValue('Snare top')
 })
 
+/**
+ * A new sheet used to book a band.
+ *
+ * It seeded an "Act 1" onto the event's running order, which is not the
+ * sheet's document — it is the whole festival's, read by the schedule
+ * module, by the countdown in every crew member's sidebar and by the
+ * production desk over the control API. So making a patch sheet put a band
+ * nobody had booked on a stage nobody had booked, in front of everyone;
+ * renaming the stage afterwards dragged the placeholder onto a real one; and
+ * deleting the sheet left it there for good, because the act was never the
+ * sheet's to remove.
+ */
+test('a new sheet books nothing on the running order', async ({ browser }) => {
+  const page = await newDevice(browser)
+  await openPatch(page)
+  const name = uniqueName('Empty Fest')
+
+  // Deliberately not the `createSheet` helper: that adds an act, which is
+  // the thing under test.
+  await page.getByRole('button', { name: '+ New Sheet' }).click()
+  await page.locator('#new-sheet-name').fill(name)
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.locator('table')).toBeVisible()
+
+  // The grid says so, and names both ways out.
+  await expect(page.getByText(`Nothing is on ${name} yet`)).toBeVisible()
+
+  // And the running order agrees, which is the half that used to be wrong.
+  await page.getByRole('button', { name: 'Lineup', exact: true }).click()
+  await expect(page.getByText(`Nothing on ${name}`)).toBeVisible()
+  await expect(page.getByLabel('Act name')).toHaveCount(0)
+
+  // Adding one is one click, and then the grid has its column.
+  await page.getByRole('button', { name: '+ Add Act' }).click()
+  const field = page.getByLabel('Act name')
+  await field.fill('The Harbour Lights')
+  await field.blur()
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(cell(page, 'The Harbour Lights', '1', 'Input')).toBeVisible()
+
+  await page.context().close()
+})
+
 test('two devices sync a sheet through the box, with crew identity presence', async ({
   browser,
 }) => {

