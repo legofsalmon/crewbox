@@ -443,6 +443,25 @@ ul {
   text-align: center;
 }
 
+/* A pane with no module in it still needs the drawer button, in the same
+   place every module's header puts it — see EmptyPane in App.tsx. */
+.empty-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 44px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+
 .update-pill {
   display: flex;
   align-items: center;
@@ -933,6 +952,14 @@ ul {
   position: relative;
   display: flex;
   flex-direction: column;
+  /* This scroller anchors itself when history is prepended above the
+     viewport (see the prevHeightRef effect in MessageList.tsx), because
+     Safari has no scroll anchoring and every phone on an iOS lock-up is a
+     Safari. Chromium and Firefox *do* have it, and were applying their
+     adjustment on top of ours: scrolling up to read the morning's traffic
+     jumped a page every time more of it loaded, on the two engines the
+     Android app and every laptop use. One anchoring, ours, everywhere. */
+  overflow-anchor: none;
 }
 
 .message-inner {

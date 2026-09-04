@@ -84,6 +84,38 @@ test('every block type parses', () => {
   assert.equal(blocks[6].kind, 'note')
 })
 
+test('a bullet wrapping onto a line that starts with a number stays one item', () => {
+  // Two real pages broke on this. The continuation rule refused any line
+  // beginning with a digit, so the wrap became a paragraph of its own — the
+  // list ended early and the `**` the item had opened was left unclosed,
+  // which put literal asterisks on the page.
+  const blocks = parseMarkdown(
+    [
+      '- **"Live — 12 receiving · 1 universe not heard, since',
+      '  18:42"** — the working state.',
+      '- Your connection ("Online ·',
+      '  42 ms"), and the buttons beside it.',
+    ].join('\n')
+  )
+  assert.deepEqual(
+    blocks.map((b) => b.type),
+    ['list']
+  )
+  assert.equal(blocks[0].items.length, 2)
+  assert.match(blocks[0].items[0].text, /18:42"\*\* — the working state\./)
+  assert.match(blocks[0].items[1].text, /42 ms"\), and the buttons/)
+})
+
+test('an indented list marker is still a nested item, not a continuation', () => {
+  // The other half of the same rule: `- ` and `1. ` under a bullet nest.
+  const blocks = parseMarkdown(['- Outer', '  - Nested', '  1. Also nested'].join('\n'))
+  assert.equal(blocks[0].items.length, 3)
+  assert.deepEqual(
+    blocks[0].items.map((item) => item.depth),
+    [0, 1, 1]
+  )
+})
+
 test('unsupported syntax is a build error, not a passthrough', () => {
   assert.throws(() => parseMarkdown('##### too deep'), /#### only/)
   assert.throws(() => parseMarkdown('```\nunclosed'), /unclosed code fence/)

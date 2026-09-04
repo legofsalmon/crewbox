@@ -1,7 +1,13 @@
 @use '../styles/tokens' as *;
 
 .app {
-  height: 100vh;
+  /* Every other full-height surface in the app is driven from the *visible*
+     viewport (see web/src/lib/viewport.ts). This one was 100vh, which on a
+     phone means the viewport as it would be with the browser chrome hidden:
+     the sheet ran under the address bar, and with a keyboard up the cell
+     being typed into could be off the bottom of the screen entirely. */
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
   background: $color-surface-alt;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useStore } from './store.ts'
 import { guardStrayFileDrops } from './lib/useFileDrop.ts'
 import Join from './components/Join.tsx'
@@ -15,6 +15,7 @@ import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import ConnectionHelp from './components/ConnectionHelp.tsx'
 import { connectionScreen, STUCK_AFTER_MS } from './lib/connscreen.ts'
+import DrawerButton from './shell/DrawerButton.tsx'
 import { registerShortcut } from './shell/keys.ts'
 import { allModules } from './shell/registry.ts'
 import { enabledModules } from './shell/modules.ts'
@@ -58,6 +59,26 @@ export default function App() {
   return <Shell />
 }
 
+/**
+ * A pane with nothing in it, and a way out of it.
+ *
+ * The way out is the point. Navigating to a module closes the drawer, so
+ * these two panes — the only ones in the app that are not a module's own
+ * view — stranded a phone user inside them: no header, no drawer button,
+ * and the browser back button is not a UI. A deep link to a module the box
+ * has switched off was a dead end you had to reload out of.
+ */
+function EmptyPane({ children }: { children: ReactNode }) {
+  return (
+    <div className="empty-pane">
+      <header className="empty-pane-head">
+        <DrawerButton />
+      </header>
+      <div className="empty-state">{children}</div>
+    </div>
+  )
+}
+
 /** The main pane: an active module's view, else chat's channel view. */
 function Main() {
   const activeChannelId = useStore((s) => s.activeChannelId)
@@ -68,10 +89,14 @@ function Main() {
   if (activeModuleId) {
     const module = enabledModules(allModules, configModules).find((m) => m.id === activeModuleId)
     if (module?.Main) return <module.Main subpath={activeModuleSubpath} />
-    return <div className="empty-state">This module isn’t available on this server</div>
+    return (
+      <EmptyPane>
+        This module isn’t available on this server. Open the menu to go back to chat.
+      </EmptyPane>
+    )
   }
   if (activeChannelId) return <ChannelView channelId={activeChannelId} />
-  return <div className="empty-state">Pick a channel to start talking</div>
+  return <EmptyPane>Pick a channel to start talking</EmptyPane>
 }
 
 function Shell() {

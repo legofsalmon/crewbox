@@ -121,6 +121,17 @@ test('a phone can always get back to the sidebar from inside a module', async ({
   await page.getByRole('button', { name: '#general' }).click()
   await expect(page.getByPlaceholder(/Message/)).toBeVisible()
 
+  // And the one pane that is not a module's own view: a deep link to
+  // something this box has switched off, or a build that never had it. It
+  // had no header at all, so a phone landed in a dead end and had to be
+  // reloaded out of.
+  await page.goto('/m/no-such-module')
+  await expect(page.getByText(/isn.t available on this server/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open channels' })).toBeVisible()
+  await page.getByRole('button', { name: 'Open channels' }).click()
+  await page.getByRole('button', { name: '#general' }).click()
+  await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
   await context.close()
 })
 

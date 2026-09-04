@@ -167,7 +167,14 @@ export function parseMarkdown(body, name = 'page') {
         items.push({ depth, text: m[3] })
         i++
         // A wrapped continuation line (indented, no marker) joins the item.
-        while (i < lines.length && /^\s{2,}(?![-\d])\S/.test(lines[i])) {
+        //
+        // "No marker" means an actual list marker — `- ` or `1. ` — and not,
+        // as it used to, any line starting with a digit. A bullet wrapping
+        // onto a line that began with a number ("18:42\"** — the working
+        // state") was left behind as a paragraph of its own, which broke the
+        // list *and* stranded the `**` the item had opened, so the asterisks
+        // came out as text on the page.
+        while (i < lines.length && /^\s{2,}(?!-\s|\d+\.\s)\S/.test(lines[i])) {
           items[items.length - 1].text += ' ' + lines[i].trim()
           i++
         }
