@@ -51,6 +51,11 @@ export interface CollectorSources {
 export interface CollectorOptions {
   now?: () => number
   sampleMs?: number
+  /**
+   * Where to say that sampling has stopped working. Said once, not once a
+   * minute — see `sample`.
+   */
+  log?: (message: string) => void
 }
 
 /** What the previous sample looked like, for edge detection. */
@@ -69,6 +74,9 @@ interface PreviousSample {
 export class Collector {
   private readonly now: () => number
   private readonly sampleMs: number
+  private readonly log: (message: string) => void
+  /** Whether the last pass failed, so the reason is logged once and not each minute. */
+  private ailing = false
   private timer: NodeJS.Timeout | null = null
   private accumulators = new Map<string, Accumulator>()
   private bucketStart = 0
@@ -85,6 +93,7 @@ export class Collector {
   ) {
     this.now = options.now ?? Date.now
     this.sampleMs = options.sampleMs ?? SAMPLE_MS
+    this.log = options.log ?? ((message) => console.warn(message))
   }
 
   start(): void {
@@ -97,7 +106,10 @@ export class Collector {
   stop(): void {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
-    // Flush the partial bucket so a clean shutdown loses nothing.
+    // Flush the partial bucket so a clean shutdown loses nothing. `flush`
+    // guards its own write, which matters more here than anywhere: this runs
+    // on the way out, and a throw would take the database close and the SFU
+    // stop with it.
     this.flush(this.bucketStart)
   }
 
@@ -117,8 +129,63 @@ export class Collector {
     this.voiceSamples.push(stats)
   }
 
-  /** One sampling pass. Public so tests can drive it with an injected clock. */
+  /**
+   * One sampling pass. Public so tests can drive it with an injected clock.
+   *
+   * Guarded, because everything below it is synchronous `node:sqlite` running
+   * inside a `setInterval` callback. `SQLITE_FULL`, `SQLITE_IOERR` and a
+   * closed database all throw, and a throw from a timer with nothing above it
+   * ends the process — so a box that filled its disk on day four of a
+   * five-day festival did not lose its graphs, it lost its comms, once a
+   * minute, for as long as anybody kept restarting it.
+   *
+   * The bucket is dropped rather than retried: a minute of monitoring is not
+   * worth a growing batch thrown at a disk that has no room, and the next
+   * minute starts clean. Said once rather than every minute, because filling
+   * a log is how the disk got full.
+   */
   sample(): void {
+    try {
+      this.collect()
+    } catch (err) {
+      // A source closure that threw. They are all reads of in-memory state,
+      // so this is a bug rather than a disk — but a bug in a monitoring
+      // read is still not worth a box.
+      this.note(err)
+    }
+  }
+
+  /**
+   * Do one database write, and never let it end the box.
+   *
+   * The guard is here rather than around a whole pass because "it is working
+   * again" has to mean a write succeeded. A pass with nothing to write
+   * succeeds trivially, and one that announced recovery would alternate
+   * between the two messages for as long as the disk stayed full — which is
+   * how this was found.
+   */
+  private write(work: () => void): void {
+    try {
+      work()
+      if (this.ailing) {
+        this.ailing = false
+        this.log('audit: the database is taking writes again')
+      }
+    } catch (err) {
+      this.note(err)
+    }
+  }
+
+  /** Say what went wrong, once, however long it goes on for. */
+  private note(err: unknown): void {
+    if (this.ailing) return
+    this.ailing = true
+    this.log(
+      `audit: nothing is being recorded — the box is fine, its graphs are not (${reason(err)})`
+    )
+  }
+
+  private collect(): void {
     const now = this.now()
     const bucket = bucketOf(now)
     if (bucket !== this.bucketStart) {
@@ -165,7 +232,8 @@ export class Collector {
 
     if (now - this.lastPrune > PRUNE_EVERY_MS) {
       this.lastPrune = now
-      this.metrics?.prune(now - RETENTION_MS)
+      const metrics = this.metrics
+      if (metrics) this.write(() => metrics.prune(now - RETENTION_MS))
     }
   }
 
@@ -372,7 +440,11 @@ export class Collector {
       })
     }
     this.accumulators = new Map()
-    this.metrics?.flush(rows)
+    // Cleared first, deliberately: a minute of monitoring is not worth
+    // throwing an ever-growing batch at a disk that has no room for it, and
+    // the next minute then starts clean.
+    const metrics = this.metrics
+    if (metrics) this.write(() => metrics.flush(rows))
   }
 
   private event(
@@ -382,22 +454,29 @@ export class Collector {
     key: string,
     detail: string
   ): void {
-    if (!this.metrics) return
-    const hourAgo = at - 60 * 60_000
-    const recent = this.metrics.countEventsSince(hourAgo)
-    if (recent >= MAX_EVENTS_PER_HOUR) {
-      // One marker so the report can say the hour was throttled, then silence.
-      if (recent === MAX_EVENTS_PER_HOUR) {
-        this.metrics.recordEvent({
-          at,
-          network,
-          kind: 'events.throttled',
-          key: '',
-          detail: 'Event flood — recording paused for the rest of the hour',
-        })
+    const metrics = this.metrics
+    if (!metrics) return
+    this.write(() => {
+      const hourAgo = at - 60 * 60_000
+      const recent = metrics.countEventsSince(hourAgo)
+      if (recent >= MAX_EVENTS_PER_HOUR) {
+        // One marker so the report can say the hour was throttled, then silence.
+        if (recent === MAX_EVENTS_PER_HOUR) {
+          metrics.recordEvent({
+            at,
+            network,
+            kind: 'events.throttled',
+            key: '',
+            detail: 'Event flood — recording paused for the rest of the hour',
+          })
+        }
+        return
       }
-      return
-    }
-    this.metrics.recordEvent({ at, network, kind, key, detail })
+      metrics.recordEvent({ at, network, kind, key, detail })
+    })
   }
+}
+
+function reason(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }

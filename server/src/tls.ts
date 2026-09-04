@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createSecureContext } from 'node:tls'
 
 /**
  * TLS for the box.
@@ -68,11 +69,30 @@ export function loadTls(dataDir: string): TlsResult {
       return { tls: null, reason: `${KEY_FILE} is not a PEM private key.` }
     }
     const caPath = join(dataDir, 'chain.pem')
-    return {
-      tls: { cert, key, ...(existsSync(caPath) ? { ca: readFileSync(caPath) } : {}) },
+    const material: TlsMaterial = {
+      cert,
+      key,
+      ...(existsSync(caPath) ? { ca: readFileSync(caPath) } : {}),
     }
+
+    // The only check that means anything: hand the material to OpenSSL and
+    // see whether it takes it. The two `includes` above say the files look
+    // like PEM, which a renewed certificate sitting next to last year's key
+    // also does — and so does a passphrase-protected key, which is the
+    // ordinary output of `openssl genrsa -aes256`. Both then throw inside
+    // `Fastify({ https })`, past every promise this file and index.ts make
+    // that broken material never stops the box, and exit 1. Verified on this
+    // Node: ERR_OSSL_X509_KEY_VALUES_MISMATCH and ERR_OSSL_BAD_DECRYPT.
+    //
+    // Doing it here costs one parse at startup and turns a box that will not
+    // start into a box on plain HTTP with a line saying why — which is what
+    // the fallback was always for.
+    createSecureContext(material)
+
+    return { tls: material }
   } catch (error) {
-    // Nearly always the key being root-owned after a certbot run.
-    return { tls: null, reason: `Could not read the certificate: ${String(error)}` }
+    // Nearly always the key being root-owned after a certbot run, or now the
+    // pair not actually being a pair.
+    return { tls: null, reason: `Could not use the certificate: ${String(error)}` }
   }
 }

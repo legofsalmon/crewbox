@@ -212,3 +212,85 @@ describe('events', () => {
     collector.stop()
   })
 })
+
+/**
+ * A disk that has filled up on day four.
+ *
+ * Every write below `sample()` is synchronous `node:sqlite`, running inside a
+ * `setInterval` callback with nothing above it: `SQLITE_FULL`, `SQLITE_IOERR`
+ * and a closed database all throw, and a throw from a timer ends the process.
+ * So a box that ran out of room did not lose its graphs, it lost its comms —
+ * once a minute, for as long as anybody kept restarting it. The audit is a
+ * graph, not a decision, and it has no business being fatal to anything.
+ */
+describe('when the database will not take another row', () => {
+  /** A store that fails the way a full disk does. */
+  const brokenStore = (fail: { now: boolean }) =>
+    ({
+      flush: () => {
+        if (fail.now) throw new Error('SQLITE_FULL: database or disk is full')
+      },
+      countEventsSince: () => 0,
+      recordEvent: () => {
+        if (fail.now) throw new Error('SQLITE_FULL: database or disk is full')
+      },
+      prune: () => {},
+    }) as unknown as MetricsStore
+
+  const collectorOn = (fail: { now: boolean }, said: string[], clock: () => number) =>
+    new Collector(
+      brokenStore(fail),
+      { hubStats: () => ({ connections: 1, onlineUsers: 1 }) },
+      { now: clock, log: (m) => said.push(m) }
+    )
+
+  it('does not throw out of a timer callback', () => {
+    const said: string[] = []
+    let now = BUCKET_MS
+    const collector = collectorOn({ now: true }, said, () => now)
+    collector.sample()
+    now += BUCKET_MS // cross a bucket boundary, so the flush actually runs
+    expect(() => collector.sample()).not.toThrow()
+  })
+
+  it('says so once, not once a minute', () => {
+    // The box filled its disk. Filling the log as well is not the answer.
+    const said: string[] = []
+    let now = BUCKET_MS
+    const collector = collectorOn({ now: true }, said, () => now)
+    for (let i = 0; i < 10; i++) {
+      collector.sample()
+      now += BUCKET_MS
+    }
+    expect(said.length).toBe(1)
+    expect(said[0]).toContain('SQLITE_FULL')
+    expect(said[0]).toContain('its graphs are not')
+  })
+
+  it('says when it comes good again', () => {
+    // Somebody deleted something. Worth one line, so the earlier one is not
+    // left standing as the last word.
+    const said: string[] = []
+    let now = BUCKET_MS
+    const fail = { now: true }
+    const collector = collectorOn(fail, said, () => now)
+    collector.sample()
+    now += BUCKET_MS
+    collector.sample()
+    expect(said.length).toBe(1)
+    fail.now = false
+    now += BUCKET_MS
+    collector.sample()
+    expect(said.length).toBe(2)
+    expect(said[1]).toContain('taking writes again')
+  })
+
+  it('does not throw on the way out either', () => {
+    // stop() flushes the partial bucket, and it runs during shutdown — a
+    // throw there takes the database close and the SFU stop with it.
+    const said: string[] = []
+    const collector = collectorOn({ now: true }, said, () => BUCKET_MS)
+    collector.sample()
+    expect(() => collector.stop()).not.toThrow()
+  })
+})
