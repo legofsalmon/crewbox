@@ -67,6 +67,7 @@ const watcher = (dmx: DmxListener, universes: number[], levels = false) => {
     dmxLevels: levels,
     dmxSent: new Map<number, Uint8Array>(),
     dmxEverLit: new Map<number, string>(),
+    dmxScan: new Map<number, number>(),
   }
   // `pushDmx` is private by design — nothing outside the hub should call it.
   const push = () => (hub as never as { pushDmx: (c: unknown) => void }).pushDmx(conn)
@@ -236,6 +237,36 @@ describe('levels', () => {
         .flatMap((m) => m.values.map(([address]) => address))
     )
     expect(total.size).toBe(512)
+  })
+
+  it('reaches the top of a universe that is changing every single tick', () => {
+    // The starvation case, and the one a rig actually produces: a chase that
+    // never settles. Scanning from address 1 every tick meant the low
+    // addresses always differed and the cap was always spent on them, so
+    // the movers patched above the LED wash sat frozen on the plot for the
+    // whole show while the wash moved.
+    const dmx = listener()
+    dmx.state.apply(frame({ sequence: 1, slots: new Uint8Array(512) }), 1000)
+    const { push, sent } = watcher(dmx, [1], true)
+    push()
+
+    // Everything moves, every tick, for a couple of seconds of ticks.
+    for (let tick = 0; tick < 12; tick++) {
+      const slots = new Uint8Array(512)
+      for (let i = 0; i < 512; i++) slots[i] = (tick * 7 + i) % 255 || 1
+      dmx.state.apply(frame({ sequence: tick + 2, slots }), 1100 + tick * 40)
+      push()
+    }
+
+    const reached = new Set(
+      levelMessages(sent)
+        .filter((m) => !m.full)
+        .flatMap((m) => m.values.map(([address]) => address))
+    )
+    // Every address, top of the universe included — not just the first 96.
+    expect(reached.has(512)).toBe(true)
+    expect(reached.has(400)).toBe(true)
+    expect(reached.size).toBe(512)
   })
 })
 

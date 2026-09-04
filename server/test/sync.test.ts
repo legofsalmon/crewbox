@@ -1664,6 +1664,104 @@ describe('a box whose database went backwards', () => {
     const { welcome } = await connect(token, { [general.id]: seqs.at(-1)! })
     expect(welcome.missed.filter((m) => m.channelId === general.id)).toEqual([])
   })
+
+  it('never hands a deleted message its number back', async () => {
+    // Deleting a photo shared by mistake is supported, and it used to cost
+    // the next message in that channel: the replacement took the deleted
+    // one's seq, so a phone caught up to that number asked for everything
+    // *after* it and the box had nothing after it. Silent, permanent, and
+    // invisible from the box.
+    const token = await join('Deleter')
+    const { general, seqs } = fill(3)
+    const last = seqs.at(-1)!
+
+    const message = store.listAfter(general.id, 0, 100).at(-1)!
+    store.deleteMessage(message.id)
+    const { message: replacement } = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'after the delete',
+    })
+    expect(replacement.seq).toBeGreaterThan(last)
+
+    const { welcome } = await connect(token, { [general.id]: last })
+    const replayed = welcome.missed.filter((m) => m.channelId === general.id)
+    expect(replayed.map((m) => m.body)).toContain('after the delete')
+  })
+
+  it('closes a socket that keeps saying hello', async () => {
+    // The most expensive thing a socket can ask for — a session lookup, a
+    // database write, and a welcome built out of every channel this user is
+    // in — and it was the one message exempt from the flood limit, because
+    // it is the one allowed before authentication. Being allowed early is
+    // not a reason to be free.
+    const token = await join('Chatty')
+    const client = new TestClient(wsUrl)
+    await client.open()
+    for (let i = 0; i < 80; i++) client.send({ type: 'hello', token, cursors: {} })
+
+    const refused = await client.waitFor(
+      (m): m is ServerMessage & { message?: string } =>
+        m.type === 'error' && (m as { message?: string }).message === 'slow down'
+    )
+    expect(refused).toBeTruthy()
+  })
+
+  it('does not count a retired channel against the cap it tells you to retire for', () => {
+    // The cap's message is "retire some first", and retiring changed
+    // nothing — so a crew that hit it had no way past on a box they cannot
+    // get into the database of.
+    const before = store.countPublicChannels()
+    const channel = store.createChannel('spare-stage', 'public', '')
+    expect(store.countPublicChannels()).toBe(before + 1)
+    store.updateChannel(channel.id, { retired: true })
+    expect(store.countPublicChannels()).toBe(before)
+  })
+
+  it('forgets deletions the replay window has passed', () => {
+    // Nothing pruned them, so a box that ran a season put every deletion it
+    // had ever made into every welcome.
+    const general = store.getChannelByName('general')!
+    const { message } = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'gone',
+    })
+    store.deleteMessage(message.id)
+    expect(store.listDeletions([general.id], 0)).toHaveLength(1)
+
+    expect(store.pruneDeletions(Date.now() + 1)).toBe(1)
+    expect(store.listDeletions([general.id], 0)).toHaveLength(0)
+  })
+
+  it('keeps a deletion a phone might still need to hear about', () => {
+    const general = store.getChannelByName('general')!
+    const { message } = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'recent',
+    })
+    store.deleteMessage(message.id)
+    expect(store.pruneDeletions(Date.now() - 60_000)).toBe(0)
+    expect(store.listDeletions([general.id], 0)).toHaveLength(1)
+  })
+
+  it('keeps counting from where it was after a restart', async () => {
+    // The high-water mark is a column now, so it survives the process. A
+    // channel that reopened at 1 would collide with every cursor on site.
+    const { general, seqs } = fill(4)
+    const reopened = new Store(db)
+    const { message } = reopened.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'after a restart',
+    })
+    expect(message.seq).toBe(seqs.at(-1)! + 1)
+  })
 })
 
 /**

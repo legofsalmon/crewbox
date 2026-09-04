@@ -278,6 +278,23 @@ export class Store {
   }
 
   /** Drop sessions idle past the TTL; run at startup so the table can't grow forever. */
+  /**
+   * Forget deletions the replay window has passed.
+   *
+   * The table exists so a phone that was away when something was deleted is
+   * told about it on the next welcome — after a week, nobody's cursor is
+   * that old and the row is only a row. Nothing pruned it, so a box that
+   * ran a season kept every deletion it had ever made and put them all in
+   * every welcome.
+   */
+  pruneDeletions(olderThan: number): number {
+    const before = this.db
+      .prepare('SELECT COUNT(*) AS n FROM deleted_messages WHERE deleted_at < ?')
+      .get(olderThan) as { n: number }
+    this.db.prepare('DELETE FROM deleted_messages WHERE deleted_at < ?').run(olderThan)
+    return before.n
+  }
+
   pruneSessions(ttlMs: number): number {
     const { changes } = this.db
       .prepare('DELETE FROM sessions WHERE last_seen < ?')
@@ -296,22 +313,14 @@ export class Store {
   }
 
   getChannel(id: string): Channel | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT c.*, COALESCE((SELECT MAX(seq) FROM messages m WHERE m.channel_id = c.id), 0) AS last_seq
-         FROM channels c WHERE c.id = ?`
-      )
-      .get(id) as ChannelRow | undefined
+    const row = this.db.prepare(`SELECT c.* FROM channels c WHERE c.id = ?`).get(id) as
+      ChannelRow | undefined
     return row ? this.toChannel(row) : undefined
   }
 
   getChannelByName(name: string): Channel | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT c.*, COALESCE((SELECT MAX(seq) FROM messages m WHERE m.channel_id = c.id), 0) AS last_seq
-         FROM channels c WHERE c.name = ?`
-      )
-      .get(name) as ChannelRow | undefined
+    const row = this.db.prepare(`SELECT c.* FROM channels c WHERE c.name = ?`).get(name) as
+      ChannelRow | undefined
     return row ? this.toChannel(row) : undefined
   }
 
@@ -319,8 +328,7 @@ export class Store {
   listChannelsFor(userId: string): Channel[] {
     const rows = this.db
       .prepare(
-        `SELECT c.*, COALESCE((SELECT MAX(seq) FROM messages m WHERE m.channel_id = c.id), 0) AS last_seq
-         FROM channels c
+        `SELECT c.* FROM channels c
          WHERE (c.kind = 'public' AND c.retired = 0)
             OR (c.kind = 'dm' AND EXISTS (
                  SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?))
@@ -330,10 +338,17 @@ export class Store {
     return rows.map((row) => this.toChannel(row))
   }
 
-  /** How many public (non-DM) channels exist — the backstop on createChannel. */
+  /**
+   * How many live public channels exist — the backstop on createChannel.
+   *
+   * Retired ones do not count. They used to, which made the message the cap
+   * sends ("retire some first") advice that could not work: retiring a
+   * channel changed nothing, so a crew that hit the limit had no way past it
+   * at all, on a box they cannot get into the database of.
+   */
   countPublicChannels(): number {
     const row = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM channels WHERE kind = 'public'`)
+      .prepare(`SELECT COUNT(*) AS n FROM channels WHERE kind = 'public' AND retired = 0`)
       .get() as { n: number }
     return row.n
   }
@@ -341,10 +356,7 @@ export class Store {
   /** Every channel including retired ones and DMs, for the admin export. */
   listAllChannels(): Channel[] {
     const rows = this.db
-      .prepare(
-        `SELECT c.*, COALESCE((SELECT MAX(seq) FROM messages m WHERE m.channel_id = c.id), 0) AS last_seq
-         FROM channels c ORDER BY c.created_at`
-      )
+      .prepare(`SELECT c.* FROM channels c ORDER BY c.created_at`)
       .all() as unknown as ChannelRow[]
     return rows.map((row) => this.toChannel(row))
   }
@@ -445,9 +457,20 @@ export class Store {
           .get(input.clientMsgId) as unknown as MessageRow | undefined
         if (existing) return { message: toMessage(existing), deduped: true }
       }
-      const { next } = this.db
-        .prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM messages WHERE channel_id = ?')
-        .get(input.channelId) as { next: number }
+      // A high-water mark, not `MAX(seq) + 1`. The old form handed the next
+      // message the number the one just deleted had been using, and a phone
+      // whose cursor sat on that number then asked for everything *after*
+      // it — so the replacement never arrived on that phone, ever. Deleting
+      // a photo shared by mistake is a supported thing to do; losing the
+      // next message in the channel because of it is not.
+      //
+      // Inside the same transaction as the insert, so two sends landing
+      // together cannot be given the same number.
+      const bumped = this.db
+        .prepare('UPDATE channels SET last_seq = last_seq + 1 WHERE id = ? RETURNING last_seq')
+        .get(input.channelId) as { last_seq: number } | undefined
+      if (!bumped) throw new Error(`no such channel: ${input.channelId}`)
+      const next = bumped.last_seq
       const message: Message = {
         id: newId(),
         channelId: input.channelId,
@@ -709,10 +732,10 @@ export class Store {
    *
    * Restoring a backup or swapping to a spare box brings a *different*
    * database, and the only thing that made them look the same was that
-   * nothing ever asked. Sequence numbers come from `MAX(seq)` over live rows,
-   * so a restored box counts from below every phone's cursor and every
-   * channel is skipped as "nothing new" — silently, on both sides. This
-   * travels in the welcome so a phone can tell.
+   * nothing ever asked. Sequence numbers count from wherever that database
+   * had got to, so a spare box counts from below every phone's cursor and
+   * every channel is skipped as "nothing new" — silently, on both sides.
+   * This travels in the welcome so a phone can tell.
    *
    * It comes back with the rows in a restore, which is the point: a restored
    * database is the same database and keeps its epoch, while a spare box

@@ -188,6 +188,23 @@ const MIGRATIONS: string[] = [
     ON incidents(client_msg_id) WHERE client_msg_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_incidents_at ON incidents(at);
   `,
+  // v9: a channel's sequence numbers become a high-water mark.
+  //
+  // They were `MAX(seq) + 1`, which reuses a number the moment the newest
+  // message is deleted — and deleting a message someone shared by mistake is
+  // a supported thing to do. A phone holding seq 42 in its cache then asks
+  // for everything after 42; the replacement message *is* 42, so the server
+  // has nothing after it, and that message never arrives on that phone
+  // again. Silent, permanent, and invisible from the box.
+  //
+  // Backfilled from what each channel already has, so an existing box
+  // carries on from where it was rather than starting again at 1.
+  `
+  ALTER TABLE channels ADD COLUMN last_seq INTEGER NOT NULL DEFAULT 0;
+  UPDATE channels SET last_seq = (
+    SELECT COALESCE(MAX(seq), 0) FROM messages WHERE messages.channel_id = channels.id
+  );
+  `,
 ]
 
 export function openDb(path: string): DatabaseSync {

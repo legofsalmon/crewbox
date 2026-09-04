@@ -83,7 +83,7 @@ import {
   Tally,
   TIMETABLE_ROOM,
 } from './control.ts'
-import { Hub, isPrivateIp } from './hub.ts'
+import { DELETION_REPLAY_MS, Hub, isPrivateIp } from './hub.ts'
 import type { VideoService } from './video/service.ts'
 import type { UpdateChecker } from './update/check.ts'
 import type { UpdateService } from './update/service.ts'
@@ -588,6 +588,12 @@ export function buildApp({
   if (sessionTtlMs) {
     const pruned = store.pruneSessions(sessionTtlMs)
     if (pruned > 0) fastify.log.info(`pruned ${pruned} expired session(s)`)
+  }
+  // Deletions past the replay window. Nothing pruned them, so a box that ran
+  // a season put every deletion it had ever made into every welcome.
+  {
+    const pruned = store.pruneDeletions(Date.now() - DELETION_REPLAY_MS)
+    if (pruned > 0) fastify.log.info(`pruned ${pruned} old deletion record(s)`)
   }
   // Per-IP: every phone has its own LAN IP, so 10/min only throttles
   // PIN-guessing, not a crew rush after a briefing.

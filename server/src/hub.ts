@@ -22,7 +22,7 @@ const MISSED_LIMIT = 200
 /** Cap on total replayed messages across all channels in one welcome. */
 const MISSED_TOTAL_LIMIT = 500
 /** How far back welcome replays deletions so returning clients reconcile. */
-const DELETION_REPLAY_MS = 7 * 24 * 60 * 60 * 1000
+export const DELETION_REPLAY_MS = 7 * 24 * 60 * 60 * 1000
 const HEARTBEAT_MS = 15_000
 
 interface Conn {
@@ -44,6 +44,18 @@ interface Conn {
   dmxSent: Map<number, Uint8Array>
   /** Last `everLit` sent per universe, so it only goes when it grows. */
   dmxEverLit: Map<number, string>
+  /**
+   * Where the level diff stopped scanning last tick, per universe.
+   *
+   * The scan is capped, and it used to restart at address 1 every time. A
+   * chase touching more than the cap in a tick therefore re-sent the same
+   * low addresses for ever and never reached the high ones: on a rig where
+   * the movers are patched above the LED wash, the plot showed the wash
+   * moving and the movers frozen, indefinitely. Resuming from here and
+   * wrapping means every changed address gets out within a handful of
+   * ticks, whatever the desk is doing.
+   */
+  dmxScan: Map<number, number>
   /** Cheap fingerprint of the last state message, to avoid resending it. */
   dmxSummary?: string
 }
@@ -304,6 +316,7 @@ export class Hub {
       dmxLevels: false,
       dmxSent: new Map(),
       dmxEverLit: new Map(),
+      dmxScan: new Map(),
     }
     this.conns.add(conn)
 
@@ -335,6 +348,17 @@ export class Hub {
     const msg = parsed.data
 
     if (msg.type === 'hello') {
+      // Counted like everything else, and the most expensive thing this
+      // socket can ask for: a session lookup, a database write, and a
+      // welcome built out of every channel this user is in. A legitimate
+      // client sends exactly one per connection; being the one message
+      // allowed before authentication is not a reason to be free, it is a
+      // reason to be careful.
+      if (this.overActionLimit(conn)) {
+        this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+        conn.ws.close(4008, 'too many handshakes')
+        return
+      }
       this.onHello(conn, msg)
       return
     }
@@ -405,6 +429,7 @@ export class Hub {
         conn.dmxLevels = msg.levels
         conn.dmxSent.clear()
         conn.dmxEverLit.clear()
+        conn.dmxScan.clear()
         // The summary too, or a subscription can get no reply at all.
         //
         // `pushDmx` only sends when the summary changed — which is right for
@@ -901,15 +926,22 @@ export class Hub {
           if (slots[i] !== 0) values.push([i + 1, slots[i]!])
         }
         conn.dmxSent.set(universe, new Uint8Array(slots))
+        conn.dmxScan.set(universe, 0)
         this.send(conn.ws, { type: 'dmxLevels', universe, full: true, values })
         continue
       }
-      for (let i = 0; i < slots.length && values.length < DMX_MAX_CHANGES; i++) {
-        if (slots[i] !== previous[i]) {
-          values.push([i + 1, slots[i]!])
-          previous[i] = slots[i]!
+      // Round-robin, not from the top: see `dmxScan`. One pass at most, so
+      // an idle universe costs one walk and a busy one hands out its cap.
+      let at = conn.dmxScan.get(universe) ?? 0
+      if (at >= slots.length) at = 0
+      for (let seen = 0; seen < slots.length && values.length < DMX_MAX_CHANGES; seen++) {
+        if (slots[at] !== previous[at]) {
+          values.push([at + 1, slots[at]!])
+          previous[at] = slots[at]!
         }
+        at = (at + 1) % slots.length
       }
+      conn.dmxScan.set(universe, at)
       if (values.length > 0) {
         this.send(conn.ws, { type: 'dmxLevels', universe, full: false, values })
       }
