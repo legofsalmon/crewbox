@@ -10,8 +10,46 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!--
+      `default`, not `black-translucent`.
+
+      Translucent puts the page under the status bar and leaves iOS choosing
+      the text colour from nothing, so an installed light-theme app got white
+      status text on the cream background at 1.6:1 — unreadable in the
+      daylight this is used in. `default` gives the bar the page's own
+      `theme-color`, which `applyTheme` keeps in step with the theme.
+    -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Crewbox</title>
+    <!--
+      Set the theme before the stylesheet paints.
+
+      The app applies it from JS after the module bundle has loaded, so a
+      light-theme crew member got a full dark screen first — outdoors, in
+      daylight, on every cold open, for as long as the bundle took over
+      festival Wi-Fi. Inline and blocking on purpose: this has to run before
+      the first paint, and it is four lines.
+
+      The same rules as `initialTheme()` in store.ts, deliberately duplicated
+      rather than imported: anything importable is in the bundle, which is
+      the thing this exists to get ahead of. The store re-applies the same
+      answer a moment later, so a drift here costs a flash and not a wrong
+      theme.
+    -->
+    <script>
+      try {
+        var saved = localStorage.getItem('crewbox:theme')
+        document.documentElement.dataset.theme =
+          saved === 'light' || saved === 'dark'
+            ? saved
+            : matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark'
+      } catch (e) {
+        // A browser with site data blocked. The stylesheet's own default
+        // stands, and the store corrects it once it loads.
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

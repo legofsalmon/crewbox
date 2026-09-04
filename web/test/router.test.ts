@@ -49,3 +49,31 @@ describe('routePath', () => {
     expect(routePath({ kind: 'channel', channelId: 'a/b' })).toBe('/c/a%2Fb')
   })
 })
+
+describe('a URL that will not decode', () => {
+  /**
+   * `decodeURIComponent` throws a URIError on a lone `%` or a truncated
+   * escape — which a link acquires by being shared through a chat client
+   * that wrapped the line, or by somebody deleting a character out of the
+   * address bar. `parseRoute` is called from `boot()` before the socket is
+   * started, so that throw left the app on "Connecting…" for ever, on a
+   * device whose owner had done nothing but follow a link.
+   */
+  it('is a route that matches nothing, not an app that will not start', () => {
+    expect(() => parseRoute('/c/%')).not.toThrow()
+    expect(parseRoute('/c/%')).toEqual({ kind: 'channel', channelId: '%' })
+    expect(parseRoute('/c/%E0%A4%A')).toEqual({ kind: 'channel', channelId: '%E0%A4%A' })
+  })
+
+  it('survives it in a module subpath too', () => {
+    expect(parseRoute('/m/patch/sheet/%zz')).toEqual({
+      kind: 'module',
+      moduleId: 'patch',
+      subpath: 'sheet/%zz',
+    })
+  })
+
+  it('still decodes a URL that is fine', () => {
+    expect(parseRoute('/c/main%20stage')).toEqual({ kind: 'channel', channelId: 'main stage' })
+  })
+})

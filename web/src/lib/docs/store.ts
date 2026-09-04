@@ -2,6 +2,7 @@ import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { newId } from '@crewbox/shared'
 import { deletedIds, removeIndexEntry, upsertIndexEntry } from './indexDoc.ts'
+import { whenPersisted } from './persistence.ts'
 import { syncManager } from './sync.ts'
 
 /**
@@ -157,17 +158,10 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     // as it should. Persistence is an accelerator; the relay is where the
     // document actually lives, and that is true in both directions.
     const persistence = hasIndexedDb ? new IndexeddbPersistence(dbPrefix + docName, doc) : null
-    // Resolves either way. `typeof indexedDB !== 'undefined'` covers a browser
-    // with no IndexedDB at all; it does not cover one that has it and refuses
-    // to open it — a corrupted profile, a private window, a quota that has run
-    // out — which rejects instead. A pane awaiting `whenLoaded` would then
-    // wait for a promise that has already failed, and never appear.
-    const whenLoaded = persistence
-      ? persistence.whenSynced.then(
-          () => undefined,
-          () => undefined
-        )
-      : Promise.resolve()
+    // `typeof indexedDB !== 'undefined'` covers a browser with no IndexedDB
+    // at all; it does not cover one that has it and refuses to open it. See
+    // `whenPersisted`, which is where that is answered.
+    const whenLoaded = whenPersisted(persistence)
     syncManager.attach(room(docName), doc, { present })
     return {
       doc,

@@ -102,8 +102,27 @@ export interface Pending {
 
 export type Theme = 'dark' | 'light'
 
+/**
+ * The colour the browser paints around the page in each theme.
+ *
+ * Must match `--bg` in app.css. Duplicated as literals because this is read
+ * before any stylesheet is guaranteed to have applied, and a
+ * `getComputedStyle` here would sometimes return the wrong one.
+ */
+const THEME_COLOR: Record<Theme, string> = { dark: '#0d1117', light: '#f5f2ec' }
+
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme
+  /**
+   * And the browser chrome with it.
+   *
+   * `theme-color` was a fixed dark value in index.html, so an installed
+   * light-theme app got a dark strip above a cream page — and on iOS, where
+   * the status bar is `black-translucent` over a `viewport-fit=cover` page,
+   * white status text landed on that cream at 1.6:1. Safari 15+ and Chrome
+   * both honour changes to this tag at runtime.
+   */
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme])
 }
 
 function initialTheme(): Theme {
@@ -1522,6 +1541,30 @@ export const useStore = create<AppState>()((set, get) => {
 })
 
 applyTheme(useStore.getState().theme)
+
+/**
+ * Follow the phone when nobody has chosen otherwise.
+ *
+ * The theme was read from the OS once, at boot. A phone that switches itself
+ * to dark at sunset stayed in light theme for the rest of the shift — which
+ * is the shift where it matters, because that is the one spent in a dark
+ * FOH tent with a screen that is now the brightest thing in it.
+ *
+ * Only without a saved preference: somebody who has pressed the toggle has
+ * said what they want, and having the sunset overrule them would be worse
+ * than never following at all.
+ */
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+  const light = window.matchMedia('(prefers-color-scheme: light)')
+  const follow = (matches: boolean) => {
+    if (localStorage.getItem(THEME_KEY)) return
+    const theme: Theme = matches ? 'light' : 'dark'
+    if (useStore.getState().theme === theme) return
+    applyTheme(theme)
+    useStore.setState({ theme })
+  }
+  light.addEventListener('change', (e) => follow(e.matches))
+}
 
 // Back/forward buttons apply the URL to state (never push — the entry the
 // user navigated to already exists).

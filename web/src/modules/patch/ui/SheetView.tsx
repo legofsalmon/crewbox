@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as Y from 'yjs'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
-import { registerShortcut } from '../../../shell/keys.ts'
+import { documentUndoTarget, registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useToasts } from './toastContext.ts'
 import { useDocMissing, useSheet } from '../store/hooks'
@@ -141,6 +141,8 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
    * URL, which reads as the box having lost it.
    */
   const missing = useDocMissing(doc, loaded)
+  /** This view's own subtree, for scoping the undo shortcut to it. */
+  const rootRef = useRef<HTMLDivElement>(null)
   const { canUndo, canRedo, undo, redo } = useUndoRedo(undoManager)
   // The acts are the event's, not the sheet's: this stage's slots out of the
   // running order, merged with the spec and notes the sheet keeps about them.
@@ -183,31 +185,10 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   // Registered through the shell registry, active only while this view is
   // mounted (i.e. on patch routes) — chat keeps its own shortcuts elsewhere.
   useEffect(() => {
-    /**
-     * Whether Ctrl+Z here means the *sheet*, rather than what is being typed.
-     *
-     * It used to mean the sheet everywhere except a grid cell with a
-     * half-typed draft, or the find box. So Ctrl+Z in a dialog — the new
-     * sheet name, an act's name, the spec and notes boxes in the Lineup —
-     * reverted the last committed edit to the sheet behind the modal, while
-     * the person pressing it was trying to take back a word they had just
-     * typed. Silently: the modal covers the grid.
-     *
-     * Inverted. Any text-entry element keeps its own text undo, and the sheet
-     * only claims the shortcut in a grid cell with nothing in progress —
-     * which is the case it was written for, and the one where the browser has
-     * nothing of its own to undo.
-     */
-    const undoableTarget = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      const typing =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target?.isContentEditable === true
-      if (!typing) return true
-      const el = target as HTMLElement
-      return Boolean(el.dataset.cell) && !el.dataset.dirty
-    }
+    // Scoped to this view: Cmd+Z in the chat composer, the search overlay or
+    // the admin panel is that field's text undo and never the sheet's. See
+    // `documentUndoTarget`.
+    const undoableTarget = documentUndoTarget(() => rootRef.current)
     const unregister = [
       registerShortcut({
         key: 'f',
@@ -243,7 +224,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   }
 
   return (
-    <div className={styles.app}>
+    <div className={styles.app} ref={rootRef}>
       {/*
         Nav row, then tool row — the same two-row shape as a lighting plot,
         and for the same reason. This used to spend the whole second row on

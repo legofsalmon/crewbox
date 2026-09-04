@@ -31,7 +31,11 @@ export function initPwa(onUpdateReady: () => void): (reload?: boolean) => Promis
       // Re-check for a new build every 30 min so long-running installed apps
       // (a phone left in a pocket all shift) eventually notice a redeploy.
       if (registration) {
-        setInterval(() => void registration.update(), 30 * 60 * 1000)
+        // Caught, because offline is the ordinary case here rather than a
+        // fault: a box in a field has no internet, and an uncaught reject
+        // every half hour is an unhandled rejection in every crew member's
+        // console for the whole show.
+        setInterval(() => void registration.update().catch(() => {}), 30 * 60 * 1000)
       }
     },
   })

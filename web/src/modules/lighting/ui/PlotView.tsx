@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { deliveredNote, deliverText, type Delivered } from '../../../lib/download.ts'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
-import { registerShortcut } from '../../../shell/keys.ts'
+import { documentUndoTarget, registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { plotCsvFilename, plotSummary, plotToCsv } from '../model/csv'
@@ -98,11 +106,14 @@ function PlotDropZone({
   importing,
   onFiles,
   onReject,
+  rootRef,
   children,
 }: {
   importing: boolean
   onFiles: (files: File[]) => void
   onReject: (files: File[]) => void
+  /** The view's own subtree, for scoping its keyboard shortcuts to it. */
+  rootRef: RefObject<HTMLDivElement | null>
   children: ReactNode
 }) {
   const accept = useCallback((file: File) => /\.(csv|mvr)$/i.test(file.name), [])
@@ -110,7 +121,11 @@ function PlotDropZone({
   // already chewing through a 40 MB venue file.
   const drop = useFileDrop(onFiles, { disabled: importing, accept, onReject })
   return (
-    <div className={`${styles.view} ${drop.over ? styles.dropping : ''}`} {...drop.handlers}>
+    <div
+      ref={rootRef}
+      className={`${styles.view} ${drop.over ? styles.dropping : ''}`}
+      {...drop.handlers}
+    >
       {drop.over && <div className={styles.dropVeil}>Drop a CSV or MVR to import fixtures</div>}
       {children}
     </div>
@@ -127,6 +142,8 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
    * branch beneath was unreachable.
    */
   const missing = useDocMissing(doc, loaded)
+  /** This view's own subtree, for scoping the undo shortcut to it. */
+  const rootRef = useRef<HTMLDivElement>(null)
   const issues = usePlotIssues(snapshot)
   const [tab, setTab] = useState<PlotTab>('fixtures')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -148,9 +165,9 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   useEffect(() => {
     if (!undoManager) return
     // Leave in-progress text edits to the browser's own undo — the doc-level
-    // shortcut would otherwise swallow a half-typed purpose.
-    const undoableTarget = (e: KeyboardEvent) =>
-      !(e.target as HTMLElement | null)?.closest('[data-dirty="true"]')
+    // shortcut would otherwise swallow a half-typed purpose — and leave
+    // everything outside this view alone entirely. See `documentUndoTarget`.
+    const undoableTarget = documentUndoTarget(() => rootRef.current)
     const offs = [
       registerShortcut({
         key: 'z',
@@ -216,6 +233,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   return (
     <PlotDropZone
       importing={importing}
+      rootRef={rootRef}
       onFiles={(files) => {
         // Sequential, not parallel: an MVR parse blocks the main thread for
         // seconds, and two at once would freeze the tab showing nothing.

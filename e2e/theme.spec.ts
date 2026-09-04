@@ -208,3 +208,51 @@ for (const scheme of ['light', 'dark'] as const) {
     await context.close()
   })
 }
+
+/**
+ * The dark flash a light-theme crew member got on every cold open.
+ *
+ * The theme was applied from JS after the module bundle had loaded, so the
+ * dark `:root` painted first — a full dark screen, outdoors, in daylight,
+ * for as long as the bundle took over festival Wi-Fi. An inline script in
+ * the head sets it before the stylesheet applies.
+ */
+test('a light-theme device never paints dark first', async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: 'light' })
+  const page = await context.newPage()
+
+  // Sampled before any module script has run: `document.write`-free, and the
+  // inline script is the only thing that could have set this.
+  await page.addInitScript(() => {
+    document.addEventListener('readystatechange', () => {
+      if (document.readyState !== 'interactive') return
+      ;(window as unknown as { firstTheme?: string }).firstTheme =
+        document.documentElement.dataset.theme
+    })
+  })
+  await page.goto('/')
+  await expect(page.getByLabel('Your name')).toBeVisible()
+
+  expect(await page.evaluate(() => (window as { firstTheme?: string }).firstTheme)).toBe('light')
+  // And the browser chrome matches the page rather than staying dark.
+  expect(
+    await page.evaluate(() =>
+      document.querySelector('meta[name="theme-color"]')?.getAttribute('content')
+    )
+  ).toBe('#f5f2ec')
+
+  await context.close()
+})
+
+test('a dark-theme device gets the dark chrome', async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: 'dark' })
+  const page = await context.newPage()
+  await page.goto('/')
+  await expect(page.getByLabel('Your name')).toBeVisible()
+  expect(
+    await page.evaluate(() =>
+      document.querySelector('meta[name="theme-color"]')?.getAttribute('content')
+    )
+  ).toBe('#0d1117')
+  await context.close()
+})

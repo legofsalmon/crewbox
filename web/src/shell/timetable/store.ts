@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
+import { whenPersisted } from '../../lib/docs/persistence.ts'
 import { syncManager } from '../../lib/docs/sync.ts'
 import { useDocSnapshot } from '../../lib/docs/hooks.ts'
 import { createTimetableUndoManager, snapshotTimetable, type TimetableSnapshot } from './model.ts'
@@ -34,15 +35,11 @@ export function timetable(): { doc: Y.Doc; undoManager: Y.UndoManager; whenLoade
   // No IndexedDB in the screenshot harness and some embedded webviews. The
   // timetable still works there, it just starts from whatever syncs.
   const hasIndexedDb = typeof indexedDB !== 'undefined'
-  // Resolves either way: a browser that *has* IndexedDB and refuses to open
-  // it rejects rather than being absent, and a timetable that waited on that
-  // promise would never draw. See lib/docs/store.ts.
-  const whenLoaded = hasIndexedDb
-    ? new IndexeddbPersistence(DB_NAME, doc).whenSynced.then(
-        () => undefined,
-        () => undefined
-      )
-    : Promise.resolve()
+  // A browser that *has* IndexedDB and refuses to open it is not the same as
+  // one without it, and a timetable that waited on the wrong promise never
+  // drew — the running order sat on "Loading…" for the whole shift. See
+  // lib/docs/persistence.ts.
+  const whenLoaded = whenPersisted(hasIndexedDb ? new IndexeddbPersistence(DB_NAME, doc) : null)
 
   // Synced, but not present. Every device on the box opens this document —
   // the sidebar countdown needs it whether or not anyone has looked at the
