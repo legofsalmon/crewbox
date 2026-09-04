@@ -5,11 +5,17 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
-let commit = 'dev'
+// The same token the server falls back to (server/src/version.ts). They used
+// to differ — 'dev' here, 'unknown' there — so a build made outside a git
+// checkout produced two version strings that could never match, and the
+// client raised "New version available" against a server running the very
+// same build, for ever.
+let commit = 'unknown'
 try {
   commit = execSync('git rev-parse --short HEAD').toString().trim()
 } catch {
-  // not a git checkout (e.g. release tarball) — fall back to 'dev'
+  // Not a git checkout (a release tarball). Both sides say 'unknown', and
+  // the reload pill declines to compare two of those.
 }
 // e.g. "0.2.0+a1b2c3d" — bump pkg.version for user-facing releases.
 const appVersion = `${pkg.version}+${commit}`

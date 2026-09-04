@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { knownBuild } from '../src/lib/pwa.ts'
 import { nextPhase, shownStage, type PollAnswer } from '../src/lib/updatewatch.ts'
 
 /**
@@ -77,5 +78,17 @@ describe('what the panel draws', () => {
   it('shows a rollback as the failure it is', () => {
     // Back to idle by then, because the old process answered.
     expect(shownStage('idle', 'failed')).toBe('failed')
+  })
+})
+
+describe('telling one build from another', () => {
+  it('refuses to compare two builds that do not know what they are', () => {
+    // A tree with no git — a release tarball — gives both the client and
+    // the server a `+unknown` commit, and the two fallbacks used to differ
+    // ('dev' here, 'unknown' there), so the strings could never match and
+    // the client raised "New version available" against the very build it
+    // was talking to, on every welcome, for ever.
+    expect(knownBuild('0.18.0+unknown')).toBe(false)
+    expect(knownBuild('0.18.0+a1b2c3d')).toBe(true)
   })
 })

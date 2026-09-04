@@ -37,7 +37,7 @@ import {
 } from './lib/alerts.ts'
 import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
 import type { VoiceManager } from './lib/voice.ts'
-import { APP_VERSION, checkForUpdate, initPwa } from './lib/pwa.ts'
+import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
 import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
 import { currentRoute, navigate, onRouteChange, type Route } from './shell/router.ts'
@@ -121,6 +121,14 @@ export interface AppState {
   connection: Connection
   /** True once a welcome has been received this session (server was reached). */
   hasConnected: boolean
+  /**
+   * True once a connection attempt has failed this session.
+   *
+   * Sticky while the app is still trying, so the recovery screen does not
+   * flap with the retry backoff. Cleared by a welcome, which sets
+   * `hasConnected` and takes the screen to 'ok' anyway.
+   */
+  hasFailed: boolean
   /** Live public settings (Wi-Fi SSID, voice availability). */
   config: PublicConfig
   me: User | null
@@ -499,6 +507,12 @@ export const useStore = create<AppState>()((set, get) => {
     if (
       msg.serverVersion &&
       msg.serverVersion !== APP_VERSION &&
+      // Only when both sides know which build they are. A tree with no git
+      // (a release tarball) gives both a `+unknown` suffix, and comparing
+      // two of those says nothing — it used to say "there is a new version"
+      // about the build already running.
+      knownBuild(msg.serverVersion) &&
+      knownBuild(APP_VERSION) &&
       typeof navigator !== 'undefined' &&
       navigator.serviceWorker?.controller
     ) {
@@ -542,6 +556,7 @@ export const useStore = create<AppState>()((set, get) => {
       phase: 'chat',
       connection: 'online',
       hasConnected: true,
+      hasFailed: false,
       config: msg.config,
       me: msg.me,
       users: Object.fromEntries(msg.users.map((u) => [u.id, u])),
@@ -850,7 +865,15 @@ export const useStore = create<AppState>()((set, get) => {
         return { token: getToken() ?? '', cursors }
       },
       onMessage: handleServer,
-      onStatus: (status) => set({ connection: status }),
+      // `hasFailed` latches on the first failure and never clears while
+      // this session is still trying — see connectionScreen. Without it a
+      // cold start with no cache flapped between the recovery screen and
+      // "Connecting…" on every backoff tick.
+      onStatus: (status) =>
+        set((state) => ({
+          connection: status,
+          hasFailed: state.hasFailed || status === 'offline',
+        })),
       onLatency: (ms) => set({ latencyMs: ms }),
     })
     ws.start()
@@ -860,6 +883,7 @@ export const useStore = create<AppState>()((set, get) => {
     phase: 'boot',
     connection: 'connecting',
     hasConnected: false,
+    hasFailed: false,
     config: initialConfig(),
     fileDetail: null,
     me: null,

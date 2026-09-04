@@ -1,6 +1,17 @@
 import { registerSW } from 'virtual:pwa-register'
 
-export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
+export const APP_VERSION: string =
+  typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0+unknown'
+
+/**
+ * Whether a version string names a specific build.
+ *
+ * A tree with no git — a release tarball — gives both the client and the
+ * server a `+unknown` commit, and two of those are not evidence of
+ * anything. Comparing them raised "New version available" against the build
+ * already running, on every welcome, for ever.
+ */
+export const knownBuild = (version: string): boolean => !version.endsWith('+unknown')
 
 /** The live SW registration, so an update check can be forced on demand. */
 let swRegistration: ServiceWorkerRegistration | undefined

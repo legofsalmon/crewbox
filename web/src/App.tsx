@@ -110,6 +110,7 @@ function Shell() {
   const fileDetail = useStore((s) => s.fileDetail)
   const connection = useStore((s) => s.connection)
   const hasConnected = useStore((s) => s.hasConnected)
+  const hasFailed = useStore((s) => s.hasFailed)
   const hasCache = useStore((s) => Object.keys(s.channels).length > 0)
   const toasts = useStore((s) => s.toasts)
   const updateReady = useStore((s) => s.updateReady)
@@ -147,7 +148,7 @@ function Shell() {
 
   // Before any content exists, show a calm connecting / recovery screen instead
   // of an empty shell. Returning users (cache or a prior connect) skip this.
-  const screen = connectionScreen({ connection, hasConnected, hasCache })
+  const screen = connectionScreen({ connection, hasConnected, hasCache, hasFailed })
   if (screen === 'unreachable') return <ServerUnreachable />
   if (screen === 'connecting') return <Connecting />
 

@@ -108,6 +108,45 @@ describe('WsClient connect timeout', () => {
     client.stop()
   })
 
+  it('survives a tab whose timers were throttled', () => {
+    // Deadness used to be "nothing heard for 25 seconds", which is a
+    // statement about the *timer* — and a background tab's timers are
+    // clamped to a minute or suspended outright. So a phone in a pocket
+    // woke up, found the clock had moved, and closed a socket that was
+    // perfectly alive: a reconnect and a fresh welcome every time the
+    // screen came on, on the device that could least afford either.
+    const client = new WsClient(makeHandlers())
+    client.start()
+    const socket = FakeWs.instances[0]!
+    socket.open()
+
+    // The clock moves five minutes without the interval firing — which is
+    // exactly what a throttled or suspended tab does — and then one tick
+    // arrives. The socket has been answering; it must not be closed.
+    vi.setSystemTime(Date.now() + 300_000)
+    vi.advanceTimersByTime(10_000)
+    expect(socket.closeCalls).toBe(0)
+    expect(socket.readyState).toBe(FakeWs.OPEN)
+    // ...and that tick sent a ping rather than giving up.
+    expect(socket.sent.some((f) => (JSON.parse(f) as { type: string }).type === 'ping')).toBe(true)
+
+    client.stop()
+  })
+
+  it('still closes a socket that stops answering', () => {
+    const client = new WsClient(makeHandlers())
+    client.start()
+    const socket = FakeWs.instances[0]!
+    socket.open()
+
+    // Pings go out and nothing comes back. Three of them is the same half
+    // minute of silence the wall clock used to measure.
+    vi.advanceTimersByTime(45_000)
+    expect(socket.closeCalls).toBeGreaterThan(0)
+
+    client.stop()
+  })
+
   it('Retry abandons a stuck-CONNECTING socket and opens a fresh one', () => {
     const client = new WsClient(makeHandlers())
     client.start()
