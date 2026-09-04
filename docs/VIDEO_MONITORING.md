@@ -24,12 +24,24 @@ review convention:
 - `ReadOnlyInit.method` in `server/src/video/coex.ts` is the literal type
   `'GET'`, so no assignment in any file using `CoexIo` can produce another
   verb.
+- `ReadOnlyInit.redirect` is the literal `'error'`, and `assertReadOnly` in
+  the same file re-checks it — along with the destination port — before the
+  real adapter opens anything. A type cannot cover this on its own: following
+  a redirect is a decision the far end makes after the compiler has finished,
+  and `fetch` follows one unless told not to. See the register bus, below.
 - `encodePdu` in `server/src/video/snmp.ts` takes a `PduType` with exactly two
   members, GetRequest and GetNextRequest. SetRequest is 0xa3, and that byte
   appears nowhere in the codebase.
+- `isUnicastIpv4` in `shared/src/video.ts` keeps a processor address to one
+  host: multicast, the limited broadcast, loopback and `0.0.0.0` are refused,
+  and `isOwnBroadcast` additionally refuses the directed broadcast of a subnet
+  this box is on — the one class an address alone cannot reveal.
 - `server/test/videoReadOnly.test.ts` asserts all of the above by reading
   every source file in `server/src/video/`, so the guarantee survives people
-  who have not read this document.
+  who have not read this document. It also drives the real adapter at a server
+  that answers `302 Location: http://<host>:5200/`, with a listener on 5200,
+  and fails if anything arrives — because that one was not visible in the
+  source at all.
 
 The same reasoning as `docs/DMX_MONITORING.md`: every crew phone on the box
 inherits whatever the box can do, and a festival's video network carries the
@@ -44,7 +56,11 @@ processor means asking it: an SNMP GET is a packet, and so is an HTTP GET.
 
 So the promise here is a different one, and weaker in exactly one way: crewbox
 transmits, but only requests that cannot change device state, and only to
-devices an admin has named and confirmed. See "The gate" below.
+single hosts somebody has named and confirmed — one address at a time, never
+a group and never a segment. Adding and arming take a crew session, not the
+admin password, which is deliberate: watching a wall is crew work. The sweep,
+which is the one thing that addresses a whole segment, is the part that takes
+the password. See "The gate" below.
 
 ### The register bus, and why nothing touches it
 
@@ -52,6 +68,14 @@ TCP 5200 is NovaStar's register bus. A control session on it is stateful and
 may be held exclusively by NovaLCT (**REASONED**, from novasun's
 investigation). Nothing in crewbox connects to it — not even to check whether
 something is listening.
+
+That was once true only of the code somebody would read. `fetch` follows
+redirects by default, so a host at the address an admin typed could answer
+`302 Location: http://<processor>:5200/` and the box would open TCP to the bus
+and write an HTTP request into it, every twenty seconds — with `method: 'GET'`
+intact the whole way, and nothing in this directory wrong. The reader now says
+`redirect: 'error'` and the adapter refuses on the destination port before a
+socket is opened, and a test with a listener on 5200 proves it.
 
 That has a visible cost, and it is the right trade. An address that answers
 nothing on 8001 and 161 could be an empty address, or it could be a VX4S or a

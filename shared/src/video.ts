@@ -238,6 +238,41 @@ export function isIpv4(host: string): boolean {
 }
 
 /**
+ * One host, addressed on purpose — not a group, and not everybody.
+ *
+ * `isIpv4` says a string is four octets, which `224.0.0.1` also is. That is
+ * the all-hosts multicast group, and Linux sends UDP to a multicast
+ * destination quite happily without `SO_BROADCAST` — out of whatever
+ * interface the routing table fancies, which on this box is the crew Wi-Fi.
+ * So an address that passed only `isIpv4` let anybody holding a session turn
+ * the SNMP reader into a segment-wide beacon every twenty seconds, by typing
+ * one thing into a box whose own rule is that segment-wide traffic needs the
+ * admin password.
+ *
+ * Rejected, and why:
+ *
+ *  - `0.0.0.0/8` — "this network"; means nothing as a destination.
+ *  - `127.0.0.0/8` — the box itself. A processor is never here, and letting
+ *    it through points the reader at the box's own services.
+ *  - `224.0.0.0/4` — multicast, the case above.
+ *  - `240.0.0.0/4` — reserved, and it carries `255.255.255.255`, which is
+ *    the limited broadcast: every interface, every host.
+ *
+ * Link-local `169.254.0.0/16` is deliberately allowed: a processor on a
+ * directly-patched cable with no DHCP lands there, and that is a real way to
+ * work. A subnet's *directed* broadcast (`10.0.30.255` on a /24) cannot be
+ * recognised from the address alone — it needs the netmask — so the caller
+ * that knows one checks for it. See `isOwnBroadcast`.
+ */
+export function isUnicastIpv4(host: string): boolean {
+  if (!isIpv4(host)) return false
+  const first = Number(host.split('.')[0])
+  if (first === 0 || first === 127) return false
+  if (first >= 224) return false
+  return true
+}
+
+/**
  * Health from a reading, and the phrase that explains it.
  *
  * Deliberately conservative about temperature: a controller that doesn't

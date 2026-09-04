@@ -93,6 +93,28 @@ export function subnetBroadcast(ip: string, netmask: string): string | null {
   return a.map((octet, i) => (octet & m[i]) | (~m[i] & 0xff)).join('.')
 }
 
+/**
+ * Is this the broadcast address of a subnet the box is actually on?
+ *
+ * The one class `isUnicastIpv4` cannot recognise, because it is not in the
+ * address — `10.0.30.255` is a host on a /16 and everybody on a /24, and
+ * only the netmask says which. A UDP datagram to it reaches every device on
+ * that segment, which is the same beacon the multicast check exists to stop.
+ *
+ * Only this box's own subnets are checked, which is all that can be: an
+ * address on a network the box is not on cannot be reached anyway, and
+ * guessing its mask would refuse legitimate hosts.
+ */
+export function isOwnBroadcast(host: string, interfaces: ScanIo['interfaces']): boolean {
+  for (const addresses of Object.values(interfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family !== 'IPv4') continue
+      if (subnetBroadcast(address.address, address.netmask) === host) return true
+    }
+  }
+  return false
+}
+
 /** The broadcast address for an interface IP the box actually holds. */
 export function broadcastFor(ip: string, io: ScanIo): string | null {
   for (const addresses of Object.values(io.interfaces())) {

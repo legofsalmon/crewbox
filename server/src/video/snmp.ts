@@ -182,13 +182,31 @@ export class SnmpSession {
   private readonly host: string
   private readonly community: string
   private readonly port: number
+  private readonly localAddress: string
   private nextRequestId = 1
 
-  constructor(host: string, io: SnmpIo, community = DEFAULT_COMMUNITY, port = SNMP_PORT) {
+  constructor(
+    host: string,
+    io: SnmpIo,
+    community = DEFAULT_COMMUNITY,
+    port = SNMP_PORT,
+    /**
+     * The video adapter's own address, when the box has one pinned.
+     *
+     * Without it the datagram leaves on whatever the routing table picks,
+     * which on a box holding both the crew Wi-Fi and a video VLAN is a coin
+     * flip — and the wrong side of that flip puts monitoring traffic on the
+     * network the crew's phones are on. `CREWBOX_VIDEO_IFACE` is already how
+     * an admin says which adapter faces the wall; this makes the reader
+     * honour it, rather than only the discovery scan.
+     */
+    localAddress = ''
+  ) {
     this.host = host
     this.io = io
     this.community = community
     this.port = port
+    this.localAddress = localAddress
   }
 
   async get(oids: string[]): Promise<Map<string, string | number | null>> {
@@ -236,9 +254,16 @@ export class SnmpSession {
           finish(err as Error)
         }
       })
-      socket.send(packet, this.port, this.host, (err) => {
-        if (err) finish(err)
-      })
+      const send = () =>
+        socket.send(packet, this.port, this.host, (err) => {
+          if (err) finish(err)
+        })
+      // Bound before sending when an adapter is pinned, so the source address
+      // — and therefore the route out — is the video network rather than
+      // whatever the table would have chosen. Port 0: this is a client
+      // socket, and it is closed in `finish`.
+      if (this.localAddress) socket.bind({ address: this.localAddress, port: 0 }, send)
+      else send()
     })
   }
 }

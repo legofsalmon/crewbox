@@ -31,7 +31,47 @@ import {
 export interface ReadOnlyInit {
   /** Literal, not `string`. The compiler is the guard. */
   method: 'GET'
+  /**
+   * Literal, and not the default.
+   *
+   * `fetch` follows redirects unless told not to, which quietly hands the
+   * choice of destination to whatever answered. A host at the address an
+   * admin typed can reply `302 Location: http://<processor>:5200/` and the
+   * box will open TCP to the register bus and write an HTTP request into it,
+   * every twenty seconds — the one thing this module must never do, reached
+   * without a single line of this file being wrong. Reproduced on this Node
+   * against a listener standing in for the bus.
+   */
+  redirect: 'error'
   signal: AbortSignal
+}
+
+/**
+ * Refuse anything that is not a plain read of the COEX API.
+ *
+ * The comment at the top of this file has always said the adapter re-checks
+ * at runtime. It did not — the real one was `fetch(url, init)` — so the type
+ * was the only guard and a type is no guard at all against a redirect, which
+ * is a decision made by the far end after the type has done its work.
+ *
+ * The port is the important one. A GET is harmless wherever it lands; a TCP
+ * connection to 5200 is not, because that session is one NovaLCT may hold
+ * exclusively and taking it could take the desk away from the operator using
+ * it mid-show. So this refuses on the port, before a socket is opened, and
+ * `readOnlyFetch` is the only way out of this module.
+ */
+export function assertReadOnly(url: string, init: ReadOnlyInit, port = COEX_HTTP_PORT): void {
+  if (init.method !== 'GET') throw new Error(`video is read-only: refusing ${init.method}`)
+  if (init.redirect !== 'error') {
+    throw new Error('video is read-only: refusing to follow a redirect')
+  }
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:') {
+    throw new Error(`video is read-only: refusing ${parsed.protocol}`)
+  }
+  if (parsed.port !== String(port)) {
+    throw new Error(`video is read-only: refusing a request to port ${parsed.port || '80'}`)
+  }
 }
 
 export interface CoexResponse {
@@ -240,6 +280,7 @@ export class CoexReader {
     try {
       const res = await this.io.fetch(`${this.base}${path}`, {
         method: 'GET',
+        redirect: 'error',
         signal: controller.signal,
       })
       if (!res.ok) return { data: null, error: `${path} answered ${res.status}` }

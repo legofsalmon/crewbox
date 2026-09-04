@@ -7,7 +7,13 @@ import {
   type VideoProcessor,
   type VideoReadPath,
 } from '@crewbox/shared'
-import { CoexReader, readingIsEmpty, type CoexIo, type ReadOnlyInit } from './coex.ts'
+import {
+  assertReadOnly,
+  CoexReader,
+  readingIsEmpty,
+  type CoexIo,
+  type ReadOnlyInit,
+} from './coex.ts'
 import { SnmpSession, readOverSnmp, type SnmpIo } from './snmp.ts'
 import type { VideoStore } from './store.ts'
 
@@ -54,7 +60,15 @@ export interface WatcherIo {
 
 export const realWatcherIo: WatcherIo = {
   coex: {
-    fetch: (url: string, init: ReadOnlyInit) => fetch(url, init),
+    // Checked here rather than trusted from the type. `redirect: 'error'` is
+    // the part a type cannot enforce — following one is a decision the far
+    // end makes after the compiler has finished — and `assertReadOnly` is
+    // what stops a 302 turning a poll into a connection to the register bus.
+    // See coex.ts.
+    fetch: (url: string, init: ReadOnlyInit) => {
+      assertReadOnly(url, init)
+      return fetch(url, init)
+    },
     now: () => Date.now(),
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   },
@@ -80,6 +94,8 @@ export interface WatcherOptions {
   store: VideoStore
   io?: WatcherIo
   community?: string
+  /** The video adapter's address (CREWBOX_VIDEO_IFACE), when one is pinned. */
+  interfaceIp?: string
   log?: { warn: (msg: string) => void }
 }
 
@@ -87,6 +103,7 @@ export class VideoWatcher {
   private readonly store: VideoStore
   private readonly io: WatcherIo
   private readonly community: string
+  private readonly interfaceIp: string
   private readonly log: WatcherOptions['log']
   private readonly watched = new Map<string, Watched>()
   private timer: NodeJS.Timeout | null = null
@@ -96,6 +113,7 @@ export class VideoWatcher {
     this.store = options.store
     this.io = options.io ?? realWatcherIo
     this.community = options.community ?? 'public'
+    this.interfaceIp = options.interfaceIp ?? ''
     this.log = options.log
   }
 
@@ -152,7 +170,13 @@ export class VideoWatcher {
     const fresh: Watched = {
       host: processor.host,
       reader: new CoexReader(processor.host, this.io.coex),
-      session: new SnmpSession(processor.host, this.io.snmp, this.community),
+      session: new SnmpSession(
+        processor.host,
+        this.io.snmp,
+        this.community,
+        undefined,
+        this.interfaceIp
+      ),
       path: null,
       reading: null,
       lastHeard: null,
