@@ -31,9 +31,10 @@ badge in the DM list.
 
 **One request a day, if the box has internet at all.** A box asks GitHub
 whether a newer crewbox exists, so the admin panel can say so. That request
-carries this box's IP address, as any request does, and nothing else — no
-event name, no crew, no message counts, no identifier. The reply is a
-version number and a link. Nothing is downloaded or installed unless an
+carries this box's IP address, as any request does, and the version it is
+running, as its `User-Agent` (`crewbox/0.18.0+abc1234`) — that is how it can
+be told a newer one exists. Nothing else: no event name, no crew, no message
+counts, no identifier. The reply is a version number and a link. Nothing is downloaded or installed unless an
 admin asks for it, twice. `CREWBOX_UPDATE_CHECK=0` stops the box asking at
 all; see [Updating the box](/docs/updating).
 

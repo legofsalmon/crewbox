@@ -92,10 +92,12 @@ itself.
 
 ## Turning it off
 
-The module ships on by default. A box that doesn't want it runs without:
+The module ships on by default. `CREWBOX_MODULES` is the whole list, not a
+list of exclusions, so turning one off means naming the rest — a box that
+does not want the show log runs:
 
 ```
-CREWBOX_MODULES=schedule,patch,lighting,network
+CREWBOX_MODULES=schedule,patch,lighting,video,network
 ```
 
 Entries already filed stay in the box's database and come back if the module

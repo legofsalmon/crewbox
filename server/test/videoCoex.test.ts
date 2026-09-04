@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { COEX_HTTP_PORT, REGISTER_BUS_PORT } from '@crewbox/shared'
 import {
+  assertReadOnly,
   BUSY_CODE,
   CoexReader,
   TOPOLOGY_EVERY,
@@ -9,6 +11,7 @@ import {
   readingIsEmpty,
   unwrap,
   type CoexIo,
+  type ReadOnlyInit,
 } from '../src/video/coex.ts'
 
 /**
@@ -25,12 +28,13 @@ import {
 interface Recorded {
   url: string
   method: string
+  redirect: string
 }
 
 function fakeIo(routes: Record<string, unknown>, recorded: Recorded[] = []): CoexIo {
   return {
     fetch: (url, init) => {
-      recorded.push({ url, method: init.method })
+      recorded.push({ url, method: init.method, redirect: init.redirect })
       const path = new URL(url).pathname
       const body = routes[path]
       if (body === undefined) {
@@ -101,6 +105,17 @@ describe('provisional field names', () => {
     // A sparse payload must not paint a working wall red — the pane's only
     // alarm is worthless if it cries wolf on a firmware that omits a field.
     expect(parseCabinets([{ id: 'C1' }])[0].online).toBe(true)
+  })
+
+  it('does not read a numeric status as "offline"', () => {
+    // `status` is a code everywhere else in this API — an input's signal
+    // status is 0 not-connected, 1 present, 2 no-signal — and turning 0
+    // into `false` painted a working wall red on a firmware that reports
+    // cabinets that way.
+    expect(parseCabinets([{ id: 'E1', status: 0 }])[0].online).toBe(true)
+    expect(parseCabinets([{ id: 'E2', status: 1 }])[0].online).toBe(true)
+    // An unambiguous field is still believed.
+    expect(parseCabinets([{ id: 'E3', online: false }])[0].online).toBe(false)
   })
 
   it('leaves a gap when no spelling matches, rather than guessing', () => {
@@ -199,5 +214,106 @@ describe('polling', () => {
     const reading = await reader.poll()
     expect(readingIsEmpty(reading)).toBe(true)
     expect(reading.errors.length).toBeGreaterThan(0)
+  })
+
+  it('does not call a processor absent because none of its answers parsed', async () => {
+    // "Nothing is there" used to be inferred from the fields: no cabinets,
+    // no inputs, no model, no temperature, no display mode. A controller
+    // answering every endpoint can land on all five — a wall not yet
+    // configured, a firmware whose model sits under a key we do not read —
+    // and was then reported as having no read path, which is the one
+    // verdict that means "this address is not a processor at all".
+    const reader = new CoexReader(
+      '10.0.30.11',
+      fakeIo({
+        '/api/v1/device': { code: 0, data: { somethingElse: 'yes' } },
+        '/api/v1/device/screen/list': { code: 0, data: { screens: [] } },
+        '/api/v1/device/snmpstate': { code: 0, data: {} },
+        '/api/v1/device/monitor/info': { code: 0, data: {} },
+        '/api/v1/device/screen/displaymode': { code: 0, data: {} },
+        '/api/v1/device/input/sources': { code: 0, data: { sources: [] } },
+        '/api/v1/device/backup': { code: 0, data: {} },
+      })
+    )
+    const reading = await reader.poll()
+    // Nothing recognisable came back...
+    expect(reading.model).toBeUndefined()
+    expect(reading.cabinets).toHaveLength(0)
+    expect(reading.inputs).toHaveLength(0)
+    // ...but the controller is plainly there and answering.
+    expect(readingIsEmpty(reading)).toBe(false)
+  })
+})
+
+/**
+ * The one way out of this module, and what it refuses.
+ *
+ * `ReadOnlyInit.method` being the literal `'GET'` is a real guard and it
+ * stops at the compiler — which is exactly where a redirect starts. `fetch`
+ * follows one unless told not to, so a host at the address an admin typed
+ * could answer `302 Location: http://<processor>:5200/` and the box would
+ * open TCP to the register bus and write an HTTP request into it, every
+ * twenty seconds. That session is one NovaLCT may hold exclusively; taking it
+ * could take the desk away from the operator using it, mid-show.
+ *
+ * Reproduced against a listener standing in for the bus before this existed.
+ */
+describe('what the read-only adapter refuses', () => {
+  const init = (over: Partial<ReadOnlyInit> = {}): ReadOnlyInit => ({
+    method: 'GET',
+    redirect: 'error',
+    signal: AbortSignal.timeout(1000),
+    ...over,
+  })
+
+  it('accepts an ordinary read of the COEX API', () => {
+    expect(() =>
+      assertReadOnly(`http://10.0.30.11:${COEX_HTTP_PORT}/api/v1/device`, init())
+    ).not.toThrow()
+  })
+
+  it('refuses to follow a redirect', () => {
+    expect(() =>
+      assertReadOnly(
+        `http://10.0.30.11:${COEX_HTTP_PORT}/api/v1/device`,
+        init({ redirect: 'follow' } as unknown as Partial<ReadOnlyInit>)
+      )
+    ).toThrow(/redirect/)
+  })
+
+  it('refuses the register bus outright', () => {
+    // Where a followed redirect would have landed. Refused on the port,
+    // before a socket is opened.
+    expect(() => assertReadOnly(`http://10.0.30.11:${REGISTER_BUS_PORT}/`, init())).toThrow(
+      String(REGISTER_BUS_PORT)
+    )
+  })
+
+  it('refuses any port that is not the COEX API', () => {
+    for (const port of [80, 443, 22, 5200]) {
+      expect(() => assertReadOnly(`http://10.0.30.11:${port}/`, init())).toThrow(/read-only/)
+    }
+  })
+
+  it('refuses a write verb, even though the type already does', () => {
+    expect(() =>
+      assertReadOnly(
+        `http://10.0.30.11:${COEX_HTTP_PORT}/api/v1/device`,
+        init({ method: 'POST' } as unknown as Partial<ReadOnlyInit>)
+      )
+    ).toThrow(/POST/)
+  })
+
+  it('asks for redirect: error on every request it makes', () => {
+    // The type says so; this says the reader actually passes it.
+    const recorded: Recorded[] = []
+    const reader = new CoexReader('10.0.30.11', fakeIo({}, recorded))
+    return reader.poll().then(() => {
+      expect(recorded.length).toBeGreaterThan(0)
+      for (const r of recorded) {
+        expect(r.method).toBe('GET')
+        expect(r.redirect).toBe('error')
+      }
+    })
   })
 })

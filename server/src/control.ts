@@ -2,8 +2,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type * as Y from 'yjs'
 import {
   agenda,
-  nowMinutes,
   relative,
+  wallClock,
   toAgendaAct,
   type Act,
   type AgendaEntry,
@@ -192,7 +192,7 @@ export interface StageBoard {
  *
  * `now` is passed in, so this is testable at any hour.
  */
-export function stageBoard(acts: Act[], now: Date): StageBoard[] {
+export function stageBoard(acts: Act[], now: Date, timeZone?: string): StageBoard[] {
   const entry = (found: AgendaEntry | null): BoardEntry | null =>
     found && {
       name: found.act.name,
@@ -203,7 +203,12 @@ export function stageBoard(acts: Act[], now: Date): StageBoard[] {
       ends: found.endsIn === null ? '' : relative(found.endsIn),
     }
 
-  return agenda(acts.map(toAgendaAct), nowMinutes(now)).map((stage) => ({
+  // The festival's wall clock, not the box's process timezone. A box imaged
+  // with UTC and driven to a field would otherwise tell a production desk the
+  // headliner is on an hour from when every crew phone says — during the
+  // show, with nothing saying why. See CREWBOX_TZ.
+  const clock = wallClock(now, timeZone)
+  return agenda(acts.map(toAgendaAct), clock.now, clock.today).map((stage) => ({
     stage: stage.stage,
     onNow: entry(stage.onNow),
     next: entry(stage.next),

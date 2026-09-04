@@ -14,16 +14,36 @@ export type Route =
   | { kind: 'channel'; channelId: string }
   | { kind: 'module'; moduleId: string; subpath: string }
 
+/**
+ * `decodeURIComponent` that cannot end the app.
+ *
+ * It throws a URIError on a lone `%` or a truncated escape — which a URL
+ * acquires by being shared through a chat client that wrapped the line, or
+ * by somebody deleting a character out of the address bar. `parseRoute` is
+ * called from `boot()` before the socket is started, so that throw left the
+ * app on "Connecting…" for ever, on a device whose owner had done nothing
+ * but follow a link. An id that will not decode is not a valid id anyway;
+ * passing the raw text through simply fails to match, which is a channel
+ * that does not exist rather than an app that does not start.
+ */
+const decode = (part: string): string => {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
+
 export function parseRoute(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean)
   if (parts[0] === 'c' && parts[1]) {
-    return { kind: 'channel', channelId: decodeURIComponent(parts[1]) }
+    return { kind: 'channel', channelId: decode(parts[1]) }
   }
   if (parts[0] === 'm' && parts[1]) {
     return {
       kind: 'module',
-      moduleId: decodeURIComponent(parts[1]),
-      subpath: parts.slice(2).map(decodeURIComponent).join('/'),
+      moduleId: decode(parts[1]),
+      subpath: parts.slice(2).map(decode).join('/'),
     }
   }
   return { kind: 'home' }

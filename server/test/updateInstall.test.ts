@@ -4,12 +4,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   OLD_SUFFIX,
@@ -18,14 +19,35 @@ import {
   dropBackup,
   inFlightPath,
   installBuild,
+  moveFile,
   readInFlight,
   recoverInterruptedInstall,
   sweepOldBinaries,
   undoInstall,
   writeInFlight,
   type InFlight,
+  type InstallResult,
 } from '../src/update/install.ts'
 import type { MacIo } from '../src/update/macapp.ts'
+
+/**
+ * The install succeeded — say so, then narrow the type.
+ *
+ * These tests were written as `if (!result.ok) return`, a type guard doing
+ * duty as an assertion. It is not one: a regression that made `installBuild`
+ * fail outright turned every test below into three lines that ran and
+ * passed, and the suite reported green on an updater that could not install
+ * anything at all.
+ */
+function assertInstalled(
+  result: InstallResult
+): asserts result is Extract<InstallResult, { ok: true }> {
+  if (!result.ok) {
+    throw new Error(`expected the install to succeed: ${result.stage} — ${result.reason}`)
+  }
+}
+import { schemaVersion, snapshotDb } from '../src/update/snapshot.ts'
+import { DatabaseSync } from 'node:sqlite'
 
 /**
  * Swapping the binary, and getting back.
@@ -134,7 +156,7 @@ describe('what is running, and how it gets replaced', () => {
     })
     expect(result.ok).toBe(true)
     expect(calls.some((c) => c.startsWith('ditto'))).toBe(true)
-    if (!result.ok) return
+    assertInstalled(result)
     expect(result.inFlight.kind).toBe('app-bundle')
     expect(result.inFlight.targetPath).toBe('/Applications/Crewbox.app')
   })
@@ -154,7 +176,7 @@ describe('what is running, and how it gets replaced', () => {
       dataDir,
       macIo: fakeMacIo([]),
     })
-    if (!result.ok) return
+    assertInstalled(result)
     expect(result.inFlight.relaunch).toEqual({
       command: 'open',
       args: ['-n', '/Applications/Crewbox.app'],
@@ -252,7 +274,7 @@ describe('going back', () => {
   it('restores the old box', () => {
     const result = install()
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    assertInstalled(result)
     expect(undoInstall(result.inFlight, dataDir)).toEqual({ ok: true })
     expect(readFileSync(target, 'utf8')).toBe('the old box')
     expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(false)
@@ -261,25 +283,111 @@ describe('going back', () => {
 
   it('leaves the restored box executable too', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     undoInstall(result.inFlight, dataDir)
     expect(statSync(target).mode & 0o111).toBeTruthy()
   })
 
   it('says why when there is nothing to go back to', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     rmSync(result.inFlight.backupPath)
     expect(undoInstall(result.inFlight, dataDir)).toMatchObject({ ok: false })
   })
 
+  it('returns the failed build to the updates directory, so a retry is a rename', () => {
+    // The swap *moves* the download into place, so deleting the installed
+    // file on rollback threw away the only copy — and "Try again" then went
+    // looking for a file the install had consumed, turning every retry into
+    // another two hundred megabytes over a venue's uplink.
+    const result = install()
+    assertInstalled(result)
+    expect(existsSync(build)).toBe(false)
+    expect(undoInstall(result.inFlight, dataDir)).toEqual({ ok: true })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+    expect(readFileSync(build, 'utf8')).toBe('the new box')
+  })
+
+  it('rolls back anyway when the download cannot be returned', () => {
+    const result = install()
+    assertInstalled(result)
+    // The updates directory has gone — a tidy-up, a different disk. Getting
+    // the box back on its old binary still matters more than the retry.
+    rmSync(dirname(build), { recursive: true, force: true })
+    expect(undoInstall(result.inFlight, dataDir)).toEqual({ ok: true })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+  })
+
+  it('keeps a note of where the download was, across a power cut', () => {
+    // The marker is what a *different process* rolls back from, so a field
+    // the reader drops is a field the rollback does not have.
+    const result = install()
+    assertInstalled(result)
+    expect(readInFlight(dataDir)?.buildPath).toBe(build)
+  })
+
   it('drops the backup once the new box has proved itself', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     dropBackup(result.inFlight, dataDir)
     expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(false)
     expect(existsSync(inFlightPath(dataDir))).toBe(false)
     expect(readFileSync(target, 'utf8')).toBe('the new box')
+  })
+})
+
+describe('moving a file the ordinary way will not', () => {
+  /**
+   * The updates directory and the binary do not have to share a filesystem.
+   *
+   * `/usr/local/bin/crewbox` with its data on `/home`, or on a USB stick, is
+   * an ordinary layout and an EXDEV every time — so the install simply could
+   * not happen, reported as a rename failure nobody would connect to the
+   * cause. Run against two real filesystems rather than a faked errno,
+   * because the thing being defended is what the kernel actually does.
+   */
+  const crossFs = (): string | null => {
+    // Linux gives a tmpfs at /dev/shm that is never the same filesystem as
+    // the temp dir here. Elsewhere there is no portable second one, and a
+    // test that quietly proves nothing is worse than one that says so.
+    try {
+      const probe = join('/dev/shm', `crewbox-xdev-${process.pid}`)
+      writeFileSync(probe, 'probe')
+      try {
+        renameSync(probe, join(dataDir, 'probe'))
+        return null // same filesystem: nothing to test here
+      } catch (err) {
+        return (err as NodeJS.ErrnoException).code === 'EXDEV' ? '/dev/shm' : null
+      } finally {
+        rmSync(probe, { force: true })
+        rmSync(join(dataDir, 'probe'), { force: true })
+      }
+    } catch {
+      return null
+    }
+  }
+
+  it('falls back to a copy when a rename crosses a filesystem', () => {
+    const other = crossFs()
+    if (!other) return
+    const from = join(other, `crewbox-xdev-build-${process.pid}`)
+    const to = join(dataDir, 'crewbox')
+    writeFileSync(from, 'the new box')
+    try {
+      // The bare rename is what used to happen, and it is why this exists.
+      expect(() => renameSync(from, to)).toThrow(/EXDEV/)
+      moveFile(from, to)
+      expect(readFileSync(to, 'utf8')).toBe('the new box')
+      expect(existsSync(from)).toBe(false)
+    } finally {
+      rmSync(from, { force: true })
+    }
+  })
+
+  it('passes any other rename failure straight through', () => {
+    // A missing source is not something to paper over with a copy that would
+    // fail the same way one line later.
+    expect(() => moveFile(join(dataDir, 'nothing.bin'), join(dataDir, 'x.bin'))).toThrow()
   })
 })
 
@@ -288,7 +396,7 @@ describe('an install nobody ever confirmed', () => {
     // Power cut after the swap, before confirmation. The box came up on the
     // new version — rolling that back would be the bug.
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     expect(recoverInterruptedInstall(dataDir, '0.18.0')).toEqual({
       action: 'confirmed',
       toVersion: '0.18.0',
@@ -299,15 +407,118 @@ describe('an install nobody ever confirmed', () => {
 
   it('finishes the rollback when the old build came back up', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     const outcome = recoverInterruptedInstall(dataDir, '0.17.1')
-    expect(outcome).toMatchObject({ action: 'rolled-back' })
+    expect(outcome).toMatchObject({ action: 'rolled-back', database: 'kept' })
     expect(readFileSync(target, 'utf8')).toBe('the old box')
+  })
+
+  describe('and the database the new build migrated', () => {
+    /**
+     * Migrations are forward-only. Putting the old binary back in front of a
+     * database the new build has already migrated does not crash — it opens
+     * happily, runs nothing, and serves a schema it does not understand. The
+     * snapshot exists to prevent exactly that, and for the life of the
+     * updater nothing ever read it back.
+     */
+    const dbPath = () => join(dataDir, 'crewbox.db')
+
+    const makeDb = (userVersion: number, rows: string[]) => {
+      const db = new DatabaseSync(dbPath())
+      try {
+        db.exec('CREATE TABLE IF NOT EXISTS notes (body TEXT)')
+        db.exec(`PRAGMA user_version = ${userVersion}`)
+        for (const row of rows) db.prepare('INSERT INTO notes (body) VALUES (?)').run(row)
+      } finally {
+        db.close()
+      }
+    }
+
+    const rows = (path: string): string[] => {
+      const db = new DatabaseSync(path, { readOnly: true })
+      try {
+        return (
+          db.prepare('SELECT body FROM notes ORDER BY rowid').all() as { body: string }[]
+        ).map((r) => r.body)
+      } finally {
+        db.close()
+      }
+    }
+
+    /** Install, having taken a snapshot first, the way the service does. */
+    const installWithSnapshot = () => {
+      const snapshot = snapshotDb({ dbPath: dbPath(), dataDir, version: '0.17.1' })
+      expect(snapshot.ok).toBe(true)
+      if (!snapshot.ok) throw new Error(snapshot.reason)
+      return installBuild({
+        target: { kind: 'binary', path: target },
+        buildPath: build,
+        fromVersion: '0.17.1',
+        toVersion: '0.18.0',
+        dataDir,
+        snapshotPath: snapshot.snapshot.path,
+        now: () => 1_700_000_000_000,
+      })
+    }
+
+    it('goes back with the binary', () => {
+      makeDb(8, ['load in', 'doors'])
+      const result = installWithSnapshot()
+      assertInstalled(result)
+      // The new build came up far enough to migrate, then died.
+      makeDb(9, ['written by the build that then died'])
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1', null, dbPath())
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'restored' })
+      expect(readFileSync(target, 'utf8')).toBe('the old box')
+      expect(schemaVersion(dbPath())).toBe(8)
+      expect(rows(dbPath())).toEqual(['load in', 'doors'])
+    })
+
+    it('is left alone when the new build never migrated', () => {
+      // The common rollback: the build would not start at all. Replacing the
+      // database there would throw away every message sent since the
+      // snapshot for no reason.
+      makeDb(8, ['load in'])
+      const result = installWithSnapshot()
+      assertInstalled(result)
+      makeDb(8, ['sent while the update was being attempted'])
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1', null, dbPath())
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'kept' })
+      expect(rows(dbPath())).toContain('sent while the update was being attempted')
+    })
+
+    it('is left alone when the caller is in no position to replace it', () => {
+      // A caller that has the database open must not pass a path: on POSIX
+      // the swap would look like it worked and change nothing.
+      makeDb(8, ['load in'])
+      const result = installWithSnapshot()
+      assertInstalled(result)
+      makeDb(9, [])
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1')
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'kept' })
+      expect(schemaVersion(dbPath())).toBe(9)
+    })
+
+    it('says so, and still puts the binary back, when the snapshot has gone', () => {
+      makeDb(8, ['load in'])
+      const result = installWithSnapshot()
+      assertInstalled(result)
+      makeDb(9, [])
+      rmSync(result.inFlight.snapshotPath!, { force: true })
+
+      const outcome = recoverInterruptedInstall(dataDir, '0.17.1', null, dbPath())
+      expect(outcome).toMatchObject({ action: 'rolled-back', database: 'failed' })
+      // The binary is the half that can still be fixed, so it is.
+      expect(readFileSync(target, 'utf8')).toBe('the old box')
+    })
   })
 
   it('refuses to guess when the running version is neither', () => {
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     const outcome = recoverInterruptedInstall(dataDir, '0.16.0')
     expect(outcome).toMatchObject({ action: 'failed' })
     // Nothing touched: a box nobody can reason about is one to leave alone.
@@ -316,6 +527,42 @@ describe('an install nobody ever confirmed', () => {
 
   it('does nothing at all when no install was in flight', () => {
     expect(recoverInterruptedInstall(dataDir, '0.17.1')).toEqual({ action: 'none' })
+  })
+
+  it('compares a release tag against a build version, not string against string', () => {
+    // The shapes that actually occur: a marker records the tag it was asked
+    // to install, and a running box reports its own build. Compared raw these
+    // match neither branch, so every real interrupted install took the
+    // "cannot reason about this" path and cleared the marker.
+    const result = installBuild({
+      target: { kind: 'binary', path: target },
+      buildPath: build,
+      fromVersion: '0.17.1+abc1234',
+      toVersion: 'v0.18.0',
+      dataDir,
+      now: () => 1_700_000_000_000,
+    })
+    assertInstalled(result)
+    expect(recoverInterruptedInstall(dataDir, '0.18.0+def5678')).toEqual({
+      action: 'confirmed',
+      toVersion: 'v0.18.0',
+    })
+  })
+
+  it('rolls back on a tagged marker too', () => {
+    const result = installBuild({
+      target: { kind: 'binary', path: target },
+      buildPath: build,
+      fromVersion: '0.17.1+abc1234',
+      toVersion: 'v0.18.0',
+      dataDir,
+      now: () => 1_700_000_000_000,
+    })
+    assertInstalled(result)
+    expect(recoverInterruptedInstall(dataDir, 'v0.17.1')).toMatchObject({
+      action: 'rolled-back',
+    })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
   })
 
   it('tolerates a marker that is junk', () => {
@@ -327,6 +574,58 @@ describe('an install nobody ever confirmed', () => {
   it('tolerates a marker missing the fields it needs', () => {
     writeFileSync(inFlightPath(dataDir), JSON.stringify({ toVersion: '0.18.0' }))
     expect(readInFlight(dataDir)).toBeNull()
+  })
+
+  /**
+   * The case that is not an interruption at all.
+   *
+   * Every successful update runs this function, in the box the updater has
+   * just launched, while the process that launched it is still watching. That
+   * process owns the marker and the backup and is about to use one or the
+   * other. A new box that helpfully "recovered" would delete the backup out
+   * from under it, and a build that then failed its health probe would have
+   * nothing to go back to — an unbootable box, from a working update.
+   */
+  describe('while another box is still supervising', () => {
+    it('reports the supervisor and changes nothing', () => {
+      const result = install()
+      assertInstalled(result)
+      expect(recoverInterruptedInstall(dataDir, '0.18.0', 4242)).toEqual({
+        action: 'supervised',
+        pid: 4242,
+        toVersion: '0.18.0',
+      })
+      expect(existsSync(inFlightPath(dataDir))).toBe(true)
+      expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(true)
+    })
+
+    it('leaves the backup alone even when this box is the new build', () => {
+      // The exact shape of the bug: the running version matches, so without
+      // the supervisor check this took the 'confirmed' branch and dropped the
+      // only file a rollback can use.
+      const result = install()
+      assertInstalled(result)
+      recoverInterruptedInstall(dataDir, '0.18.0', 4242)
+      expect(existsSync(result.inFlight.backupPath)).toBe(true)
+    })
+
+    it('leaves the sweep nothing to take either', () => {
+      // The marker is what stops the sweep, so leaving it in place is what
+      // keeps `.old` on disk through the supervised boot.
+      const result = install()
+      assertInstalled(result)
+      recoverInterruptedInstall(dataDir, '0.18.0', 4242)
+      expect(sweepOldBinaries(dataDir, target)).toEqual([])
+      expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(true)
+    })
+
+    it('still recovers normally once nobody is watching', () => {
+      const result = install()
+      assertInstalled(result)
+      expect(recoverInterruptedInstall(dataDir, '0.18.0', null)).toMatchObject({
+        action: 'confirmed',
+      })
+    })
   })
 
   it('round-trips a marker', () => {
@@ -382,7 +681,7 @@ describe('sweeping up', () => {
     // That `.old` is the only way back. Sweeping it here would turn a
     // recoverable failure into a permanent one.
     const result = install()
-    if (!result.ok) return
+    assertInstalled(result)
     expect(sweepOldBinaries(dataDir, target)).toEqual([])
     expect(existsSync(`${target}${OLD_SUFFIX}`)).toBe(true)
   })

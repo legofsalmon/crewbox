@@ -119,17 +119,53 @@ export class AdminTokens {
   }
 }
 
+/**
+ * How many distinct keys one limiter will track.
+ *
+ * The sweep runs every few minutes, so between sweeps the map grows with
+ * every new key — and a key is an IP address, which under a trusted proxy
+ * means a string a client supplied. Address-based trust is what stops a LAN
+ * client minting them, and this is the floor under it: a bound that holds
+ * whatever the key turns out to be.
+ *
+ * Generously above any real crew — a thousand phones is a festival, not a
+ * green room — so the cap is only ever reached by something abusive.
+ */
+export const MAX_TRACKED_KEYS = 4096
+
 /** Sliding-window limiter for PIN attempts, keyed by IP. */
 export class RateLimiter {
   private hits = new Map<string, number[]>()
 
   constructor(
     private readonly max: number,
-    private readonly windowMs: number
+    private readonly windowMs: number,
+    private readonly maxKeys = MAX_TRACKED_KEYS
   ) {}
+
+  /**
+   * Make room before adding a key, when the map is at its bound.
+   *
+   * Sweeps first, which is almost always enough — most keys in a burst have
+   * already fallen out of their window. If that frees nothing, the oldest
+   * insertion goes: a Map iterates in insertion order, and under a flood the
+   * oldest entry is the least likely to be a crew member still typing.
+   *
+   * Dropping a key means forgetting somebody's failed attempts, which is the
+   * lesser harm. The alternative is a box that runs out of memory, and a box
+   * that is not running rate-limits nothing at all.
+   */
+  private makeRoom(key: string): void {
+    if (this.hits.has(key) || this.hits.size < this.maxKeys) return
+    this.sweep()
+    if (this.hits.size < this.maxKeys) return
+    const oldest = this.hits.keys().next()
+    if (!oldest.done) this.hits.delete(oldest.value)
+  }
 
   allow(key: string): boolean {
     const now = Date.now()
+    this.makeRoom(key)
     const recent = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs)
     if (recent.length >= this.max) {
       this.hits.set(key, recent)
@@ -152,9 +188,15 @@ export class RateLimiter {
   /** Record one event against the key (e.g. a failed login) without gating. */
   record(key: string): void {
     const now = Date.now()
+    this.makeRoom(key)
     const recent = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs)
     recent.push(now)
     this.hits.set(key, recent)
+  }
+
+  /** How many keys are being tracked. For the cap's own tests. */
+  size(): number {
+    return this.hits.size
   }
 
   /** Forget a key — e.g. a successful login clears its failure count. */

@@ -93,6 +93,23 @@ export interface AgendaAct {
   id: string
   name: string
   stage: string
+  /**
+   * Which show day this act belongs to, as plain YYYY-MM-DD.
+   *
+   * Carried, not dropped. Dropping it put every act on a stage across the
+   * whole weekend onto one clock, so on the Saturday at 21:30 — with a
+   * Friday headliner and a Saturday headliner both at 21:00 — "on now" was
+   * Friday's band, on every phone, on the board, and over the control API.
+   * The show log copies that name into a permanent record of the night.
+   *
+   * The convention is the one `showMinutes` already assumes: a set at 00:30
+   * belongs to the night that started at 19:00, so it carries that night's
+   * date, not the following morning's.
+   *
+   * Empty means "any day", which is what a single-day sheet with nobody
+   * filling the date column looks like. Those behave exactly as before.
+   */
+  date: string
   /** Minutes into the show day, or null when the sheet gives no time. */
   start: number | null
   end: number | null
@@ -138,6 +155,7 @@ export function toAgendaAct(input: Act): AgendaAct {
     id: input.id,
     name: input.name.trim(),
     stage: input.stage.trim(),
+    date: input.date.trim(),
     start: mappedStart,
     end: mappedStart === null || duration === null ? null : mappedStart + duration,
     changeover: input.changeover,
@@ -148,7 +166,125 @@ export function toAgendaAct(input: Act): AgendaAct {
 export const nowMinutes = (now: Date): number => showMinutes(now.getHours() * 60 + now.getMinutes())
 
 /**
+ * Where the festival is, as a wall clock and a show day.
+ *
+ * Two things read a running order: every crew phone, and the box when a
+ * production desk asks over the control API. The phones read their own local
+ * time, which on site is the festival's. The box reads its *process*
+ * timezone — and a box imaged with UTC and driven to a field in July is an
+ * hour out, so the Stream Deck at front of house and every phone in the crew
+ * disagree about when the headliner is on, during the show, with nothing
+ * saying why.
+ *
+ * `timeZone` is an IANA name (`CREWBOX_TZ`). Unset, this is the process
+ * zone, which is today's behaviour and correct on a box whose clock is set
+ * up properly. A name Intl cannot read falls back to the same, because a
+ * typo in an environment variable must not stop a box telling anybody the
+ * time.
+ */
+export function wallClock(now: Date, timeZone?: string): { now: number; today: string } {
+  const parts = zoneParts(now, timeZone)
+  const clock = parts.hour * 60 + parts.minute
+  // Before the roll it is still the previous show day. Shifted through UTC
+  // so the arithmetic is a plain day and never lands on a clock change.
+  const at = Date.UTC(parts.year, parts.month - 1, parts.day)
+  const day = new Date(clock < DAY_ROLLS_AT ? at - 24 * 60 * 60_000 : at)
+  const month = String(day.getUTCMonth() + 1).padStart(2, '0')
+  const date = String(day.getUTCDate()).padStart(2, '0')
+  return { now: showMinutes(clock), today: `${day.getUTCFullYear()}-${month}-${date}` }
+}
+
+interface ZoneParts {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+}
+
+function zoneParts(now: Date, timeZone?: string): ZoneParts {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(now)
+      const value = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+      const read = {
+        year: value('year'),
+        month: value('month'),
+        day: value('day'),
+        hour: value('hour'),
+        minute: value('minute'),
+      }
+      if (!Object.values(read).some(Number.isNaN)) return read
+    } catch {
+      // An unusable zone name. Fall through to the process zone rather than
+      // refusing to say what time it is.
+    }
+  }
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+  }
+}
+
+/**
+ * Which show day it is, as plain YYYY-MM-DD.
+ *
+ * The same 06:00 line as `showMinutes`, applied to the calendar: at half past
+ * midnight on the Saturday it is still Friday's show day, because the set on
+ * stage started at eleven on the Friday night. Without this, a timetable
+ * would change day underneath the crew halfway through the headline slot.
+ */
+export const showDate = (now: Date, timeZone?: string): string => wallClock(now, timeZone).today
+
+/**
+ * Whole days from one plain date to another, or null if either is unusable.
+ *
+ * Parsed as UTC on both sides so the answer is a count of calendar days and
+ * never shifts by one across a daylight-saving boundary — which for a
+ * festival in late March or October is not hypothetical.
+ */
+export function daysBetween(from: string, to: string): number | null {
+  const parse = (text: string): number | null => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim())
+    if (!match) return null
+    const ms = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    return Number.isNaN(ms) ? null : ms
+  }
+  const a = parse(from)
+  const b = parse(to)
+  if (a === null || b === null) return null
+  return Math.round((b - a) / (24 * 60 * 60_000))
+}
+
+/**
  * What is on, and what is next, per stage.
+ *
+ * **`today` is not optional and this is why.** Without it every act on a
+ * stage across the whole weekend landed on one clock, so on the Saturday at
+ * 21:30, with a Friday headliner and a Saturday headliner both at 21:00,
+ * "on now" was Friday's band — on every phone, on the board, and over the
+ * control API, and from there into the show log as a permanent record of who
+ * was on. Both consumers now pass the show day from `showDate`, and the
+ * required parameter is what stops a third one forgetting.
+ *
+ * Acts dated before today are gone; acts dated after it can be "next" only
+ * once today's stage has nothing left, and their countdown carries the whole
+ * gap, so a stage that has finished says "in 19h" rather than "in 5 min"
+ * about tomorrow lunchtime.
+ *
+ * An act with no date at all belongs to whatever day is being asked about,
+ * which is what a single-day sheet with an empty date column looks like.
  *
  * Acts with no start time are carried but never chosen as "on now" or
  * "next" — a TBC slot should not silently become the answer to "who is on".
@@ -156,7 +292,7 @@ export const nowMinutes = (now: Date): number => showMinutes(now.getHours() * 60
  * stage is at the top of a phone screen rather than the alphabetically
  * luckiest one.
  */
-export function agenda(acts: AgendaAct[], now: number): StageAgenda[] {
+export function agenda(acts: AgendaAct[], now: number, today: string): StageAgenda[] {
   const byStage = new Map<string, AgendaAct[]>()
   for (const act of acts) {
     const stage = act.stage || 'Stage'
@@ -165,34 +301,64 @@ export function agenda(acts: AgendaAct[], now: number): StageAgenda[] {
     else byStage.set(stage, [act])
   }
 
+  /**
+   * How far into the future this act sits, in minutes, counting the days.
+   *
+   * Null for an act from a day that has been and gone, and for a date
+   * nobody can read — both are things this must never call "on now".
+   */
+  const offsetOf = (act: AgendaAct): number | null => {
+    if (!act.date) return 0
+    const days = daysBetween(today, act.date)
+    if (days === null || days < 0) return null
+    return days * DAY
+  }
+
   const stages: StageAgenda[] = []
   for (const [stage, list] of byStage) {
     const timed = list
-      .filter((a): a is AgendaAct & { start: number } => a.start !== null)
-      .sort((a, b) => a.start - b.start)
+      .map((act) => ({ act, offset: offsetOf(act) }))
+      .filter(
+        (a): a is { act: AgendaAct & { start: number }; offset: number } =>
+          a.act.start !== null && a.offset !== null
+      )
+      // By when it actually happens, which across days is the start plus the
+      // days between. Sorting on the clock alone is the whole bug.
+      .sort((a, b) => a.act.start + a.offset - (b.act.start + b.offset))
+
+    const startsAt = (i: number): number => timed[i]!.act.start + timed[i]!.offset
 
     // An act with no end time runs until the next one starts; without that,
     // every set on a sheet where nobody filled the end column would read as
-    // over the moment it began.
-    const entry = (act: AgendaAct, index: number): AgendaEntry => {
-      const implied = act.end ?? timed[index + 1]?.start ?? null
+    // over the moment it began. The next one is only an end if it is on the
+    // same day — tomorrow's first act does not end tonight's last.
+    const impliedEnd = (i: number): number | null => {
+      const { act, offset } = timed[i]!
+      if (act.end !== null) return act.end + offset
+      const following = timed[i + 1]
+      if (!following) return null
+      return following.offset === offset ? startsAt(i + 1) : null
+    }
+
+    const entry = (i: number): AgendaEntry => {
+      const end = impliedEnd(i)
       return {
-        act,
-        startsIn: act.start === null ? null : act.start - now,
-        endsIn: implied === null ? null : implied - now,
+        act: timed[i]!.act,
+        startsIn: startsAt(i) - now,
+        endsIn: end === null ? null : end - now,
       }
     }
 
-    const onNowIndex = timed.findIndex((act, i) => {
-      const end = act.end ?? timed[i + 1]?.start ?? null
-      return act.start <= now && (end === null || end > now)
+    const onNowIndex = timed.findIndex((_, i) => {
+      const end = impliedEnd(i)
+      return startsAt(i) <= now && (end === null || end > now)
     })
-    const nextIndex = timed.findIndex((act) => act.start > now)
+    const nextIndex = timed.findIndex((_, i) => startsAt(i) > now)
 
     stages.push({
       stage,
-      onNow: onNowIndex === -1 ? null : entry(timed[onNowIndex]!, onNowIndex),
-      next: nextIndex === -1 ? null : entry(timed[nextIndex]!, nextIndex),
+      onNow: onNowIndex === -1 ? null : entry(onNowIndex),
+      next: nextIndex === -1 ? null : entry(nextIndex),
     })
   }
 

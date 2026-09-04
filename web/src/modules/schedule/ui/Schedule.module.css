@@ -144,7 +144,11 @@
 
 .toggle[aria-pressed='true'] {
   background: var(--accent);
-  color: var(--accent-text, #fff);
+  /* `--accent-text` does not exist and never did, so this was always
+     #fff — white on the amber accent, 1.79:1 in the dark theme, on a
+     control somebody presses at a production desk. `--accent-contrast` is
+     the token that means "text on the accent": 10.2:1 dark, 4.9:1 light. */
+  color: var(--accent-contrast);
   border-color: transparent;
 }
 
@@ -226,7 +230,11 @@
 .addAct {
   align-self: start;
   background: var(--accent);
-  color: var(--accent-text, #fff);
+  /* `--accent-text` does not exist and never did, so this was always
+     #fff — white on the amber accent, 1.79:1 in the dark theme, on a
+     control somebody presses at a production desk. `--accent-contrast` is
+     the token that means "text on the accent": 10.2:1 dark, 4.9:1 light. */
+  color: var(--accent-contrast);
   border: 0;
   border-radius: 10px;
   padding: 10px 16px;

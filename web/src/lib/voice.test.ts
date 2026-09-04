@@ -3,6 +3,7 @@
 // The manager reads saved device ids out of localStorage on every join.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { saveDeviceId, savedDeviceId } from './devices.ts'
 
 /**
  * The two moments a crew member is left with nothing on screen.
@@ -51,6 +52,9 @@ class FakeRoom {
 
   async connect(): Promise<void> {
     if (FakeRoom.connectBehaviour === 'fail') {
+      // A real Room fires this on the way out of a failed connect, which is
+      // the whole point of the test below.
+      this.emit('disconnected')
       throw new Error('could not establish signal connection: Failed to fetch')
     }
     this.state = 'connected'
@@ -154,6 +158,23 @@ describe('being dropped off comms has to say so too', () => {
     expect(notices).toEqual(['Voice dropped — you are no longer on the intercom'])
   })
 
+  it('does not say you were dropped from a call you never joined', async () => {
+    // A failed connect fires Disconnected too, with `room` still set — so
+    // every join against an unreachable SFU told the crew member they had
+    // been dropped off the intercom they had never been on, on top of the
+    // join error they were already being shown. Two toasts, one of them
+    // false, and the false one is the alarming one.
+    FakeRoom.connectBehaviour = 'fail'
+    const notices: string[] = []
+    const manager = new VoiceManager(
+      () => {},
+      (message) => notices.push(message)
+    )
+    await manager.join('chan-1', 'token', 'ws://nowhere').catch(() => {})
+
+    expect(notices).toEqual([])
+  })
+
   it('stays quiet when the user left on purpose', async () => {
     // The guard that makes the notice safe: leave() nulls `room` before
     // disconnecting, so the handler's identity check fails and a deliberate
@@ -183,6 +204,70 @@ describe('being dropped off comms has to say so too', () => {
 
     first.emit('disconnected')
     expect(notices).toEqual([])
+  })
+})
+
+describe('the mic capture that happens on the way in', () => {
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+  })
+
+  it('leaves the mic open if the button went down while it was capturing', async () => {
+    // The capture is enable-then-disable, and it takes a moment. A press
+    // inside that window was undone by the disable — the button held down,
+    // the mic shut, and nothing on screen saying so. The second call has to
+    // honour whatever is being asked for by the time it runs.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    const room = (manager as unknown as { room: FakeRoom }).room
+    const mic = room.localParticipant.setMicrophoneEnabled as ReturnType<typeof vi.fn>
+
+    // Press while the acquisition is still in flight, then let it finish.
+    mic.mockClear()
+    ;(manager as unknown as { talking: boolean }).talking = true
+    await (manager as unknown as { acquireMic: () => Promise<void> }).acquireMic()
+
+    expect(mic).toHaveBeenLastCalledWith(true)
+  })
+})
+
+describe('the devices a browser will admit to', () => {
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    localStorage.clear()
+  })
+
+  it('does not forget the saved headset because the browser will not name it', async () => {
+    // Before the microphone permission is granted, enumerateDevices returns
+    // entries with blank ids — which the filter drops, leaving an empty
+    // list. The fall-back logic read that as "your headset is gone" and
+    // erased the crew member's choice, on every join, before they were even
+    // asked for permission to use it.
+    saveDeviceId('audioinput', 'my-headset')
+    const devices = {
+      enumerateDevices: async () => [{ kind: 'audioinput', deviceId: '', label: '' }],
+    }
+    Object.defineProperty(navigator, 'mediaDevices', { value: devices, configurable: true })
+
+    const manager = new VoiceManager(() => {})
+    await manager.refreshDevices()
+
+    expect(savedDeviceId('audioinput')).toBe('my-headset')
+  })
+
+  it('still falls back loudly when the headset really is unplugged', async () => {
+    saveDeviceId('audioinput', 'my-headset')
+    const devices = {
+      enumerateDevices: async () => [
+        { kind: 'audioinput', deviceId: 'built-in', label: 'Built-in Microphone' },
+      ],
+    }
+    Object.defineProperty(navigator, 'mediaDevices', { value: devices, configurable: true })
+
+    const manager = new VoiceManager(() => {})
+    await manager.refreshDevices()
+
+    expect(savedDeviceId('audioinput')).toBeNull()
   })
 })
 

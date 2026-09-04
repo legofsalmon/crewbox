@@ -1,4 +1,6 @@
 /** Audio device preference persistence + fallback rules (unit-testable core). */
+import { isSafari, shouldMixThroughWebAudio } from './voice-playback.ts'
+import { forgetPref, readPref, writePref } from './prefs.ts'
 
 export type AudioKind = 'audioinput' | 'audiooutput'
 
@@ -13,12 +15,12 @@ const KEYS: Record<AudioKind, string> = {
 }
 
 export function savedDeviceId(kind: AudioKind): string | null {
-  return localStorage.getItem(KEYS[kind])
+  return readPref(KEYS[kind])
 }
 
 export function saveDeviceId(kind: AudioKind, deviceId: string | null): void {
-  if (deviceId === null) localStorage.removeItem(KEYS[kind])
-  else localStorage.setItem(KEYS[kind], deviceId)
+  if (deviceId === null) forgetPref(KEYS[kind])
+  else writePref(KEYS[kind], deviceId)
 }
 
 /**
@@ -59,6 +61,14 @@ export function isIOS(): boolean {
  */
 export function canSelectOutput(): boolean {
   if (isIOS()) return false
+  // Never alongside the Web Audio mix. With `webAudioMix` on, LiveKit
+  // switches output by calling setSinkId on the *AudioContext* and throws
+  // outright where that does not exist — and voice-playback.ts calls the
+  // pairing unreachable because iOS hides the picker. Desktop Safari is the
+  // hole: it mixes *and*, since Safari 17, reports setSinkId on media
+  // elements, so both were true and the speaker menu threw when used.
+  // Refusing here closes it by construction rather than by argument.
+  if (shouldMixThroughWebAudio({ ios: false, safari: isSafari() })) return false
   return typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 }
 

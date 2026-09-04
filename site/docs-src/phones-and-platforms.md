@@ -13,14 +13,24 @@ it to a stage manager.
 
 ## The capability table
 
-|                                   | Browser / installed web app | Android app | iOS app             |
-| --------------------------------- | --------------------------- | ----------- | ------------------- |
-| Chat, patch, lighting, network    | yes                         | yes         | yes                 |
-| Works offline                     | yes                         | yes         | yes                 |
-| Voice: listen                     | yes                         | yes         | yes                 |
-| Voice: talk on plain HTTP         | no — needs HTTPS            | **yes**     | **yes**             |
-| Alerts, app open                  | yes                         | yes         | yes                 |
-| Alerts, phone locked, no internet | no                          | **yes**     | **no — impossible** |
+|                                   | Browser / installed web app | Android app     | iOS app             |
+| --------------------------------- | --------------------------- | --------------- | ------------------- |
+| Chat, patch, lighting, network    | yes                         | yes             | yes                 |
+| Works offline                     | yes                         | yes             | yes                 |
+| Voice: listen                     | yes                         | yes             | yes                 |
+| Voice: talk on plain HTTP         | no — needs HTTPS            | **yes**         | **yes**             |
+| Alerts, app open                  | yes                         | yes             | yes                 |
+| Alerts, phone locked, no internet | no                          | **yes**         | **no — impossible** |
+| Exports (CSV, reports, archives)  | downloads to the device     | the share sheet | the share sheet     |
+
+The exports row is worth a sentence. A WebView has no download handler, so
+the ordinary "save this file" path does nothing at all inside either app —
+it used to do nothing _and say it had worked_. Both apps hand the file to
+the system share sheet instead, which is the better answer anyway: what
+somebody does with a network audit at a venue is send it to the venue's IT,
+and that is one tap from the share sheet and several from a downloads
+folder. If a device refuses to share the file, the app says so rather than
+claiming a save.
 
 ## The Android app
 
@@ -76,7 +86,13 @@ this Wi-Fi_) tells you which half is missing:
    **Download port 80 config** button with your adapter and address already
    filled in. On Linux the neater answer is
    `sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox` once, after
-   which it takes port 80 directly and no redirect is needed.
+   which it takes port 80 directly and no redirect is needed — but **a
+   capability belongs to the file, and a self-update replaces the file.** The
+   first time the box updates itself the capability is gone and the probes go
+   unanswered, silently. Either re-run `setcap` after every update, or use
+   the redirect rule, which survives one. On the systemd rig neither applies:
+   the shipped unit grants the capability to the service, which is a property
+   of the unit and not of the binary.
 
    > [!NOTE]
    > Running the whole box with `sudo` also works, and is the wrong fix: it

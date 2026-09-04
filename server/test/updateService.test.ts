@@ -1,12 +1,21 @@
 import { createHash, generateKeyPairSync, sign as signWith } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DownloadIo } from '../src/update/download.ts'
 import type { RestartIo } from '../src/update/restart.ts'
-import { listSnapshots } from '../src/update/snapshot.ts'
+import { inFlightPath } from '../src/update/install.ts'
+import { listSnapshots, readPendingRestore, schemaVersion } from '../src/update/snapshot.ts'
 import { UpdateService } from '../src/update/service.ts'
 
 /**
@@ -31,11 +40,12 @@ const digest = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 
 type Answer = Awaited<ReturnType<DownloadIo['fetch']>>
 
-function releaseServer(asset: string): DownloadIo {
+function releaseServer(asset: string, fetched: string[] = []): DownloadIo {
   const manifest = `${digest(BODY)}  ${asset}\n`
   const signature = signWith(null, Buffer.from(manifest, 'utf8'), privateKey).toString('base64')
   return {
     fetch: (url) => {
+      fetched.push(url)
       const name = url.split('/').pop() ?? ''
       const body = name.endsWith('.sig')
         ? Buffer.from(signature)
@@ -94,7 +104,11 @@ function restartIo(answers: ({ ok: true; version: string } | null)[]): RestartIo
   }
 }
 
-const service = (answers: ({ ok: true; version: string } | null)[], packaged = true) =>
+const service = (
+  answers: ({ ok: true; version: string } | null)[],
+  packaged = true,
+  fetched: string[] = []
+) =>
   new UpdateService({
     dataDir: dir,
     dbPath,
@@ -112,7 +126,7 @@ const service = (answers: ({ ok: true; version: string } | null)[], packaged = t
     packaged,
     target: { kind: 'binary', path: target },
     keys: KEYS,
-    downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`),
+    downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`, fetched),
     restartIo: restartIo(answers),
     platform: 'linux',
     base: 'https://example.test',
@@ -271,9 +285,88 @@ describe('when the new box will not come up', () => {
     s.start(VERSION)
     await settle(s)
     const result = await s.install()
+    // Asserted, not assumed. `if (result.ok) return` is a type guard, and a
+    // regression that made the install succeed here would have skipped
+    // every line below it and passed.
+    expect(result).toMatchObject({ ok: false })
     if (result.ok) return
     expect(result.reason).toContain('did not answer')
     expect(result.reason).toContain('previous version has been put back')
+  })
+
+  it('writes down a database restore it cannot safely do itself', async () => {
+    /**
+     * The build got far enough to migrate and then died. The old box is now
+     * serving a schema it does not understand — which does not crash and
+     * does not announce itself — and it cannot fix that here: crew are
+     * typing into that database and this process has it open, so replacing
+     * the file would take whoever is on shift with it and, on POSIX, not
+     * even change what this process goes on writing to. So it says so, and
+     * the next start pays it.
+     */
+    let clock = 0
+    const s = new UpdateService({
+      dataDir: dir,
+      dbPath,
+      currentVersion: '0.17.1',
+      healthUrl: 'http://localhost:8787/api/health',
+      releasePort: () => Promise.resolve(),
+      regainPort: () => Promise.resolve(),
+      exit: () => {},
+      packaged: true,
+      target: { kind: 'binary', path: target },
+      keys: KEYS,
+      downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`),
+      restartIo: {
+        launch: () => 4242,
+        probe: () => {
+          // What the new build does on its way up, before it fails.
+          const db = new DatabaseSync(dbPath)
+          db.exec('PRAGMA user_version = 9')
+          db.close()
+          return Promise.resolve(null)
+        },
+        kill: () => {},
+        // The clock has to move, or the probe deadline never arrives.
+        now: () => clock,
+        sleep: (ms) => {
+          clock += ms
+          return Promise.resolve()
+        },
+      },
+      platform: 'linux',
+      base: 'https://example.test',
+    })
+    s.start(VERSION)
+    await settle(s)
+    const result = await s.install()
+    // Asserted, not assumed. `if (result.ok) return` is a type guard, and a
+    // regression that made the install succeed here would have skipped
+    // every line below it and passed.
+    expect(result).toMatchObject({ ok: false })
+    if (result.ok) return
+
+    expect(result.reason).toContain('RESTART THE BOX')
+    const owed = readPendingRestore(dir)
+    expect(owed).toMatchObject({ fromVersion: '0.17.1', toVersion: VERSION })
+    expect(schemaVersion(owed!.snapshotPath)).toBe(0)
+    // Not restored here — that is the next start's job, and this process
+    // still has the database open.
+    expect(schemaVersion(dbPath)).toBe(9)
+  })
+
+  it('owes nothing when the failed build never migrated', async () => {
+    const s = service([])
+    s.start(VERSION)
+    await settle(s)
+    const result = await s.install()
+    // Asserted, not assumed. `if (result.ok) return` is a type guard, and a
+    // regression that made the install succeed here would have skipped
+    // every line below it and passed.
+    expect(result).toMatchObject({ ok: false })
+    if (result.ok) return
+    expect(result.reason).toContain('never migrated')
+    expect(readPendingRestore(dir)).toBeNull()
   })
 
   it('regains the port after rolling back, in that order', async () => {
@@ -293,6 +386,31 @@ describe('when the new box will not come up', () => {
     expect(s.state().error).toBeTruthy()
   })
 
+  it('can install again after a rollback, without downloading again', async () => {
+    // The swap moves the download into place, so a rollback that deleted the
+    // installed file left "Try again" pointing at a file the install had
+    // consumed — every retry another two hundred megabytes over a venue's
+    // uplink, on a box that has just proved its uplink is what it is.
+    const s = service([])
+    s.start(VERSION)
+    await settle(s)
+    await s.install()
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+    s.reset()
+    expect(s.state().stage).toBe('ready')
+
+    events.length = 0
+    const fetched: string[] = []
+    const again = service([{ ok: true, version: '0.18.0' }], true, fetched)
+    again.start(VERSION)
+    await settle(again)
+    // The manifest and its signature again — cheap, and they are what prove
+    // the file on disk is still the right one — but not the build.
+    expect(fetched.some((u) => u.endsWith(`crewbox-linux-x64-${VERSION}`))).toBe(false)
+    expect(await again.install()).toEqual({ ok: true })
+    expect(readFileSync(target, 'utf8')).toBe('a plausible new crewbox')
+  })
+
   it('can be reset back to the verified build, without downloading again', async () => {
     const s = service([])
     s.start(VERSION)
@@ -301,5 +419,77 @@ describe('when the new box will not come up', () => {
     s.reset()
     expect(s.state().stage).toBe('ready')
     expect(s.state().error).toBeNull()
+  })
+})
+
+/**
+ * The port itself refusing to come free.
+ *
+ * By the time `releasePort` is called the binary on disk is already the new
+ * one, so a release that throws is not a tidy "sorry, try later": the box is
+ * running a build it never launched, and the marker on disk says an install
+ * is in flight. Nothing else is coming to fix that — `restartInto`, which
+ * owns the other rollback, is never reached. So this path has to undo its own
+ * work.
+ */
+describe('when the port will not come free', () => {
+  const stuck = (answers: ({ ok: true; version: string } | null)[]) =>
+    new UpdateService({
+      dataDir: dir,
+      dbPath,
+      currentVersion: '0.17.1',
+      healthUrl: 'http://localhost:8787/api/health',
+      releasePort: () => {
+        events.push('releasePort')
+        return Promise.reject(new Error('the port was still busy after 5000 ms'))
+      },
+      regainPort: () => {
+        events.push('regainPort')
+        return Promise.resolve()
+      },
+      exit: () => events.push('exit'),
+      packaged: true,
+      target: { kind: 'binary', path: target },
+      keys: KEYS,
+      downloadIo: releaseServer(`crewbox-linux-x64-${VERSION}`),
+      restartIo: restartIo(answers),
+      platform: 'linux',
+      base: 'https://example.test',
+    })
+
+  const readyStuck = async () => {
+    const s = stuck([{ ok: true, version: '0.18.0' }])
+    s.start(VERSION)
+    await settle(s)
+    return s
+  }
+
+  it('puts the old binary back rather than leaving the swap standing', async () => {
+    const s = await readyStuck()
+    expect(await s.install()).toMatchObject({ ok: false })
+    expect(readFileSync(target, 'utf8')).toBe('the old box')
+  })
+
+  it('never launches the new build', async () => {
+    // The point of failing here: a box that cannot free the port is a box the
+    // new process could not bind on either.
+    const s = await readyStuck()
+    await s.install()
+    expect(events).toEqual(['releasePort', 'regainPort'])
+  })
+
+  it('clears the in-flight marker, so the next boot does not roll back twice', async () => {
+    const s = await readyStuck()
+    await s.install()
+    expect(existsSync(inFlightPath(dir))).toBe(false)
+  })
+
+  it('says what failed and that the old version is still in place', async () => {
+    const s = await readyStuck()
+    const result = await s.install()
+    if (result.ok) throw new Error('the install should not have succeeded')
+    expect(result.reason).toContain('still busy after 5000 ms')
+    expect(result.reason).toContain('the previous version is still in place')
+    expect(s.state().stage).toBe('failed')
   })
 })

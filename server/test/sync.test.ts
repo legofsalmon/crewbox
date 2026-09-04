@@ -1,11 +1,19 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
-import type { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { newId, type ServerMessage, type WelcomeMessage } from '@crewbox/shared'
-import { openDb } from '../src/db.ts'
+import {
+  newId,
+  OUTBOX_FLUSH_GAP_MS,
+  SEND_LIMIT,
+  SEND_WINDOW_MS,
+  type ServerMessage,
+  type WelcomeMessage,
+} from '@crewbox/shared'
+import { openDb, runMigrations } from '../src/db.ts'
 import { Store } from '../src/store.ts'
 import { isPrivateIp, isRemoteConnection } from '../src/hub.ts'
 import type { IncomingMessage } from 'node:http'
@@ -412,6 +420,34 @@ describe('reconnect resync', () => {
     expect(replayed).toHaveLength(200)
     // The replay is the newest tail, ending at the true last message.
     expect(replayed.at(-1)!.body).toBe('m249')
+  })
+
+  it('serves the tail of a truncated channel over REST', async () => {
+    // The contract the client's backfill rests on. The hub's comment has
+    // always said "the client backfills those channels over REST on demand";
+    // the client had no such code, and this is what it now asks for — the
+    // newest page of a channel it holds nothing of, addressed by the
+    // `lastSeq` every welcome carries.
+    const token = await join('Alex')
+    const general = store.getChannelByName('general')!
+    for (let i = 0; i < 250; i++) {
+      store.appendMessage({ channelId: general.id, authorId: null, kind: 'text', body: `m${i}` })
+    }
+    const { welcome } = await connect(token, { [general.id]: 1 })
+    const channel = welcome.channels.find((c) => c.id === general.id)!
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/channels/${general.id}/messages?beforeSeq=${channel.lastSeq + 1}&limit=100`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(200)
+    const { messages } = res.json() as { messages: { seq: number; body: string }[] }
+    expect(messages).toHaveLength(100)
+    // The newest hundred, ending at the true last message — so a phone with
+    // nothing gets the bottom of the channel, not the top.
+    expect(messages.at(-1)!.body).toBe('m249')
+    expect(messages.at(-1)!.seq).toBe(channel.lastSeq)
   })
 
   it('bounds the whole welcome, not just each channel', async () => {
@@ -833,6 +869,43 @@ describe('files and search', () => {
     expect(await search(tokenC)).toEqual(['the generator needs diesel'])
   })
 
+  it("finds a public message behind a wall of somebody else's DMs", () => {
+    // The membership check used to run on the newest 50 hits, so a word a
+    // crew member had used a lot in their own DMs pushed every public match
+    // out of the window: fifty rows fetched, fifty discarded, "no results"
+    // for a message sitting in #general. On a box that has run a festival
+    // that is most searches for a common word.
+    const general = store.getChannelByName('general')!
+    const inPublic = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'generator refuel at six',
+    }).message
+
+    const alex = store.createUser('Alex', 'x', 'member')
+    const sam = store.createUser('Sam', 'x', 'member')
+    const dm = store.getOrCreateDm(alex.id, sam.id)
+    for (let i = 0; i < 60; i++) {
+      store.appendMessage({
+        channelId: dm.id,
+        authorId: alex.id,
+        kind: 'text',
+        body: `generator chat ${i}`,
+      })
+    }
+
+    // A third person, in neither DM: they see the public one and nothing else.
+    const jo = store.createUser('Jo', 'x', 'member')
+    const hits = store.searchMessages('generator', jo.id, 25)
+    expect(hits.map((m) => m.id)).toContain(inPublic.id)
+    expect(hits.every((m) => m.channelId === general.id)).toBe(true)
+
+    // ...and the people in the DM still find their own.
+    const theirs = store.searchMessages('generator', alex.id, 25)
+    expect(theirs.some((m) => m.channelId === dm.id)).toBe(true)
+  })
+
   it('drops deleted messages from the search index', () => {
     const general = store.getChannelByName('general')!
     const kept = store.appendMessage({
@@ -847,13 +920,13 @@ describe('files and search', () => {
       kind: 'text',
       body: 'diesel spill cleanup',
     }).message
-    expect(store.searchMessages('diesel', 10).map((m) => m.id)).toEqual(
+    expect(store.searchMessages('diesel', 'anyone', 10).map((m) => m.id)).toEqual(
       expect.arrayContaining([kept.id, doomed.id])
     )
 
     db.prepare('DELETE FROM messages WHERE id = ?').run(doomed.id)
 
-    const hits = store.searchMessages('diesel', 10).map((m) => m.id)
+    const hits = store.searchMessages('diesel', 'anyone', 10).map((m) => m.id)
     expect(hits).toContain(kept.id)
     expect(hits).not.toContain(doomed.id)
 
@@ -865,8 +938,55 @@ describe('files and search', () => {
       kind: 'text',
       body: 'stage two lineup',
     }).message
-    expect(store.searchMessages('spill', 10)).toEqual([])
-    expect(store.searchMessages('lineup', 10).map((m) => m.id)).toEqual([successor.id])
+    expect(store.searchMessages('spill', 'anyone', 10)).toEqual([])
+    expect(store.searchMessages('lineup', 'anyone', 10).map((m) => m.id)).toEqual([successor.id])
+  })
+
+  it('repairs an index a box damaged before the delete trigger existed', () => {
+    /**
+     * The trigger arrived in v3 and nothing repaired what its absence had
+     * already done, so every box older than that carries the damage: bodies
+     * left in the index by deletes, matched against whatever row holds that
+     * rowid now.
+     *
+     * Reproduced by removing the trigger, which is exactly what those boxes
+     * were: delete a message, insert one that takes its rowid, and the
+     * search for a word only the deleted message contained returns the new
+     * one. Then the migration.
+     */
+    const general = store.getChannelByName('general')!
+    db.exec('DROP TRIGGER messages_fts_delete')
+
+    const doomed = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'diesel spill cleanup',
+    }).message
+    db.prepare('DELETE FROM messages WHERE id = ?').run(doomed.id)
+    const successor = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'stage two lineup',
+    }).message
+
+    // The damage, before anything is fixed: a message that does not contain
+    // the word, returned as the hit for it.
+    expect(store.searchMessages('spill', 'anyone', 10).map((m) => m.id)).toEqual([successor.id])
+
+    // What an upgrade does: v3's trigger, then v11's rebuild.
+    db.exec(`
+      CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+      END;
+      PRAGMA user_version = 10;
+    `)
+    runMigrations(db)
+
+    expect(store.searchMessages('spill', 'anyone', 10)).toEqual([])
+    // And the index still finds what is really there.
+    expect(store.searchMessages('lineup', 'anyone', 10).map((m) => m.id)).toEqual([successor.id])
   })
 })
 
@@ -922,6 +1042,57 @@ describe('remote access', () => {
     expect(store.getSessionUser(token)).toBeDefined() // no TTL → still valid
     expect(store.pruneSessions(60_000)).toBe(1)
     expect(store.getSessionUser(token)).toBeUndefined()
+  })
+
+  it('never writes a session token down', async () => {
+    /**
+     * The token is the bearer credential. Stored in plain text it went into
+     * every backup on a USB stick, every `VACUUM INTO` snapshot the updater
+     * takes and every copy of the database anybody has ever made — a live
+     * login for every crew member on the box, usable from any phone on the
+     * network, as them.
+     */
+    const token = await join('Alex')
+    const rows = db.prepare('SELECT * FROM sessions').all() as unknown as Record<string, unknown>[]
+    expect(rows).toHaveLength(1)
+    // Not under any column name, whatever the schema comes to look like.
+    expect(JSON.stringify(rows[0])).not.toContain(token)
+    // And what is there is the hash, which is what the lookup uses.
+    expect(rows[0]!.token_sha).toBe(createHash('sha256').update(token).digest('hex'))
+    expect(store.getSessionUser(token)?.name).toBe('Alex')
+  })
+
+  it('carries existing sessions through the hashing migration', async () => {
+    /**
+     * The alternative — dropping the table — would sign out every phone on
+     * site at the moment an admin pressed Install, which is a worse thing to
+     * do than the outage the update already costs.
+     */
+    const older = new DatabaseSync(':memory:')
+    older.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member',
+        pin_hash TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
+      CREATE TABLE sessions (
+        token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+        created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL
+      );
+      INSERT INTO users VALUES ('u1', 'Alex', 'member', 'x', 1);
+      INSERT INTO sessions VALUES ('a-real-token', 'u1', 1, 1);
+      PRAGMA user_version = 9;
+    `)
+    runMigrations(older)
+
+    const rows = older.prepare('SELECT token_sha, user_id FROM sessions').all() as unknown as {
+      token_sha: string
+      user_id: string
+    }[]
+    expect(rows).toEqual([
+      { token_sha: createHash('sha256').update('a-real-token').digest('hex'), user_id: 'u1' },
+    ])
+    // The phone holding that token is still signed in.
+    expect(new Store(older).getSessionUser('a-real-token')?.name).toBe('Alex')
   })
 
   it('marks users connected only from off-site, clearing when a LAN socket appears', async () => {
@@ -988,6 +1159,44 @@ describe('voice', () => {
     // Kit is not in the DM → no token for its voice room.
     const denied = await mint(tokenC, dm.channel.id)
     expect(denied.statusCode).toBe(404)
+  })
+
+  it('gives one person on two devices two identities', async () => {
+    // LiveKit disconnects the older participant when a second joins with
+    // the same identity, and the identity was the user id — so "one
+    // identity per person" was silently a rule of one device per person. A
+    // stage manager with a phone in a pocket and a tablet on the desk lost
+    // one of them to "Voice dropped" every time they used the other.
+    // Two joins under the same name and PIN — the same account, twice, which
+    // is exactly what a second device is.
+    const phone = await join('Two Devices')
+    const tablet = await join('Two Devices')
+    const general = store.getChannelByName('general')!
+
+    const identityFrom = async (token: string) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/voice/token',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { channelId: general.id },
+      })
+      expect(res.statusCode).toBe(200)
+      const { token: jwt } = res.json() as { token: string }
+      const claims = JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString()) as {
+        sub: string
+        name: string
+      }
+      return claims
+    }
+
+    const one = await identityFrom(phone)
+    const two = await identityFrom(tablet)
+    expect(one.sub).not.toBe(two.sub)
+    // Same person, so the room still shows one name.
+    expect(one.name).toBe(two.name)
+    // And the same device keeps its identity across reconnects, so a rejoin
+    // replaces its own stale participant rather than piling up chips.
+    expect((await identityFrom(phone)).sub).toBe(one.sub)
   })
 })
 
@@ -1374,5 +1583,481 @@ describe('onboarding & runtime settings', () => {
     // The download is named after the real file — the version survives onto
     // the phone — while the URL never changes, so posters don't go stale.
     expect(res.headers.get('content-disposition')).toBe('attachment; filename="crewbox-v9.9.9.apk"')
+  })
+})
+
+/**
+ * The outbox a phone brings back from a dead spot.
+ *
+ * The flood guard exists to stop one authenticated socket fanning out
+ * unbounded traffic, and thirty messages in ten seconds is implausibly fast
+ * for a human. A phone flushing an outbox is not a human. It came back from
+ * a dead spot with everything the crew member had typed, sent it in one go,
+ * and every frame past the thirtieth was refused — by a limit that has
+ * nothing to say about whether the message was any good.
+ *
+ * The client then deleted each rejection from IndexedDB, so those messages
+ * were gone, on the screen that had promised "Nothing is lost while this
+ * lasts". `retry` is what tells it the difference.
+ */
+describe('replaying more than the flood guard allows', () => {
+  const replay = async (count: number) => {
+    const token = await join('Dead Spot')
+    const { client, welcome } = await connect(token)
+    const channelId = welcome.channels[0]!.id
+    const ids = Array.from({ length: count }, () => newId())
+    for (const clientMsgId of ids) {
+      client.send({ type: 'send', clientMsgId, channelId, body: `queued ${clientMsgId}` })
+    }
+    return { client, ids }
+  }
+
+  it('refuses the ones past the limit, as it always did', async () => {
+    const { client } = await replay(SEND_LIMIT + 5)
+    await client.waitFor((m): m is ServerMessage => m.type === 'rejected')
+    const rejected = client.received.filter((m) => m.type === 'rejected')
+    expect(rejected.length).toBeGreaterThan(0)
+  })
+
+  it('marks every one of them retryable, so nothing is thrown away', async () => {
+    // The whole fix in one assertion: the client keeps what carries `retry`.
+    const { client } = await replay(SEND_LIMIT + 5)
+    await client.waitFor((m): m is ServerMessage => m.type === 'rejected')
+    await new Promise((r) => setTimeout(r, 100))
+    const rejected = client.received.filter(
+      (m): m is Extract<ServerMessage, { type: 'rejected' }> => m.type === 'rejected'
+    )
+    expect(rejected.length).toBe(5)
+    for (const r of rejected) expect(r.retry).toBe(true)
+  })
+
+  it('still takes the ones inside the limit', async () => {
+    const { client, ids } = await replay(SEND_LIMIT + 5)
+    await client.waitFor((m): m is ServerMessage => m.type === 'rejected')
+    await new Promise((r) => setTimeout(r, 100))
+    const acked = client.received.filter((m) => m.type === 'ack')
+    expect(acked.length).toBe(SEND_LIMIT)
+    // And the rejected ones are the tail, not an arbitrary five.
+    const rejectedIds = new Set(
+      client.received.filter((m) => m.type === 'rejected').map((m) => m.clientMsgId)
+    )
+    expect([...rejectedIds]).toEqual(ids.slice(SEND_LIMIT))
+  })
+
+  it('does not mark a real refusal retryable', async () => {
+    // A message to a channel that does not exist is a fact about the
+    // message: waiting changes nothing, and keeping it queued for ever would
+    // be worse than dropping it. Only the flood guard is temporary.
+    const token = await join('No Such Channel')
+    const { client } = await connect(token)
+    client.send({
+      type: 'send',
+      clientMsgId: newId(),
+      channelId: newId(),
+      body: 'into the void',
+    })
+    const rejected = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'rejected' }> => m.type === 'rejected'
+    )
+    expect(rejected.reason).toContain('channel not found')
+    expect(rejected.retry).toBeUndefined()
+  })
+
+  it('paces a replay under the limit, given the gap the client uses', () => {
+    // The client's gap is derived from these numbers rather than guessed, so
+    // this is the arithmetic that keeps them honest: a full window of
+    // replayed frames has to fit inside the allowance with headroom for the
+    // crew member typing while their phone catches up.
+    const inOneWindow = Math.floor(SEND_WINDOW_MS / OUTBOX_FLUSH_GAP_MS)
+    expect(inOneWindow).toBeLessThan(SEND_LIMIT)
+    expect(SEND_LIMIT - inOneWindow).toBeGreaterThanOrEqual(10)
+  })
+})
+
+/**
+ * A full disk, and everybody signed out.
+ *
+ * `touchSession` is an UPDATE and it sat above `conn.user = user`, so on a
+ * disk with no room the throw left an authenticated crew member on an
+ * unauthenticated socket. Their next frame earned "hello required first" —
+ * sent as `code: 'auth'`, which the client reads as a dead session: token
+ * dropped, IndexedDB wiped, outbox and all, back to the join screen.
+ * Re-joining then failed too, because that is another write. One box short of
+ * disk, every phone on site signed out with its unsent messages gone.
+ *
+ * Two separate mistakes, so two separate fixes: bookkeeping does not gate
+ * authentication, and a fact about one socket is not a verdict on a session.
+ */
+describe('when the box cannot write session bookkeeping', () => {
+  it('still authenticates the crew member', async () => {
+    const token = await join('Full Disk')
+    // The one write `onHello` does that is not the session lookup.
+    const failing = () => {
+      throw new Error('SQLITE_FULL: database or disk is full')
+    }
+    const original = store.touchSession.bind(store)
+    store.touchSession = failing
+    try {
+      const { welcome } = await connect(token)
+      expect(welcome.me.name).toBe('Full Disk')
+    } finally {
+      store.touchSession = original
+    }
+  })
+
+  it('lets that connection go on sending', async () => {
+    // The part that actually cost people their messages: an unauthenticated
+    // socket refuses the next frame, and the refusal used to end the session.
+    const token = await join('Full Disk Sends')
+    const original = store.touchSession.bind(store)
+    store.touchSession = () => {
+      throw new Error('SQLITE_FULL: database or disk is full')
+    }
+    let welcome
+    try {
+      ;({ welcome } = await connect(token))
+    } finally {
+      store.touchSession = original
+    }
+    const client = sockets.at(-1)!
+    const clientMsgId = newId()
+    client.send({
+      type: 'send',
+      clientMsgId,
+      channelId: welcome.channels[0]!.id,
+      body: 'still here',
+    })
+    const ack = await client.waitFor((m): m is ServerMessage => m.type === 'ack')
+    expect(ack).toMatchObject({ clientMsgId })
+  })
+})
+
+describe('a socket that has not said hello', () => {
+  it('is told about the socket, not about the session', async () => {
+    // `auth` is the only code that ends somebody's session, so this must not
+    // be it: a box under load or short of disk can produce this with the
+    // session perfectly intact.
+    const client = new TestClient(wsUrl)
+    await client.open()
+    client.send({ type: 'markRead', channelId: 'general', seq: 1 })
+    const error = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'error' }> => m.type === 'error'
+    )
+    expect(error.code).toBe('handshake')
+    expect(error.code).not.toBe('auth')
+  })
+
+  it('still says `auth` when the session really is invalid', async () => {
+    // The distinction has to cut both ways, or it is just a rename.
+    const client = new TestClient(wsUrl)
+    await client.open()
+    client.send({ type: 'hello', token: 'not-a-real-token', cursors: {} })
+    const error = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'error' }> => m.type === 'error'
+    )
+    expect(error.code).toBe('auth')
+  })
+})
+
+/**
+ * A box whose database went backwards.
+ *
+ * Restoring from a backup, or swapping to the spare box, brings a *different*
+ * database — and `seq` comes from `MAX(seq)` over live rows, so the counter
+ * starts below every phone's cursor. Every channel then looked like "nothing
+ * new" to the box and nothing at all to the crew, silently, for as long as it
+ * took the counter to climb past a number nobody could see. The runbook
+ * promises phones "reconnect on their own and stay signed in". They did.
+ */
+describe('a box whose database went backwards', () => {
+  /** Post `count` messages and hand back the channel and their real seqs. */
+  const fill = (count: number) => {
+    const general = store.getChannelByName('general')!
+    const seqs: number[] = []
+    for (let i = 0; i < count; i++) {
+      const { message } = store.appendMessage({
+        channelId: general.id,
+        authorId: null,
+        kind: 'text',
+        body: `m${i}`,
+      })
+      seqs.push(message.seq)
+    }
+    return { general, seqs }
+  }
+
+  it('sends the tail when a cursor is ahead of the whole channel', async () => {
+    const token = await join('Restored')
+    const { general } = fill(20)
+    // The phone's cursor from before the restore, far past this box's end.
+    const { welcome } = await connect(token, { [general.id]: 421 })
+    const replayed = welcome.missed.filter((m) => m.channelId === general.id)
+    // Everything the channel holds, ending where it really ends — not the
+    // silence the box used to answer with.
+    expect(replayed.length).toBeGreaterThan(0)
+    expect(replayed.at(-1)!.body).toBe('m19')
+    expect(replayed.map((m) => m.body)).toContain('m0')
+  })
+
+  it('says which database it is', async () => {
+    const token = await join('Epoch')
+    const { welcome } = await connect(token)
+    expect(welcome.dbEpoch).toBeTruthy()
+  })
+
+  it('keeps the same epoch across reconnects, so a phone is not reset for nothing', async () => {
+    const token = await join('Stable')
+    const first = await connect(token)
+    const second = await connect(token)
+    expect(second.welcome.dbEpoch).toBe(first.welcome.dbEpoch)
+  })
+
+  it('keeps it across a restore, because a restored database is the same one', () => {
+    // It travels with the rows, which is the point: a restore keeps its
+    // identity and a fresh box mints its own.
+    const epoch = store.dbEpoch()
+    const other = new Store(openDb(':memory:'))
+    other.createChannel('general', 'public', 'Everyone')
+    expect(other.dbEpoch()).not.toBe(epoch)
+    expect(store.dbEpoch()).toBe(epoch)
+  })
+
+  it('still honours a cursor that is merely behind', async () => {
+    // The clamp must not throw away ordinary resume.
+    const token = await join('Ordinary')
+    const { general, seqs } = fill(20)
+    const { welcome } = await connect(token, { [general.id]: seqs[14]! })
+    const replayed = welcome.missed.filter((m) => m.channelId === general.id)
+    expect(replayed.map((m) => m.body)).toEqual(['m15', 'm16', 'm17', 'm18', 'm19'])
+  })
+
+  it('sends nothing when the cursor is exactly the end', async () => {
+    const token = await join('Caught Up')
+    const { general, seqs } = fill(20)
+    const { welcome } = await connect(token, { [general.id]: seqs.at(-1)! })
+    expect(welcome.missed.filter((m) => m.channelId === general.id)).toEqual([])
+  })
+
+  it('never hands a deleted message its number back', async () => {
+    // Deleting a photo shared by mistake is supported, and it used to cost
+    // the next message in that channel: the replacement took the deleted
+    // one's seq, so a phone caught up to that number asked for everything
+    // *after* it and the box had nothing after it. Silent, permanent, and
+    // invisible from the box.
+    const token = await join('Deleter')
+    const { general, seqs } = fill(3)
+    const last = seqs.at(-1)!
+
+    const message = store.listAfter(general.id, 0, 100).at(-1)!
+    store.deleteMessage(message.id)
+    const { message: replacement } = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'after the delete',
+    })
+    expect(replacement.seq).toBeGreaterThan(last)
+
+    const { welcome } = await connect(token, { [general.id]: last })
+    const replayed = welcome.missed.filter((m) => m.channelId === general.id)
+    expect(replayed.map((m) => m.body)).toContain('after the delete')
+  })
+
+  it('closes a socket that keeps saying hello', async () => {
+    // The most expensive thing a socket can ask for — a session lookup, a
+    // database write, and a welcome built out of every channel this user is
+    // in — and it was the one message exempt from the flood limit, because
+    // it is the one allowed before authentication. Being allowed early is
+    // not a reason to be free.
+    const token = await join('Chatty')
+    const client = new TestClient(wsUrl)
+    await client.open()
+    for (let i = 0; i < 80; i++) client.send({ type: 'hello', token, cursors: {} })
+
+    const refused = await client.waitFor(
+      (m): m is ServerMessage & { message?: string } =>
+        m.type === 'error' && (m as { message?: string }).message === 'slow down'
+    )
+    expect(refused).toBeTruthy()
+  })
+
+  it('does not count a retired channel against the cap it tells you to retire for', () => {
+    // The cap's message is "retire some first", and retiring changed
+    // nothing — so a crew that hit it had no way past on a box they cannot
+    // get into the database of.
+    const before = store.countPublicChannels()
+    const channel = store.createChannel('spare-stage', 'public', '')
+    expect(store.countPublicChannels()).toBe(before + 1)
+    store.updateChannel(channel.id, { retired: true })
+    expect(store.countPublicChannels()).toBe(before)
+  })
+
+  it('forgets deletions the replay window has passed', () => {
+    // Nothing pruned them, so a box that ran a season put every deletion it
+    // had ever made into every welcome.
+    const general = store.getChannelByName('general')!
+    const { message } = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'gone',
+    })
+    store.deleteMessage(message.id)
+    expect(store.listDeletions([general.id], 0)).toHaveLength(1)
+
+    expect(store.pruneDeletions(Date.now() + 1)).toBe(1)
+    expect(store.listDeletions([general.id], 0)).toHaveLength(0)
+  })
+
+  it('keeps a deletion a phone might still need to hear about', () => {
+    const general = store.getChannelByName('general')!
+    const { message } = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'recent',
+    })
+    store.deleteMessage(message.id)
+    expect(store.pruneDeletions(Date.now() - 60_000)).toBe(0)
+    expect(store.listDeletions([general.id], 0)).toHaveLength(1)
+  })
+
+  it('keeps counting from where it was after a restart', async () => {
+    // The high-water mark is a column now, so it survives the process. A
+    // channel that reopened at 1 would collide with every cursor on site.
+    const { general, seqs } = fill(4)
+    const reopened = new Store(db)
+    const { message } = reopened.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'after a restart',
+    })
+    expect(message.seq).toBe(seqs.at(-1)! + 1)
+  })
+})
+
+/**
+ * A restore onto a different rig.
+ *
+ * `deploy/restore.sh` explicitly supports it — that is what a spare box is
+ * for, and swapping to one is the whole reason the backups exist. But
+ * `files.path` was written absolute by whichever box did the upload, so on a
+ * rig whose data directory differs every attachment and every thumbnail
+ * 404'd: a crew switched boxes to save the event and lost their photographs
+ * of the patch.
+ */
+describe('files after a restore onto another rig', () => {
+  const upload = async (token: string) => {
+    const body =
+      '--x\r\nContent-Disposition: form-data; name="file"; filename="plot.txt"\r\n' +
+      'Content-Type: text/plain\r\n\r\nchannel 12 is dark\r\n--x--\r\n'
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/files',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'multipart/form-data; boundary=x',
+      },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    return (res.json() as { file: { id: string; name: string } }).file
+  }
+
+  /** Make a row look like one another box wrote, before it was restored here. */
+  const asRestoredFromElsewhere = (fileId: string) => {
+    db.prepare('UPDATE files SET path = ?, thumb_path = ? WHERE id = ?').run(
+      '/var/lib/a-different-box/files/deadbeef',
+      '/var/lib/a-different-box/files/deadbeef.thumb',
+      fileId
+    )
+  }
+
+  it('serves an attachment whose row points at a data directory that is not here', async () => {
+    const token = await join('Restorer')
+    const file = await upload(token)
+    asRestoredFromElsewhere(file.id)
+
+    const res = await fetch(`${baseUrl}/api/files/${file.id}/${encodeURIComponent(file.name)}`)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('channel 12 is dark')
+  })
+
+  it('serves a byte range from it too', async () => {
+    // iOS refuses to play media without 206s, and the range path reads the
+    // file by its own route.
+    const token = await join('Ranger')
+    const file = await upload(token)
+    asRestoredFromElsewhere(file.id)
+
+    const res = await fetch(`${baseUrl}/api/files/${file.id}/${encodeURIComponent(file.name)}`, {
+      headers: { range: 'bytes=0-6' },
+    })
+    expect(res.status).toBe(206)
+    expect(await res.text()).toBe('channel')
+  })
+
+  it('takes a re-upload of content whose row points somewhere else', async () => {
+    // Dedupe used to hand back the row's path, so the thumbnail was written
+    // into the old rig's directory and re-sharing a photo already on the box
+    // 500'd. A one-pixel GIF, because a thumbnail is only made for images.
+    const token = await join('Rephotographer')
+    const gif = Buffer.from('R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==', 'base64')
+    const shareTheGif = async () => {
+      const head =
+        '--x\r\nContent-Disposition: form-data; name="width"\r\n\r\n1\r\n' +
+        '--x\r\nContent-Disposition: form-data; name="height"\r\n\r\n1\r\n' +
+        '--x\r\nContent-Disposition: form-data; name="thumb"; filename="t.gif"\r\n' +
+        'Content-Type: image/gif\r\n\r\n'
+      const mid =
+        '\r\n--x\r\nContent-Disposition: form-data; name="file"; filename="rig.gif"\r\n' +
+        'Content-Type: image/gif\r\n\r\n'
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/files',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'multipart/form-data; boundary=x',
+        },
+        payload: Buffer.concat([
+          Buffer.from(head),
+          gif,
+          Buffer.from(mid),
+          gif,
+          Buffer.from('\r\n--x--\r\n'),
+        ]),
+      })
+      return res
+    }
+
+    const first = await shareTheGif()
+    expect(first.statusCode).toBe(200)
+    asRestoredFromElsewhere((first.json() as { file: { id: string } }).file.id)
+
+    const second = await shareTheGif()
+    expect(second.statusCode).toBe(200)
+    const again = (second.json() as { file: { id: string } }).file
+    const thumb = await fetch(`${baseUrl}/api/files/${again.id}/thumb`)
+    expect(thumb.status).toBe(200)
+  })
+
+  it('404s an attachment whose bytes did not come along with the database', async () => {
+    // A restore that brought the database and not the files directory: the
+    // row is there and the blob is not. 404, not a read of something absent.
+    const token = await join('Halfrestorer')
+    const file = await upload(token)
+    rmSync(pathJoin(filesDir, createHash('sha256').update('channel 12 is dark').digest('hex')), {
+      force: true,
+    })
+
+    const res = await fetch(`${baseUrl}/api/files/${file.id}/${encodeURIComponent(file.name)}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('still 404s a file that genuinely is not there', async () => {
+    // Resolving by content must not turn a missing id into a 200.
+    const res = await fetch(`${baseUrl}/api/files/no-such-id/anything.txt`)
+    expect(res.status).toBe(404)
   })
 })

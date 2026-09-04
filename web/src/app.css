@@ -21,6 +21,11 @@
   --accent-strong: #ffcd66;
   --accent-contrast: #10151d;
   --danger: #ef6a5a;
+  /* --danger, lightened enough to stay AA as *text on a raised surface*.
+     --danger is tuned against --bg; on --bg-hover, which is what every
+     button sits on, it drops to 4.25 in the light theme — under AA at the
+     13.5px a button label is. Same hue, one step up the ladder. */
+  --danger-strong: #f47f70;
   --ok: #58c98a;
   --radius: 12px;
   --sidebar-w: 280px;
@@ -48,6 +53,7 @@
   --accent-strong: #7d5300;
   --accent-contrast: #fffaf0;
   --danger: #c53a2a;
+  --danger-strong: #ad2f1e;
   /* Was #1e8a54 — 3.90 on --bg, under AA. This is the "voice is running"
      green, read off a phone in daylight, so it has to clear the bar. */
   --ok: #1b7d4c;
@@ -441,6 +447,25 @@ ul {
   color: var(--text-faint);
   padding: 40px;
   text-align: center;
+}
+
+/* A pane with no module in it still needs the drawer button, in the same
+   place every module's header puts it — see EmptyPane in App.tsx. */
+.empty-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 44px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
 }
 
 .update-pill {
@@ -933,6 +958,14 @@ ul {
   position: relative;
   display: flex;
   flex-direction: column;
+  /* This scroller anchors itself when history is prepended above the
+     viewport (see the prevHeightRef effect in MessageList.tsx), because
+     Safari has no scroll anchoring and every phone on an iOS lock-up is a
+     Safari. Chromium and Firefox *do* have it, and were applying their
+     adjustment on top of ours: scrolling up to read the morning's traffic
+     jumped a page every time more of it loaded, on the two engines the
+     Android app and every laptop use. One anchoring, ours, everywhere. */
+  overflow-anchor: none;
 }
 
 .message-inner {
@@ -1440,6 +1473,17 @@ ul {
   box-shadow:
     0 0 0 8px rgba(245, 183, 62, 0.25),
     0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Through a reconnect. The button stays where it is — unmounting it under a
+   pressed finger is how the mic used to stick open — and says it is not
+   listening. Not `display: none`, and not moved: the target under the thumb
+   must be the same one it was a moment ago. */
+.ptt-btn:disabled {
+  opacity: 0.45;
+  border-color: var(--border);
+  color: var(--text-dim);
+  box-shadow: none;
 }
 
 .latch-btn {
@@ -2118,12 +2162,21 @@ ul {
 }
 
 .admin-btn.danger {
-  color: var(--danger);
+  /* --danger-strong, not --danger: this label sits on --bg-hover, where
+     --danger is 4.25 in the light theme — under AA at 13.5px, on the button
+     that retires a channel the crew are talking in. */
+  color: var(--danger-strong);
 }
 
 .admin-btn.danger.confirm {
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  /* Darker, not tinted red. The tint was a 14% --danger wash, which lifted
+     the surface toward the text and left the confirm state — the one that
+     actually does the thing — at 3.52 in the light theme, worse than the
+     state before it. The ring carries the escalation instead, and being
+     inset it thickens the border without moving anything. */
+  border-color: var(--danger-strong);
+  box-shadow: inset 0 0 0 1px var(--danger-strong);
+  background: var(--bg-active);
 }
 
 .admin-inline-form {

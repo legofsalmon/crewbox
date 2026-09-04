@@ -10,6 +10,27 @@ import {
 export const MAX_MESSAGE_LENGTH = 4000
 
 /**
+ * Max `send` frames one socket may emit per window before being throttled.
+ *
+ * Shared so the client can pace a reconnect replay under it rather than
+ * discovering it the hard way. A human hitting thirty messages in ten
+ * seconds is already implausibly fast; a phone flushing an outbox is not a
+ * human, and it was being judged as one.
+ */
+export const SEND_LIMIT = 30
+export const SEND_WINDOW_MS = 10_000
+
+/**
+ * Gap between replayed outbox entries on reconnect.
+ *
+ * Two thirds of the limit, not all of it: the crew member whose phone is
+ * reconnecting is very often typing while it happens, and their live
+ * messages share this socket's allowance. Leaving ten sends of headroom is
+ * what stops the replay stealing the message somebody is writing now.
+ */
+export const OUTBOX_FLUSH_GAP_MS = Math.ceil(SEND_WINDOW_MS / (SEND_LIMIT * (2 / 3)))
+
+/**
  * Wire-protocol generation. Bump on breaking changes to the shapes in this
  * file; a client that sees a different value in `welcome` prompts a reload
  * (server and web bundle deploy in lockstep, so reloading converges).
@@ -219,6 +240,26 @@ export interface WelcomeMessage {
   truncated: string[]
   /** Recently deleted messages, so returning clients drop stale cache entries. */
   deletions: { channelId: string; messageId: string }[]
+  /**
+   * Which database this box is serving.
+   *
+   * A resume cursor is a bare sequence number, and sequence numbers come from
+   * `MAX(seq)` over live rows — so restoring from a backup, or swapping to a
+   * spare box, puts the server's counter *below* every phone's cursor. Every
+   * channel is then skipped as "nothing new" and nobody notices, because
+   * nothing in the welcome said which database it came from. The runbook
+   * promises crew phones "reconnect on their own and stay signed in"; they
+   * did, and then saw nothing sent on the restored box until its counter
+   * climbed past a stale cursor, hours later.
+   *
+   * A phone that sees this change treats every cursor as zero and drops its
+   * cached messages — they are numbered against a database that is no longer
+   * there, and two of them at the same seq are two different messages.
+   *
+   * Optional: a box that predates it simply does not send it, and a client
+   * that sees none keeps whatever it had. No PROTOCOL_VERSION bump.
+   */
+  dbEpoch?: string
 }
 
 export interface MsgMessage {
@@ -233,11 +274,31 @@ export interface AckMessage {
   message: Message
 }
 
-/** Permanent rejection of a send — the client should drop it from its outbox. */
+/** Rejection of a send. Permanent unless `retry` says otherwise. */
 export interface RejectedMessage {
   type: 'rejected'
   clientMsgId: string
   reason: string
+  /**
+   * The box could not take it *now*, and the client should keep it.
+   *
+   * Only the flood guard sets this, and only it should: everything else that
+   * rejects a send is a fact about the message — too long, no such channel,
+   * a channel that has been retired — and no amount of waiting changes any of
+   * them, so dropping those is right.
+   *
+   * The guard is different, and the difference cost real messages. A phone
+   * that has been out of signal comes back with an outbox, replays it in one
+   * go, and the thirty-first frame is refused — by a limit that exists to
+   * stop one socket fanning out unbounded traffic, not to say the message
+   * was bad. The client deleted every rejection from IndexedDB, so a crew
+   * member who typed thirty-five messages in a dead spot got thirty, and the
+   * screen that had promised "nothing is lost while this lasts" was wrong.
+   *
+   * Additive: a box that does not send it, and a client that does not read
+   * it, both behave exactly as before. No PROTOCOL_VERSION bump.
+   */
+  retry?: true
 }
 
 export interface PresenceMessage {
@@ -291,7 +352,19 @@ export interface DeletedMessage {
 
 export interface ErrorMessage {
   type: 'error'
-  code: 'auth' | 'bad_request' | 'not_found' | 'forbidden'
+  /**
+   * `auth` means *this session is no longer valid* — the client should stop
+   * using its token. It is the only code that ends somebody's session, which
+   * is why "you have not said hello on this socket yet" is `handshake` and
+   * not this: that is a fact about one connection, and a box under load or
+   * short of disk could produce it with the session perfectly intact. It did,
+   * and every phone on site was signed out.
+   *
+   * Additive: a client that does not know `handshake` falls through to its
+   * generic branch and shows the message, which is wrong but survivable —
+   * unlike logging out. No PROTOCOL_VERSION bump.
+   */
+  code: 'auth' | 'handshake' | 'bad_request' | 'not_found' | 'forbidden'
   message: string
 }
 
@@ -316,10 +389,13 @@ export interface DmxUniverseWire {
    * sending — the fault this exists to catch. `lost` is the same failure
    * where the source allowed receivers to carry on regardless. `unwatched`
    * means the sync universe isn't one this box joined, so it can't tell.
+   * `unsynchronised` means nothing has *ever* arrived on that sync
+   * universe: the stage is following the desk (§6.2.4.1), but the
+   * multi-universe timing the source asked for is not happening at all.
    *
    * See `DmxSyncState` in the server for the clauses behind each.
    */
-  sync: 'none' | 'held' | 'frozen' | 'lost' | 'unwatched'
+  sync: 'none' | 'held' | 'frozen' | 'lost' | 'unwatched' | 'unsynchronised'
   /** The universe synchronization packets are expected on, or 0. */
   syncAddress: number
   /** When this universe was first heard — the window the verdicts speak for. */

@@ -59,7 +59,13 @@ export default function Composer({
     // Restore this channel's draft rather than blanking the box.
     setValue(drafts.get(channelId) ?? '')
     setMention(null)
-    ref.current?.focus()
+    // Not on a phone. Focusing the box opens the soft keyboard, so every tap
+    // on a channel in the drawer arrived with half the screen gone and the
+    // messages the crew member had just navigated to pushed out of sight —
+    // to write a message they had not said they wanted to write. On a
+    // keyboard there is no cost and it saves a click, which is why it is
+    // here at all.
+    if (!coarsePointer) ref.current?.focus()
     requestAnimationFrame(autogrow)
   }, [channelId])
 

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Channel, User } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
+import { deliveredNote, deliverFile, NO_DOWNLOADS } from '../lib/download.ts'
+import { adminError } from '../lib/adminerror.ts'
+import { adapterMissing, listeningMode } from '../lib/adminnetwork.ts'
 import UpdateSection from './UpdateSection.tsx'
 
 const PIN_RE = /^\d{4,8}$/
@@ -51,15 +54,10 @@ export default function AdminPanel() {
     setExporting(true)
     try {
       const blob = await api.adminExport(auth())
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `crewbox-export-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      setNote('Export downloaded')
+      const name = `crewbox-export-${new Date().toISOString().slice(0, 10)}.json`
+      setNote(deliveredNote(await deliverFile(name, blob), 'Export'))
     } catch (err) {
-      setNote(err instanceof api.ApiError ? err.message : 'Export failed')
+      setNote(adminError(err, 'Export failed'))
     } finally {
       setExporting(false)
     }
@@ -232,7 +230,7 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
     api
       .adminGetEnvironment(auth(), refresh)
       .then(setReport)
-      .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Could not check'))
+      .catch((err) => onNote(adminError(err, 'Could not check')))
       .finally(() => setBusy(false))
   }
 
@@ -250,15 +248,14 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
   async function downloadDns() {
     try {
       const blob = await api.adminDnsConfig(auth())
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'crewbox-dns.conf'
-      a.click()
-      URL.revokeObjectURL(url)
-      onNote('DNS config downloaded — put it on the venue router')
+      const result = await deliverFile('crewbox-dns.conf', blob)
+      onNote(
+        result === 'unavailable'
+          ? NO_DOWNLOADS
+          : `${deliveredNote(result, 'DNS config')} — put it on the venue router`
+      )
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Could not build the DNS config')
+      onNote(adminError(err, 'Could not build the DNS config'))
     }
   }
 
@@ -353,7 +350,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         setSsid(d.settings.wifiSsid)
         setPin(d.serverInfo.eventPin)
       })
-      .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Could not load settings'))
+      .catch((err) => onNote(adminError(err, 'Could not load settings')))
     return () => {
       live = false
     }
@@ -384,7 +381,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
           )
           onNote(note)
         })
-        .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Save failed'))
+        .catch((err) => onNote(adminError(err, 'Save failed')))
         .finally(() => setSaving(false))
     }
   }
@@ -401,7 +398,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
       URL.revokeObjectURL(url)
       onNote('Port 80 config downloaded — one rule, run it on this machine')
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Could not build the port 80 config')
+      onNote(adminError(err, 'Could not build the port 80 config'))
     }
   }
 
@@ -477,7 +474,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
                 setData((d) => (d && fresh ? { ...d, network: fresh } : d))
                 onNote(note)
               })
-              .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Save failed'))
+              .catch((err) => onNote(adminError(err, 'Save failed')))
               .finally(() => setSaving(false))
           }}
         />
@@ -572,7 +569,16 @@ function NetworksSection({
   const [dmxIface, setDmxIface] = useState(network.saved.dmxIface)
   const [universes, setUniverses] = useState(network.saved.dmxUniverses)
 
-  const adapterOptions = (blank: string) => (
+  /**
+   * The adapter list, plus whatever is currently selected if it is not on it.
+   *
+   * An address saved last week and gone this morning — a USB-to-Ethernet
+   * dongle left in the van, a Wi-Fi network not joined yet — otherwise made
+   * the select fall back to showing the blank option. So the panel said "All
+   * networks" while the box was pinned to an adapter that is not there, and
+   * choosing the blank option registered as no change and saved nothing.
+   */
+  const adapterOptions = (blank: string, current: string) => (
     <>
       <option value="">{blank}</option>
       {network.adapters.map((a) => (
@@ -580,8 +586,22 @@ function NetworksSection({
           {a.address} — {a.name}
         </option>
       ))}
+      {adapterMissing(network.adapters, current) && (
+        <option value={current}>{current} — not connected</option>
+      )}
     </>
   )
+
+  /**
+   * Whether this box is listening to a lighting network at all.
+   *
+   * Not `dmxMode`, which comes from what has been *saved*. With CREWBOX_DMX
+   * pinning the mode and nothing ever saved through the panel, that is empty
+   * — so the panel concluded lighting was off and hid the adapter and
+   * universes fields, which the environment does not pin and are the two an
+   * operator on such a box actually has to set.
+   */
+  const effectiveMode = listeningMode(network, dmxMode)
 
   const dirty =
     crewIface !== network.saved.crewIface ||
@@ -622,12 +642,15 @@ function NetworksSection({
           value={crewIface}
           onChange={(e) => setCrewIface(e.target.value)}
         >
-          {adapterOptions('All networks — first adapter wins')}
+          {adapterOptions('All networks — first adapter wins', crewIface)}
         </select>
       )}
       <label htmlFor="admin-dmx-mode">Lighting network listening</label>
       {network.fromEnv.dmxMode ? (
-        <p className="admin-note">Set by CREWBOX_DMX in the environment; change it there.</p>
+        <p className="admin-note">
+          Set by CREWBOX_DMX in the environment{effectiveMode ? ` to ${effectiveMode}` : ''}; change
+          it there.
+        </p>
       ) : (
         <select id="admin-dmx-mode" value={dmxMode} onChange={(e) => setDmxMode(e.target.value)}>
           <option value="off">Off</option>
@@ -636,7 +659,7 @@ function NetworksSection({
           <option value="both">Both</option>
         </select>
       )}
-      {dmxMode !== 'off' && (
+      {effectiveMode !== 'off' && (
         <>
           <label htmlFor="admin-dmx-iface">Lighting network adapter</label>
           {network.fromEnv.dmxIface ? (
@@ -647,7 +670,7 @@ function NetworksSection({
               value={dmxIface}
               onChange={(e) => setDmxIface(e.target.value)}
             >
-              {adapterOptions('Let the OS choose')}
+              {adapterOptions('Let the OS choose', dmxIface)}
             </select>
           )}
           <label htmlFor="admin-dmx-universes">sACN universes</label>
@@ -714,7 +737,7 @@ function AdminPasswordField({
         setValue('')
         onNote('Admin password changed — any other device with the panel open is now locked')
       })
-      .catch((err) => onNote(err instanceof api.ApiError ? err.message : 'Save failed'))
+      .catch((err) => onNote(adminError(err, 'Save failed')))
       .finally(() => setSaving(false))
   }
 
@@ -771,7 +794,7 @@ function UserRow({
       setEditing(false)
       setPin('')
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'PIN reset failed')
+      onNote(adminError(err, 'PIN reset failed'))
     } finally {
       setBusy(false)
     }
@@ -841,7 +864,7 @@ function ChannelRow({ channel, onNote }: { channel: Channel; onNote: (note: stri
       onNote(`#${patch.name ?? channel.name} updated`)
       setEditing(false)
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Channel update failed')
+      onNote(adminError(err, 'Channel update failed'))
     } finally {
       setBusy(false)
     }
@@ -857,7 +880,7 @@ function ChannelRow({ channel, onNote }: { channel: Channel; onNote: (note: stri
       await api.adminUpdateChannel(auth(), channel.id, { retired: true })
       onNote(`#${channel.name} retired`)
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Retire failed')
+      onNote(adminError(err, 'Retire failed'))
     } finally {
       setBusy(false)
     }

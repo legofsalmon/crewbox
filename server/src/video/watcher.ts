@@ -7,7 +7,13 @@ import {
   type VideoProcessor,
   type VideoReadPath,
 } from '@crewbox/shared'
-import { CoexReader, readingIsEmpty, type CoexIo, type ReadOnlyInit } from './coex.ts'
+import {
+  assertReadOnly,
+  CoexReader,
+  readingIsEmpty,
+  type CoexIo,
+  type ReadOnlyInit,
+} from './coex.ts'
 import { SnmpSession, readOverSnmp, type SnmpIo } from './snmp.ts'
 import type { VideoStore } from './store.ts'
 
@@ -54,7 +60,15 @@ export interface WatcherIo {
 
 export const realWatcherIo: WatcherIo = {
   coex: {
-    fetch: (url: string, init: ReadOnlyInit) => fetch(url, init),
+    // Checked here rather than trusted from the type. `redirect: 'error'` is
+    // the part a type cannot enforce — following one is a decision the far
+    // end makes after the compiler has finished — and `assertReadOnly` is
+    // what stops a 302 turning a poll into a connection to the register bus.
+    // See coex.ts.
+    fetch: (url: string, init: ReadOnlyInit) => {
+      assertReadOnly(url, init)
+      return fetch(url, init)
+    },
     now: () => Date.now(),
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   },
@@ -80,6 +94,8 @@ export interface WatcherOptions {
   store: VideoStore
   io?: WatcherIo
   community?: string
+  /** The video adapter's address (CREWBOX_VIDEO_IFACE), when one is pinned. */
+  interfaceIp?: string
   log?: { warn: (msg: string) => void }
 }
 
@@ -87,6 +103,7 @@ export class VideoWatcher {
   private readonly store: VideoStore
   private readonly io: WatcherIo
   private readonly community: string
+  private readonly interfaceIp: string
   private readonly log: WatcherOptions['log']
   private readonly watched = new Map<string, Watched>()
   private timer: NodeJS.Timeout | null = null
@@ -96,6 +113,7 @@ export class VideoWatcher {
     this.store = options.store
     this.io = options.io ?? realWatcherIo
     this.community = options.community ?? 'public'
+    this.interfaceIp = options.interfaceIp ?? ''
     this.log = options.log
   }
 
@@ -129,16 +147,25 @@ export class VideoWatcher {
       for (const [id] of this.watched) {
         if (!armed.some((p) => p.id === id)) this.watched.delete(id)
       }
-      for (const processor of armed) {
-        try {
-          await this.pollOne(processor)
-        } catch (err) {
-          // A reader that throws is a bug here, not a network condition —
-          // both clients are written to degrade. Log it and keep the rest of
-          // the wall on screen.
-          this.log?.warn(`video: polling ${processor.host} threw: ${String(err)}`)
-        }
-      }
+      // Concurrently, not one after another.
+      //
+      // A processor that has been unplugged costs the SNMP timeout plus the
+      // HTTP one — fifteen to thirty-five seconds — and serially that was
+      // fifteen to thirty-five seconds the *healthy* walls waited too. One
+      // dead cabinet at the back of a stage stalled the whole pane, and the
+      // longer the list the worse it got: the failure is exactly the case
+      // where somebody is staring at the screen wanting an answer.
+      //
+      // Each poll already contains its own failures, so `allSettled` is
+      // belt and braces for a reader that throws — which would be a bug
+      // here, not a network condition, since both clients degrade.
+      await Promise.allSettled(
+        armed.map((processor) =>
+          this.pollOne(processor).catch((err: unknown) => {
+            this.log?.warn(`video: polling ${processor.host} threw: ${String(err)}`)
+          })
+        )
+      )
     } finally {
       this.polling = false
     }
@@ -152,7 +179,13 @@ export class VideoWatcher {
     const fresh: Watched = {
       host: processor.host,
       reader: new CoexReader(processor.host, this.io.coex),
-      session: new SnmpSession(processor.host, this.io.snmp, this.community),
+      session: new SnmpSession(
+        processor.host,
+        this.io.snmp,
+        this.community,
+        undefined,
+        this.interfaceIp
+      ),
       path: null,
       reading: null,
       lastHeard: null,

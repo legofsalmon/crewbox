@@ -28,7 +28,16 @@ class FakeSocket extends EventEmitter {
   sent: Array<{ payload: Buffer; port: number; address: string }> = []
   broadcast = false
   bound: { port: number; address?: string } | null = null
+  multicastInterface: string | null = null
+  memberships: Array<{ group: string; iface?: string }> = []
   closed = false
+
+  setMulticastInterface(iface: string): void {
+    this.multicastInterface = iface
+  }
+  addMembership(group: string, iface?: string): void {
+    this.memberships.push({ group, ...(iface ? { iface } : {}) })
+  }
 
   bind(port: number, address?: string | (() => void), cb?: () => void): void {
     const done = typeof address === 'function' ? address : cb
@@ -106,6 +115,47 @@ describe('addressing', () => {
     const io = fakeIo(new FakeSocket())
     expect(broadcastFor('10.0.30.9', io)).toBe('10.0.30.255')
     expect(broadcastFor('192.168.1.5', io)).toBeNull()
+  })
+})
+
+describe('hearing the answers', () => {
+  it('binds wide and steers by address, so broadcast replies arrive at all', async () => {
+    // It used to bind the adapter's own unicast address, which does not
+    // receive datagrams sent to the subnet broadcast or to a multicast
+    // group — that is, every reply the scan is waiting for. The probe was
+    // going out and nothing could ever come back.
+    const socket = new FakeSocket()
+    await scan('10.0.30.9', fakeIo(socket))
+    expect(socket.bound?.address).toBeUndefined()
+    expect(socket.bound?.port).toBe(3800)
+    // Steered instead: egress on the named adapter, and the group joined so
+    // a reply sent to it is delivered.
+    expect(socket.multicastInterface).toBe('10.0.30.9')
+    expect(socket.memberships).toEqual([{ group: DISCOVERY_GROUP, iface: '10.0.30.9' }])
+  })
+
+  it('lists a processor that answered on the video network', async () => {
+    const socket = new FakeSocket()
+    const result = await scan(
+      '10.0.30.9',
+      fakeIo(socket, [{ from: '10.0.30.44', buf: Buffer.concat([REPLY_PREFIX, Buffer.from('x')]) }])
+    )
+    expect(result.found.map((p) => p.host)).toEqual(['10.0.30.44'])
+  })
+
+  it('ignores an answer from a network nobody pointed it at', async () => {
+    // The socket can hear every adapter now. A device answering on the crew
+    // LAN is not a video processor this box was asked about, and listing it
+    // would be the module reaching onto a network by accident — which is
+    // the one thing it must never do.
+    const socket = new FakeSocket()
+    const result = await scan(
+      '10.0.30.9',
+      fakeIo(socket, [
+        { from: '192.168.200.50', buf: Buffer.concat([REPLY_PREFIX, Buffer.from('x')]) },
+      ])
+    )
+    expect(result.found).toEqual([])
   })
 })
 

@@ -31,7 +31,47 @@ import {
 export interface ReadOnlyInit {
   /** Literal, not `string`. The compiler is the guard. */
   method: 'GET'
+  /**
+   * Literal, and not the default.
+   *
+   * `fetch` follows redirects unless told not to, which quietly hands the
+   * choice of destination to whatever answered. A host at the address an
+   * admin typed can reply `302 Location: http://<processor>:5200/` and the
+   * box will open TCP to the register bus and write an HTTP request into it,
+   * every twenty seconds — the one thing this module must never do, reached
+   * without a single line of this file being wrong. Reproduced on this Node
+   * against a listener standing in for the bus.
+   */
+  redirect: 'error'
   signal: AbortSignal
+}
+
+/**
+ * Refuse anything that is not a plain read of the COEX API.
+ *
+ * The comment at the top of this file has always said the adapter re-checks
+ * at runtime. It did not — the real one was `fetch(url, init)` — so the type
+ * was the only guard and a type is no guard at all against a redirect, which
+ * is a decision made by the far end after the type has done its work.
+ *
+ * The port is the important one. A GET is harmless wherever it lands; a TCP
+ * connection to 5200 is not, because that session is one NovaLCT may hold
+ * exclusively and taking it could take the desk away from the operator using
+ * it mid-show. So this refuses on the port, before a socket is opened, and
+ * `readOnlyFetch` is the only way out of this module.
+ */
+export function assertReadOnly(url: string, init: ReadOnlyInit, port = COEX_HTTP_PORT): void {
+  if (init.method !== 'GET') throw new Error(`video is read-only: refusing ${init.method}`)
+  if (init.redirect !== 'error') {
+    throw new Error('video is read-only: refusing to follow a redirect')
+  }
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:') {
+    throw new Error(`video is read-only: refusing ${parsed.protocol}`)
+  }
+  if (parsed.port !== String(port)) {
+    throw new Error(`video is read-only: refusing a request to port ${parsed.port || '80'}`)
+  }
 }
 
 export interface CoexResponse {
@@ -160,7 +200,13 @@ export function parseCabinets(payload: unknown): CabinetReading[] {
   for (const [index, raw] of list.entries()) {
     if (!isObject(raw)) continue
     const id = str(pick(raw, ['id', 'cabinetId', 'sn', 'serialNumber'])) ?? String(index + 1)
-    const online = bool(pick(raw, ['online', 'isOnline', 'connected', 'status']))
+    // Not `status`: it is a *code* everywhere else in this API — an input's
+    // signal status is 0 not-connected, 1 present, 2 no-signal — and `bool`
+    // turns 0 into false, so a firmware reporting `status: 0` for a normal
+    // cabinet painted a working wall red. A cabinet that only says `status`
+    // now falls through to the module's own default for "the firmware
+    // didn't say", which is online.
+    const online = bool(pick(raw, ['online', 'isOnline', 'connected']))
     out.push({
       id,
       ...(str(pick(raw, ['screen', 'screenId', 'screenName'])) !== undefined
@@ -240,6 +286,7 @@ export class CoexReader {
     try {
       const res = await this.io.fetch(`${this.base}${path}`, {
         method: 'GET',
+        redirect: 'error',
         signal: controller.signal,
       })
       if (!res.ok) return { data: null, error: `${path} answered ${res.status}` }
@@ -369,6 +416,7 @@ export class CoexReader {
       else if (num(role) !== undefined) reading.isBackup = num(role) === 1
     }
 
+    reading.answered = answered
     // Nothing answered: an empty reading, with no cached identity dressing it
     // up as a live one. The caller counts this as a miss.
     if (answered === 0) return reading
@@ -396,6 +444,9 @@ export class CoexReader {
  * second is worth telling somebody about.
  */
 export function readingIsEmpty(reading: ProcessorReading): boolean {
+  // The count when the reader kept one — "did anything answer" is the
+  // question, and it is not the same as "did we recognise any of it".
+  if (reading.answered !== undefined) return reading.answered === 0
   return (
     reading.cabinets.length === 0 &&
     reading.inputs.length === 0 &&

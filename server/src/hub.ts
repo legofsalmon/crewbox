@@ -3,6 +3,8 @@ import type { WebSocket, WebSocketServer } from 'ws'
 import {
   clientMessageSchema,
   PROTOCOL_VERSION,
+  SEND_LIMIT,
+  SEND_WINDOW_MS,
   type Channel,
   type ClientMessage,
   type DmxUniverseWire,
@@ -12,6 +14,7 @@ import {
   type User,
 } from '@crewbox/shared'
 import type { DmxListener } from './dmx/listener.ts'
+import type { UniverseHealth } from './dmx/state.ts'
 import type { Store } from './store.ts'
 import { APP_VERSION } from './version.ts'
 
@@ -20,7 +23,7 @@ const MISSED_LIMIT = 200
 /** Cap on total replayed messages across all channels in one welcome. */
 const MISSED_TOTAL_LIMIT = 500
 /** How far back welcome replays deletions so returning clients reconcile. */
-const DELETION_REPLAY_MS = 7 * 24 * 60 * 60 * 1000
+export const DELETION_REPLAY_MS = 7 * 24 * 60 * 60 * 1000
 const HEARTBEAT_MS = 15_000
 
 interface Conn {
@@ -42,13 +45,21 @@ interface Conn {
   dmxSent: Map<number, Uint8Array>
   /** Last `everLit` sent per universe, so it only goes when it grows. */
   dmxEverLit: Map<number, string>
+  /**
+   * Where the level diff stopped scanning last tick, per universe.
+   *
+   * The scan is capped, and it used to restart at address 1 every time. A
+   * chase touching more than the cap in a tick therefore re-sent the same
+   * low addresses for ever and never reached the high ones: on a rig where
+   * the movers are patched above the LED wash, the plot showed the wash
+   * moving and the movers frozen, indefinitely. Resuming from here and
+   * wrapping means every changed address gets out within a handful of
+   * ticks, whatever the desk is doing.
+   */
+  dmxScan: Map<number, number>
   /** Cheap fingerprint of the last state message, to avoid resending it. */
   dmxSummary?: string
 }
-
-/** Max `send` messages one socket may emit per window before being throttled. */
-const SEND_LIMIT = 30
-const SEND_WINDOW_MS = 10_000
 
 /**
  * How far from the box's clock a show-log entry's time may be.
@@ -165,6 +176,22 @@ interface Logger {
   error: (msg: string) => void
 }
 
+/**
+ * How long an on-air crew member may be off the network before the tally
+ * gives up on them.
+ *
+ * iOS closes a WebSocket about thirty seconds after the app goes to the
+ * background, and the person on camera is precisely the one not holding
+ * their phone — so "their last socket closed" is not "they left", and
+ * treating it as such made the red bar vanish for the whole crew mid-shot.
+ *
+ * Five minutes: longer than any shot plus the gap around it, short enough
+ * that somebody who has actually gone home is not still on air by the next
+ * scene. A vision desk can clear it at any point regardless; this is only
+ * about what happens when nobody does.
+ */
+export const TALLY_GRACE_MS = 5 * 60_000
+
 export class Hub {
   private conns = new Set<Conn>()
   /** userId → number of open sockets. */
@@ -191,6 +218,9 @@ export class Hub {
    */
   private tally: TallySource | undefined
 
+  /** Pending "they really have gone" timers, per user. See markOffline. */
+  private tallyGrace = new Map<string, NodeJS.Timeout>()
+
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
@@ -198,7 +228,9 @@ export class Hub {
     private readonly sessionTtlMs?: number,
     private readonly trustProxy = false,
     /** Lighting network, when this box was asked to listen to one. */
-    private readonly dmx?: DmxListener
+    private readonly dmx?: DmxListener,
+    /** Injectable so the tally grace is testable without waiting minutes. */
+    private readonly tallyGraceMs = TALLY_GRACE_MS
   ) {}
 
   /** Hand the audit collector what the crew's devices report. Off by default. */
@@ -231,7 +263,18 @@ export class Hub {
     this.heartbeat.unref()
     if (this.dmx) {
       this.dmxTimer = setInterval(() => {
-        for (const conn of this.conns) if (conn.dmxUniverses.length > 0) this.pushDmx(conn)
+        // `health()` sorts every universe and rebuilds a public record for
+        // every source in each. It used to run once per watching socket, so
+        // a production desk, a lighting tablet and three phones watching the
+        // same rig cost five identical rebuilds four times a second. The
+        // answer is the same for all of them, so it is computed once and
+        // handed down.
+        const watching = [...this.conns].filter((conn) => conn.dmxUniverses.length > 0)
+        // Nobody is looking: a rig with no pane open costs nothing at all,
+        // which is most of the time on most boxes.
+        if (watching.length === 0 || !this.dmx) return
+        const health = new Map(this.dmx.state.health().map((u) => [u.universe, u]))
+        for (const conn of watching) this.pushDmx(conn, health)
       }, DMX_TICK_MS)
       this.dmxTimer.unref()
     }
@@ -241,7 +284,30 @@ export class Hub {
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.dmxTimer) clearInterval(this.dmxTimer)
     this.dmxTimer = null
+    for (const timer of this.tallyGrace.values()) clearTimeout(timer)
+    this.tallyGrace.clear()
     for (const conn of this.conns) conn.ws.terminate()
+  }
+
+  /** Start the countdown to forgetting an on-air crew member who dropped. */
+  private scheduleTallyForget(userId: string): void {
+    if (this.tally?.current().userId !== userId) return
+    this.clearTallyGrace(userId)
+    const timer = setTimeout(() => {
+      this.tallyGrace.delete(userId)
+      if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
+    }, this.tallyGraceMs)
+    // Never a reason to hold the process open — a box shutting down has no
+    // tally to clear.
+    timer.unref?.()
+    this.tallyGrace.set(userId, timer)
+  }
+
+  private clearTallyGrace(userId: string): void {
+    const timer = this.tallyGrace.get(userId)
+    if (!timer) return
+    clearTimeout(timer)
+    this.tallyGrace.delete(userId)
   }
 
   stats(): { connections: number; onlineUsers: number } {
@@ -262,6 +328,7 @@ export class Hub {
       dmxLevels: false,
       dmxSent: new Map(),
       dmxEverLit: new Map(),
+      dmxScan: new Map(),
     }
     this.conns.add(conn)
 
@@ -293,11 +360,27 @@ export class Hub {
     const msg = parsed.data
 
     if (msg.type === 'hello') {
+      // Counted like everything else, and the most expensive thing this
+      // socket can ask for: a session lookup, a database write, and a
+      // welcome built out of every channel this user is in. A legitimate
+      // client sends exactly one per connection; being the one message
+      // allowed before authentication is not a reason to be free, it is a
+      // reason to be careful.
+      if (this.overActionLimit(conn)) {
+        this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+        conn.ws.close(4008, 'too many handshakes')
+        return
+      }
       this.onHello(conn, msg)
       return
     }
     if (!conn.user) {
-      this.send(conn.ws, { type: 'error', code: 'auth', message: 'hello required first' })
+      // `handshake`, not `auth`: this says nothing about the session, only
+      // that this socket has not presented it yet. Sent as `auth` it told the
+      // client its token was dead, and the client believed it — dropped the
+      // token, wiped IndexedDB and reloaded to the join screen. See
+      // ErrorMessage.
+      this.send(conn.ws, { type: 'error', code: 'handshake', message: 'hello required first' })
       conn.ws.close(4001, 'unauthenticated')
       return
     }
@@ -310,10 +393,15 @@ export class Hub {
         const now = Date.now()
         conn.sends = conn.sends.filter((t) => now - t < SEND_WINDOW_MS)
         if (conn.sends.length >= SEND_LIMIT) {
+          // `retry`, because this is the box saying "not now" rather than
+          // anything about the message. Without it the client deleted the
+          // entry, and a phone replaying an outbox after a dead spot lost
+          // everything past the thirtieth. See RejectedMessage.
           this.send(conn.ws, {
             type: 'rejected',
             clientMsgId: msg.clientMsgId,
             reason: 'slow down — too many messages',
+            retry: true,
           })
           break
         }
@@ -353,6 +441,18 @@ export class Hub {
         conn.dmxLevels = msg.levels
         conn.dmxSent.clear()
         conn.dmxEverLit.clear()
+        conn.dmxScan.clear()
+        // The summary too, or a subscription can get no reply at all.
+        //
+        // `pushDmx` only sends when the summary changed — which is right for
+        // a tick, and wrong for a *new* watch: re-watching a set of universes
+        // the box has never heard from produces the same summary as last
+        // time, so nothing goes out. The client has just set `listening:
+        // false` in its own cleanup, so the live bar reads "this box is not
+        // listening to Art-Net or sACN" while the admin panel says it is
+        // listening on sixteen universes. At get-in, before the desk is
+        // outputting, that is exactly where an LX programmer lands.
+        delete conn.dmxSummary
         this.pushDmx(conn)
         break
       case 'ping':
@@ -387,6 +487,7 @@ export class Hub {
             type: 'rejected',
             clientMsgId: msg.clientMsgId,
             reason: 'slow down — too many entries',
+            retry: true,
           })
           break
         }
@@ -406,7 +507,18 @@ export class Hub {
       conn.ws.close(4001, 'invalid session')
       return
     }
-    this.store.touchSession(msg.token)
+    // Bookkeeping, and never a reason to fail a hello. It is an UPDATE, so on
+    // a full disk it throws — and it sat above `conn.user = user`, so the
+    // throw left an authenticated crew member on an unauthenticated socket.
+    // Their next ping earned "hello required first", which the client read as
+    // a dead session: token dropped, IndexedDB wiped, outbox and all, back to
+    // the join screen. Re-joining then failed too, because that is another
+    // write. A box short of disk signed out every phone on site.
+    try {
+      this.store.touchSession(msg.token)
+    } catch (err) {
+      this.log.warn(`could not record session activity: ${String(err)}`)
+    }
     // A repeated hello on the same socket must not double-count presence: the
     // close handler decrements exactly once, so onHello has to increment at
     // most once per connection. Remember whether this socket was already
@@ -425,7 +537,14 @@ export class Hub {
     // truncated, and the client backfills those channels over REST on demand.
     let budget = MISSED_TOTAL_LIMIT
     for (const channel of channels) {
-      const afterSeq = msg.cursors[channel.id] ?? 0
+      const claimed = msg.cursors[channel.id] ?? 0
+      // A cursor past the end of the channel is a cursor from another
+      // database — a restore, or a spare box. Believing it skips the channel
+      // silently, so it is treated as no cursor at all and the client gets
+      // the tail. `dbEpoch` above is how the client knows to drop what it was
+      // holding; this is what gets it something to replace it with, including
+      // on a client too old to read the epoch.
+      const afterSeq = claimed > channel.lastSeq ? 0 : claimed
       if (channel.lastSeq <= afterSeq) continue
       const perChannel = Math.min(MISSED_LIMIT, budget)
       if (perChannel <= 0) {
@@ -464,6 +583,9 @@ export class Hub {
         channels.map((c) => c.id),
         Date.now() - DELETION_REPLAY_MS
       ),
+      // Which database this is. A phone that sees it change knows its cursors
+      // and its cached messages belong to one that is no longer here.
+      dbEpoch: this.store.dbEpoch(),
     })
     // Straight after the welcome, and only when somebody is actually live:
     // a device joining mid-show has to arrive already knowing, or its red
@@ -657,6 +779,10 @@ export class Hub {
 
   /** Close every socket for a user (their session tokens are now invalid). */
   disconnectUser(userId: string): void {
+    // An account being deleted is somebody leaving on purpose, so the tally
+    // goes now rather than waiting out the grace period below.
+    this.clearTallyGrace(userId)
+    if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
     for (const conn of this.conns) {
       if (conn.user?.id === userId) {
         this.send(conn.ws, { type: 'error', code: 'auth', message: 'account deleted' })
@@ -679,6 +805,8 @@ export class Hub {
   // -- presence -------------------------------------------------------------
 
   private markOnline(userId: string, remote: boolean): void {
+    // They are back, so whatever their last dropped socket started, stop it.
+    this.clearTallyGrace(userId)
     const wasRemoteOnly = this.isRemoteOnly(userId)
     const count = this.online.get(userId) ?? 0
     this.online.set(userId, count + 1)
@@ -706,10 +834,20 @@ export class Hub {
       this.online.delete(userId)
       this.localSockets.delete(userId)
       this.broadcastAll({ type: 'presence', userId, online: false })
+      // The tally waits.
+      //
       // A tally pointing at somebody who has left the event is a red bar
       // nobody can clear: not them, because they are gone, and not anyone
-      // else, because it is not their bar.
-      if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
+      // else, because it is not their bar. But "their last socket closed" is
+      // not "they left" — iOS closes one about thirty seconds after the app
+      // goes to the background, and the person on camera is precisely the one
+      // who is not holding their phone. So the bar was vanishing for the whole
+      // crew, mid-shot, because the subject pocketed a device.
+      //
+      // A grace period tells the two apart: long enough that a shot survives
+      // it, short enough that somebody who has gone home stops being on air
+      // before the next scene. Coming back cancels it. See TALLY_GRACE_MS.
+      this.scheduleTallyForget(userId)
     } else {
       this.online.set(userId, count - 1)
       // Their last on-site device left; they're still on from the office.
@@ -739,14 +877,16 @@ export class Hub {
    * moved. A universe nobody is watching costs nothing, and a rig that is
    * sitting still costs one small state message a second.
    */
-  private pushDmx(conn: Conn): void {
+  private pushDmx(conn: Conn, shared: Map<number, UniverseHealth> | null = null): void {
     if (conn.ws.readyState !== conn.ws.OPEN) return
     if (!this.dmx) {
       this.send(conn.ws, { type: 'dmxState', listening: false, universes: [] })
       return
     }
 
-    const health = new Map(this.dmx.state.health().map((u) => [u.universe, u]))
+    // The tick computes this once for every watching socket. The fallback is
+    // for the one caller that is not the tick.
+    const health = shared ?? new Map(this.dmx.state.health().map((u) => [u.universe, u]))
     const universes: DmxUniverseWire[] = []
     let stateChanged = false
 
@@ -800,15 +940,22 @@ export class Hub {
           if (slots[i] !== 0) values.push([i + 1, slots[i]!])
         }
         conn.dmxSent.set(universe, new Uint8Array(slots))
+        conn.dmxScan.set(universe, 0)
         this.send(conn.ws, { type: 'dmxLevels', universe, full: true, values })
         continue
       }
-      for (let i = 0; i < slots.length && values.length < DMX_MAX_CHANGES; i++) {
-        if (slots[i] !== previous[i]) {
-          values.push([i + 1, slots[i]!])
-          previous[i] = slots[i]!
+      // Round-robin, not from the top: see `dmxScan`. One pass at most, so
+      // an idle universe costs one walk and a busy one hands out its cap.
+      let at = conn.dmxScan.get(universe) ?? 0
+      if (at >= slots.length) at = 0
+      for (let seen = 0; seen < slots.length && values.length < DMX_MAX_CHANGES; seen++) {
+        if (slots[at] !== previous[at]) {
+          values.push([at + 1, slots[at]!])
+          previous[at] = slots[at]!
         }
+        at = (at + 1) % slots.length
       }
+      conn.dmxScan.set(universe, at)
       if (values.length > 0) {
         this.send(conn.ws, { type: 'dmxLevels', universe, full: false, values })
       }

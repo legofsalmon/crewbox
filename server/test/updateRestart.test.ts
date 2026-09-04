@@ -57,7 +57,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 /** A clock that only moves when the code under test sleeps. */
 function fakeIo(
-  answers: ({ ok: true; version: string } | null)[] = [],
+  answers: ({ ok: true; version: string; pid?: number } | null)[] = [],
   overrides: Partial<RestartIo> = {}
 ): RestartIo & { launched: string[]; killed: number[] } {
   let clock = 0
@@ -194,9 +194,12 @@ describe('asking the status file instead of the network', () => {
    * certificate would fail fetch's verification, and a successful update
    * would be rolled back for having the wrong certificate authority.
    */
-  it('accepts a file written by the new process', async () => {
+  it('accepts a file written by the new process, and names it', async () => {
+    // The pid matters as much as the version: on macOS the launch went
+    // through `open`, so this file is the only place the new box's own pid
+    // can be read.
     const probe = statusFileProbe('/data', 100, () => ({ pid: 200, version: '0.18.0' }))
-    expect(await probe('ignored')).toEqual({ ok: true, version: '0.18.0' })
+    expect(await probe('ignored')).toEqual({ ok: true, version: '0.18.0', pid: 200 })
   })
 
   it('ignores our own status file', async () => {
@@ -218,5 +221,32 @@ describe('asking the status file instead of the network', () => {
     // against is not the same as a match.
     const probe = statusFileProbe('/data', 100, () => ({ pid: 200, version: '' }))
     expect(await probe('ignored')).toBeNull()
+  })
+})
+
+/**
+ * Stopping the right process.
+ *
+ * A `.app` is launched with `open -n`, which hands the request to
+ * LaunchServices and exits — so the pid that comes back belongs to a process
+ * that is already gone. Killing it stopped nothing, and a box that failed its
+ * probe went on holding the port while this process rolled back and tried to
+ * take it: two boxes, one port, and a rollback that had not really happened.
+ */
+describe('killing a box that will not come good', () => {
+  it('kills what answered, not what was launched', async () => {
+    // 4242 is the launch pid — `open`, already gone. 8080 is the box, read
+    // from the status file it wrote.
+    const io = fakeIo([{ ok: true, version: '9.9.9', pid: 8080 }])
+    await run(io)
+    expect(io.killed).toEqual([8080])
+  })
+
+  it('falls back to the launched pid when nothing ever answered', async () => {
+    // A plain binary is its own launcher, so that pid is the box — and it is
+    // the only one there is when no probe came back.
+    const io = fakeIo([])
+    await run(io, 2_000)
+    expect(io.killed).toEqual([4242])
   })
 })

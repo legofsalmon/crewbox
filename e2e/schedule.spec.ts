@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { newDevice, uniqueName } from './helpers'
+import { expect, type Page } from '@playwright/test'
+import { newDevice, test, uniqueName } from './helpers'
 
 /**
  * The running order, now that the shell owns it.

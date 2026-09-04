@@ -1,6 +1,15 @@
-import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { OLD_APP_SUFFIX, installMacApp, relaunchCommand, type MacIo } from './macapp.ts'
+import { restoreSnapshot } from './snapshot.ts'
 
 /**
  * Putting a verified build in place of the running one, and being able to
@@ -93,6 +102,18 @@ export interface InFlight {
   /** The database copy taken first, when there was one. */
   snapshotPath: string | null
   /**
+   * Where the verified download came from, when it is known.
+   *
+   * The swap is a rename, so after it there is no copy left in the updates
+   * directory — and a rollback that simply deleted the installed file threw
+   * away the one thing "Try again" needs, turning every retry into another
+   * two-hundred-megabyte download over a venue's uplink. `undoInstall` puts
+   * it back here instead. Optional because a marker written by an older box
+   * will not have it, and a marker that fails to parse is a rollback that
+   * cannot happen.
+   */
+  buildPath?: string
+  /**
    * How to start it again. A bare binary is its own launcher; a bundle has
    * to go through `open`, or LaunchServices never hears about it and the
    * menu bar never appears.
@@ -151,6 +172,7 @@ export function installBuild(options: InstallOptions): InstallResult {
     targetPath: target.path,
     backupPath,
     snapshotPath: options.snapshotPath ?? null,
+    buildPath,
     relaunch: { command: target.path, args: [] },
     startedAt: at,
   }
@@ -184,7 +206,9 @@ export function installBuild(options: InstallOptions): InstallResult {
   }
 
   try {
-    renameSync(buildPath, target.path)
+    // The one move here that can cross a filesystem: the download lives under
+    // the data directory and the binary does not have to.
+    moveFile(buildPath, target.path)
   } catch (err) {
     // Put it back rather than leaving a box with no binary at its own path.
     // This is the one failure that would otherwise be unrecoverable without
@@ -293,9 +317,26 @@ export function undoInstall(
     return { ok: false, reason: `there is no ${inFlight.backupPath} to go back to` }
   }
   try {
-    // The failed new build is in the way; it is verified and still in the
-    // updates directory, so losing this copy costs a rename, not a download.
-    rmSync(inFlight.targetPath, { force: true, recursive: true })
+    // The failed new build is in the way, and it is the only copy: the swap
+    // moved it out of the updates directory rather than copying it. Put it
+    // back there, so "Try again" is a rename and not another two hundred
+    // megabytes over a venue's uplink. A bundle has no download to return —
+    // `installMacApp` owns that path — and anything that goes wrong here is
+    // not worth failing a rollback over.
+    let returned = false
+    if (inFlight.kind !== 'app-bundle' && inFlight.buildPath) {
+      try {
+        // Windows will not rename onto an existing name, and the swap should
+        // have left nothing here anyway.
+        rmSync(inFlight.buildPath, { force: true })
+        moveFile(inFlight.targetPath, inFlight.buildPath)
+        returned = true
+      } catch {
+        // Out of space, or a directory that has gone. It is a download, and
+        // the box being on the right binary matters more.
+      }
+    }
+    if (!returned) rmSync(inFlight.targetPath, { force: true, recursive: true })
     renameSync(inFlight.backupPath, inFlight.targetPath)
     // A bundle has no single executable bit to put back — the signature and
     // the modes inside it came over with the directory.
@@ -363,6 +404,10 @@ export function readInFlight(dataDir: string): InFlight | null {
       targetPath: r.targetPath,
       backupPath: r.backupPath,
       snapshotPath: typeof r.snapshotPath === 'string' ? r.snapshotPath : null,
+      // Optional for the same reason as `relaunch`: a marker can outlive the
+      // build that wrote it. Without it a rollback deletes the download
+      // instead of returning it, which costs a retry and nothing else.
+      ...(typeof r.buildPath === 'string' ? { buildPath: r.buildPath } : {}),
       relaunch,
       startedAt: r.startedAt,
     }
@@ -379,19 +424,88 @@ export function clearInFlight(dataDir: string): void {
   }
 }
 
+/**
+ * Are these two strings the same crewbox version?
+ *
+ * Three notations for one thing are in play and none of them can be compared
+ * raw. A release is tagged `v0.19.0`; the in-flight marker stores whatever
+ * tag it was asked to install; a running box reports `0.19.0+def5678`,
+ * because the commit is part of what it is. Comparing the numeric version
+ * only is deliberate — the suffix is not knowable from a tag, and a box that
+ * installed perfectly but reported an unexpected one would otherwise be
+ * treated as a stranger.
+ */
+export function sameVersion(a: string, b: string): boolean {
+  const strip = (v: string) => v.replace(/^v/, '').split('+')[0]!.trim()
+  return strip(a) === strip(b)
+}
+
+/**
+ * Move a file, including onto a different filesystem.
+ *
+ * `renameSync` is the whole reason an install is survivable — it is atomic,
+ * and it works on a file that is currently executing. But it only works
+ * within one filesystem, and the two paths here are the data directory and
+ * wherever the binary lives. A box with `/usr/local/bin/crewbox` and its data
+ * on `/home`, or on a USB stick, is an ordinary layout and an EXDEV every
+ * time: the update simply could not be installed, with a message about a
+ * rename nobody would connect to the cause.
+ *
+ * So: try the rename, and on EXDEV only, copy and remove. The copy is not
+ * atomic, which is why it is the fallback and not the method — every caller
+ * that can use a rename still does.
+ */
+export function moveFile(from: string, to: string): void {
+  try {
+    renameSync(from, to)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err
+    copyFileSync(from, to)
+    rmSync(from, { force: true })
+  }
+}
+
 export type RecoveryOutcome =
   | { action: 'none' }
+  | { action: 'supervised'; pid: number; toVersion: string }
   | { action: 'confirmed'; toVersion: string }
-  | { action: 'rolled-back'; toVersion: string; fromVersion: string }
+  | {
+      action: 'rolled-back'
+      toVersion: string
+      fromVersion: string
+      /**
+       * What happened to the database.
+       *
+       * `restored` — the new build had migrated it and the snapshot went back
+       * in its place. `kept` — it was never migrated, so the old build can
+       * read what is already there and nothing was touched. `failed` — the
+       * binary went back and the database could not, which is the one
+       * combination a person has to be told about.
+       */
+      database: 'restored' | 'kept' | 'failed'
+      /** Why, when there is anything to say. */
+      databaseDetail?: string
+    }
   | { action: 'failed'; reason: string }
 
 /**
  * What to do about an install nobody ever confirmed.
  *
- * Reached when the supervising process died between swapping the binary and
- * seeing the new one answer — a power cut, or somebody closing the lid at
- * exactly the wrong moment. The question is whether the box now starting is
- * the new build or the old one, and **the running version answers it**:
+ * **First: is anybody already doing it?** Every successful update reaches
+ * this function, because the box the updater has just launched runs the same
+ * startup as any other — and that box must not touch a thing. The process
+ * that swapped the binary is alive, holds the only reference to the backup,
+ * and is at this moment polling `/api/health` to decide whether to keep this
+ * build or put the old one back. A newly launched box that "recovered" would
+ * delete the backup out from under the one process that can still use it, and
+ * a build that then failed its probe would have nothing to go back to. So a
+ * live supervisor means: report it, and leave.
+ *
+ * Otherwise this is the case the name describes — the supervising process
+ * died between swapping the binary and seeing the new one answer, a power cut
+ * or somebody closing the lid at exactly the wrong moment. The question is
+ * whether the box now starting is the new build or the old one, and **the
+ * running version answers it**:
  *
  *  - Running the new version: the swap worked and the box is up. Nobody
  *    confirmed it, but it is plainly alive — clear the marker and keep the
@@ -401,19 +515,58 @@ export type RecoveryOutcome =
  *
  * Anything else — a version matching neither — is a box nobody can reason
  * about from here, so it says so rather than guessing which way to jump.
+ *
+ * The comparison is `sameVersion`, not `===`: a marker records the release
+ * tag it was asked to install (`v0.19.0`) and a running box reports its own
+ * build (`0.19.0+def5678`). Comparing those raw matches neither branch, which
+ * sent every interrupted install down the "cannot reason about this" path.
  */
 export function recoverInterruptedInstall(
   dataDir: string,
-  runningVersion: string
+  runningVersion: string,
+  /** Another crewbox already running and watching this one, if there is one. */
+  supervisor: number | null = null,
+  /**
+   * The live database, when the caller is in a position to have it replaced.
+   *
+   * Only a caller that has not yet opened it may pass this: on POSIX a
+   * process holding an open handle goes on writing to the file a restore
+   * replaces, so a rollback there would look like it worked and change
+   * nothing. Startup is such a caller and is the one that matters — every
+   * rollback that ends with a box running the old build comes back through
+   * here. Omitted, the database is left exactly as it is.
+   */
+  dbPath: string | null = null
 ): RecoveryOutcome {
   const inFlight = readInFlight(dataDir)
   if (!inFlight) return { action: 'none' }
 
-  if (runningVersion === inFlight.toVersion) {
+  if (supervisor !== null) {
+    return { action: 'supervised', pid: supervisor, toVersion: inFlight.toVersion }
+  }
+
+  if (sameVersion(runningVersion, inFlight.toVersion)) {
     dropBackup(inFlight, dataDir)
     return { action: 'confirmed', toVersion: inFlight.toVersion }
   }
-  if (runningVersion === inFlight.fromVersion) {
+  if (sameVersion(runningVersion, inFlight.fromVersion)) {
+    // The database before the binary. If the restore is going to fail it
+    // should fail while the old build is still the one on disk, rather than
+    // after a swap that leaves the box on a binary that cannot read its data.
+    let database: 'restored' | 'kept' | 'failed' = 'kept'
+    let databaseDetail: string | undefined
+    if (dbPath && inFlight.snapshotPath) {
+      const restored = restoreSnapshot({ dbPath, snapshotPath: inFlight.snapshotPath })
+      if (!restored.ok) {
+        database = 'failed'
+        databaseDetail = restored.reason
+      } else if (restored.restored) {
+        database = 'restored'
+        databaseDetail = `the migrated database is at ${restored.supersededPath}`
+      } else {
+        databaseDetail = restored.reason
+      }
+    }
     const undone = undoInstall(inFlight, dataDir)
     if (!undone.ok) {
       clearInFlight(dataDir)
@@ -423,6 +576,8 @@ export function recoverInterruptedInstall(
       action: 'rolled-back',
       toVersion: inFlight.toVersion,
       fromVersion: inFlight.fromVersion,
+      database,
+      ...(databaseDetail ? { databaseDetail } : {}),
     }
   }
   clearInFlight(dataDir)

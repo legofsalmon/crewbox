@@ -1,6 +1,14 @@
 [Unit]
 Description=Crewbox crew comms server
-After=network.target
+# network-online, not network: `network.target` is reached the moment the
+# network *stack* is up, which is before any adapter has an address. The box
+# enumerates adapters at startup to decide what to bind and what address to
+# print on the join QR, so starting a moment too early on a two-network rig
+# meant it found nothing to prefer, bound every adapter it could see — the
+# lighting VLAN included — and advertised whichever one the kernel happened
+# to list first.
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -10,12 +18,44 @@ Environment=NODE_ENV=production
 Environment=CREWBOX_PORT=8787
 Environment=DATA_DIR=/var/lib/crewbox
 Environment=WEB_DIST=/opt/crewbox/web/dist
-# CHANGE THESE before the event:
+# The festival's timezone, as an IANA name. Crew phones read the running order
+# against their own local time; without this the box reads it against its
+# process timezone, and a box imaged elsewhere disagrees with every phone about
+# when the headliner is on.
+Environment=CREWBOX_TZ=Europe/London
+# CHANGE THIS before the event:
 Environment=EVENT_PIN=2468
-Environment=LIVEKIT_URL=wss://chat.example.com/livekit
-Environment=LIVEKIT_KEY=devkey
-Environment=LIVEKIT_SECRET=secret
+# Answer the connectivity probes phones make when they join the Wi-Fi.
+#
+# Without this a rack box does not: the responder is on for a packaged box
+# and off from source, and this unit runs from source. So the dnsmasq lines
+# in deploy/dnsmasq.conf, which send those probes here, had nothing to
+# answer them — an iPhone declared the crew network dead and moved to
+# cellular, which cannot reach a box on a private address.
+#
+# The probes arrive on port 80, which User=crewbox may not bind without the
+# capability below. Both are needed; either one alone does nothing.
+Environment=CREWBOX_CAPTIVE=1
+# Voice. A rig installed from source has no SFU inside it the way the
+# packaged box does, so point this at a livekit-server on the machine and
+# crewbox supervises it: same port, same credentials, behind the box's own
+# certificate, stopped when the box stops.
+#
+#   Environment=CREWBOX_LIVEKIT_BIN=/usr/local/bin/livekit-server
+#
+# Leave it unset and the voice button simply is not offered. That is the
+# honest state, and it is why LIVEKIT_URL is not set here any more: it used
+# to ship pointing at an example host with the dev credentials, so every
+# phone was told voice was available and every token was minted for an SFU
+# that did not exist. Set LIVEKIT_URL only to reach an SFU you already run
+# elsewhere — it turns off this box's own supervision entirely.
 ExecStart=/usr/bin/npm start
+# The one privilege this box needs and the only one it gets: bind port 80 for
+# the connectivity-probe responder above. CapabilityBoundingSet caps what the
+# process could ever acquire, so a compromised box cannot reach for more.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
 Restart=always
 RestartSec=2
 # The app exits within 3s of SIGTERM by design; don't wait longer.

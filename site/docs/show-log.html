@@ -55,8 +55,8 @@ earnest.</p></div>
 <p>Entries file with no signal. They are held on the phone that wrote them — through a reload, a dead battery, a walk out of Wi-Fi range — and go to the box the moment it is reachable. The pane says how many are still waiting rather than pretending they have landed.</p>
 <p>Because the log is the box's, not the phone's, an entry only reaches the rest of the crew once it has arrived. What you cannot lose is the entry itself.</p>
 <h2 id="turning-it-off"><a class="anchor" href="#turning-it-off">Turning it off</a></h2>
-<p>The module ships on by default. A box that doesn't want it runs without:</p>
-<pre><code>CREWBOX_MODULES=schedule,patch,lighting,network</code></pre>
+<p>The module ships on by default. <code>CREWBOX_MODULES</code> is the whole list, not a list of exclusions, so turning one off means naming the rest — a box that does not want the show log runs:</p>
+<pre><code>CREWBOX_MODULES=schedule,patch,lighting,video,network</code></pre>
 <p>Entries already filed stay in the box's database and come back if the module is turned on again.</p>
         <footer class="prevnext"><a class="prev" href="/docs/schedule"><span>Previous</span>Running order</a><a class="next" href="/docs/patch"><span>Next</span>Patch sheets</a></footer>
       </main>

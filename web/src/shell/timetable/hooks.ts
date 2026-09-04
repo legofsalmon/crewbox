@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTimetable } from './store.ts'
-import { agenda, nowMinutes, toAgendaAct, type StageAgenda } from '@crewbox/shared'
+import { agenda, nowMinutes, showDate, toAgendaAct, type StageAgenda } from '@crewbox/shared'
 import { stagesIn, type Act } from './model.ts'
 
 /** How often the countdowns move. Fine enough to trust, idle enough to ignore. */
@@ -16,14 +16,29 @@ const TICK_MS = 15_000
  */
 export function useAgenda(): { stages: StageAgenda[]; acts: Act[]; loaded: boolean } {
   const { snapshot, loaded } = useTimetable()
-  const [now, setNow] = useState(() => nowMinutes(new Date()))
+  // The show day travels with the clock. It rolls at 06:00 like everything
+  // else here, so a phone watching the headline slot at half past midnight
+  // does not have the timetable change day underneath it — and on a
+  // multi-day festival it is what stops Friday's headliner being reported as
+  // on now on the Saturday.
+  const [clock, setClock] = useState(() => {
+    const at = new Date()
+    return { now: nowMinutes(at), today: showDate(at) }
+  })
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(nowMinutes(new Date())), TICK_MS)
+    const timer = setInterval(() => {
+      const at = new Date()
+      setClock({ now: nowMinutes(at), today: showDate(at) })
+    }, TICK_MS)
     return () => clearInterval(timer)
   }, [])
 
-  return { stages: agenda(snapshot.acts.map(toAgendaAct), now), acts: snapshot.acts, loaded }
+  return {
+    stages: agenda(snapshot.acts.map(toAgendaAct), clock.now, clock.today),
+    acts: snapshot.acts,
+    loaded,
+  }
 }
 
 /**

@@ -3,9 +3,10 @@ import type * as Y from 'yjs'
 import { useStageNames } from '../../../shell/timetable/hooks.ts'
 import { timetable } from '../../../shell/timetable/store.ts'
 import { setMetaField } from '../model/sheetDoc'
-import { setSheetStage } from '../model/lineup'
+import { setSheetDate, setSheetStage } from '../model/lineup'
 import { displayToIso, isoToDisplay } from '../model/date'
 import type { SheetAct, SheetSnapshot } from '../model/types'
+import { deliveredNote, NO_DOWNLOADS } from '../../../lib/download.ts'
 import { downloadSheetCsv } from './download'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useToasts } from './toastContext'
@@ -60,18 +61,23 @@ export default function Toolbar({
     setSheetStage(timetable().doc, snapshot.meta, acts, next)
     setMetaField(doc, 'stage', next.trim())
   })
+  // The acts move with the date for the same reason they move with the
+  // stage: between them those two fields are how the sheet finds its
+  // columns, so changing one on its own empties the grid and says nothing.
   const date = useDraft(isoToDisplay(snapshot.meta.date), (next) => {
     const iso = displayToIso(next)
     if (iso) {
+      setSheetDate(timetable().doc, snapshot.meta, acts, iso)
       setMetaField(doc, 'date', iso)
     } else if (next.trim()) {
       addToast('Invalid date', 'Use DD/MM/YYYY — date left unchanged', 'warning')
     }
   })
 
-  const handleExport = () => {
-    downloadSheetCsv(snapshot, acts)
-    addToast('Export complete', 'Sheet downloaded as CSV', 'success')
+  const handleExport = async () => {
+    const result = await downloadSheetCsv(snapshot, acts)
+    if (result === 'unavailable') addToast('Cannot save here', NO_DOWNLOADS, 'warning')
+    else addToast('Export complete', deliveredNote(result, 'Sheet CSV'), 'success')
   }
 
   return (
@@ -181,7 +187,7 @@ export default function Toolbar({
         <button
           type="button"
           className={styles.export}
-          onClick={handleExport}
+          onClick={() => void handleExport()}
           title="Export this sheet as CSV"
         >
           Export

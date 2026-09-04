@@ -1,6 +1,17 @@
 import { registerSW } from 'virtual:pwa-register'
 
-export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
+export const APP_VERSION: string =
+  typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0+unknown'
+
+/**
+ * Whether a version string names a specific build.
+ *
+ * A tree with no git — a release tarball — gives both the client and the
+ * server a `+unknown` commit, and two of those are not evidence of
+ * anything. Comparing them raised "New version available" against the build
+ * already running, on every welcome, for ever.
+ */
+export const knownBuild = (version: string): boolean => !version.endsWith('+unknown')
 
 /** The live SW registration, so an update check can be forced on demand. */
 let swRegistration: ServiceWorkerRegistration | undefined
@@ -20,7 +31,11 @@ export function initPwa(onUpdateReady: () => void): (reload?: boolean) => Promis
       // Re-check for a new build every 30 min so long-running installed apps
       // (a phone left in a pocket all shift) eventually notice a redeploy.
       if (registration) {
-        setInterval(() => void registration.update(), 30 * 60 * 1000)
+        // Caught, because offline is the ordinary case here rather than a
+        // fault: a box in a field has no internet, and an uncaught reject
+        // every half hour is an unhandled rejection in every crew member's
+        // console for the whole show.
+        setInterval(() => void registration.update().catch(() => {}), 30 * 60 * 1000)
       }
     },
   })

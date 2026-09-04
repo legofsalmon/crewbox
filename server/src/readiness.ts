@@ -48,6 +48,17 @@ export interface ReadinessInput {
   /** CREWBOX_IFACE, when set: the adapter every crew-facing address uses. */
   iface?: string
   /**
+   * The address this process is actually listening on, decided once at boot.
+   *
+   * `'0.0.0.0'` (or absent) means every adapter. The distinction matters
+   * because the configuration and the bind can disagree in both directions:
+   * a crew adapter that was down at boot leaves the box answering
+   * everywhere even after the cable goes back in, and a box bound to an
+   * address that has since gone is answering nowhere. Both used to be read
+   * off the live adapters and reported as the opposite of what was true.
+   */
+  boundHost?: string
+  /**
    * This machine's LAN IPv4 addresses, best first — the first is what the
    * join QR points at. Passed in so the check is pure and the caller decides
    * when to enumerate.
@@ -82,6 +93,14 @@ export interface ReadinessInput {
   backup?: { at: number; dest?: string } | null
   /** Clock for the backup age. Injected so the check stays pure. */
   now?: number
+  /**
+   * `CREWBOX_TZ`, when the box has been told what timezone the event is in.
+   *
+   * Absent means the box uses its own — which is right on a machine whose
+   * clock was set up, and an hour or more wrong on one imaged from a server
+   * image and driven to a field. See `clockCheck`.
+   */
+  timeZone?: string
   dataDir: string
   crewCount: number
   /** Host the admin used, for copy that names the real address. */
@@ -130,6 +149,61 @@ function networkCheck(input: ReadinessInput): ReadinessCheck {
         'Join links already point at the saved crew network; the binding and the lighting ' +
         'listener change at the next start.',
       fix: 'Restart the box — close it and run it again. Nothing else is lost: crew rejoin automatically.',
+    }
+  }
+
+  // What the box is actually listening on. Absent (tests, nothing bound
+  // yet) means fall back to describing the configuration, as before.
+  const everywhere = !input.boundHost || input.boundHost === '0.0.0.0' || input.boundHost === '::'
+  const boundToIface = Boolean(input.iface) && input.boundHost === input.iface
+
+  if (input.iface && !everywhere && !boundToIface && input.boundHost) {
+    // Bound to something that is not the configured adapter — the saved
+    // setting changed without a restart, or the address moved.
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        `The box is answering on ${input.boundHost}, but crew join links point at ` +
+        `${input.iface}. It has been bound to that address since it started.`,
+      fix: 'Restart the box to bind the crew adapter. Crew rejoin automatically.',
+    }
+  }
+
+  if (input.iface && boundToIface) {
+    const present = addresses[0] === input.iface
+    return {
+      ...base,
+      state: present ? 'ok' : 'limited',
+      detail: present
+        ? `Crew join links point at ${input.iface}, and the box answers only there ` +
+          '(and on localhost). Other networks this machine is on never see its traffic.'
+        : `The box is bound to ${input.iface}, and no adapter has that address any more — ` +
+          'so it is answering nowhere. A pulled cable, or a DHCP lease that moved.',
+      ...(present
+        ? {}
+        : { fix: 'Put the cable back, or restart the box once the adapter has its address.' }),
+    }
+  }
+
+  if (input.iface && input.boundHost && everywhere) {
+    // Configured, but the adapter was not up when the box bound, so it fell
+    // back to every network. Saying "answers only there" once the cable is
+    // back in — which is what reading the live adapters did — is the answer
+    // an operator would act on and the wrong one.
+    const back = addresses[0] === input.iface
+    return {
+      ...base,
+      state: 'limited',
+      detail:
+        `${input.iface} was not up when the box started, so it is answering on every ` +
+        `network this machine is on` +
+        (back
+          ? ' — including the crew adapter, which is back now.'
+          : `${addresses.length > 0 ? ` and the join QR points at ${addresses[0]}` : ''}.`),
+      fix: back
+        ? 'Restart the box to answer only on the crew adapter. Crew rejoin automatically.'
+        : 'Check the cable and the adapter\u2019s IP, then restart the box.',
     }
   }
 
@@ -441,6 +515,104 @@ function voiceQualityCheck(quality: NonNullable<ReadinessInput['voiceQuality']>)
   }
 }
 
+/**
+ * The clock the running order is read against.
+ *
+ * Two things answer "who is on stage now": every crew phone, from its own
+ * local time, and this box, when a production desk asks over the control
+ * API. On site the phones are right by construction — they are in the field.
+ * The box is right only if somebody set its clock up, and a mini PC imaged
+ * from a server image is on UTC, which in Ireland in July is an hour out.
+ *
+ * That failure is invisible in exactly the way that matters: nothing errors,
+ * nothing is missing, the Stream Deck at front of house simply says the
+ * headliner is on at a different time from every phone in the crew, during
+ * the show, with nothing anywhere saying why.
+ *
+ * So the row prints the time the box thinks it is, in the zone it is using.
+ * An admin glancing at the panel checks it against their own watch in a
+ * second, which is a better test than any amount of configuration reporting.
+ */
+function clockCheck(input: ReadinessInput): ReadinessCheck {
+  const now = new Date(input.now ?? Date.now())
+  const configured = input.timeZone?.trim()
+  // Not `process`: that is a global here, and shadowing it inside a function
+  // that may grow is a trap for whoever adds the next line.
+  const boxZone = systemZone()
+  const usable = configured ? zoneReadable(configured) : false
+  const zone = usable ? configured! : boxZone
+
+  // A typo in an environment variable falls back to the process zone without
+  // a word — `wallClock` swallows the error on purpose, because a box must
+  // not stop telling anybody the time over a misspelling. This is where it
+  // gets said.
+  if (configured && !usable) {
+    return {
+      id: 'clock',
+      label: 'Clock and timezone',
+      state: 'limited',
+      detail: `CREWBOX_TZ is set to "${configured}", which is not a timezone this box knows. It is using ${describe(boxZone)}, where it is ${localTime(now, boxZone)}.`,
+      fix: 'Use an IANA name — Europe/Dublin, Europe/London, America/New_York. Then restart the box.',
+    }
+  }
+
+  const onUtc = !configured && isUtc(boxZone)
+  return {
+    id: 'clock',
+    label: 'Clock and timezone',
+    state: onUtc ? 'limited' : 'ok',
+    detail: onUtc
+      ? `This box is on UTC and it is ${localTime(now, zone)}. Crew phones read their own local time, so anywhere that is not on UTC right now, the running order this box gives a production desk is off by the difference.`
+      : `${localTime(now, zone)} in ${describe(zone)}${configured ? ' (CREWBOX_TZ)' : ''}. Check it against your watch.`,
+    fix: onUtc
+      ? 'Set the machine\u2019s timezone, or start the box with CREWBOX_TZ=Europe/Dublin (any IANA name) if its clock has to stay on UTC.'
+      : undefined,
+  }
+}
+
+/** The zone this process is in, as an IANA name where one is available. */
+function systemZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+/** Can Intl read this name? A typo must be reported, not silently ignored. */
+function zoneReadable(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: name }).format(new Date())
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A zone with no offset from UTC right now.
+ *
+ * By name rather than by offset: London in January is +00:00 and is not a
+ * box anybody needs to warn, whereas a box literally set to UTC in a field
+ * almost always means nobody set it.
+ */
+const isUtc = (zone: string): boolean => /^(utc|etc\/utc|etc\/gmt|gmt|z)$/i.test(zone)
+
+const describe = (zone: string): string => zone.replace(/_/g, ' ')
+
+function localTime(now: Date, zone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(now)
+  } catch {
+    return now.toISOString().slice(11, 16)
+  }
+}
+
 export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
   const checks: ReadinessCheck[] = []
 
@@ -525,6 +697,10 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
     )
   }
 
+  // Beside the crew row: both are about whether what the box says matches
+  // what the people on site are seeing.
+  checks.push(clockCheck(input))
+
   checks.push({
     id: 'crew',
     label: 'Crew joined',
@@ -534,7 +710,11 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
         ? `${input.crewCount} ${input.crewCount === 1 ? 'person has' : 'people have'} joined.`
         : 'Nobody has joined yet.',
     fix:
-      input.crewCount > 0 ? undefined : `Show the QR at http://${input.host}/connect, or print it.`,
+      input.crewCount > 0
+        ? undefined
+        : // http:// was hardcoded, so on a box with a certificate this line
+          // sent whoever read it to a port that only speaks TLS.
+          `Show the QR at ${input.secure ? 'https' : 'http'}://${input.host}/connect, or print it.`,
   })
 
   return checks

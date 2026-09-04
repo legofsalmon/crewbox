@@ -14,6 +14,31 @@ import { useRef, useState } from 'react'
  *
  * `multiline` (for textareas) keeps Enter as a newline; commit is blur-only.
  */
+/** What a key press in a draft field means. */
+export type DraftKey = 'commit' | 'revert' | 'ignore'
+
+/**
+ * Enter commits and Escape reverts — except while an input method is
+ * composing.
+ *
+ * Typing Japanese, Chinese or Korean goes through a candidate window that
+ * Enter *selects* from and Escape *cancels*. Acting on those took the
+ * unconfirmed reading, blurred the field, and left a crew member's name
+ * half-transliterated in a document every other device on the box is
+ * watching — or threw away a word mid-conversion. `isComposing` is on the
+ * native event for exactly this, and is why the browser sends a keyCode of
+ * 229 during composition rather than the key itself.
+ */
+export function draftKey(
+  key: string,
+  { composing, multiline }: { composing: boolean; multiline?: boolean }
+): DraftKey {
+  if (composing) return 'ignore'
+  if (key === 'Enter' && !multiline) return 'commit'
+  if (key === 'Escape') return 'revert'
+  return 'ignore'
+}
+
 export function useDraft(
   value: string,
   commit: (next: string) => void,
@@ -44,9 +69,13 @@ export function useDraft(
         set(null)
       },
       onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => {
-        if (e.key === 'Enter' && !options?.multiline) {
+        const meaning = draftKey(e.key, {
+          composing: Boolean((e.nativeEvent as { isComposing?: boolean }).isComposing),
+          multiline: options?.multiline ?? false,
+        })
+        if (meaning === 'commit') {
           ;(e.target as HTMLElement).blur()
-        } else if (e.key === 'Escape') {
+        } else if (meaning === 'revert') {
           set(null)
           ;(e.target as HTMLElement).blur()
         }

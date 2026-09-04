@@ -22,15 +22,73 @@ if [ -z "${DATA_DIR:-}" ]; then
     DATA_DIR="$HOME/.crewbox/data"
   fi
 fi
-BACKUP_DIR="${BACKUP_DIR:-/media/usb/crewbox-backups}"
+# Matches backup.sh, which falls back to the home directory on a machine with
+# no /media/usb — a laptop box, and a rack box whose stick is not plugged in.
+if [ -z "${BACKUP_DIR:-}" ]; then
+  if [ -d /media/usb ]; then
+    BACKUP_DIR=/media/usb/crewbox-backups
+  else
+    BACKUP_DIR="$HOME/crewbox-backups"
+  fi
+fi
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+# Is this directory a backup that finished?
+#
+# backup.sh writes to `<stamp>.partial` and moves it into place only after
+# the manifest is written, so a directory that has both a database and a
+# manifest is one that completed. Older backups, taken before that change,
+# were written in place — hence the second test rather than trusting the name
+# alone. A directory holding half a database is the one nobody would question
+# at 3am and the one that cannot be restored.
+finished() {
+  [ -f "$1/crewbox.db" ] && [ -f "$1/MANIFEST.txt" ]
+}
+
+# And does the database in it actually read?
+#
+# A stick pulled mid-write leaves a file SQLite opens perfectly happily: it
+# only notices the missing pages when something reads them, which on a box is
+# ten minutes into the show. Checked here, while there is still a choice.
+sound() {
+  if command -v sqlite3 >/dev/null 2>&1; then
+    [ "$(sqlite3 "$1/crewbox.db" 'PRAGMA integrity_check' 2>/dev/null | head -1)" = ok ]
+  elif command -v node >/dev/null 2>&1; then
+    node --experimental-sqlite --no-warnings "$HERE/check-db.mjs" "$1/crewbox.db" >/dev/null 2>&1
+  else
+    # Nothing to check with. Say so rather than quietly calling it sound.
+    echo "  (no sqlite3 and no node — cannot check the database, going on anyway)" >&2
+    true
+  fi
+}
 
 SRC="${1:-}"
 if [ -z "$SRC" ]; then
-  SRC="$(ls -1dt "$BACKUP_DIR"/*/ 2>/dev/null | head -1 || true)"
+  # Newest first. The directories are stamped YYYYmmdd-HHMMSS, so the shell's
+  # own lexical sort is chronological — no `ls -t`, whose flags and quoting
+  # differ on macOS, and no surprises from a path with a space in it.
+  shopt -s nullglob
+  stamped=("$BACKUP_DIR"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9])
+  shopt -u nullglob
+  for ((i = ${#stamped[@]} - 1; i >= 0; i--)); do
+    candidate="${stamped[$i]}"
+    if ! finished "$candidate"; then
+      echo "skipping $(basename "$candidate"): unfinished (no manifest or no database)" >&2
+      continue
+    fi
+    if ! sound "$candidate"; then
+      echo "skipping $(basename "$candidate"): its database does not read" >&2
+      continue
+    fi
+    SRC="$candidate"
+    break
+  done
   [ -n "$SRC" ] || {
-    echo "no backups found in $BACKUP_DIR — pass one explicitly" >&2
+    echo "no usable backup in $BACKUP_DIR — pass one explicitly" >&2
     exit 1
   }
+  CHECKED=yes
 fi
 SRC="${SRC%/}"
 
@@ -38,6 +96,22 @@ SRC="${SRC%/}"
   echo "$SRC has no crewbox.db — is that a backup directory?" >&2
   exit 1
 }
+# An explicitly named directory is checked too, and refused rather than
+# half-restored. This is the only guard between a truncated file and a box
+# that starts, serves, and then falls over during the show.
+if [ "${CHECKED:-no}" != yes ]; then
+  if [ ! -f "$SRC/MANIFEST.txt" ]; then
+    echo "$SRC has no MANIFEST.txt, so it is a backup that did not finish." >&2
+    echo "  Pick another, or — if you are certain this one is complete —" >&2
+    echo "  touch $SRC/MANIFEST.txt and run this again." >&2
+    exit 1
+  fi
+  sound "$SRC" || {
+    echo "$SRC has a database that does not read. Restoring it would give you a box" >&2
+    echo "  that starts and then fails during the show. Pick an older backup." >&2
+    exit 1
+  }
+fi
 
 # Restoring underneath a running server corrupts the database it is holding
 # open. Checking the port is cruder than asking systemd, but it is true on
@@ -55,7 +129,13 @@ box_answering() {
 }
 if box_answering; then
   echo "a box is already answering on port $PORT — stop it first:" >&2
-  echo "  sudo systemctl stop crewbox     (or quit Crewbox from the Dock)" >&2
+  # Not "quit it from the Dock": the box is a Node single-file executable
+  # that never links AppKit, so a double-clicked one has no Dock icon and no
+  # window. `--stop` is the answer on every platform, and the menu-bar item
+  # is the answer on the Mac.
+  echo "  sudo systemctl stop crewbox" >&2
+  echo "  crewbox --stop                  (any platform, including a .app)" >&2
+  echo "  or Crewbox in the menu bar → Stop Crewbox and quit" >&2
   exit 1
 fi
 
@@ -73,6 +153,18 @@ fi
 mkdir -p "$DATA_DIR"
 cp "$SRC/crewbox.db" "$DATA_DIR/crewbox.db"
 [ -d "$SRC/files" ] && cp -R "$SRC/files" "$DATA_DIR/files"
+
+# The Android app, which is what gives crew lock-screen alerts with no
+# internet — and what the printed poster's QR points at. Not rebuildable on
+# site: no internet, no Android SDK.
+shopt -s nullglob
+apks=("$SRC"/crewbox*.apk)
+apk=no
+if [ "${#apks[@]}" -gt 0 ]; then
+  for file in "${apks[@]}"; do cp -p "$file" "$DATA_DIR/"; done
+  apk=yes
+fi
+shopt -u nullglob
 
 tls=no
 for f in cert.pem key.pem chain.pem; do
@@ -93,6 +185,8 @@ echo ""
 echo "Restored into $DATA_DIR"
 [ "$tls" = yes ] || echo "  NOTE: no certificate in that backup — this box will serve plain http,"
 [ "$tls" = yes ] || echo "        so browsers get no microphone and no install prompt."
+[ "$apk" = yes ] || echo "  NOTE: no Android app in that backup — /crewbox.apk will 404, and so will"
+[ "$apk" = yes ] || echo "        the APK QR on the printed poster. Copy one in from the release."
 echo ""
 echo "Next: start the box, give it the old box's address, and check"
 echo "      Admin → This box. Crew phones reconnect by themselves."

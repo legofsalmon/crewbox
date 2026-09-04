@@ -9,9 +9,11 @@
 // The box build treats a missing binary as "this build has no voice" rather
 // than an error, so a offline `npm run build:box` still produces a box.
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assetFor, digestFor, findChecksumAsset } from './livekit-release.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const outDir = join(root, 'build', 'livekit')
@@ -49,12 +51,26 @@ if (!fromSource && (!platform || !arch)) {
   process.exit(1)
 }
 
-const api = 'https://api.github.com/repos/livekit/livekit/releases/latest'
+/**
+ * The SFU version this build embeds.
+ *
+ * `LIVEKIT_VERSION` names a tag; unset, this resolves whatever upstream
+ * calls latest. Every platform job used to resolve `latest` on its own, at
+ * whatever minute it happened to start — so a release cut across an upstream
+ * release ships a Linux box and a macOS box carrying different SFUs, and
+ * nothing in the release says so. The workflow resolves it once now and
+ * passes the tag down; this variable is how.
+ */
+const wantedVersion = process.env.LIVEKIT_VERSION?.trim()
+const repo = 'https://api.github.com/repos/livekit/livekit/releases'
+const api = wantedVersion ? `${repo}/tags/${wantedVersion}` : `${repo}/latest`
 const headers = { 'user-agent': 'crewbox-build' }
 if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`
 
 const release = await fetch(api, { headers }).then((r) => {
-  if (!r.ok) throw new Error(`GitHub API ${r.status} fetching the latest livekit release`)
+  if (!r.ok) {
+    throw new Error(`GitHub API ${r.status} fetching livekit ${wantedVersion ?? 'latest'} — ${api}`)
+  }
   return r.json()
 })
 
@@ -140,17 +156,54 @@ if (fromSource) {
   process.exit(0)
 }
 
-const wanted = `${platform}_${arch}`
-const asset = release.assets.find((a) => a.name.includes(wanted) && /\.(tar\.gz|zip)$/.test(a.name))
+const asset = assetFor(release.assets, platform, arch)
 if (!asset) {
   console.error(
-    `no ${wanted} asset in livekit ${release.tag_name}. Assets:\n  ` +
+    `no ${platform}_${arch} asset in livekit ${release.tag_name}. Assets:\n  ` +
       release.assets.map((a) => a.name).join('\n  ')
   )
   process.exit(1)
 }
 
-console.log(`fetching ${asset.name} (${(asset.size / 1e6).toFixed(1)} MB)`)
+// What this build expects the archive to hash to, before it is written to
+// disk. The Node base binary this box is built on is verified against
+// nodejs.org's SHASUMS256.txt for exactly this reason (see fetch-node.mjs);
+// the SFU that ships beside it inside the same binary was not verified at
+// all. A build that cannot find a checksum stops here rather than embedding
+// something unchecked — if upstream stops publishing one, that is a decision
+// to take deliberately and not a line to notice afterwards.
+// Two independent places a digest can come from: the release's own checksums
+// file, and the per-asset `digest` GitHub itself records. Either will do; if
+// neither is there, this stops rather than embedding something unchecked.
+const checksums = findChecksumAsset(release.assets)
+let expected = null
+let source = ''
+if (checksums) {
+  expected = digestFor(
+    await fetch(checksums.browser_download_url, { headers }).then((r) => {
+      if (!r.ok) throw new Error(`could not fetch ${checksums.name} (${r.status})`)
+      return r.text()
+    }),
+    asset.name
+  )
+  source = checksums.name
+}
+if (!expected && typeof asset.digest === 'string' && asset.digest.startsWith('sha256:')) {
+  expected = asset.digest.slice('sha256:'.length).toLowerCase()
+  source = "GitHub's own asset digest"
+}
+if (!expected) {
+  console.error(
+    `nothing to verify ${asset.name} against: livekit ${release.tag_name} publishes no ` +
+      `checksums file and GitHub reports no digest for the asset. Assets:\n  ` +
+      release.assets.map((a) => a.name).join('\n  ')
+  )
+  process.exit(1)
+}
+
+console.log(
+  `fetching ${asset.name} (${(asset.size / 1e6).toFixed(1)} MB), verified against ${source}`
+)
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })
 
@@ -159,6 +212,13 @@ const body = await fetch(asset.browser_download_url, { headers }).then((r) => {
   if (!r.ok) throw new Error(`download failed: ${r.status}`)
   return r.arrayBuffer()
 })
+const actual = createHash('sha256').update(Buffer.from(body)).digest('hex')
+if (actual !== expected) {
+  console.error(`checksum mismatch for ${asset.name} (against ${source})`)
+  console.error(`  expected ${expected}`)
+  console.error(`  got      ${actual}`)
+  process.exit(1)
+}
 writeFileSync(archive, Buffer.from(body))
 
 if (asset.name.endsWith('.zip')) {

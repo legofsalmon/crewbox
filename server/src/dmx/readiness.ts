@@ -42,6 +42,42 @@ const ago = (now: number, then: number): string => {
 /** Wall-clock HH:MM in the box's own timezone, for "went dark at 14:32". */
 const clock = (at: number): string => new Date(at).toTimeString().slice(0, 5)
 
+/**
+ * Why a group would not join, in the words of whoever has to fix it.
+ *
+ * This line used to say `net.ipv4.igmp_max_memberships` whatever had gone
+ * wrong, so an unplugged card or a `CREWBOX_DMX_IFACE` typo sent an
+ * electrician to read kernel documentation about a limit they were nowhere
+ * near. The kernel already said which of these it was; the panel just threw
+ * it away.
+ */
+const joinFix = (
+  failed: Array<{ universe: number; reason: string; retrying: boolean }>,
+  interfaceIp: string | null
+): string => {
+  const reasons = new Set(failed.map((f) => f.reason))
+  const fixes: string[] = []
+  if (failed.some((f) => f.reason.includes('limit')) || reasons.has('ENOBUFS')) {
+    fixes.push(
+      'Linux allows 20 multicast memberships per socket — listen to fewer universes, or raise net.ipv4.igmp_max_memberships.'
+    )
+  }
+  if (reasons.has('ENODEV') || reasons.has('EADDRNOTAVAIL')) {
+    fixes.push(
+      interfaceIp
+        ? `No interface here has the address ${interfaceIp}. Check CREWBOX_DMX_IFACE against the card that is on the lighting network, and that its cable is in.`
+        : 'The network interface was not up when the groups were joined. Check the cable and the switch port.'
+    )
+  }
+  if (reasons.has('EPERM') || reasons.has('EACCES')) {
+    fixes.push('The box was refused permission to join a multicast group.')
+  }
+  const known = ['ENOBUFS', 'ENOMEM', 'ENODEV', 'EADDRNOTAVAIL', 'EPERM', 'EACCES']
+  const rest = [...reasons].filter((r) => !known.includes(r) && !r.includes('limit'))
+  if (rest.length > 0) fixes.push(`The kernel refused the join: ${rest.join(', ')}.`)
+  return fixes.join(' ')
+}
+
 /** Loss below this is rounding noise on a UDP network; at or above, a fault. */
 const LOSS_REPORT_THRESHOLD = 0.01
 
@@ -99,14 +135,35 @@ export function dmxReadiness(
         fix: 'Something else may already hold UDP 5568 on this machine.',
       })
     } else if (failed.length > 0) {
+      const retrying = failed.filter((f) => f.retrying)
       checks.push({
         id: 'dmx-sacn',
         label: 'sACN',
         state: 'limited',
-        detail: `Joined ${plural(joined.length, 'universe')}; could not join ${failed
-          .map((f) => f.universe)
-          .join(', ')}.`,
-        fix: 'Linux allows 20 multicast memberships per socket — listen to fewer universes, or raise net.ipv4.igmp_max_memberships.',
+        detail:
+          `Joined ${plural(joined.length, 'universe')}; could not join ${summarise(
+            failed.map((f) => f.universe)
+          )}.` +
+          (retrying.length > 0
+            ? ` Still trying ${summarise(retrying.map((f) => f.universe))} — this clears itself if the interface comes up.`
+            : ''),
+        fix: joinFix(failed, status.interfaceIp),
+      })
+    } else if (!status.sacn.discovery) {
+      // The listener has always set this flag and said the admin panel
+      // reports it; nothing did. Without the discovery group there is no
+      // "here is what the desks say they are sending", which is the one
+      // check that separates a typo in CREWBOX_DMX_UNIVERSES from a dead
+      // network — and the pane simply showed nothing where it would be.
+      checks.push({
+        id: 'dmx-sacn',
+        label: 'sACN',
+        state: 'limited',
+        detail:
+          `Listening on UDP 5568, joined ${plural(joined.length, 'universe')}, but not the ` +
+          'universe-discovery group (239.255.250.214) — so what the desks say they are ' +
+          'sending cannot be shown.',
+        fix: 'Everything else works. Usually the socket is at the kernel\u2019s membership limit; listening to fewer universes frees one.',
       })
     } else {
       checks.push({
@@ -187,7 +244,8 @@ export function dmxReadiness(
           )
           .join(', ') +
         (nodes.length > 6 ? `, and ${nodes.length - 6} more` : '') +
-        '. Heard because consoles poll; crewbox never polls.',
+        '. Heard because consoles poll; crewbox never polls while monitoring — ' +
+        'the network audit sends exactly one ArtPoll, and only when an admin asks.',
     })
   }
 
@@ -229,7 +287,7 @@ export function dmxReadiness(
         status.packets > 0
           ? `Nothing arriving now. ${plural(status.packets, 'packet')} seen since start.`
           : 'Listening, but nothing has arrived.',
-      fix: 'Check the box is on the lighting network (right card, right VLAN), that the switch is not doing IGMP snooping without a querier, and that no firewall is dropping UDP 6454/5568. Crewbox never announces itself, so a console that only unicasts to nodes which answered its poll will not be seen.',
+      fix: 'Check the box is on the lighting network (right card, right VLAN), that the switch is not doing IGMP snooping without a querier, and that no firewall is dropping UDP 6454/5568. Crewbox never announces itself while monitoring, so a console that only unicasts to nodes which answered its poll will not be seen — the network audit can send one ArtPoll on request, which is what will wake them.',
     })
     return checks
   }
@@ -321,6 +379,10 @@ export function dmxReadiness(
   const stuck = live.filter((u) => u.sync === 'frozen' || u.sync === 'lost')
   const held = live.filter((u) => u.sync === 'held')
   const unwatched = live.filter((u) => u.sync === 'unwatched')
+  // Sync-addressed, listened to, and never once sent — which is a fault at
+  // the desk rather than on the network, and reads nothing like a stream
+  // that died mid-show.
+  const never = live.filter((u) => u.sync === 'unsynchronised')
 
   if (stuck.length > 0) {
     const frozen = stuck.some((u) => u.sync === 'frozen')
@@ -336,6 +398,19 @@ export function dmxReadiness(
           ? ' Receivers hold their last look until it comes back, so the stage may have stopped following the desk.'
           : ' The sources allow receivers to carry on, so the stage is live but no longer synchronised.'),
       fix: 'Check what is meant to be sending synchronization packets on that universe. Until it is back, levels shown here are not proof of what is on stage.',
+    })
+  } else if (never.length > 0) {
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'limited',
+      detail:
+        `${plural(never.length, 'universe')} asking to be synchronised on universe ` +
+        `${[...new Set(never.map((u) => u.syncAddress))].join(', ')}, and nothing has ever ` +
+        'been sent there. Receivers process data normally until the first synchronization ' +
+        'packet (E1.31 §6.2.4.1), so the stage is following the desk — but the timing these ' +
+        'universes were set up to land together with is not happening.',
+      fix: 'Either the source that should be sending synchronization packets is not, or these fixtures do not need synchronising and the sync address should be cleared at the desk.',
     })
   } else if (unwatched.length > 0) {
     checks.push({

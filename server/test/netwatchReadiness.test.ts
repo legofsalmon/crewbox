@@ -18,6 +18,7 @@ const status = (over: Partial<NetWatchStatus> = {}): NetWatchStatus => ({
 const clock = (over: Partial<ClockStatus> = {}): ClockStatus => ({
   grandmasterId: '00:1d:c1:ff:fe:11:22:33',
   domain: 0,
+  domains: 1,
   priority1: 128,
   clockClass: 248,
   since: NOW - 3_600_000,

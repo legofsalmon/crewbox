@@ -37,6 +37,21 @@ describe('the redirect rule', () => {
   })
 })
 
+describe('the Linux rule', () => {
+  it('creates the table and chain it needs before adding to them', () => {
+    // `nft add rule inet nat prerouting ...` fails with "No such file or
+    // directory" on a machine that has no inet nat table — which is most
+    // machines not already doing NAT, and every fresh Debian. So the one
+    // line we handed an operator to paste simply did not work there.
+    const lines = plan.linux.split('\n')
+    expect(lines[0]).toContain('add table inet nat')
+    expect(lines[1]).toContain('add chain inet nat prerouting')
+    expect(lines[2]).toContain('add rule inet nat prerouting')
+    // `add`, not `create`, all the way down: pasting it twice is harmless.
+    expect(lines.every((line) => line.includes(' add '))).toBe(true)
+  })
+})
+
 describe('the generated file', () => {
   const file = redirectConfigFile(plan)
 

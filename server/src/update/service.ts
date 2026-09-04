@@ -1,7 +1,7 @@
 import { downloadBuild, type DownloadIo } from './download.ts'
-import { detectTarget, installBuild, type InstallTarget } from './install.ts'
+import { detectTarget, installBuild, undoInstall, type InstallTarget } from './install.ts'
 import { restartInto, type RestartIo } from './restart.ts'
-import { pruneSnapshots, snapshotDb } from './snapshot.ts'
+import { databaseAheadOf, pruneSnapshots, snapshotDb, writePendingRestore } from './snapshot.ts'
 import { assetFor } from './verify.ts'
 
 /**
@@ -194,7 +194,8 @@ export class UpdateService {
     if (!snapshot.ok) {
       return this.failWith(`could not copy the database first: ${snapshot.reason}`)
     }
-    pruneSnapshots(this.options.dataDir)
+    // Never the one just taken — see `pruneSnapshots`.
+    pruneSnapshots(this.options.dataDir, undefined, snapshot.snapshot.path)
     this.options.log?.info(`update: database copied to ${snapshot.snapshot.name}`)
 
     const installed = installBuild({
@@ -215,8 +216,25 @@ export class UpdateService {
     try {
       await this.options.releasePort()
     } catch (err) {
+      // The binary is already swapped, so this cannot just be reported: put
+      // the old one back and start answering again, or the box is left
+      // running a build it never launched. `undoInstall` clears the marker
+      // when it succeeds and deliberately leaves it when it does not — that
+      // file is then the only description of what is actually on disk, and
+      // the next start is the right place to read it.
+      const undone = undoInstall(installed.inFlight, this.options.dataDir)
+      try {
+        await this.options.regainPort()
+      } catch {
+        // Already the bad case below; the reason says so.
+      }
+      const detail = undone.ok
+        ? 'the previous version is still in place'
+        : `the previous version could NOT be put back: ${undone.reason}`
       return this.failWith(
-        `could not free the port to restart: ${err instanceof Error ? err.message : String(err)}`
+        `could not free the port to restart (${
+          err instanceof Error ? err.message : String(err)
+        }) — ${detail}`
       )
     }
 
@@ -247,11 +265,36 @@ export class UpdateService {
         })`
       )
     }
-    const detail = restarted.rolledBack
-      ? 'the previous version has been put back'
-      : `the previous version could NOT be put back${
-          restarted.rollbackError ? `: ${restarted.rollbackError}` : ''
-        }`
+    // The database is not restored here, on purpose: this process has it
+    // open and crew are typing into it, so replacing the file would take
+    // whoever is on shift with it — and on POSIX would not even change what
+    // this process goes on writing to. What can be done is answer the
+    // question rather than hedge it. If the build that just failed got far
+    // enough to migrate, the old box is now serving a schema it does not
+    // understand, which does not crash and does not announce itself; the
+    // debt is written down and the next start, which runs before anything
+    // opens the database, pays it.
+    let detail: string
+    if (!restarted.rolledBack) {
+      detail = `the previous version could NOT be put back${
+        restarted.rollbackError ? `: ${restarted.rollbackError}` : ''
+      }`
+    } else if (databaseAheadOf(this.options.dbPath, snapshot.snapshot.path) === true) {
+      const noted = writePendingRestore(this.options.dataDir, {
+        snapshotPath: snapshot.snapshot.path,
+        fromVersion: this.options.currentVersion,
+        toVersion: version,
+        at: Date.now(),
+      })
+      detail = noted
+        ? `the previous version has been put back, but ${version} had already migrated the database — ` +
+          `RESTART THE BOX and it will be restored from ${snapshot.snapshot.name}`
+        : `the previous version has been put back, but ${version} had already migrated the database ` +
+          `and the restore could not be noted — restore ${snapshot.snapshot.path} by hand`
+      this.options.log?.warn(`update: ${detail}`)
+    } else {
+      detail = `the previous version has been put back (the database was never migrated; a copy from before the attempt is at ${snapshot.snapshot.path})`
+    }
     return this.failWith(`${restarted.reason} — ${detail}`)
   }
 

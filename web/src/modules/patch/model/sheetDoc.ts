@@ -1,6 +1,6 @@
 import { newId } from '@crewbox/shared'
 import * as Y from 'yjs'
-import { addAct, upsertAct } from '../../../shell/timetable/model.ts'
+import { upsertAct } from '../../../shell/timetable/model.ts'
 import {
   emptyExtras,
   emptyPatchEntry,
@@ -106,14 +106,24 @@ export interface InitSheetOptions {
 }
 
 /**
- * Populate an empty doc with the default sheet structure, and put its first
- * act on the running order.
+ * Populate an empty doc with the default sheet structure.
  *
- * The act goes in the timetable rather than here — a sheet with no acts is a
- * grid with no columns, and the first thing anyone does with a new sheet is
- * type a patch against somebody.
+ * **No act.** It used to put an "Act 1" on the running order, on the
+ * reasoning that a sheet with no acts is a grid with no columns. But the
+ * running order is the whole event's, read by the schedule module, by the
+ * countdown in every crew member's sidebar and by the production desk over
+ * the control API — so making a patch sheet was quietly adding a band called
+ * "Act 1" to the festival, on a stage nobody had booked, in front of
+ * everyone. Renaming the stage afterwards then dragged the placeholder onto
+ * a real stage, and deleting the sheet left it there for good, because the
+ * act was never the sheet's to remove.
+ *
+ * The grid says what to do instead: it has an empty state naming both routes
+ * out — add an act in the lineup, or point the sheet at a stage that already
+ * has some — and that is a better first screen than a column called "Act 1"
+ * that somebody has to notice and rename.
  */
-export const initSheet = (doc: Y.Doc, timetableDoc: Y.Doc, options: InitSheetOptions): void => {
+export const initSheet = (doc: Y.Doc, options: InitSheetOptions): void => {
   const { meta, channels } = getSheetRoots(doc)
   const now = options.now ?? new Date().toISOString()
   const stage = (options.stage ?? options.title).trim()
@@ -128,7 +138,6 @@ export const initSheet = (doc: Y.Doc, timetableDoc: Y.Doc, options: InitSheetOpt
       channels.push([mapFrom({ id: newId(), label: String(i + 1), input: '' })])
     }
   })
-  addAct(timetableDoc, { name: 'Act 1', stage, date, start: '19:00', end: '20:00' })
 }
 
 // --- Meta -------------------------------------------------------------------
@@ -508,6 +517,12 @@ const setSpecOrNotes = (
   getOrCreateExtras(roots.extras, actId).set(field, value)
 }
 
+/** What the import wants to tell the person who started it. */
+export interface ImportedSheetReport {
+  /** Names the file used more than once, kept as separate columns. */
+  duplicateActs: string[]
+}
+
 /**
  * Populate an empty doc from imported data (see importCsv.ts), putting its
  * acts on the running order. One transaction per document; the caller clears
@@ -518,7 +533,7 @@ export const buildImportedSheet = (
   timetableDoc: Y.Doc,
   data: ImportedSheetData,
   options: { title: string; stage?: string; date?: string; now?: string }
-): void => {
+): ImportedSheetReport => {
   const roots = getSheetRoots(doc)
   const { meta, channels } = roots
   const now = options.now ?? new Date().toISOString()
@@ -535,16 +550,39 @@ export const buildImportedSheet = (
   // stage, a re-import after a correction — must reconcile with the day
   // that is already there rather than listing it again. Blank cells say
   // nothing, so they leave a time somebody fixed by hand alone.
-  const actIds = data.acts.map((act) =>
-    upsertAct(timetableDoc, {
-      name: act.name.trim() || 'Act',
-      stage,
-      date,
-      ...(act.start ? { start: act.start } : {}),
-      ...(act.end ? { end: act.end } : {}),
-      ...(act.changeover ? { changeover: act.changeover } : {}),
-    })
-  )
+  //
+  // `claimed` is what keeps two slots of the same name apart. A running order
+  // with "Changeover" twice, or a support band playing an early and a late
+  // set, matched the same act on the second pass — so the sheet got one
+  // column where the file had two, and the second act's patch was written
+  // over the first's. Reconciling with the day already on the box is right;
+  // reconciling two rows of one file with each other is not.
+  const claimed = new Set<string>()
+  const seen = new Set<string>()
+  const duplicates: string[] = []
+  const actIds = data.acts.map((act) => {
+    const name = act.name.trim() || 'Act'
+    const key = name.toLowerCase()
+    // Worth saying out loud: the running order now lists the name twice,
+    // which is what the file says and not necessarily what somebody
+    // scanning the sidebar expects to see.
+    if (seen.has(key) && !duplicates.includes(name)) duplicates.push(name)
+    seen.add(key)
+    const id = upsertAct(
+      timetableDoc,
+      {
+        name,
+        stage,
+        date,
+        ...(act.start ? { start: act.start } : {}),
+        ...(act.end ? { end: act.end } : {}),
+        ...(act.changeover ? { changeover: act.changeover } : {}),
+      },
+      claimed
+    )
+    claimed.add(id)
+    return id
+  })
 
   transact(doc, () => {
     meta.set('title', title)
@@ -582,17 +620,33 @@ export const buildImportedSheet = (
       })
     })
   })
+
+  return { duplicateActs: duplicates }
 }
 
-/** Copy every patch entry from one act onto another (overwriting). */
+/**
+ * Make one act's patch match another's.
+ *
+ * A copy, not a merge. The button says "copy from the act before", and what
+ * a sound engineer means by that is "this act is on the same rig" — so a
+ * channel the source leaves empty has to end up empty here too. It did not:
+ * a source with no entry was skipped, leaving whatever the target already
+ * had. Copying a support band's four-channel patch onto a headliner's column
+ * left the headliner's other thirty-two channels in place and the result
+ * looked like a rig nobody had ever patched.
+ */
 export const copyPatchesFromAct = (doc: Y.Doc, sourceActId: string, targetActId: string) => {
   const { channels, patches } = getSheetRoots(doc)
   transact(doc, () => {
     for (const channel of channels.toArray()) {
       const channelId = channel.get('id') as string
       const source = patches.get(patchKey(sourceActId, channelId))
-      if (!source) continue
-      patches.set(patchKey(targetActId, channelId), mapFrom(source.toJSON()))
+      const key = patchKey(targetActId, channelId)
+      if (!source) {
+        patches.delete(key)
+        continue
+      }
+      patches.set(key, mapFrom(source.toJSON()))
     }
   })
 }
@@ -649,13 +703,23 @@ export const snapshotSheet = (doc: Y.Doc): SheetSnapshot => {
  * The running order is not touched. A saved version is a version of *this
  * sheet*, and restoring one must not reach across and move set times for
  * every other department on the box.
+ *
+ * **Which is why `stage` and `date` are not restored either.** Those two are
+ * not the sheet's own content; they are the join to the running order — how
+ * the sheet finds its columns. Putting back an old pair while every act
+ * stayed where it is disconnects the sheet from its acts, and the result is
+ * a blank grid with nothing saying why. The toolbar can change them, and
+ * moves the acts when it does (see `setSheetDate` and `setSheetStage`); a
+ * restore has no business doing half of that.
+ *
+ * So a restore puts back what somebody actually saved a version of — the
+ * channels, the patch, the specs, the notes, the files — and leaves the sheet
+ * pointing at the stage and day it is currently for.
  */
 export const applySnapshot = (doc: Y.Doc, snapshot: SheetSnapshot): void => {
   const { meta, channels, subBoxes, extras, files, patches } = getSheetRoots(doc)
   transact(doc, () => {
     meta.set('title', snapshot.meta.title)
-    meta.set('stage', snapshot.meta.stage)
-    meta.set('date', snapshot.meta.date)
     meta.set('created', snapshot.meta.created)
     channels.delete(0, channels.length)
     channels.push(snapshot.channels.map((channel) => mapFrom({ ...channel })))

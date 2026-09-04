@@ -33,6 +33,38 @@ describe('CSV import', () => {
     expect(result.skippedColumns).toEqual([])
   })
 
+  it('takes the footprint from the type when the file does not carry one', () => {
+    // Most paperwork has no channel-count column at all. Every fixture used
+    // to import one channel wide, so a 400-head rig collided with nothing,
+    // the address checker said it was clean, and the first person to find
+    // out was whoever was standing under the truss.
+    const csv = [
+      'Channel,Type,Mode,Universe,Address',
+      '101,LED PAR (generic),RGBW (4 ch),1,1',
+      '102,Clay Paky Sharpy,Mode 1,1,5',
+    ].join('\n')
+
+    const result = fixturesFromCsv(parseCsv(csv), noCustomTypes)
+    expect(result.fixtures[0]).toMatchObject({ typeId: 'led-par', footprint: 4 })
+    expect(result.fixtures[1]!.footprint).toBeGreaterThan(1)
+  })
+
+  it('leaves a typed footprint alone, and says nothing when nothing says', () => {
+    const csv = [
+      'Channel,Type,Mode,Footprint',
+      // A rig wired in a mode the library does not list. The number in the
+      // file is the one somebody measured.
+      '101,LED PAR (generic),RGBW (4 ch),7',
+      // A multi-mode type with no mode named: the library cannot say which,
+      // and inventing one would be a confidently wrong footprint.
+      '102,Moving spot / beam (generic),,',
+    ].join('\n')
+
+    const result = fixturesFromCsv(parseCsv(csv), noCustomTypes)
+    expect(result.fixtures[0]!.footprint).toBe(7)
+    expect(result.fixtures[1]!.footprint).toBeUndefined()
+  })
+
   it('reads a console export with absolute addresses', () => {
     const csv = [
       'Chan,Address,Type,Label',

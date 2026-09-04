@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import DrawerButton from '../../shell/DrawerButton.tsx'
 import { fetchAudit, fetchSeries } from './model/api.ts'
-import { GRADE_LABELS, overallGrade } from './model/grade.ts'
+import { reportAge } from './model/age.ts'
+import { GRADE_LABELS, overallGrade, seriesWanted } from './model/grade.ts'
 import type { AuditPayload, SeriesPoint } from './model/types.ts'
 import EventStrip from './ui/EventStrip.tsx'
 import ExportBar from './ui/ExportBar.tsx'
@@ -34,17 +35,36 @@ export default function NetworkMain(_props: { subpath: string }) {
   const [payload, setPayload] = useState<AuditPayload | null>(null)
   const [series, setSeries] = useState<Map<string, SeriesPoint[]>>(new Map())
   const [error, setError] = useState('')
+  // Ticks the age line while the pane is open, independent of the poll —
+  // which is the case that matters, because a poll that is failing is
+  // exactly when the number needs to keep climbing.
+  const [now, setNow] = useState(() => Date.now())
+
+  /**
+   * Which poll's answers are still wanted.
+   *
+   * Nothing stopped an earlier, slower poll from landing after a later one —
+   * so on a box under load the pane could settle on an *older* report than
+   * the one it had already drawn, and stay there until the next tick. A
+   * counter, checked before every `set`, is the whole fix.
+   */
+  const generation = useRef(0)
 
   const load = useCallback(async () => {
     const token = localStorage.getItem('crewbox:token') ?? ''
+    const mine = ++generation.current
+    const current = () => mine === generation.current
     try {
       const audit = await fetchAudit(token)
+      if (!current()) return
       setPayload(audit)
       setError('')
-      // Fetch the evidence: every series a finding references, in parallel.
-      const wanted = audit.report.networks
-        .flatMap((n) => n.findings)
-        .flatMap((f) => (f.series ? [f.series] : []))
+      // Fetch the evidence: every series a finding references, in parallel
+      // and once each. Two findings on one network routinely cite the same
+      // series — a loss figure and the latency beside it — and every
+      // duplicate was a second identical query against the box's rollups,
+      // every ten seconds, for the whole time the pane is open.
+      const wanted = seriesWanted(audit.report)
       const now = Date.now()
       const fetched = await Promise.all(
         wanted.map(async ({ metric, key }): Promise<[string, SeriesPoint[]]> => {
@@ -56,11 +76,12 @@ export default function NetworkMain(_props: { subpath: string }) {
           }
         })
       )
+      if (!current()) return
       setSeries(new Map(fetched.filter(([, points]) => points.length > 0)))
     } catch (err) {
       // Offline is the default, not an error state: keep the last report on
       // screen and say the refresh is waiting, rather than blanking the pane.
-      setError(err instanceof Error ? err.message : 'audit unavailable')
+      if (current()) setError(err instanceof Error ? err.message : 'audit unavailable')
     }
   }, [])
 
@@ -69,8 +90,23 @@ export default function NetworkMain(_props: { subpath: string }) {
     const timer = window.setInterval(() => {
       if (!document.hidden) void load()
     }, POLL_MS)
-    return () => window.clearInterval(timer)
+    // A tab that has been in the background is showing a report from
+    // whenever it was last foregrounded, so ask again the moment somebody
+    // looks rather than up to ten seconds later.
+    const onVisible = () => {
+      if (!document.hidden) void load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [load])
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(tick)
+  }, [])
 
   const grade = payload ? overallGrade(payload.report) : null
 
@@ -84,9 +120,22 @@ export default function NetworkMain(_props: { subpath: string }) {
             {GRADE_LABELS[grade]}
           </span>
         )}
+        {payload && (
+          <span className={styles.age} title={new Date(payload.report.generatedAt).toISOString()}>
+            {reportAge(payload.report.generatedAt, now)}
+          </span>
+        )}
       </header>
 
-      {error && payload === null && <p className={styles.note}>Waiting for the box: {error}</p>}
+      {/*
+        A report on screen is a report from *some* moment, and once the pane
+        has one it kept showing it with nothing saying the refreshes had
+        stopped — so a crew chief could be reading a green verdict from
+        before the switch was unplugged. The age line is always there and the
+        note appears whenever a refresh is failing, whether or not there is
+        something to look at behind it.
+      */}
+      {error && <p className={styles.note}>Waiting for the box: {error}</p>}
 
       {payload && (
         <div className={styles.body}>

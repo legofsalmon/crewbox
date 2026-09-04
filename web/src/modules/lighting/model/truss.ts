@@ -1,5 +1,5 @@
 import { findFixtureType } from './fixtures'
-import { fitPosition } from './placement'
+import { BAR_RESIDUAL_LIMIT, fitPosition } from './placement'
 import type { Fixture, FixtureType, Position } from './types'
 
 /**
@@ -94,6 +94,13 @@ export function widthIsKnown(fixture: Fixture, customTypes: FixtureType[]): bool
  * total" simply the target and leaves only the stick count to minimise.
  */
 export function packSticks(metres: number): number[] {
+  // A length that is not a length gets nothing, rather than a crash.
+  // `needed` is arithmetic over widths that come out of a shared document
+  // anyone can write to — an import with a garbage width, a hand-edited
+  // number — and a NaN or an absurd span reaches `new Array(target + 1)` as
+  // an "Invalid array length" thrown inside a render, which takes the whole
+  // lighting pane down rather than one row of it.
+  if (!Number.isFinite(metres) || metres > MAX_RUN_M) return []
   const target = Math.max(1, Math.ceil(metres / UNIT - 1e-9))
   // Longest first, so where two combinations tie on total and count the one
   // built from bigger sticks wins. Ties are common (3 + 0.5 and 2.5 + 1 are
@@ -120,6 +127,14 @@ export function packSticks(metres: number): number[] {
 }
 
 /**
+ * The longest run this will suggest sticks for.
+ *
+ * Longer than any real position — the Pyramid's roof trusses are under
+ * 40 m — so the only thing it excludes is arithmetic that has gone wrong.
+ */
+const MAX_RUN_M = 200
+
+/**
  * What truss this position's fixtures need.
  *
  * Null when there is nothing useful to say: no fixtures, or a boom, whose
@@ -141,14 +156,31 @@ export function estimateTruss(
   let needed: number
   let basis: TrussEstimate['basis']
 
-  if (placed.length >= 2) {
+  const fit = placed.length >= 2 ? fitPosition(placed.map(({ x, y }) => ({ x, y }))) : null
+
+  /**
+   * Is the fitted span a measurement, or a drawing default?
+   *
+   * Two cases where it is not. Fixtures stacked at one coordinate — which
+   * is most of an MVR whose author grouped by role rather than by hang —
+   * have no direction to fit, so `fitPosition` returns its 12 m default;
+   * reported as `coordinates` that reads as "measured off the plan" and
+   * lands on a truss hire order. And a grouping spread across several
+   * trusses fits a line through all of them, giving a span that measures a
+   * distance nothing spans.
+   *
+   * Both fall back to the widths-and-gaps basis, which claims less and is
+   * true: this many fixtures, at this size, need about this much bar.
+   */
+  const measurable = fit !== null && !fit.degenerate && fit.residual <= BAR_RESIDUAL_LIMIT
+
+  if (fit && measurable) {
     // Real coordinates beat any assumption about spacing: this is the rig
     // someone actually drew, so measure it. `fitPosition` already finds the
     // span along the fixtures' own axis, which is the truss.
-    const span = fitPosition(placed.map(({ x, y }) => ({ x, y }))).length
     // The span runs centre to centre, so half a fixture hangs off each end.
     const ends = (widths[0]! + widths[widths.length - 1]!) / 2
-    needed = span + ends
+    needed = fit.length + ends
     basis = 'coordinates'
   } else {
     const total = widths.reduce((sum, width) => sum + width, 0)
@@ -157,6 +189,9 @@ export function estimateTruss(
   }
 
   const sticks = packSticks(needed)
+  // Nothing to suggest means nothing to say, rather than a row reading
+  // "0 m of truss" beside a fixture count.
+  if (sticks.length === 0) return null
   return {
     needed,
     sticks,

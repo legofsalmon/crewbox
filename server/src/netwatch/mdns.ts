@@ -142,12 +142,30 @@ export interface MediaService {
 }
 
 /**
- * The roster. Devices are never dropped — like the Art-Net node inventory,
- * a device that stopped announcing is the news, and `lastSeen` carries it.
+ * How many services the roster will hold.
+ *
+ * Devices are never *aged* out — a device that stopped announcing is the
+ * news, and `lastSeen` carries it — but "never dropped" was unbounded, and
+ * the instance name comes off the wire. One sender can mint tens of
+ * thousands of names a second, and every consumer sorts the whole roster on
+ * every read: the panel, the audit sample, the probe count. A media network
+ * with a misbehaving device took the box's memory and then its event loop.
+ *
+ * Well past any real rig. A large festival's Dante and NDI estate is a few
+ * hundred endpoints, so this is only ever reached by something wrong.
+ */
+export const MAX_SERVICES = 512
+
+/**
+ * The roster. Devices are never dropped for going quiet — like the Art-Net
+ * node inventory, a device that stopped announcing is the news, and
+ * `lastSeen` carries it. See MAX_SERVICES for the one thing that does drop.
  */
 export class MdnsState {
   /** kind + instance name → record. */
   private readonly services = new Map<string, MediaService & { host: string }>()
+  /** Instances refused because the roster was full — the panel says so. */
+  private overflowed = 0
 
   applyPacket(records: MdnsRecord[], now: number): void {
     // A-record addresses from this packet, to enrich instances announced
@@ -188,6 +206,10 @@ export class MdnsState {
     const key = `${kind}:${instance}`
     let service = this.services.get(key)
     if (!service) {
+      if (!this.makeRoom()) {
+        this.overflowed++
+        return
+      }
       service = {
         name: instance.replace(/\._(netaudio-[a-z]+\._udp|ndi\._tcp)\.local$/, ''),
         kind,
@@ -205,6 +227,33 @@ export class MdnsState {
     service.saidGoodbye = ttl === 0
   }
 
+  /**
+   * Free a slot for a new instance, if one can honestly be freed.
+   *
+   * The oldest thing that has said goodbye goes first: it unregistered on
+   * purpose and is the least likely to be wanted. Failing that the roster
+   * is full of live devices and a new one is refused rather than pushing a
+   * real one out — a flood must not be able to empty the list of what is
+   * actually on the network, which is the list's whole job.
+   */
+  private makeRoom(): boolean {
+    if (this.services.size < MAX_SERVICES) return true
+    let oldest: { key: string; lastSeen: number } | null = null
+    for (const [key, service] of this.services) {
+      if (!service.saidGoodbye) continue
+      if (!oldest || service.lastSeen < oldest.lastSeen)
+        oldest = { key, lastSeen: service.lastSeen }
+    }
+    if (!oldest) return false
+    this.services.delete(oldest.key)
+    return true
+  }
+
+  /** How many announcements the roster had no room for. */
+  overflow(): number {
+    return this.overflowed
+  }
+
   /** The roster, most recently heard first. */
   roster(): MediaService[] {
     return [...this.services.values()]
@@ -214,5 +263,6 @@ export class MdnsState {
 
   clear(): void {
     this.services.clear()
+    this.overflowed = 0
   }
 }

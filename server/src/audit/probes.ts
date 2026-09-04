@@ -1,6 +1,10 @@
 import type dgram from 'node:dgram'
+import { networkInterfaces } from 'node:os'
 import { newId } from '@crewbox/shared'
 import type { Probes } from '../environment.ts'
+// One implementation of "the broadcast address of the segment this adapter is
+// on", shared with the video scan, which made the same promise first.
+import { subnetBroadcast } from '../video/discovery.ts'
 import type { MetricsStore } from './metrics.ts'
 
 /**
@@ -64,6 +68,8 @@ export interface AuditProbeIo {
   now: () => number
   /** Injectable so tests never sleep. */
   wait: (ms: number) => Promise<void>
+  /** The box's adapters, for working out where a broadcast should go. */
+  interfaces?: typeof networkInterfaces
 }
 
 export interface ProberDeps {
@@ -135,7 +141,9 @@ function sendOnce(
   packet: Buffer,
   address: string,
   port: number,
-  configure?: (socket: dgram.Socket) => void
+  configure?: (socket: dgram.Socket) => void,
+  /** Local address to leave from. The only thing that steers a broadcast. */
+  bindAddress?: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const socket = io.createSocket({ type: 'udp4', reuseAddr: true })
@@ -149,15 +157,48 @@ function sendOnce(
       else resolve()
     }
     socket.on('error', (err) => done(err))
-    socket.bind(() => {
+    const bound = () => {
       try {
         configure?.(socket)
         socket.send(packet, port, address, (err) => done(err ?? undefined))
       } catch (err) {
         done(err as Error)
       }
-    })
+    }
+    if (bindAddress) socket.bind(0, bindAddress, bound)
+    else socket.bind(bound)
   })
+}
+
+/**
+ * Where an ArtPoll from this adapter should go, and out of which address.
+ *
+ * `setMulticastInterface` was doing this job, and could not: it steers
+ * multicast, and 255.255.255.255 is not multicast. A limited broadcast
+ * leaves by whichever adapter the routing table fancies — on a box that also
+ * holds the crew Wi-Fi, that is the crew Wi-Fi. So the probe promised venue
+ * IT "from the lighting adapter" while putting a discovery packet on the
+ * network full of phones.
+ *
+ * Two things fix it, and both are needed. Binding the socket to the lighting
+ * address makes the datagram leave through that adapter. Addressing the
+ * segment's own broadcast rather than 255.255.255.255 means that even if a
+ * route did something surprising, the packet is for one named subnet and no
+ * other. If the adapter is not on this box, there is nothing to be careful
+ * with and the probe says so instead of guessing.
+ */
+export function artPollTarget(
+  iface: string,
+  interfaces: typeof networkInterfaces
+): { address: string; from: string } | null {
+  for (const addresses of Object.values(interfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family !== 'IPv4' || address.address !== iface) continue
+      const broadcast = subnetBroadcast(address.address, address.netmask)
+      if (broadcast) return { address: broadcast, from: iface }
+    }
+  }
+  return null
 }
 
 export class Prober {
@@ -331,14 +372,29 @@ export class Prober {
         fix: 'Set the lighting adapter in Setup or the admin panel to include Art-Net discovery in the sweep.',
       }
     }
+    const target = artPollTarget(iface, this.io.interfaces ?? networkInterfaces)
+    if (!target) {
+      return {
+        id: 'artnet-inventory',
+        network: 'lighting',
+        state: 'skipped',
+        sent: 'nothing',
+        detail: `Skipped: no adapter on this box holds ${iface}, so a broadcast could only have gone out of whichever one the routing table picked — which may be the crew network.`,
+        fix: 'Set the lighting adapter to an address this box actually has, and check its cable is in.',
+      }
+    }
     const before = this.deps.nodeCount?.() ?? 0
-    const sent = `one ArtPoll broadcast (14 bytes, opcode 0x2000) to 255.255.255.255:${ARTNET_PORT} from ${iface}`
+    const sent = `one ArtPoll broadcast (14 bytes, opcode 0x2000) to ${target.address}:${ARTNET_PORT} from ${target.from}`
     try {
-      await sendOnce(this.io, buildArtPoll(), '255.255.255.255', ARTNET_PORT, (socket) => {
-        socket.setBroadcast(true)
+      await sendOnce(
+        this.io,
+        buildArtPoll(),
+        target.address,
+        ARTNET_PORT,
+        (socket) => socket.setBroadcast(true),
         // Leave from the lighting adapter, never the crew LAN.
-        socket.setMulticastInterface(iface)
-      })
+        target.from
+      )
     } catch (err) {
       return {
         id: 'artnet-inventory',

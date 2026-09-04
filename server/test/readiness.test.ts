@@ -214,6 +214,64 @@ describe('the crew network line on a two-network box', () => {
     expect(check.detail).toContain('2.0.0.7')
   })
 
+  it('does not claim an adapter it never bound to, once the cable is back', () => {
+    // The dangerous direction: the crew adapter was down at boot, so the box
+    // bound every network. Reading the live adapters said "the box answers
+    // only there" as soon as the cable went back in — which is what an
+    // operator acts on, and the opposite of the truth. The lighting VLAN
+    // was reachable the whole time.
+    const check = find(
+      boxReadiness(
+        input({
+          iface: '192.168.1.50',
+          boundHost: '0.0.0.0',
+          addresses: ['192.168.1.50', '2.0.0.7'],
+        })
+      ),
+      'network'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('every network')
+    expect(check.fix).toMatch(/Restart/)
+  })
+
+  it('says when the box is bound to an address that has gone', () => {
+    // The other direction: bound at boot, adapter left since. It is not
+    // answering everywhere — it is answering nowhere.
+    const check = find(
+      boxReadiness(
+        input({ iface: '192.168.1.50', boundHost: '192.168.1.50', addresses: ['2.0.0.7'] })
+      ),
+      'network'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toContain('answering nowhere')
+  })
+
+  it('is settled when the bind and the adapter agree', () => {
+    const check = find(
+      boxReadiness(
+        input({
+          iface: '192.168.1.50',
+          boundHost: '192.168.1.50',
+          addresses: ['192.168.1.50', '2.0.0.7'],
+        })
+      ),
+      'network'
+    )
+    expect(check.state).toBe('ok')
+    expect(check.detail).toMatch(/never see its traffic/)
+  })
+
+  it('points at https when the box has a certificate', () => {
+    // The line was hardcoded http://, so on a box with a certificate it sent
+    // whoever read it to a port that only speaks TLS.
+    const secure = find(boxReadiness(input({ secure: true, crewCount: 0 })), 'crew')
+    expect(secure.fix).toMatch(/^Show the QR at https:\/\//)
+    const plain = find(boxReadiness(input({ secure: false, crewCount: 0 })), 'crew')
+    expect(plain.fix).toMatch(/^Show the QR at http:\/\//)
+  })
+
   it('keeps quiet-and-green on a one-network machine', () => {
     const check = find(boxReadiness(input({ addresses: ['192.168.1.50'] })), 'network')
     expect(check.state).toBe('ok')
@@ -389,5 +447,60 @@ describe('how comms sound, from the crew’s own devices', () => {
     const check = quality(0, 6)
     expect(check.state).toBe('ok')
     expect(check.detail).toContain('the buffer covered it')
+  })
+})
+
+describe('the clock the running order is read against', () => {
+  /**
+   * Two things answer "who is on stage now": every crew phone, from its own
+   * local time, and the box, when a production desk asks over the control
+   * API. On site the phones are right by construction. The box is right only
+   * if somebody set its clock up, and a mini PC imaged from a server image
+   * is on UTC — an hour out in Ireland in July, invisibly, during the show.
+   */
+  const at = Date.UTC(2026, 6, 4, 20, 7) // 21:07 in Dublin, 20:07 in UTC
+
+  it('prints the time the box thinks it is, so it can be checked at a glance', () => {
+    const clock = find(boxReadiness(input({ timeZone: 'Europe/Dublin', now: at })), 'clock')
+    expect(clock.state).toBe('ok')
+    expect(clock.detail).toContain('21:07')
+    expect(clock.detail).toContain('Europe/Dublin')
+  })
+
+  it('warns when the box is on UTC and nobody has said otherwise', () => {
+    // The imaged-from-a-server-image case, which is most boxes.
+    const clock = find(boxReadiness(input({ now: at })), 'clock')
+    if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'UTC') {
+      expect(clock.state).toBe('limited')
+      expect(clock.detail).toContain('UTC')
+      expect(clock.fix).toContain('CREWBOX_TZ')
+    } else {
+      // A developer machine with a real zone: the row is fine and says so.
+      expect(clock.state).toBe('ok')
+    }
+  })
+
+  it('does not warn about UTC when the event zone has been named', () => {
+    // Naming a zone is the fix, so it must not still be reported as a fault.
+    const clock = find(boxReadiness(input({ timeZone: 'UTC', now: at })), 'clock')
+    expect(clock.state).toBe('ok')
+  })
+
+  it('says so when CREWBOX_TZ is a name it cannot read', () => {
+    // `wallClock` swallows this on purpose — a box must not stop telling
+    // anybody the time over a misspelling — so a typo otherwise falls back
+    // to the process zone in complete silence, which is the trap.
+    const clock = find(boxReadiness(input({ timeZone: 'Europe/Dublinn', now: at })), 'clock')
+    expect(clock.state).toBe('limited')
+    expect(clock.detail).toContain('Europe/Dublinn')
+    expect(clock.fix).toContain('IANA')
+  })
+
+  it('reads a zone west of Greenwich as readily as one east', () => {
+    const clock = find(boxReadiness(input({ timeZone: 'America/New_York', now: at })), 'clock')
+    expect(clock.state).toBe('ok')
+    expect(clock.detail).toContain('16:07')
+    // Underscores are an IANA spelling, not something to print at a person.
+    expect(clock.detail).toContain('America/New York')
   })
 })

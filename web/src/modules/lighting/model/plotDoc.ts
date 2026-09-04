@@ -283,6 +283,18 @@ const num = (value: unknown, fallback: number): number =>
 const nullableNum = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
 
+/**
+ * A count of things, read back whole.
+ *
+ * Universe, address and footprint are positions on a network, not
+ * measurements, and a fraction of one is a value nothing can be at. The
+ * grid rounds what it writes now, but plots already on phones carry
+ * whatever was typed into them before that — and a single fractional
+ * universe puts every live level for the plot out of reach, silently. So
+ * the read heals it too, which costs nothing and needs no migration.
+ */
+const wholeNum = (value: unknown, fallback: number): number => Math.round(num(value, fallback))
+
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 /**
@@ -388,11 +400,11 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
       return {
         id: str(json.id),
         channel: str(json.channel),
-        universe: Math.max(1, num(json.universe, 1)),
-        address: Math.max(0, num(json.address, 0)),
+        universe: Math.max(1, wholeNum(json.universe, 1)),
+        address: Math.max(0, wholeNum(json.address, 0)),
         typeId: str(json.typeId),
         mode: str(json.mode),
-        footprint: Math.max(0, num(json.footprint, 1)),
+        footprint: Math.max(0, wholeNum(json.footprint, 1)),
         purpose: str(json.purpose),
         positionId: str(json.positionId),
         unit: str(json.unit),
@@ -406,6 +418,7 @@ export const snapshotPlot = (doc: Y.Doc): PlotSnapshot => {
         status: (['todo', 'rigged', 'ok', 'fault'] as const).includes(status as FixtureStatus)
           ? (status as FixtureStatus)
           : 'todo',
+        ...(str(json.mvrUuid) ? { mvrUuid: str(json.mvrUuid) } : {}),
       }
     }),
     customTypes: types.map((item): FixtureType => {

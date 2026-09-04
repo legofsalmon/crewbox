@@ -323,3 +323,38 @@ describe('positions', () => {
     expect(position).toMatchObject({ x: 3, y: 8, rotation: 90, length: 6 })
   })
 })
+
+describe('a universe that is not a whole number', () => {
+  /**
+   * Universe, address and footprint are positions on a network, not
+   * measurements: a fraction of one is a value nothing can be at. A typed
+   * "1.5" in the universe cell was stored as 1.5, and every consumer that
+   * keys live levels by universe number then missed — the plot's whole live
+   * view went dark, silently, with one cell out of hundreds to find.
+   *
+   * The grid rounds what it writes, but plots already on phones carry
+   * whatever was typed into them before that, so the read heals it too.
+   */
+  it('is read back whole', () => {
+    const doc = newPlot()
+    const id = addFixture(doc, { channel: '1' })
+    updateFixture(doc, id, { universe: 1.5, address: 12.7, footprint: 8.2 })
+
+    const fixture = snapshotPlot(doc).fixtures[0]!
+    expect(fixture.universe).toBe(2)
+    expect(fixture.address).toBe(13)
+    expect(fixture.footprint).toBe(8)
+  })
+
+  it('leaves the real measurements alone', () => {
+    // Watts and weight are things somebody weighed. Two decimal places are
+    // theirs to keep.
+    const doc = newPlot()
+    const id = addFixture(doc, { channel: '1' })
+    updateFixture(doc, id, { watts: 575.5, weight: 12.25 })
+
+    const fixture = snapshotPlot(doc).fixtures[0]!
+    expect(fixture.watts).toBe(575.5)
+    expect(fixture.weight).toBe(12.25)
+  })
+})

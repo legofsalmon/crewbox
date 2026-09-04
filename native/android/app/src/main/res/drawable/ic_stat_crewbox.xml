@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The status-bar icon.
+
+  Android draws a notification's small icon as a silhouette: it takes the
+  alpha channel and throws the colours away. The launcher mipmap was being
+  used, which is a full-colour adaptive icon on an opaque rounded square —
+  so every crewbox alert appeared in the status bar as a plain white blob.
+  Nothing in a build log says so; it is only visible on a phone.
+
+  This is the same mark as web/public/icon.svg, drawn as opaque strokes on
+  transparency, at the 24dp Android asks for.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:pathData="M3.4,14.6a8.6,8.6 0 0 1 17.2,0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.1"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M7.7,14.6a4.3,4.3 0 0 1 8.6,0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.1"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M12,16.4m-2.3,0a2.3,2.3 0 1,0 4.6,0a2.3,2.3 0 1,0 -4.6,0"
+        android:fillColor="#FFFFFFFF" />
+</vector>

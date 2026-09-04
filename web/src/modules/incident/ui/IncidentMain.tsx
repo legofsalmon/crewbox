@@ -9,6 +9,7 @@ import {
   type IncidentSeverity,
 } from '@crewbox/shared'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
+import { deliveredNote, deliverText } from '../../../lib/download.ts'
 import { useStore } from '../../../store.ts'
 import { byShowDay, clockOf, filterLog, loggedLate, type LogFilter } from '../model/log.ts'
 import { reportFilename, showReportHtml } from '../model/report.ts'
@@ -91,10 +92,16 @@ export default function IncidentMain() {
   const incidents = useStore((s) => s.incidents)
   const loaded = useStore((s) => s.incidentsLoaded)
   const loadIncidents = useStore((s) => s.loadIncidents)
+  const complete = useStore((s) => s.incidentsComplete)
+  const loadEarlierIncidents = useStore((s) => s.loadEarlierIncidents)
+  const loadWholeLog = useStore((s) => s.loadWholeLog)
   const eventName = useStore((s) => s.config.eventName)
   const toast = useStore((s) => s.toast)
 
   const [filing, setFiling] = useState(false)
+  /** The report is paging the log; the button says so rather than hanging. */
+  const [building, setBuilding] = useState(false)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
   const [correcting, setCorrecting] = useState<Incident | null>(null)
   const [filter, setFilter] = useState<LogFilter>({})
   // Entries this device has filed and the box has not yet confirmed. Read
@@ -112,15 +119,26 @@ export default function IncidentMain() {
     [incidents]
   )
 
-  const download = () => {
-    const html = showReportHtml({ eventName, entries: incidents, generatedAt: Date.now() })
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = reportFilename(eventName, Date.now())
-    link.click()
-    URL.revokeObjectURL(url)
-    toast('Show report downloaded')
+  const download = async () => {
+    /**
+     * The whole night, not the last two hundred entries of it.
+     *
+     * The pane fetches one page and never paged, so a festival on its third
+     * night produced a report that silently began partway through Friday —
+     * a document that gets mailed on, with nothing in it saying it was a
+     * fragment. Pages to the beginning first; on a box that cannot be
+     * reached it exports what is held, which is what was happening before.
+     */
+    setBuilding(true)
+    try {
+      await loadWholeLog()
+      const entries = useStore.getState().incidents
+      const html = showReportHtml({ eventName, entries, generatedAt: Date.now() })
+      const result = await deliverText(reportFilename(eventName, Date.now()), 'text/html', html)
+      toast(deliveredNote(result, 'Show report'))
+    } finally {
+      setBuilding(false)
+    }
   }
 
   return (
@@ -140,8 +158,12 @@ export default function IncidentMain() {
             >
               {filing ? 'Close' : 'Log an entry'}
             </button>
-            <button className={styles.secondary} onClick={download} disabled={!incidents.length}>
-              Show report
+            <button
+              className={styles.secondary}
+              onClick={() => void download()}
+              disabled={!incidents.length || building}
+            >
+              {building ? 'Building…' : 'Show report'}
             </button>
           </div>
         </div>
@@ -254,6 +276,25 @@ export default function IncidentMain() {
             </ul>
           </section>
         ))
+      )}
+
+      {/*
+        The log kept only the latest two hundred entries and never paged, so
+        a third night began partway through Friday with nothing saying so.
+      */}
+      {loaded && incidents.length > 0 && !complete && (
+        <div className={styles.earlier}>
+          <button
+            className={styles.secondary}
+            disabled={loadingEarlier}
+            onClick={() => {
+              setLoadingEarlier(true)
+              void loadEarlierIncidents().finally(() => setLoadingEarlier(false))
+            }}
+          >
+            {loadingEarlier ? 'Loading…' : 'Load earlier entries'}
+          </button>
+        </div>
       )}
     </div>
   )

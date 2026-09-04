@@ -22,9 +22,14 @@ A useful PR body for this repo covers:
 ```bash
 npm run lint
 npm run format:check
+npm run build                               # typechecks both workspaces
 npm test                                    # server + web unit tests
 npm run build -w web && npx playwright test # e2e (needs the built web app)
 ```
+
+`npm run build` is the typecheck, and nothing else here covers it: vitest
+transpiles without checking types, so a type error in a _test_ file passes
+lint, format and the whole suite and then fails CI. It has.
 
 In this sandbox Playwright needs `PW_CHROMIUM=/opt/pw-browsers/chromium`.
 

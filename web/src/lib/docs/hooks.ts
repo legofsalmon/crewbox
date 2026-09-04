@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type * as Y from 'yjs'
 import { snapshotIndex, type DocIndexEntry } from './indexDoc.ts'
-import type { DocHandle, DocStore } from './store.ts'
+import { docHasContent, type DocHandle, type DocStore } from './store.ts'
 import { syncManager, type RemotePeer, type SyncStatus } from './sync.ts'
 
 /**
@@ -66,8 +66,12 @@ export function useStoreDoc<T>(
     })
     return () => {
       cancelled = true
-      // The doc stays cached in the store for quick re-open; sync providers
-      // and explicit deletion manage its real lifetime.
+      // Give the hold back. The store keeps the document open for a short
+      // grace period, so navigating away and back does not tear down a
+      // WebSocket and an IndexedDB connection and rebuild them — but a pane
+      // that stays closed stops holding a room, which is what stopped this
+      // device appearing in every sheet it had ever glanced at.
+      h.destroy()
       setHandle(null)
     }
   }, [store, id])
@@ -95,6 +99,13 @@ export function useDocIndex(store: DocStore): { entries: DocIndexEntry[]; loaded
     let cancelled = false
     handle.whenLoaded.then(() => {
       if (!cancelled) setLoaded(true)
+      // Once the index is here it can be believed about deletions. A doc
+      // deleted on another device is dropped from this one's registry and
+      // its database removed, so it neither lists nor takes up room.
+      if (!cancelled) {
+        store.reconcileDeletions()
+        setLocalIds(store.listLocalIds())
+      }
     })
     setLocalIds(store.listLocalIds())
     return () => {
@@ -104,14 +115,58 @@ export function useDocIndex(store: DocStore): { entries: DocIndexEntry[]; loaded
 
   const entries = useDocSnapshot(handle.doc, compute) ?? []
   const known = new Set(entries.map((e) => e.id))
+  // Deleting a doc removes its index row, and absence is not the same as
+  // "gone": every device merges its own registry back in, so a sheet deleted
+  // on the desk reappeared on every phone as "Untitled Sheet (local)" — and
+  // could not be deleted there either, because what they were listing was
+  // their own copy. The index carries tombstones now, and this is where they
+  // are believed.
+  const gone = store.deleted()
   const merged = [
     ...entries,
     ...localIds
-      .filter((id) => !known.has(id))
+      .filter((id) => !known.has(id) && !gone.has(id))
       // Present but never synced or edited here: no index entry to name it.
       .map((id) => ({ id, title: `${store.defaultTitle} (local)`, lastModified: '', meta: {} })),
   ]
   return { entries: merged, loaded }
+}
+
+/**
+ * Has this document turned out not to exist?
+ *
+ * Following a link to a document that has been deleted, or one from a box
+ * this device is not on, mints an empty Y.Doc — which looks exactly like a
+ * document that is still loading, so the pane sat on "Opening…" for ever and
+ * the "not found" branch beneath it was unreachable.
+ *
+ * Emptiness alone is not the answer either: IndexedDB resolves before the
+ * relay has said anything, so a document that is about to arrive is briefly
+ * indistinguishable from one that never will. Hence the wait — short enough
+ * that nobody stares at a spinner, long enough to hear from a box on the
+ * same LAN — and any content at all, from anywhere, settles it immediately.
+ */
+export function useDocMissing(doc: Y.Doc | null, loaded: boolean, graceMs = 2500): boolean {
+  const [missing, setMissing] = useState(false)
+
+  useEffect(() => {
+    setMissing(false)
+    if (!doc || !loaded) return
+    if (docHasContent(doc)) return
+
+    const timer = setTimeout(() => setMissing(true), graceMs)
+    const onUpdate = () => {
+      clearTimeout(timer)
+      setMissing(false)
+    }
+    doc.on('update', onUpdate)
+    return () => {
+      clearTimeout(timer)
+      doc.off('update', onUpdate)
+    }
+  }, [doc, loaded, graceMs])
+
+  return missing
 }
 
 export const useSyncStatus = (): SyncStatus =>

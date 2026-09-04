@@ -88,9 +88,22 @@ export interface SapStream {
  *  ages out streams whose sender vanished without a deletion. */
 export const SAP_TIMEOUT_MS = 30 * 60_000
 
+/**
+ * How many streams the directory will hold.
+ *
+ * Each entry lives for half an hour after its last announcement, and the
+ * id comes off the wire — so one sender can mint unlimited streams that
+ * each occupy the directory for thirty minutes, and every read sorts the
+ * whole thing. A large AES67 estate is a few hundred streams; this is only
+ * reached by something wrong.
+ */
+export const MAX_STREAMS = 256
+
 /** The stream directory. Deletions remove; silence eventually ages out. */
 export class SapState {
   private readonly streams = new Map<string, SapStream>()
+  /** Announcements refused because the directory was full. */
+  private overflowed = 0
 
   apply(message: SapMessage, now: number): void {
     if (message.deletion) {
@@ -101,6 +114,13 @@ export class SapState {
     }
     let stream = this.streams.get(message.id)
     if (!stream) {
+      // Full: refuse the new one rather than push out a stream that is
+      // really on the network. A flood must not be able to empty the list
+      // of what is actually there, which is the list's whole job.
+      if (this.streams.size >= MAX_STREAMS) {
+        this.overflowed++
+        return
+      }
       stream = {
         name: message.sessionName || message.id,
         origin: message.origin,
@@ -122,6 +142,11 @@ export class SapState {
     }
   }
 
+  /** How many announcements the directory had no room for. */
+  overflow(): number {
+    return this.overflowed
+  }
+
   roster(): SapStream[] {
     return [...this.streams.values()].sort(
       (a, b) => b.lastSeen - a.lastSeen || a.name.localeCompare(b.name)
@@ -130,5 +155,6 @@ export class SapState {
 
   clear(): void {
     this.streams.clear()
+    this.overflowed = 0
   }
 }

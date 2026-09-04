@@ -1,9 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
-import { seaAsset } from './box.ts'
+import { hasSeaAsset, seaAsset } from './box.ts'
 
 /**
  * The box runs its own LiveKit SFU.
@@ -29,7 +37,7 @@ const assetName = () => (process.platform === 'win32' ? 'livekit-server.exe' : '
 const PID_FILE = 'livekit.pid'
 
 /** Whether this build carries an SFU it can run. */
-export const hasEmbeddedLiveKit = (): boolean => seaAsset(`livekit/${assetName()}`) !== null
+export const hasEmbeddedLiveKit = (): boolean => hasSeaAsset(`livekit/${assetName()}`)
 
 export interface EmbeddedLiveKit {
   port: number
@@ -133,9 +141,15 @@ export function livekitCredentials(
 }
 
 /** Resolves once something is listening, or false if it never comes up. */
-async function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
+async function waitForPort(
+  port: number,
+  timeoutMs: number,
+  /** Give up early — the child is already gone and nothing will open it. */
+  abandoned: () => boolean = () => false
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
+    if (abandoned()) return false
     const open = await new Promise<boolean>((resolve) => {
       const socket = createConnection({ host: '127.0.0.1', port })
       const done = (result: boolean) => {
@@ -169,6 +183,11 @@ export interface StartLiveKitOptions {
    * reach the SFU at 127.0.0.1.
    */
   iface?: string
+  /**
+   * Another crewbox already running, when there is one — see
+   * `reapOrphanLiveKit`, which will not touch that box's SFU.
+   */
+  owner?: number | null
   log: BoxLog
 }
 
@@ -231,9 +250,103 @@ export function unpackLiveKit(
  * served by a process holding the previous run's keys, so tokens minted by
  * the new box are rejected and nobody can talk.
  *
+ * **Only when nothing else is running the box.** The pid file says which
+ * process owns 7880, not whether that owner is finished with it, and there is
+ * one moment when it is very much not: an update launches a new box while the
+ * old one is alive, supervising, and able to put itself back. Reaping there
+ * kills the *supervisor's* SFU, so a rollback returned a box that kept
+ * minting tokens for a process this one had killed and every voice join
+ * failed until somebody restarted it by hand. A box started by hand beside
+ * another is the same picture with a shorter story. So a live owner means
+ * leave it alone; a force-quit box leaves a status file whose pid is dead,
+ * which is exactly the case this function is for.
+ *
  * Returns true if it reaped something, so the caller can say so.
  */
-export async function reapOrphanLiveKit(dir: string, log: BoxLog): Promise<boolean> {
+/**
+ * Remove the pid file, whatever is actually there.
+ *
+ * Recursive and swallowing, because every caller is already handling a
+ * failure or inside an event handler: a tidy-up that throws would replace a
+ * reported problem with an unreported one, and from `child.on('exit')` it
+ * would be an uncaught exception with nothing above it — the box, for a
+ * stale file. Whatever will not go is clutter, and the next start tries
+ * again.
+ */
+function tidyPidFile(pidPath: string): void {
+  try {
+    rmSync(pidPath, { force: true, recursive: true })
+  } catch {
+    // Locked, or not ours.
+  }
+}
+
+/**
+ * Is the pid in the file still the SFU, or has the number been handed on?
+ *
+ * Pids are recycled, and a box that has just had its power cut and come back
+ * up is precisely where they get recycled from a low number: the pid file
+ * records 812, the machine reboots, and 812 is now `wpa_supplicant`, or
+ * `dnsmasq`, or the thing serving the crew's Wi-Fi. `process.kill(812)` is
+ * then a box that boots and shoots something on the rig, once, silently, and
+ * blames a stale voice file.
+ *
+ * Linux answers this exactly: `/proc/<pid>/exe` is a link to the running
+ * binary and `/proc/<pid>/cmdline` is its argv, and the SFU we unpacked is
+ * named in one or the other. Only a box with no `/proc` — a mac, a stripped
+ * container — comes back `unknown`, and there the caller keeps the old
+ * behaviour rather than never reaping, because a held :7880 is the fault
+ * this whole function exists for.
+ */
+export function sfuIdentity(pid: number, binPath: string): 'ours' | 'someone-elses' | 'unknown' {
+  // Through symlinks, because /proc reports the resolved path and a data
+  // directory under /var on a mac is really /private/var.
+  let real = binPath
+  try {
+    real = realpathSync(binPath)
+  } catch {
+    // Unpacked by a build that has since been replaced. The string still
+    // matches what was spawned, which is what the comparison is for.
+  }
+  const isOurs = (path: string) => path === binPath || path === real
+
+  let exe: string | null = null
+  try {
+    // A binary replaced under a running process reads back as `<path>
+    // (deleted)` — still that path, and the most likely way to meet it is an
+    // update that swapped the file.
+    exe = readlinkSync(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, '')
+  } catch {
+    // Someone else's process (readable only by its owner or root), a pid
+    // that has gone, or no /proc at all. The next two reads say which.
+  }
+  if (exe && isOurs(exe)) return 'ours'
+
+  // A script runs under its interpreter, so `exe` names node rather than the
+  // SFU. argv still names what was started, and is world-readable.
+  try {
+    const argv = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0')
+    return argv.some(isOurs) ? 'ours' : 'someone-elses'
+  } catch {
+    // Gone, or nothing to read.
+  }
+  if (exe) return 'someone-elses'
+  try {
+    readlinkSync('/proc/self/exe')
+  } catch {
+    return 'unknown'
+  }
+  return 'someone-elses'
+}
+
+export async function reapOrphanLiveKit(
+  dir: string,
+  log: BoxLog,
+  /** Another crewbox already running, if there is one. */
+  owner: number | null = null,
+  /** The SFU binary, when it is not the one unpacked into `dir`. */
+  binPath: string = join(dir, assetName())
+): Promise<boolean> {
   const pidPath = join(dir, PID_FILE)
   let pid: number
   try {
@@ -241,7 +354,13 @@ export async function reapOrphanLiveKit(dir: string, log: BoxLog): Promise<boole
   } catch {
     return false
   }
-  if (!Number.isInteger(pid) || pid <= 0) return false
+  // A zero-byte or unparseable file is a record of nothing — most likely a
+  // write that ran out of disk halfway. Leaving it would make every future
+  // start skip the reap, so it goes.
+  if (!Number.isInteger(pid) || pid <= 0) {
+    tidyPidFile(pidPath)
+    return false
+  }
 
   const alive = (): boolean => {
     try {
@@ -253,8 +372,26 @@ export async function reapOrphanLiveKit(dir: string, log: BoxLog): Promise<boole
     }
   }
 
+  // Before the owner check, so a stale file is always tidied: the update path
+  // stops its own SFU on the way out, which leaves exactly this — a live box
+  // and a pid that is already gone.
   if (!alive()) {
     rmSync(pidPath, { force: true })
+    return false
+  }
+  if (owner !== null) {
+    log.warn(`voice: an SFU is running (pid ${pid}) and box ${owner} still has it — leaving it`)
+    return false
+  }
+
+  // Alive is not the same as ours. See `sfuIdentity`.
+  const identity = sfuIdentity(pid, binPath)
+  if (identity === 'someone-elses') {
+    log.warn(
+      `voice: pid ${pid} in the voice status file belongs to something else now — ` +
+        'leaving it alone and forgetting the file'
+    )
+    tidyPidFile(pidPath)
     return false
   }
 
@@ -307,16 +444,48 @@ export async function spawnLiveKit(
 
   // Recorded before the wait, so a box killed mid-startup still leaves a
   // trail for the next one to clean up.
-  const pidPath = join(dirname(binPath), PID_FILE)
-  if (child.pid) writeFileSync(pidPath, String(child.pid))
+  //
+  // Guarded, because this is the one write on the boot path that is always a
+  // *new* file — which is exactly what fails first on a full disk. Unguarded
+  // it threw out of `main()` and exited 1 with the SFU already spawned, and
+  // the child outlived the box holding :7880 for good: the next boot's reaper
+  // reads a zero-byte file, gets NaN, and skips it. So the child goes with us
+  // rather than being orphaned, and voice simply stays off.
+  // Beside the config, not beside the binary. They are the same directory
+  // for an SFU this box unpacked, and very much not for one the operator
+  // installed: `dirname(binPath)` there is /usr/local/bin, which is where
+  // the pid file would have been written — if it were writable at all, and
+  // if it were, nowhere the reaper looks.
+  const pidPath = join(dirname(configPath), PID_FILE)
+  if (child.pid) {
+    try {
+      writeFileSync(pidPath, String(child.pid))
+    } catch (error) {
+      child.kill('SIGKILL')
+      tidyPidFile(pidPath)
+      log.warn(`voice: could not record the SFU's pid (${String(error)}); voice stays off`)
+      return { sfu: null, failure: 'no-start' }
+    }
+  }
 
   let exited = false
-  child.on('error', () => {
+  /**
+   * Why the child never ran, when the OS said.
+   *
+   * `child.on('error')` carries the code, the syscall and the path — EACCES
+   * on a binary without the exec bit, ENOEXEC for the wrong architecture,
+   * ENOENT for a `CREWBOX_LIVEKIT_BIN` that is not there. It was thrown
+   * away, and the warning said only "did not start listening", which is
+   * both the least useful thing to say and not what happened.
+   */
+  let spawnError: Error | null = null
+  child.on('error', (err) => {
     exited = true
+    spawnError = err
   })
   child.on('exit', (code) => {
     exited = true
-    rmSync(pidPath, { force: true })
+    tidyPidFile(pidPath)
     if (code !== 0 && code !== null) log.warn(`voice: SFU exited with code ${code}`)
   })
   // The SFU's own logging goes to the box log so a failure is diagnosable.
@@ -325,10 +494,18 @@ export async function spawnLiveKit(
     if (line) log.warn(`livekit: ${line}`)
   })
 
-  const up = await waitForPort(LIVEKIT_PORT, 8000)
+  // Stops as soon as the child is gone rather than sitting out the full
+  // eight seconds: a binary that cannot execute fails in milliseconds, and
+  // the box was waiting anyway before saying so.
+  const up = await waitForPort(LIVEKIT_PORT, 8000, () => exited)
   if (!up) {
     child.kill()
-    log.warn('voice: SFU did not start listening; voice stays off')
+    const why: Error | null = spawnError
+    log.warn(
+      why
+        ? `voice: could not start the SFU (${String(why)}); voice stays off`
+        : 'voice: SFU did not start listening; voice stays off'
+    )
     return { sfu: null, failure: 'no-start' }
   }
   if (exited) {
@@ -367,26 +544,65 @@ export async function spawnLiveKit(
       key: creds.key,
       secret: creds.secret,
       stop: async () => {
+        // The pid file goes here, synchronously, rather than in the exit
+        // handler: `stop()` used to resolve after a fixed 500 ms whether or
+        // not the child had gone, and the caller exits straight after — so
+        // on a normal shutdown the handler often never ran and every box
+        // left a stale pid behind for the next boot to reason about.
+        tidyPidFile(pidPath)
         if (exited) return
         child.kill('SIGTERM')
-        // Give it a moment to close rooms cleanly, then insist.
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        if (!exited) child.kill('SIGKILL')
+        // Waited for, not slept through: it takes a moment to close rooms,
+        // and returning while it is still holding :7880 hands the next
+        // start a port that is not free.
+        const gone = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+        const deadline = new Promise<void>((resolve) => setTimeout(resolve, 3000))
+        await Promise.race([gone, deadline])
+        if (!exited) {
+          child.kill('SIGKILL')
+          await Promise.race([gone, new Promise((resolve) => setTimeout(resolve, 500))])
+        }
       },
     },
   }
 }
 
 /**
- * Extract and start the embedded SFU. Returns null when this build has no
- * binary, or when it failed to come up — the caller treats both the same way
- * and simply leaves voice off.
+ * An SFU binary this box can run that is not inside it.
+ *
+ * The packaged box carries its own; a rig installed from source and run by
+ * systemd does not, and the unit file shipped alongside pointed
+ * `LIVEKIT_URL` at an example host with the dev credentials. So the rack
+ * box told every phone voice was available and minted tokens for an SFU
+ * that did not exist — the runbook, meanwhile, said the SFU runs inside the
+ * box and starts and stops with it, which was true of one deployment and
+ * not the other.
+ *
+ * `CREWBOX_LIVEKIT_BIN` closes that: point it at a livekit-server on the
+ * machine and the box supervises it exactly as it supervises its own —
+ * same config, same port, same proxy behind the box's certificate, same
+ * orphan reaping — so the runbook's sentence is true of a rack too.
+ */
+export const externalLiveKit = (): string | null => {
+  const configured = process.env.CREWBOX_LIVEKIT_BIN?.trim()
+  return configured ? configured : null
+}
+
+/** Whether this process can run an SFU at all — embedded or on disk. */
+export const canRunLiveKit = (): boolean => hasEmbeddedLiveKit() || externalLiveKit() !== null
+
+/**
+ * Extract and start the SFU. Returns null when there is no binary to run,
+ * or when it failed to come up — the caller treats both the same way and
+ * simply leaves voice off.
  */
 export async function startEmbeddedLiveKit(options: StartLiveKitOptions): Promise<SpawnOutcome> {
   const asset = seaAsset(`livekit/${assetName()}`)
-  // No failure recorded: a build without the binary is a build without
-  // voice, not a fault — the readiness copy for that case already exists.
-  if (!asset) return { sfu: null }
+  const external = asset ? null : externalLiveKit()
+  // No failure recorded: a build without the binary and no binary named on
+  // disk is a deployment without voice, not a fault — the readiness copy for
+  // that case already exists.
+  if (!asset && !external) return { sfu: null }
 
   // Before anything else. A box that was killed rather than stopped leaves
   // its SFU running, and that orphan is *executing the very file* the unpack
@@ -394,14 +610,37 @@ export async function startEmbeddedLiveKit(options: StartLiveKitOptions): Promis
   // unpacking first fails with ETXTBSY and voice stays off for good. Clearing
   // it first also frees the port, which the orphan would otherwise hold while
   // answering with the previous run's keys.
-  await reapOrphanLiveKit(join(options.dataDir, 'livekit'), options.log)
+  //
+  // The binary is named explicitly because the reaper checks that the pid it
+  // is about to signal really is the SFU, and an external one lives wherever
+  // the operator put it rather than in the data directory.
+  const dir = join(options.dataDir, 'livekit')
+  await reapOrphanLiveKit(dir, options.log, options.owner ?? null, external ?? undefined)
 
   let unpacked: { binPath: string; configPath: string }
   try {
-    unpacked = unpackLiveKit(options.dataDir, asset, options.key, options.secret, options.iface)
+    unpacked = external
+      ? { binPath: external, configPath: writeLiveKitConfig(options) }
+      : unpackLiveKit(options.dataDir, asset!, options.key, options.secret, options.iface)
   } catch (error) {
-    options.log.warn(`voice: could not unpack the SFU (${String(error)}); voice stays off`)
+    options.log.warn(`voice: could not prepare the SFU (${String(error)}); voice stays off`)
     return { sfu: null, failure: 'no-start' }
   }
+  if (external) options.log.info(`voice: supervising the SFU at ${external}`)
   return spawnLiveKit(unpacked.binPath, unpacked.configPath, options, options.log)
+}
+
+/**
+ * The config for an SFU whose binary this box did not unpack.
+ *
+ * Written into the same directory the embedded one uses, so the pid file
+ * lands beside it and everything downstream — the reaper, the proxy, the
+ * readiness copy — reads exactly one place.
+ */
+function writeLiveKitConfig(options: StartLiveKitOptions): string {
+  const dir = join(options.dataDir, 'livekit')
+  const configPath = join(dir, 'livekit.yaml')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(configPath, livekitConfigYaml(options.key, options.secret, options.iface))
+  return configPath
 }

@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -16,7 +17,10 @@ import {
   livekitConfigYaml,
   livekitCredentials,
   probeSfu,
+  canRunLiveKit,
   reapOrphanLiveKit,
+  startEmbeddedLiveKit,
+  sfuIdentity,
   spawnLiveKit,
   unpackLiveKit,
   type EmbeddedLiveKit,
@@ -62,6 +66,20 @@ const loiterStub = (): Buffer =>
     `#!/usr/bin/env node\n` +
       `setInterval(() => {}, 1000)\n` +
       `process.on('SIGTERM', () => process.exit(0))\n`
+  )
+
+/**
+ * A stub that takes the port and then ignores SIGTERM, as an SFU with rooms
+ * to close can. Two seconds, which is past the old fixed 500 ms wait.
+ */
+const stubbornStub = (): Buffer =>
+  Buffer.from(
+    `#!/usr/bin/env node\n` +
+      `require('node:http').createServer((req, res) => {\n` +
+      `  res.statusCode = req.url.startsWith('/rtc/validate') ? 200 : 404\n` +
+      `  res.end('success')\n` +
+      `}).listen(${LIVEKIT_PORT}, '0.0.0.0')\n` +
+      `process.on('SIGTERM', () => setTimeout(() => process.exit(0), 2000))\n`
   )
 
 /** A stub that starts and dies, as a broken SFU would. */
@@ -202,6 +220,48 @@ describe('orphaned SFU from a killed box', () => {
     expect(() => process.kill(pid, 0)).not.toThrow()
   }, 15_000)
 
+  it('is really finished when stop() resolves, not merely 500ms later', async () => {
+    // It used to resolve after a fixed sleep whether or not the child had
+    // gone, and the caller exits straight after — so the SFU was still
+    // holding :7880 as the box died, and the exit handler that removes the
+    // pid file often never ran at all. An SFU with rooms to close takes
+    // longer than that sleep, which is exactly when it matters.
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, stubbornStub(), 'k', 's')
+    const { sfu } = await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog)
+    expect(sfu).not.toBeNull()
+    const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+
+    await sfu!.stop()
+    // No sleep here: both of these are what the caller's immediate exit
+    // depends on being true already.
+    expect(() => process.kill(pid, 0)).toThrow()
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  }, 20_000)
+
+  it('says why a binary would not run, rather than that it did not listen', async () => {
+    // The OS says EACCES, ENOEXEC or ENOENT and names the path; the reason
+    // was thrown away and the warning said "did not start listening", which
+    // is the least useful thing to say and not what happened.
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    chmodSync(binPath, 0o644) // no exec bit
+
+    const warnings: string[] = []
+    const started = Date.now()
+    const { sfu, failure } = await spawnLiveKit(
+      binPath,
+      configPath,
+      { key: 'k', secret: 's' },
+      { info: () => {}, warn: (m) => warnings.push(m) }
+    )
+    expect(sfu).toBeNull()
+    expect(failure).toBe('no-start')
+    expect(warnings.join(' ')).toMatch(/EACCES|ENOEXEC|permission/i)
+    // ...and it did not sit out the full eight-second port wait to say so.
+    expect(Date.now() - started).toBeLessThan(4000)
+  }, 15_000)
+
   it('clears the record when the SFU stops cleanly', async () => {
     const dir = tempDir()
     const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
@@ -246,6 +306,164 @@ describe('orphaned SFU from a killed box', () => {
     // A pid that cannot be running: the file outlived a reboot.
     writeFileSync(join(dir, 'livekit', 'livekit.pid'), '2147483646')
     expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
+
+  it('runs an SFU named on disk when the build carries none', async () => {
+    // The systemd rig: installed from source, so nothing is embedded. It
+    // used to fall through to whatever LIVEKIT_URL the unit file carried,
+    // which shipped pointing at an example host with the dev credentials.
+    const dir = tempDir()
+    const onDisk = join(dir, 'livekit-server-from-the-distro')
+    writeFileSync(onDisk, listenerStub())
+    chmodSync(onDisk, 0o755)
+    process.env.CREWBOX_LIVEKIT_BIN = onDisk
+    try {
+      expect(canRunLiveKit()).toBe(true)
+      const outcome = await startEmbeddedLiveKit({
+        dataDir: dir,
+        key: 'k',
+        secret: 's',
+        log: silentLog,
+      })
+      expect(outcome.sfu).not.toBeNull()
+      running.push(outcome.sfu!)
+      // Configured and recorded in the box's own directory, so the reaper,
+      // the proxy and the readiness copy all read one place.
+      expect(existsSync(join(dir, 'livekit', 'livekit.yaml'))).toBe(true)
+      expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(true)
+      // And nothing was unpacked — the binary is the operator's.
+      expect(existsSync(join(dir, 'livekit', 'livekit-server'))).toBe(false)
+    } finally {
+      delete process.env.CREWBOX_LIVEKIT_BIN
+    }
+  }, 15_000)
+
+  it('offers no voice at all when nothing names an SFU', async () => {
+    // Better than the placeholder URL that shipped: the button is absent
+    // rather than minting tokens for a host that is not there.
+    delete process.env.CREWBOX_LIVEKIT_BIN
+    expect(canRunLiveKit()).toBe(false)
+    const outcome = await startEmbeddedLiveKit({
+      dataDir: tempDir(),
+      key: 'k',
+      secret: 's',
+      log: silentLog,
+    })
+    expect(outcome.sfu).toBeNull()
+    // Not a failure either — a deployment without voice is a choice.
+    expect(outcome.failure).toBeUndefined()
+  })
+
+  it('reaps an orphan of an SFU that lives outside the data directory', async () => {
+    const dir = tempDir()
+    const onDisk = join(dir, 'livekit-server-from-the-distro')
+    writeFileSync(onDisk, listenerStub())
+    chmodSync(onDisk, 0o755)
+    process.env.CREWBOX_LIVEKIT_BIN = onDisk
+    try {
+      const orphan = await startEmbeddedLiveKit({
+        dataDir: dir,
+        key: 'k',
+        secret: 's',
+        log: silentLog,
+      })
+      expect(orphan.sfu).not.toBeNull()
+      // Belt and braces: if the reap below fails, afterEach still takes the
+      // child with it rather than stranding a listener on :7880 for every
+      // test after this one.
+      running.push(orphan.sfu!)
+      const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+
+      // The identity check compares against the binary that is actually
+      // running, so it has to be told where that is.
+      expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog, null, onDisk)).toBe(true)
+      expect(() => process.kill(pid, 0)).toThrow()
+    } finally {
+      delete process.env.CREWBOX_LIVEKIT_BIN
+    }
+  }, 15_000)
+
+  it('will not kill a process that has merely inherited the pid', async () => {
+    // The one this is for: power cut, reboot, and 812 is now dnsmasq. The
+    // box used to SIGTERM it — once, silently, on every boot — and call it
+    // clearing a stale voice file.
+    const dir = tempDir()
+    mkdirSync(join(dir, 'livekit'), { recursive: true })
+    // This test process is alive, is not the SFU, and is not going anywhere.
+    writeFileSync(join(dir, 'livekit', 'livekit.pid'), String(process.pid))
+
+    const warnings: string[] = []
+    const reaped = await reapOrphanLiveKit(join(dir, 'livekit'), {
+      info: () => {},
+      warn: (m) => warnings.push(m),
+    })
+    expect(reaped).toBe(false)
+    expect(warnings.join(' ')).toMatch(/belongs to something else/)
+    // Still here. A killed test process could not assert anything.
+    expect(() => process.kill(process.pid, 0)).not.toThrow()
+    // And the file that named it is gone, so the next boot does not repeat.
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
+
+  it('recognises its own SFU by what is running, not just by the number', () => {
+    const dir = tempDir()
+    const { binPath } = unpackLiveKit(dir, loiterStub(), 'k', 's')
+    expect(sfuIdentity(process.pid, binPath)).toBe('someone-elses')
+    // The pid of this test, against the binary this test is running.
+    expect(sfuIdentity(process.pid, process.execPath)).toBe('ours')
+  })
+
+  it('will not kill an SFU another running box still owns', async () => {
+    // Mid-update this is the supervisor's SFU. Reaping it meant a box that
+    // rolled back went on minting tokens for a process it had killed, and
+    // every voice join failed until somebody restarted the box by hand.
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    const owned = (await spawnLiveKit(binPath, configPath, { key: 'k', secret: 's' }, silentLog))
+      .sfu
+    expect(owned).not.toBeNull()
+    const pid = Number(readFileSync(join(dir, 'livekit', 'livekit.pid'), 'utf8'))
+
+    const warnings: string[] = []
+    const reaped = await reapOrphanLiveKit(
+      join(dir, 'livekit'),
+      { info: () => {}, warn: (m) => warnings.push(m) },
+      process.pid
+    )
+    expect(reaped).toBe(false)
+    expect(warnings.join(' ')).toMatch(/still has it/)
+    // Still there, which is the whole point.
+    expect(() => process.kill(pid, 0)).not.toThrow()
+    await owned!.stop()
+  }, 15_000)
+
+  it('throws away a pid file that says nothing', async () => {
+    // What a write that ran out of disk leaves behind. Left in place it made
+    // every future start skip the reap, so an orphan would hold :7880 for
+    // good.
+    const dir = tempDir()
+    mkdirSync(join(dir, 'livekit'), { recursive: true })
+    writeFileSync(join(dir, 'livekit', 'livekit.pid'), '')
+    expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
+
+  it('throws away a pid file that is junk', async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, 'livekit'), { recursive: true })
+    writeFileSync(join(dir, 'livekit', 'livekit.pid'), 'not a number')
+    expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog)).toBe(false)
+    expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
+  })
+
+  it('still tidies a dead record even with a box running', async () => {
+    // What the update path actually leaves behind: it stops its own SFU
+    // before launching the new box, so the file names a pid that has gone.
+    const dir = tempDir()
+    mkdirSync(join(dir, 'livekit'), { recursive: true })
+    writeFileSync(join(dir, 'livekit', 'livekit.pid'), '2147483646')
+    expect(await reapOrphanLiveKit(join(dir, 'livekit'), silentLog, process.pid)).toBe(false)
     expect(existsSync(join(dir, 'livekit', 'livekit.pid'))).toBe(false)
   })
 })
@@ -384,4 +602,43 @@ describe('binding the SFU to the crew adapter', () => {
     const { configPath } = unpackLiveKit(dataDir, listenerStub(), 'k', 's', '192.168.1.50')
     expect(readFileSync(configPath, 'utf8')).toContain('"192.168.1.50"')
   })
+})
+
+/**
+ * The one boot-time write with nothing under it.
+ *
+ * `unpackLiveKit` is guarded, so a build that cannot write its SFU leaves
+ * voice off and the box starts. The pid write after the spawn was not — and
+ * it is the one that fails first on a full disk, because it is always a new
+ * file. Unguarded it threw out of `main()` and exited 1 with the SFU already
+ * running, so the child outlived the box and held :7880 for good.
+ */
+describe('when the pid file cannot be written', () => {
+  it('leaves voice off and takes the child with it, rather than exiting', async () => {
+    const dir = tempDir()
+    const { binPath, configPath } = unpackLiveKit(dir, listenerStub(), 'k', 's')
+    // A directory where the pid file wants to be: EISDIR, from the same line
+    // as ENOSPC.
+    mkdirSync(join(dir, 'livekit', 'livekit.pid'), { recursive: true })
+
+    const warnings: string[] = []
+    const outcome = await spawnLiveKit(
+      binPath,
+      configPath,
+      { key: 'k', secret: 's' },
+      { info: () => {}, warn: (m) => warnings.push(m) }
+    )
+    expect(outcome).toEqual({ sfu: null, failure: 'no-start' })
+    expect(warnings.join(' ')).toMatch(/could not record the SFU's pid/)
+
+    // And nothing is left holding the port. Proved by binding it.
+    await new Promise((r) => setTimeout(r, 300))
+    const probe = createServer()
+    const bound = await new Promise<boolean>((resolve) => {
+      probe.once('error', () => resolve(false))
+      probe.listen(LIVEKIT_PORT, '127.0.0.1', () => resolve(true))
+    })
+    await new Promise<void>((r) => probe.close(() => r()))
+    expect(bound, 'an orphaned SFU is still holding the port').toBe(true)
+  }, 20_000)
 })

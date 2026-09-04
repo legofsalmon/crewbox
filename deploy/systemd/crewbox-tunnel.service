@@ -3,14 +3,37 @@ Description=Cloudflare tunnel for Crewbox remote support access
 Documentation=https://github.com/legofsalmon/crewbox/blob/main/deploy/RUNBOOK.md
 # The tunnel is strictly optional: it may fail or be stopped at any time
 # without affecting site chat, so it wants Crewbox but Crewbox never wants it.
+# `Wants=` is the half that was missing — the comment described an intent the
+# unit did not express, so starting the tunnel on a cold box got a tunnel to
+# nothing until somebody noticed and started crewbox by hand.
 After=network-online.target crewbox.service
-Wants=network-online.target
+Wants=network-online.target crewbox.service
 
 [Service]
+# A dedicated system user rather than DynamicUser=yes.
+#
+# cloudflared's credentials file is written 0400 root by `cloudflared tunnel
+# create`, and a DynamicUser gets a fresh unprivileged uid on every start —
+# so the unit as shipped could not read the one file it exists to use, and
+# failed on its first start with a permissions error that reads like a
+# cloudflared bug. Create the user and hand it the directory:
+#
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin cloudflared
+#   sudo chown -R cloudflared:cloudflared /etc/cloudflared
+#
+# The hardening below is what DynamicUser was providing implicitly. Ambient
+# capabilities are not among it: the tunnel dials out, so it never needs a
+# privileged port.
+User=cloudflared
+Group=cloudflared
 ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
 Restart=always
 RestartSec=5
-DynamicUser=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
 
 [Install]
 WantedBy=multi-user.target

@@ -140,3 +140,71 @@ describe('writing it down', () => {
     expect(describeSticks([3])).toBe('1 × 3 m')
   })
 })
+
+describe('a span that is not a measurement', () => {
+  /**
+   * The estimate goes on a truss hire order, so a number in it has to be one
+   * somebody could have measured. Two ways it was not.
+   */
+  const placed = (points: Array<{ x: number; y: number }>): Fixture[] =>
+    points.map((p, i) => ({ ...emptyFixture(), id: `f${i}`, x: p.x, y: p.y }))
+
+  it('does not measure a stack of fixtures at one coordinate', () => {
+    // Most of an MVR whose author grouped by role rather than by hang. There
+    // is no direction to fit, so `fitPosition` returns its 12 m drawing
+    // default — reported as `coordinates`, that read as measured off the
+    // plan and became twelve metres of truss on a hire order.
+    const stacked = placed([
+      { x: 4, y: 6 },
+      { x: 4, y: 6 },
+      { x: 4, y: 6 },
+    ])
+    const estimate = estimateTruss(truss(), stacked, [])
+    expect(estimate?.basis).toBe('fixtures')
+    // Three fixtures at the default width and gap, not twelve metres.
+    expect(estimate!.needed).toBeCloseTo(3 * DEFAULT_FIXTURE_WIDTH + 2 * DEFAULT_GAP, 5)
+  })
+
+  it('does not measure a grouping spread across several trusses', () => {
+    // A "key light" grouping with members on three different bars fits a
+    // line through all of them, and that line measures a distance nothing
+    // spans.
+    const scattered = placed([
+      { x: 0, y: 0 },
+      { x: 6, y: 5 },
+      { x: 12, y: 0 },
+    ])
+    expect(estimateTruss(truss(), scattered, [])?.basis).toBe('fixtures')
+  })
+
+  it('still measures a real bar', () => {
+    // The case the coordinates basis exists for: fixtures in a line, within
+    // centimetres of it, which is what a truss looks like.
+    const bar = placed([
+      { x: 0, y: 6 },
+      { x: 3, y: 6.01 },
+      { x: 6, y: 6 },
+    ])
+    const estimate = estimateTruss(truss(), bar, [])
+    expect(estimate?.basis).toBe('coordinates')
+    expect(estimate!.needed).toBeGreaterThan(6)
+  })
+})
+
+describe('a length that is not a length', () => {
+  it('suggests nothing rather than throwing inside a render', () => {
+    // `needed` is arithmetic over widths that come out of a shared document
+    // anyone can write to. A NaN reached `new Array(target + 1)` as an
+    // "Invalid array length" thrown during render, taking the whole lighting
+    // pane down rather than one row of it.
+    expect(packSticks(Number.NaN)).toEqual([])
+    expect(packSticks(Number.POSITIVE_INFINITY)).toEqual([])
+    expect(packSticks(1e9)).toEqual([])
+  })
+
+  it('says nothing about a position it cannot size', () => {
+    const broken: FixtureType[] = [{ id: 't1', name: 'Broken', modes: [], width: Number.NaN }]
+    const one = [{ ...emptyFixture(), id: 'f0', typeId: 't1' }]
+    expect(estimateTruss(truss(), one, broken)).toBeNull()
+  })
+})

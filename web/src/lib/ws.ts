@@ -3,7 +3,15 @@ import { pushSample, rollingMedian } from './quality.ts'
 import { wsUrl } from './server.ts'
 
 const HEARTBEAT_MS = 10_000
-const DEAD_AFTER_MS = 25_000
+/**
+ * Unanswered pings before the socket is called dead.
+ *
+ * Three at a ten-second cadence is the same half-minute of silence the wall
+ * clock used to measure, and it tolerates a single lost pong — but it is
+ * counted in *pings sent*, not in seconds elapsed, which is the whole
+ * point. See `unansweredPings`.
+ */
+const DEAD_AFTER_PINGS = 3
 const MAX_BACKOFF_MS = 10_000
 /**
  * How long a socket may sit in CONNECTING before it is abandoned. A captive
@@ -41,7 +49,6 @@ export class WsClient {
   private reconnectTimer: number | null = null
   private heartbeatTimer: number | null = null
   private connectTimer: number | null = null
-  private lastActivity = 0
   private stopped = false
   private rttSamples: number[] = []
   /**
@@ -121,7 +128,6 @@ export class WsClient {
     this.handlers.onStatus('connecting')
     const ws = new WebSocket(wsUrl())
     this.ws = ws
-    this.lastActivity = Date.now()
     // Force a stuck-CONNECTING socket closed so onclose frees this.ws and a
     // normal backoff reconnect follows — without this, a black-hole network
     // pins the client at "connecting" and no retry can recover.
@@ -139,7 +145,8 @@ export class WsClient {
       this.startHeartbeat()
     }
     ws.onmessage = (event) => {
-      this.lastActivity = Date.now()
+      // Anything at all from the box proves the socket is carrying traffic.
+      this.unansweredPings = 0
       let msg: ServerMessage
       try {
         msg = JSON.parse(event.data as string) as ServerMessage
@@ -199,14 +206,33 @@ export class WsClient {
     }, base * jitter)
   }
 
+  /**
+   * How many pings have gone out since anything came back.
+   *
+   * Deadness is measured per ping, not per wall-clock second. It used to be
+   * "nothing heard for 25 s" — which is a statement about the *timer*, and
+   * a background tab's timers are throttled to a minute or suspended
+   * outright. So a phone in a pocket woke up, found the clock had moved,
+   * and closed a socket that was perfectly alive: a reconnect and a fresh
+   * welcome every time the screen came on, and a longer gap before the next
+   * alert, on exactly the device that most needed neither.
+   *
+   * Pings that went unanswered are real evidence however late the ticks
+   * were, because a pong would have arrived whenever it arrived. Throttling
+   * now costs checks, not sockets.
+   */
+  private unansweredPings = 0
+
   private startHeartbeat(): void {
+    this.unansweredPings = 0
     this.heartbeatTimer = window.setInterval(() => {
       if (!this.connected) return
-      if (Date.now() - this.lastActivity > DEAD_AFTER_MS) {
-        // Half-open socket: nothing heard for too long, force a reconnect.
+      if (this.unansweredPings >= DEAD_AFTER_PINGS) {
+        // Half-open socket: three pings out, nothing back.
         this.ws?.close()
         return
       }
+      this.unansweredPings++
       this.send({ type: 'ping', t: Date.now() })
     }, HEARTBEAT_MS)
   }

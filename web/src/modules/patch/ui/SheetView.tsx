@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as Y from 'yjs'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
-import { registerShortcut } from '../../../shell/keys.ts'
+import { documentUndoTarget, registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useToasts } from './toastContext.ts'
-import { useSheet } from '../store/hooks'
+import { useDocMissing, useSheet } from '../store/hooks'
 import { useSheetPeers, useSheetRemotePeers, useSyncStatus } from '../store/useSync'
 import { useUndoRedo } from '../store/useUndo'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useTimetable } from '../../../shell/timetable/store.ts'
-import { patchSubBoxDisplay, setMetaField } from '../model/sheetDoc'
+import { setMetaField } from '../model/sheetDoc'
 import { sheetActs } from '../model/lineup'
-import { PATCH_FIELDS, patchKey, type SheetAct, type SheetSnapshot } from '../model/types'
+import { findMatches } from '../model/find'
+import type { SheetSnapshot } from '../model/types'
 import Toolbar from './Toolbar'
 import PatchGrid from './PatchGrid'
 import SubBoxManager from './SubBoxManager'
@@ -19,32 +20,6 @@ import StagePatch from './StagePatch'
 import LineupManager from './LineupManager'
 import VersionManager from './VersionManager'
 import styles from './SheetView.module.scss'
-
-/** All cells (and channel labels) whose display value contains the query. */
-const findMatches = (snapshot: SheetSnapshot, acts: SheetAct[], query: string) => {
-  const cells = new Set<string>()
-  const channels = new Set<string>()
-  const q = query.trim().toLowerCase()
-  if (!q) return { cells, channels, order: [] as string[] }
-  const order: string[] = []
-  for (const channel of snapshot.channels) {
-    if (channel.label.toLowerCase().includes(q)) channels.add(channel.id)
-    for (const act of acts) {
-      const entry = snapshot.patches[patchKey(act.id, channel.id)]
-      if (!entry) continue
-      for (const field of PATCH_FIELDS) {
-        const display =
-          field === 'subBox' ? patchSubBoxDisplay(entry, snapshot.subBoxes) : entry[field]
-        if (display && display.toLowerCase().includes(q)) {
-          const cellId = `${act.id}:${channel.id}:${field}`
-          cells.add(cellId)
-          order.push(cellId)
-        }
-      }
-    }
-  }
-  return { cells, channels, order }
-}
 
 function PresenceAvatars({ sheetId }: { sheetId: string }) {
   const peers = useSheetRemotePeers(sheetId)
@@ -157,6 +132,17 @@ function ShareMenu({
 
 export default function SheetView({ sheetId, onClose }: { sheetId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = useSheet(sheetId)
+  /**
+   * A link to a sheet that is not there.
+   *
+   * `useSheet` always hands back a Y.Doc, so a deleted sheet, or a link
+   * pasted from a different box, minted an empty one and sat on "Loading
+   * sheet…" for the rest of the session — with the sheet's own id in the
+   * URL, which reads as the box having lost it.
+   */
+  const missing = useDocMissing(doc, loaded)
+  /** This view's own subtree, for scoping the undo shortcut to it. */
+  const rootRef = useRef<HTMLDivElement>(null)
   const { canUndo, canRedo, undo, redo } = useUndoRedo(undoManager)
   // The acts are the event's, not the sheet's: this stage's slots out of the
   // running order, merged with the spec and notes the sheet keeps about them.
@@ -195,18 +181,14 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   }
 
   // Cmd/Ctrl+Z undoes the last committed edit; Shift adds redo (Ctrl+Y too).
-  // A field with an in-progress draft (data-dirty) keeps native text undo.
   // Cmd/Ctrl+F focuses the find box.
   // Registered through the shell registry, active only while this view is
   // mounted (i.e. on patch routes) — chat keeps its own shortcuts elsewhere.
   useEffect(() => {
-    const undoableTarget = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      return !(
-        (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
-        (target.dataset.dirty || target.dataset.search)
-      )
-    }
+    // Scoped to this view: Cmd+Z in the chat composer, the search overlay or
+    // the admin panel is that field's text undo and never the sheet's. See
+    // `documentUndoTarget`.
+    const undoableTarget = documentUndoTarget(() => rootRef.current)
     const unregister = [
       registerShortcut({
         key: 'f',
@@ -230,12 +212,19 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
   // come from it: rendering a beat early would draw the grid with no acts,
   // flash "nothing is on this sheet", and then mount every cell a second
   // time under whatever finger was already typing into the first one.
+  if (missing) {
+    return (
+      <div className={styles.loading}>
+        Sheet not found. It may have been deleted, or this link may be from a different box.
+      </div>
+    )
+  }
   if (!doc || !snapshot || !loaded || !timetableLoaded) {
     return <div className={styles.loading}>Loading sheet…</div>
   }
 
   return (
-    <div className={styles.app}>
+    <div className={styles.app} ref={rootRef}>
       {/*
         Nav row, then tool row — the same two-row shape as a lighting plot,
         and for the same reason. This used to spend the whole second row on
@@ -294,6 +283,7 @@ export default function SheetView({ sheetId, onClose }: { sheetId: string; onClo
           onOpenLineup={() => setShowLineup(true)}
           matchedCells={matches?.cells}
           matchedChannels={matches?.channels}
+          matchedInputs={matches?.inputs}
         />
       </div>
 

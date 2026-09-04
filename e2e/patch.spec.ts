@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import {
   cell,
   commitCell,
@@ -6,6 +6,7 @@ import {
   newDevice,
   openPatch,
   openSheetByName,
+  test,
   uniqueName,
 } from './helpers'
 
@@ -19,11 +20,76 @@ test('sheet edits persist across reload and the URL deep-links the sheet', async
   await commitCell(page, 'Act 1', '2', 'Description', 'Snare top')
   await expect(page).toHaveURL(/\/m\/patch\/sheet\//)
 
+  /**
+   * Prove the last edit left this device before reloading it.
+   *
+   * `commitCell` returns once the keypress has been handled. The Yjs update
+   * reaches IndexedDB and the relay after that, asynchronously, and a reload
+   * inside that window takes the edit with it — which is a race in this
+   * test, not in the product: nobody reloads a page in the millisecond after
+   * typing. It has failed CI twice, both times on the *last* edit before the
+   * reload, with the one before it intact.
+   *
+   * A second device seeing the value is the only durability signal the app
+   * offers, and it is the right one: it proves the update is off this device
+   * and in the box. The witness is closed again before the reload, so the
+   * relay room dies with it and the reloaded page still has to restore from
+   * its own IndexedDB — which is what this test is about.
+   */
+  const witness = await newDevice(browser)
+  await openPatch(witness)
+  await openSheetByName(witness, name)
+  await expect(cell(witness, 'Act 1', '2', 'Description')).toHaveValue('Snare top')
+  await witness.context().close()
+
   await page.reload()
   // The route restores the same sheet without any navigation.
   await expect(page.locator('table')).toBeVisible()
   await expect(cell(page, 'Act 1', '1', 'Input')).toHaveValue('Kick')
   await expect(cell(page, 'Act 1', '2', 'Description')).toHaveValue('Snare top')
+})
+
+/**
+ * A new sheet used to book a band.
+ *
+ * It seeded an "Act 1" onto the event's running order, which is not the
+ * sheet's document — it is the whole festival's, read by the schedule
+ * module, by the countdown in every crew member's sidebar and by the
+ * production desk over the control API. So making a patch sheet put a band
+ * nobody had booked on a stage nobody had booked, in front of everyone;
+ * renaming the stage afterwards dragged the placeholder onto a real one; and
+ * deleting the sheet left it there for good, because the act was never the
+ * sheet's to remove.
+ */
+test('a new sheet books nothing on the running order', async ({ browser }) => {
+  const page = await newDevice(browser)
+  await openPatch(page)
+  const name = uniqueName('Empty Fest')
+
+  // Deliberately not the `createSheet` helper: that adds an act, which is
+  // the thing under test.
+  await page.getByRole('button', { name: '+ New Sheet' }).click()
+  await page.locator('#new-sheet-name').fill(name)
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.locator('table')).toBeVisible()
+
+  // The grid says so, and names both ways out.
+  await expect(page.getByText(`Nothing is on ${name} yet`)).toBeVisible()
+
+  // And the running order agrees, which is the half that used to be wrong.
+  await page.getByRole('button', { name: 'Lineup', exact: true }).click()
+  await expect(page.getByText(`Nothing on ${name}`)).toBeVisible()
+  await expect(page.getByLabel('Act name')).toHaveCount(0)
+
+  // Adding one is one click, and then the grid has its column.
+  await page.getByRole('button', { name: '+ Add Act' }).click()
+  const field = page.getByLabel('Act name')
+  await field.fill('The Harbour Lights')
+  await field.blur()
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(cell(page, 'The Harbour Lights', '1', 'Input')).toBeVisible()
+
+  await page.context().close()
 })
 
 test('two devices sync a sheet through the box, with crew identity presence', async ({
@@ -257,6 +323,13 @@ test('the changeover between two acts comes across, and is checked', async ({ br
   // sheets, plots and log entries. It sat on the default timeout and fell
   // off it three times across two branches; the app is doing real work, so
   // the test gets the room rather than the app losing the feature.
+  //
+  // Half of that was not the app: every spec before this one left its
+  // browser contexts open, so by here Chromium was running thirty idle
+  // pages with live sockets. That is fixed (see `newDevice`), and this spec
+  // now takes about five seconds on its own. The margin stays until
+  // somebody has watched a few full runs — a timeout tightened on one
+  // measurement is how it came to be raised in the first place.
   await expect(page.locator('table')).toBeVisible({ timeout: 20_000 })
   await page.getByRole('button', { name: 'Lineup' }).click()
 
@@ -273,4 +346,54 @@ test('the changeover between two acts comes across, and is checked', async ({ br
   await changeovers.nth(1).fill('30')
   await changeovers.nth(1).blur()
   await expect(page.getByText('the set times leave 1 hr')).toBeVisible()
+})
+
+/**
+ * Two things the sheet's own chrome got wrong.
+ *
+ * Find never searched the house input column — the sheet's spine, what is on
+ * channel 12 all day whoever is playing. It is the only column with the same
+ * value for every act, so the miss was the least visible and the most
+ * annoying: the search looked like it worked.
+ *
+ * And Ctrl+Z in a dialog reverted the sheet behind the modal. The shortcut
+ * claimed every key press except a half-typed grid cell and the find box, so
+ * taking back a word in an act's name in the Lineup undid the last committed
+ * edit to the grid instead — silently, because the modal covers it.
+ */
+test('find searches the input column, and Ctrl+Z in a dialog stays in the dialog', async ({
+  browser,
+}) => {
+  const page = await newDevice(browser)
+  await openPatch(page)
+  await createSheet(page, uniqueName('Find Fest'))
+
+  // The house input on channel 1, and a patch cell that does not match it.
+  const houseInput = page.getByLabel('Input on channel 1', { exact: true })
+  await houseInput.fill('KICK IN')
+  await houseInput.blur()
+  await commitCell(page, 'Act 1', '2', 'Mic/DI', 'SM57')
+
+  const find = page.getByLabel('Find in sheet')
+  await find.fill('KICK IN')
+  // One match, and it is the spine — not a patch cell.
+  await expect(page.getByText('1 match', { exact: true })).toBeVisible()
+  await expect(houseInput).toHaveClass(/matchCell/)
+  await find.fill('')
+
+  // Now the undo guard. Commit something to the grid to have an undo target.
+  await commitCell(page, 'Act 1', '1', 'Description', 'Kick drum')
+  await expect(cell(page, 'Act 1', '1', 'Description')).toHaveValue('Kick drum')
+
+  await page.getByRole('button', { name: 'Lineup', exact: true }).click()
+  const name = page.getByLabel('Act name')
+  await name.click()
+  await name.type(' and Friends')
+  await page.keyboard.press('ControlOrMeta+z')
+  await page.getByRole('button', { name: 'Close' }).click()
+
+  // The grid is exactly as it was: the undo went to the text, not the sheet.
+  await expect(cell(page, 'Act 1', '1', 'Description')).toHaveValue('Kick drum')
+
+  await page.context().close()
 })

@@ -1,3 +1,4 @@
+import type { networkInterfaces } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { openDb } from '../src/db.ts'
 import { MetricsStore } from '../src/audit/metrics.ts'
@@ -68,8 +69,14 @@ class FakeSocket {
     return this
   }
 
-  bind(cb?: () => void) {
-    cb?.()
+  boundTo = ''
+
+  bind(a?: number | (() => void), b?: string, c?: () => void) {
+    if (typeof a === 'function') a()
+    else {
+      this.boundTo = b ?? ''
+      c?.()
+    }
     return this
   }
 
@@ -107,6 +114,12 @@ function fakeEnv(over: Partial<Probes> = {}): Probes {
   }
 }
 
+/** A box with a crew adapter and a lighting one, as every real one has. */
+const fakeInterfaces = (() => ({
+  wlan0: [{ family: 'IPv4', address: '192.168.200.1', netmask: '255.255.255.0' }],
+  eth1: [{ family: 'IPv4', address: '2.0.0.5', netmask: '255.0.0.0' }],
+})) as unknown as typeof networkInterfaces
+
 function harness(deps: Partial<ProberDeps> = {}, env: Partial<Probes> = {}, failSend = false) {
   FakeSocket.instances = []
   const metrics = new MetricsStore(openDb(':memory:'))
@@ -116,6 +129,7 @@ function harness(deps: Partial<ProberDeps> = {}, env: Partial<Probes> = {}, fail
     env: fakeEnv(env),
     now: () => 1_700_000_000_000,
     wait: async () => {},
+    interfaces: fakeInterfaces,
   }
   const prober = new Prober(
     io,
@@ -152,15 +166,38 @@ describe('Prober', () => {
     const sockets = FakeSocket.instances
     expect(sockets).toHaveLength(1)
     expect(sockets[0]!.sent).toHaveLength(1)
-    expect(sockets[0]!.sent[0]!.address).toBe('255.255.255.255')
+    // The lighting segment's own broadcast, out of the lighting address —
+    // not 255.255.255.255 down whichever route the kernel liked, which on
+    // this box is the crew Wi-Fi.
+    expect(sockets[0]!.sent[0]!.address).toBe('2.255.255.255')
     expect(sockets[0]!.sent[0]!.port).toBe(ARTNET_PORT)
     expect(sockets[0]!.sent[0]!.packet.equals(buildArtPoll())).toBe(true)
     expect(sockets[0]!.broadcast).toBe(true)
-    expect(sockets[0]!.multicastInterface).toBe('2.0.0.5')
+    expect(sockets[0]!.boundTo).toBe('2.0.0.5')
     expect(sockets[0]!.closed).toBe(true)
     const r = result(run, 'artnet-inventory')
     expect(r.state).toBe('ok')
     expect(r.detail).toContain('answered only when asked')
+  })
+
+  it('names the segment it broadcast to, so a capture can be checked against it', async () => {
+    const { prober } = harness({ dmxIface: () => '2.0.0.5' })
+    const run = await prober.run('Colm')
+    expect(result(run, 'artnet-inventory').sent).toContain('2.255.255.255')
+    expect(result(run, 'artnet-inventory').sent).toContain('from 2.0.0.5')
+  })
+
+  it('sends nothing at all when no adapter here holds the lighting address', async () => {
+    // A stale CREWBOX_DMX_IFACE, or a card that never came up. There is no
+    // careful way to broadcast from an address the box does not have, so it
+    // does not: the alternative is a discovery packet on the crew network.
+    const { prober } = harness({ dmxIface: () => '10.9.9.9' })
+    const run = await prober.run('Colm')
+    expect(FakeSocket.instances).toHaveLength(0)
+    const r = result(run, 'artnet-inventory')
+    expect(r.state).toBe('skipped')
+    expect(r.sent).toBe('nothing')
+    expect(r.detail).toContain('10.9.9.9')
   })
 
   it('sends the mDNS query to the group only when the watchers listen', async () => {

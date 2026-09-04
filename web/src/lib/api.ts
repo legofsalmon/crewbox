@@ -35,6 +35,15 @@ export interface AdminNetwork {
   saved: { crewIface: string; dmxMode: string; dmxIface: string; dmxUniverses: string }
   /** Fields pinned by an environment variable; saving them here would lose. */
   fromEnv: { iface: boolean; dmxMode: boolean; dmxIface: boolean; dmxUniverses: boolean }
+  /**
+   * What the next start will actually run with — the environment where it
+   * has set something, `saved` otherwise.
+   *
+   * Needed because the two disagree in the case that matters: with
+   * CREWBOX_DMX pinning the mode and nothing saved, `saved.dmxMode` is empty
+   * while the box is very much listening. Optional so an older box parses.
+   */
+  effective?: { iface: string; dmxMode: string; dmxIface: string; dmxUniverses: string }
   /** Where join links point right now. */
   advertised: string
   /** Saved settings differ from what this process booted with. */

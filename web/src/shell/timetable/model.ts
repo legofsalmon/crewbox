@@ -85,7 +85,9 @@ export const addAct = (doc: Y.Doc, fields: Partial<Omit<Act, 'id'>> = {}): strin
  */
 const matchingAct = (
   acts: Y.Array<Y.Map<unknown>>,
-  fields: Partial<Omit<Act, 'id'>>
+  fields: Partial<Omit<Act, 'id'>>,
+  /** Acts the caller has already reconciled with. See `upsertAct`. */
+  exclude?: ReadonlySet<string>
 ): Y.Map<unknown> | null => {
   const name = (fields.name ?? '').trim().toLowerCase()
   if (!name) return null
@@ -94,6 +96,7 @@ const matchingAct = (
   return (
     acts.toArray().find(
       (map) =>
+        !exclude?.has(String(map.get('id') ?? '')) &&
         String(map.get('name') ?? '')
           .trim()
           .toLowerCase() === name &&
@@ -115,14 +118,42 @@ const matchingAct = (
  *
  * Only the fields passed are written, so times somebody fixed by hand
  * survive a file that says nothing about them.
+ *
+ * `exclude` is for the caller working through one file: an act it has already
+ * reconciled with is not a candidate again. Without it, a running order with
+ * two slots of the same name on a stage — "Changeover", "TBC", "DJ set", a
+ * support band playing twice — collapsed into a single act, and on a patch
+ * sheet that means one column where there were two, with the second act's
+ * patch written straight over the first's.
  */
-export const upsertAct = (doc: Y.Doc, fields: Partial<Omit<Act, 'id'>>): string => {
+export const upsertAct = (
+  doc: Y.Doc,
+  fields: Partial<Omit<Act, 'id'>>,
+  exclude?: ReadonlySet<string>
+): string => {
   const { acts } = getTimetableRoots(doc)
-  const existing = matchingAct(acts, fields)
+  const existing = matchingAct(acts, fields, exclude)
   if (!existing) return addAct(doc, fields)
   const id = existing.get('id') as string
   doc.transact(() => {
-    for (const [key, value] of Object.entries(fields)) existing.set(key, value)
+    for (const [key, value] of Object.entries(fields)) {
+      /**
+       * The identity keeps the spelling it already had.
+       *
+       * The match is case-insensitive — "MAIN STAGE" and "Main Stage" are
+       * one stage to a crew — but writing the file's spelling back renamed
+       * the stage for everybody. And a patch sheet finds its columns by
+       * comparing its own `meta.stage` to the act's *exactly*, so an import
+       * typed in capitals silently emptied the grid of every sheet already
+       * pointing at that stage. Nothing said why; the acts were still
+       * there, under a name the sheet no longer recognised.
+       *
+       * `date` matched exactly, so skipping it changes nothing; `name` and
+       * `stage` are the two that can differ by case.
+       */
+      if (key === 'name' || key === 'stage' || key === 'date') continue
+      existing.set(key, value)
+    }
   }, LOCAL_ORIGIN)
   return id
 }

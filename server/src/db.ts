@@ -1,6 +1,16 @@
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+
+/**
+ * How a session token is stored: SHA-256 of the bearer string, as hex.
+ *
+ * Unsalted on purpose. A token is 256 bits of `randomBytes`, so there is no
+ * dictionary to run against it, and the lookup has to be one indexed
+ * equality on every authenticated request.
+ */
+export const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex')
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -12,6 +22,9 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
+  /* Renamed to token_sha, and hashed, by migration v10. SCHEMA is the
+     original v0 shape and every box — fresh or in the field — walks the
+     migrations from its own user_version, so this stays as it was. */
   token      TEXT PRIMARY KEY,
   user_id    TEXT NOT NULL REFERENCES users(id),
   created_at INTEGER NOT NULL,
@@ -57,7 +70,15 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
  * Numbered migrations applied on top of the base schema, tracked with
  * PRAGMA user_version. Append only — never edit an existing entry.
  */
-const MIGRATIONS: string[] = [
+/**
+ * A migration: SQL, or a function for the ones SQL cannot express.
+ *
+ * SQLite has no hash function, so v10 has to compute one in JS. Each runs
+ * inside its own transaction.
+ */
+type Migration = string | ((db: DatabaseSync) => void)
+
+const MIGRATIONS: Migration[] = [
   // v1: files + message attachments + full-text search
   `
   CREATE TABLE IF NOT EXISTS files (
@@ -164,9 +185,12 @@ const MIGRATIONS: string[] = [
   // a rename or a departure. Both are cleared together when somebody deletes
   // their account, which keeps the record and drops the person.
   //
-  // Nothing here is ever UPDATEd by the app: a correction is a new row whose
-  // `amends` names the row it corrects. `at` and `logged_at` are separate
-  // because the show does not wait for anyone to get their phone out.
+  // No entry's content is ever UPDATEd: a correction is a new row whose
+  // `amends` names the row it corrects. The only write after INSERT is the
+  // one above — clearing author_id and author_name when somebody deletes
+  // their account (see Store.deleteUser) — which changes who filed an entry
+  // and never what it says. `at` and `logged_at` are separate because the
+  // show does not wait for anyone to get their phone out.
   `
   CREATE TABLE IF NOT EXISTS incidents (
     id            TEXT PRIMARY KEY,
@@ -188,7 +212,124 @@ const MIGRATIONS: string[] = [
     ON incidents(client_msg_id) WHERE client_msg_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_incidents_at ON incidents(at);
   `,
+  // v9: a channel's sequence numbers become a high-water mark.
+  //
+  // They were `MAX(seq) + 1`, which reuses a number the moment the newest
+  // message is deleted — and deleting a message someone shared by mistake is
+  // a supported thing to do. A phone holding seq 42 in its cache then asks
+  // for everything after 42; the replacement message *is* 42, so the server
+  // has nothing after it, and that message never arrives on that phone
+  // again. Silent, permanent, and invisible from the box.
+  //
+  // Backfilled from what each channel already has, so an existing box
+  // carries on from where it was rather than starting again at 1.
+  `
+  ALTER TABLE channels ADD COLUMN last_seq INTEGER NOT NULL DEFAULT 0;
+  UPDATE channels SET last_seq = (
+    SELECT COALESCE(MAX(seq), 0) FROM messages WHERE messages.channel_id = channels.id
+  );
+  `,
+  // v10: session tokens are stored hashed.
+  //
+  // They were the bearer credential itself, in plain text, in the row. So
+  // every backup on a USB stick, every `VACUUM INTO` snapshot the updater
+  // takes and every copy of the database anybody has ever made carried a
+  // live login for every crew member on the box — usable from any phone on
+  // the network, as them, until the session's TTL ran out.
+  //
+  // A token is 256 bits of `randomBytes`, so an unsalted SHA-256 is the
+  // right shape: there is nothing to guess, and the lookup has to be one
+  // indexed equality on every authenticated request.
+  //
+  // A function rather than SQL because SQLite has no sha256 — and the
+  // alternative, dropping the table, would sign out every phone on site at
+  // the moment an admin pressed Install. That is a worse thing to do than
+  // the outage the update already costs.
+  (db) => {
+    db.exec(`
+      CREATE TABLE sessions_hashed (
+        token_sha  TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id),
+        created_at INTEGER NOT NULL,
+        last_seen  INTEGER NOT NULL
+      );
+    `)
+    const rows = db
+      .prepare('SELECT token, user_id, created_at, last_seen FROM sessions')
+      .all() as unknown as {
+      token: string
+      user_id: string
+      created_at: number
+      last_seen: number
+    }[]
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO sessions_hashed (token_sha, user_id, created_at, last_seen)
+       VALUES (?, ?, ?, ?)`
+    )
+    for (const row of rows) {
+      insert.run(hashToken(row.token), row.user_id, row.created_at, row.last_seen)
+    }
+    db.exec('DROP TABLE sessions')
+    db.exec('ALTER TABLE sessions_hashed RENAME TO sessions')
+  },
+  // v11: rebuild the search index, because v3 only stopped the bleeding.
+  //
+  // v3 added the trigger that removes a deleted message from `messages_fts`.
+  // Nothing repaired what its absence had already done, and every box that
+  // was in the field before it carries the damage: the index is an
+  // external-content FTS5 table keyed on rowid, so a body left behind by a
+  // delete stays matchable, and SQLite answers the match by reading whatever
+  // row holds that rowid now. A search for a word returns a message that
+  // does not contain it — in the one place a crew member goes to find where
+  // they were told to be.
+  //
+  // 'rebuild' is the only thing that fixes rows already orphaned: it throws
+  // the index away and regenerates it from `messages`. Proportional to the
+  // messages on the box, so a festival's worth is a second or two, once, on
+  // the update that installs this.
+  //
+  // Guarded rather than plain SQL, because a migration that throws stops the
+  // box from starting. Every real box has this table — v1 creates it — but a
+  // database rebuilt by hand from a `.dump`, or one restored from a partial
+  // copy, might not, and "the search index is missing" is not a reason to
+  // leave a festival without its comms. It comes back on the next start.
+  (db) => {
+    const present = db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages_fts'`)
+      .get()
+    if (!present) return
+    db.exec(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild');`)
+  },
 ]
+
+/**
+ * Walk a database up from its own `user_version` to the current schema.
+ *
+ * Separate from `openDb` so a test can hand it a database built the way an
+ * older box's was and check what happens to the rows in it — which for v10,
+ * where somebody's session either survives or does not, is the only thing
+ * worth asserting.
+ */
+export function runMigrations(db: DatabaseSync): void {
+  const { user_version: version } = db.prepare('PRAGMA user_version').get() as unknown as {
+    user_version: number
+  }
+  let migrated = false
+  for (let v = version; v < MIGRATIONS.length; v++) {
+    const migration = MIGRATIONS[v]!
+    db.exec('BEGIN')
+    if (typeof migration === 'string') db.exec(migration)
+    else migration(db)
+    db.exec(`PRAGMA user_version = ${v + 1}`)
+    db.exec('COMMIT')
+    migrated = true
+  }
+  // Once, after any upgrade, and outside the transaction because VACUUM
+  // cannot run inside one. It rewrites the file, which is the only way the
+  // pages a migration freed stop carrying what used to be in them — v10
+  // exists precisely because one of those things was a live credential.
+  if (migrated) db.exec('VACUUM')
+}
 
 export function openDb(path: string): DatabaseSync {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
@@ -200,15 +341,7 @@ export function openDb(path: string): DatabaseSync {
     PRAGMA busy_timeout = 5000;
   `)
   db.exec(SCHEMA)
-  const { user_version: version } = db.prepare('PRAGMA user_version').get() as unknown as {
-    user_version: number
-  }
-  for (let v = version; v < MIGRATIONS.length; v++) {
-    db.exec('BEGIN')
-    db.exec(MIGRATIONS[v]!)
-    db.exec(`PRAGMA user_version = ${v + 1}`)
-    db.exec('COMMIT')
-  }
+  runMigrations(db)
   return db
 }
 

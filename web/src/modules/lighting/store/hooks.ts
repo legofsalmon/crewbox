@@ -7,7 +7,7 @@ import { snapshotPlot } from '../model/plotDoc'
 import type { PlotSnapshot } from '../model/types'
 import { plotRoom, plotStore } from './docManager.ts'
 
-export { useSyncStatus } from '../../../lib/docs/hooks.ts'
+export { useDocMissing, useSyncStatus } from '../../../lib/docs/hooks.ts'
 export type { RemotePeer, SyncStatus } from '../../../lib/docs/sync.ts'
 
 export interface PlotIndexEntry {

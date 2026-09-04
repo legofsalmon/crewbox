@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createServer, type Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
@@ -31,14 +32,34 @@ let sfuPort: number
 /** Every path the stub was asked for, so a mangled URL is visible. */
 let sfuPaths: string[]
 let sfuSockets: WebSocket[]
+let sfuHttp: Server
+/** What the stub was asked over HTTP, so a drained body is visible. */
+let sfuBodies: { method: string; path: string; body: string }[]
 let clients: WebSocket[]
 
 const openStub = async (): Promise<void> => {
   sfuPaths = []
   sfuSockets = []
-  sfu = new WebSocketServer({ port: 0 })
-  await new Promise<void>((resolve) => sfu.once('listening', resolve))
-  const address = sfu.address()
+  sfuBodies = []
+  // A real HTTP server under the WebSocket one: the SDK's `/rtc/validate`
+  // and its POSTs go over HTTP through the same proxy, and a bare
+  // WebSocketServer answers none of them.
+  sfuHttp = createServer((req, res) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => chunks.push(chunk))
+    req.on('end', () => {
+      sfuBodies.push({
+        method: req.method ?? '',
+        path: req.url ?? '',
+        body: Buffer.concat(chunks).toString(),
+      })
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('success')
+    })
+  })
+  sfu = new WebSocketServer({ server: sfuHttp })
+  await new Promise<void>((resolve) => sfuHttp.listen(0, '127.0.0.1', resolve))
+  const address = sfuHttp.address()
   sfuPort = typeof address === 'object' && address ? address.port : 0
   sfu.on('connection', (ws, req) => {
     sfuPaths.push(req.url ?? '')
@@ -76,6 +97,7 @@ afterEach(async () => {
   for (const ws of clients) ws.close()
   await app.close()
   await new Promise<void>((resolve) => sfu.close(() => resolve()))
+  await new Promise<void>((resolve) => sfuHttp.close(() => resolve()))
   db.close()
   rmSync(filesDir, { recursive: true, force: true })
 })
@@ -199,5 +221,51 @@ describe('when this box runs no SFU', () => {
     })
     expect(outcome).toBe('refused')
     await bare.close()
+  })
+})
+
+/**
+ * The HTTP half of the same proxy.
+ *
+ * The SDK talks to `/rtc/validate` over HTTP before it opens a socket, and
+ * publishes over HTTP after. Both went through a route Fastify had already
+ * parsed the body of, so a JSON POST reached `req.pipe(target)` with nothing
+ * left to send and hung upstream until it timed out — and anything Fastify
+ * had no parser for was answered 415 before the proxy saw it.
+ */
+describe('proxying the SFU over HTTP', () => {
+  const proxied = (path: string, init?: RequestInit) =>
+    fetch(`http://127.0.0.1:${appPort()}${path}`, init)
+
+  it('carries a GET through and hands back what the SFU said', async () => {
+    const res = await proxied('/livekit/rtc/validate?access_token=abc123')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('success')
+    expect(sfuBodies.at(-1)?.path).toBe('/rtc/validate?access_token=abc123')
+  })
+
+  it('carries a JSON POST through with its body intact', async () => {
+    const res = await proxied('/livekit/twirp/livekit.RoomService/ListRooms', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ names: ['general'] }),
+    })
+    expect(res.status).toBe(200)
+    const seen = sfuBodies.at(-1)!
+    expect(seen.method).toBe('POST')
+    // The body arrived — it used to be drained by Fastify before the proxy
+    // ever saw the request, and the upstream call hung with nothing to read.
+    expect(JSON.parse(seen.body)).toEqual({ names: ['general'] })
+  })
+
+  it('carries a content type Fastify has no parser for', async () => {
+    const res = await proxied('/livekit/twirp/livekit.RoomService/ListRooms', {
+      method: 'POST',
+      headers: { 'content-type': 'application/protobuf' },
+      body: 'not-json-at-all',
+    })
+    // 415 was the old answer, decided before the proxy was reached.
+    expect(res.status).toBe(200)
+    expect(sfuBodies.at(-1)?.body).toBe('not-json-at-all')
   })
 })

@@ -22,6 +22,8 @@ import { DMX_UNIVERSE_SIZE, type FixtureMode, type FixtureType } from './types'
  */
 
 export interface MvrFixture {
+  /** The scene object's own uuid — what makes a re-import an update. */
+  uuid: string
   name: string
   /** Layer or group the fixture sat in — becomes a rigging position. */
   layer: string
@@ -85,6 +87,23 @@ export const parseMvrMatrix = (text: string): { x: number; y: number; z: number 
 }
 
 /**
+ * The largest entry worth inflating.
+ *
+ * Generous — a big rig's scene description runs to a few megabytes, and a
+ * GDTF profile with its models can be tens — so the only thing this refuses
+ * is an entry whose declared size is not a real file's. A zip's header is
+ * whatever wrote it, and a crew member opening a file somebody emailed them
+ * should not be able to be handed a gigabyte to inflate on a phone.
+ */
+const MAX_ENTRY_BYTES = 256 * 1024 * 1024
+
+/** An unzip filter: this name, and a size that could be a real file. */
+const wantedEntry =
+  (name: RegExp) =>
+  (file: { name: string; originalSize: number }): boolean =>
+    name.test(file.name) && file.originalSize <= MAX_ENTRY_BYTES
+
+/**
  * Build a crewbox fixture type from an embedded .gdtf archive.
  *
  * The channel maps come back attached to every mode; `parseMvr` strips them
@@ -93,7 +112,14 @@ export const parseMvrMatrix = (text: string): { x: number; y: number; z: number 
  * document that syncs to every phone on site.
  */
 const typeFromGdtf = (id: string, gdtfBytes: Uint8Array): FixtureType | null => {
-  const inner = unzipSync(gdtfBytes)
+  // The one file in here that is wanted.
+  //
+  // The outer archive is filtered for exactly this reason and the inner one
+  // was not, so every embedded profile's 3D models, gobo wheel images and
+  // thumbnails were inflated in full to reach one XML — several megabytes
+  // per fixture type, on the phone somebody is holding at the top of a
+  // ladder. Nothing draws any of it.
+  const inner = unzipSync(gdtfBytes, { filter: wantedEntry(/description\.xml$/i) })
   const descriptionBytes = findEntry(inner, (name) => name.endsWith('description.xml'))
   if (!descriptionBytes) return null
 
@@ -131,6 +157,37 @@ const splitAddress = (absolute: number): { universe: number; address: number } =
 })
 
 /**
+ * What an `<Address>` says, in the two ways exporters write it.
+ *
+ * The spec's own form is one absolute number counting from universe 1
+ * channel 1, so 513 is universe 2 channel 1. But plenty of exporters write
+ * the desk's notation instead — `2.001`, or `2.1`, meaning universe 2,
+ * address 1 — and that used to go through `Number()` into `splitAddress`
+ * unremarked: `2.001` became universe 1, address 2.001. A fractional
+ * address is not a number the rest of the module has any idea what to do
+ * with, so the fixture landed a channel out, overlap detection compared it
+ * against nothing, and the rig sheet read as clean.
+ *
+ * The digits after the point are the address as written — `.001` is 1 and
+ * `.257` is 257 — which is how a desk prints them and how the person who
+ * exported the file reads them back.
+ */
+export const parseMvrAddress = (text: string): { universe: number; address: number } | null => {
+  const trimmed = text.trim()
+  const dotted = /^(\d+)\.(\d+)$/.exec(trimmed)
+  if (dotted) {
+    const universe = Number(dotted[1])
+    const address = Number(dotted[2])
+    if (universe < 1 || address < 1 || address > DMX_UNIVERSE_SIZE) return null
+    return { universe, address }
+  }
+  if (!/^\d+$/.test(trimmed)) return null
+  const absolute = Number(trimmed)
+  if (absolute < 1) return null
+  return splitAddress(absolute)
+}
+
+/**
  * Walk a ChildList, collecting fixtures. Groups nest arbitrarily deep and
  * exporters use them for real structure, so a group's name wins over the
  * layer's as the position — "SL Boom" is more useful than "Layer 1".
@@ -160,9 +217,7 @@ export function parseMvr(data: Uint8Array): MvrResult {
   // 10 MB festival rig carried 218 of them against a single scene XML — and
   // inflating those costs seconds on a laptop and far worse on the phone
   // someone is actually holding. We never draw them.
-  const files = unzipSync(data, {
-    filter: (file) => /\.(xml|gdtf)$/i.test(file.name),
-  })
+  const files = unzipSync(data, { filter: wantedEntry(/\.(xml|gdtf)$/i) })
 
   const sceneBytes = findEntry(files, (name) => name.endsWith('generalscenedescription.xml'))
   if (!sceneBytes) {
@@ -224,14 +279,14 @@ export function parseMvr(data: Uint8Array): MvrResult {
       warnings.push(`${type.name}: mode “${modeName}” not in its GDTF profile`)
     }
 
-    const absolute = Number(textOf(element, 'Address'))
-    const addressed = Number.isFinite(absolute) && absolute >= 1
-    if (!addressed) unaddressed++
-    const { universe, address } = addressed ? splitAddress(absolute) : { universe: 1, address: 0 }
+    const patched = parseMvrAddress(textOf(element, 'Address'))
+    if (!patched) unaddressed++
+    const { universe, address } = patched ?? { universe: 1, address: 0 }
 
     const point = parseMvrMatrix(textOf(element, 'Matrix')) ?? { x: 0, y: 0, z: 0 }
 
     fixtures.push({
+      uuid: element.getAttribute('uuid')?.trim() ?? '',
       name: element.getAttribute('name')?.trim() ?? '',
       layer: group,
       typeId: type?.id ?? '',

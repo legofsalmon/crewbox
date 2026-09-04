@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SAP_TIMEOUT_MS, SapState, parseSap } from '../src/netwatch/sap.ts'
+import { MAX_STREAMS, SAP_TIMEOUT_MS, SapState, parseSap } from '../src/netwatch/sap.ts'
 
 const SDP = [
   'v=0',
@@ -75,5 +75,18 @@ describe('the stream directory', () => {
     expect(state.roster()).toHaveLength(1)
     state.sweep(1000 + SAP_TIMEOUT_MS + 1)
     expect(state.roster()).toHaveLength(0)
+  })
+
+  it('stops listing at a bound, and says it did', () => {
+    // Each entry holds its place for half an hour after its last
+    // announcement and the id comes off the wire, so one sender could mint
+    // unlimited streams that each occupy the directory for that long — and
+    // every read sorts the whole thing.
+    const state = new SapState()
+    for (let i = 0; i < MAX_STREAMS + 20; i++) {
+      state.apply(parseSap(sap({ hash: i + 1 }))!, 1000 + i)
+    }
+    expect(state.roster()).toHaveLength(MAX_STREAMS)
+    expect(state.overflow()).toBe(20)
   })
 })

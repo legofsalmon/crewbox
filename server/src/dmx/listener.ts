@@ -39,6 +39,8 @@ export interface DmxListenerOptions {
   log?: { info: (msg: string) => void; warn: (msg: string) => void }
   /** Injectable for tests; defaults to the real thing. */
   createSocket?: (options: dgram.SocketOptions) => dgram.Socket
+  /** How long between attempts at a group that would not join. Tests set it. */
+  joinRetryMs?: number
 }
 
 export interface DmxListenerStatus {
@@ -49,7 +51,7 @@ export interface DmxListenerStatus {
     error: string | null
     joined: number[]
     /** Universes whose group could not be joined, with why. */
-    failed: Array<{ universe: number; reason: string }>
+    failed: Array<{ universe: number; reason: string; retrying: boolean }>
     /** Whether universe 64214 was joined, so sources can advertise to us. */
     discovery: boolean
   }
@@ -100,6 +102,19 @@ export class DmxListener {
   private sacnSocket: dgram.Socket | null = null
   private sweepTimer: NodeJS.Timeout | null = null
   private status: DmxListenerStatus
+  /**
+   * Groups still to be joined, and when the next attempt is due.
+   *
+   * A membership is not a one-shot: `IP_ADD_MEMBERSHIP` fails with `ENODEV`
+   * or `EADDRNOTAVAIL` while the interface is still coming up, and a box
+   * powered on with the rest of the rack routinely wins that race against
+   * the switch. It used to fail once at bind and stay failed for the run —
+   * the universe silently never arrived, and the only fix was a restart
+   * somebody had to think of.
+   */
+  private pendingJoins = new Set<number>()
+  private discoveryPending = false
+  private nextJoinAttempt = 0
 
   constructor(options: DmxListenerOptions) {
     this.options = options
@@ -121,7 +136,11 @@ export class DmxListener {
     if (this.options.mode !== 'sacn') this.startArtNet()
     if (this.options.mode !== 'artnet') this.startSacn()
     // Sources are only "gone" when they stop arriving, which nothing tells us.
-    this.sweepTimer = setInterval(() => this.state.sweep(Date.now()), 1000)
+    this.sweepTimer = setInterval(() => {
+      const now = Date.now()
+      this.state.sweep(now)
+      this.retryJoins(now)
+    }, 1000)
     this.sweepTimer.unref()
   }
 
@@ -137,6 +156,9 @@ export class DmxListener {
     }
     this.artnetSocket = null
     this.sacnSocket = null
+    this.pendingJoins.clear()
+    this.discoveryPending = false
+    this.nextJoinAttempt = 0
     this.status.artnet.listening = false
     this.status.sacn.listening = false
     this.status.sacn.discovery = false
@@ -234,55 +256,136 @@ export class DmxListener {
       // Kept out of `joined`, which means "universes you asked to watch": it
       // is not one of those, and counting it there would report 17 to
       // somebody who listed 16.
-      try {
-        if (this.options.interfaceIp) {
-          socket.addMembership(sacnGroup(DISCOVERY_UNIVERSE), this.options.interfaceIp)
-        } else {
-          socket.addMembership(sacnGroup(DISCOVERY_UNIVERSE))
-        }
-        this.status.sacn.discovery = true
-      } catch {
-        // Not fatal, and not worth a warning of its own — everything else
-        // still works, there is just no "here is what the desks are sending"
-        // to show. The admin panel says so where it would have shown it.
-      }
+      // Not fatal if it fails: everything else still works, there is just no
+      // "here is what the desks are sending" to show, and the admin panel
+      // says so where it would have shown it. Worth retrying all the same.
+      this.status.sacn.discovery = this.join(socket, DISCOVERY_UNIVERSE)
+      this.discoveryPending = !this.status.sacn.discovery
 
       const wanted = this.options.universes.slice(0, MAX_SACN_UNIVERSES)
       const dropped = this.options.universes.slice(MAX_SACN_UNIVERSES)
-      for (const universe of wanted) {
-        try {
-          if (this.options.interfaceIp) {
-            socket.addMembership(sacnGroup(universe), this.options.interfaceIp)
-          } else {
-            socket.addMembership(sacnGroup(universe))
-          }
-          this.status.sacn.joined.push(universe)
-        } catch (err) {
-          const reason =
-            err instanceof Error ? ('code' in err && err.code) || err.message : 'failed'
-          this.status.sacn.failed.push({ universe, reason: String(reason) })
-        }
-      }
+      for (const universe of wanted) this.joinUniverse(socket, universe)
       for (const universe of dropped) {
-        this.status.sacn.failed.push({ universe, reason: `over the ${MAX_SACN_UNIVERSES} limit` })
+        // Ours, not the kernel's, and it will not change by waiting.
+        this.status.sacn.failed.push({
+          universe,
+          reason: `over the ${MAX_SACN_UNIVERSES} limit`,
+          retrying: false,
+        })
       }
-      // Synchronization packets only reach their own universe's group
-      // (E1.31 §6.3.3.1), so which groups were joined decides whether a
-      // missing sync stream is a fault we can see or one we cannot.
       this.state.watchSyncUniverses(this.status.sacn.joined)
       this.options.log?.info(
         `sACN: listening on ${SACN_PORT}, joined ${this.status.sacn.joined.length}` +
           (this.options.interfaceIp ? ` via ${this.options.interfaceIp}` : '')
       )
-      if (this.status.sacn.failed.length > 0) {
+      const stuck = this.status.sacn.failed.filter((f) => !f.retrying)
+      if (stuck.length > 0) {
         this.options.log?.warn(
-          `sACN: could not join ${this.status.sacn.failed.map((f) => f.universe).join(', ')} — ` +
-            'Linux allows 20 memberships per socket (net.ipv4.igmp_max_memberships)'
+          `sACN: cannot join ${stuck.map((f) => f.universe).join(', ')} — ` +
+            stuck.map((f) => f.reason).join(', ')
+        )
+      }
+      if (this.pendingJoins.size > 0 || this.discoveryPending) {
+        this.options.log?.warn(
+          `sACN: could not join ${[...this.pendingJoins].join(', ') || 'discovery'} yet — ` +
+            'retrying, the interface may still be coming up'
         )
       }
     })
   }
+
+  /** One membership attempt. True if the group is now joined. */
+  private join(socket: dgram.Socket, universe: number): boolean {
+    try {
+      if (this.options.interfaceIp) {
+        socket.addMembership(sacnGroup(universe), this.options.interfaceIp)
+      } else {
+        socket.addMembership(sacnGroup(universe))
+      }
+      return true
+    } catch (err) {
+      this.lastJoinError = joinReason(err)
+      return false
+    }
+  }
+
+  private lastJoinError = 'failed'
+
+  /**
+   * Join one universe, or queue it for another go.
+   *
+   * A membership that failed because the socket is full will fail the same
+   * way forever, so it is reported as settled; anything else is provisional
+   * and gets retried, because the usual cause is an interface that is not up
+   * yet and will be in a few seconds.
+   */
+  private joinUniverse(socket: dgram.Socket, universe: number): void {
+    if (this.join(socket, universe)) {
+      this.status.sacn.joined.push(universe)
+      this.status.sacn.joined.sort((a, b) => a - b)
+      this.pendingJoins.delete(universe)
+      this.status.sacn.failed = this.status.sacn.failed.filter((f) => f.universe !== universe)
+      return
+    }
+    const reason = this.lastJoinError
+    const retrying = !isFull(reason)
+    if (retrying) this.pendingJoins.add(universe)
+    else this.pendingJoins.delete(universe)
+    const existing = this.status.sacn.failed.find((f) => f.universe === universe)
+    if (existing) {
+      existing.reason = reason
+      existing.retrying = retrying
+    } else {
+      this.status.sacn.failed.push({ universe, reason, retrying })
+    }
+  }
+
+  /**
+   * Try the groups that have not joined yet, every few seconds.
+   *
+   * Every few and not every one: a failing `addMembership` is a syscall, and
+   * an interface that is genuinely absent for a whole show would otherwise
+   * make one per universe per second for the run. Slow enough to be free,
+   * fast enough that a cable plugged in during focus is watching before
+   * anyone has walked back to the desk.
+   */
+  private retryJoins(now: number): void {
+    const socket = this.sacnSocket
+    if (!socket || !this.status.sacn.listening) return
+    if (this.pendingJoins.size === 0 && !this.discoveryPending) return
+    if (now < this.nextJoinAttempt) return
+    this.nextJoinAttempt = now + (this.options.joinRetryMs ?? JOIN_RETRY_MS)
+
+    if (this.discoveryPending && this.join(socket, DISCOVERY_UNIVERSE)) {
+      this.discoveryPending = false
+      this.status.sacn.discovery = true
+    }
+    const before = this.status.sacn.joined.length
+    for (const universe of [...this.pendingJoins]) this.joinUniverse(socket, universe)
+    if (this.status.sacn.joined.length === before) return
+    this.state.watchSyncUniverses(this.status.sacn.joined)
+    this.options.log?.info(
+      `sACN: joined ${this.status.sacn.joined.length} universes` +
+        (this.pendingJoins.size > 0 ? `, still trying ${[...this.pendingJoins].join(', ')}` : '')
+    )
+  }
 }
+
+/** Seconds, not the sweep's one second — see `retryJoins`. */
+const JOIN_RETRY_MS = 10_000
+
+/** The error code, when there is one: `ENODEV` says more than its message. */
+const joinReason = (err: unknown): string =>
+  err instanceof Error ? String(('code' in err && err.code) || err.message) : 'failed'
+
+/**
+ * Is this "the socket is full", the one failure waiting cannot fix?
+ *
+ * Linux answers `IP_ADD_MEMBERSHIP` past `net.ipv4.igmp_max_memberships`
+ * with ENOBUFS, and there is nothing to retry: the 21st group will be
+ * refused as surely in an hour as it was at boot.
+ */
+const isFull = (reason: string): boolean => reason === 'ENOBUFS' || reason === 'ENOMEM'
 
 /** Expand "1-8,101" into universe numbers. Junk is skipped, not fatal. */
 export function parseUniverseList(spec: string): number[] {

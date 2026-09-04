@@ -67,10 +67,18 @@ const watcher = (dmx: DmxListener, universes: number[], levels = false) => {
     dmxLevels: levels,
     dmxSent: new Map<number, Uint8Array>(),
     dmxEverLit: new Map<number, string>(),
+    dmxScan: new Map<number, number>(),
   }
   // `pushDmx` is private by design — nothing outside the hub should call it.
   const push = () => (hub as never as { pushDmx: (c: unknown) => void }).pushDmx(conn)
-  return { push, sent }
+  /** What a client's `dmxWatch` frame does, through the real handler. */
+  const watch = (next: number[], wantLevels = levels) =>
+    (hub as never as { onMessage: (c: unknown, m: unknown) => void }).onMessage(conn, {
+      type: 'dmxWatch',
+      universes: next,
+      levels: wantLevels,
+    })
+  return { push, watch, sent, conn }
 }
 
 const states = (sent: ServerMessage[]) =>
@@ -229,5 +237,83 @@ describe('levels', () => {
         .flatMap((m) => m.values.map(([address]) => address))
     )
     expect(total.size).toBe(512)
+  })
+
+  it('reaches the top of a universe that is changing every single tick', () => {
+    // The starvation case, and the one a rig actually produces: a chase that
+    // never settles. Scanning from address 1 every tick meant the low
+    // addresses always differed and the cap was always spent on them, so
+    // the movers patched above the LED wash sat frozen on the plot for the
+    // whole show while the wash moved.
+    const dmx = listener()
+    dmx.state.apply(frame({ sequence: 1, slots: new Uint8Array(512) }), 1000)
+    const { push, sent } = watcher(dmx, [1], true)
+    push()
+
+    // Everything moves, every tick, for a couple of seconds of ticks.
+    for (let tick = 0; tick < 12; tick++) {
+      const slots = new Uint8Array(512)
+      for (let i = 0; i < 512; i++) slots[i] = (tick * 7 + i) % 255 || 1
+      dmx.state.apply(frame({ sequence: tick + 2, slots }), 1100 + tick * 40)
+      push()
+    }
+
+    const reached = new Set(
+      levelMessages(sent)
+        .filter((m) => !m.full)
+        .flatMap((m) => m.values.map(([address]) => address))
+    )
+    // Every address, top of the universe included — not just the first 96.
+    expect(reached.has(512)).toBe(true)
+    expect(reached.has(400)).toBe(true)
+    expect(reached.size).toBe(512)
+  })
+})
+
+/**
+ * Subscribing again, to universes the box has never heard from.
+ *
+ * `pushDmx` only sends when the summary changed, which is right for a tick
+ * and wrong for a new watch: the summary for a set of silent universes is
+ * the same as last time, so nothing went out. The client has just set
+ * `listening: false` in its own cleanup, so the live bar reads "this box is
+ * not listening to Art-Net or sACN" while the admin panel says it is
+ * listening on sixteen universes. At get-in, before the desk is outputting,
+ * that is exactly where an LX programmer lands.
+ */
+describe('watching again', () => {
+  it('always answers a fresh watch, even when nothing has been heard', () => {
+    const dmx = listener()
+    const { watch, sent } = watcher(dmx, [])
+    watch([1, 2])
+    expect(states(sent)).toHaveLength(1)
+    sent.length = 0
+    // The same silent universes again. This used to send nothing at all.
+    watch([1, 2])
+    expect(states(sent)).toHaveLength(1)
+    expect(states(sent)[0]!.listening).toBe(true)
+  })
+
+  it('answers a fresh watch when the rig is running, too', () => {
+    const dmx = listener()
+    dmx.state.apply(frame({ wireUniverse: 1 }), 1000)
+    const { watch, sent } = watcher(dmx, [])
+    watch([1])
+    sent.length = 0
+    watch([1])
+    expect(states(sent)).toHaveLength(1)
+    expect(states(sent)[0]!.universes.map((u) => u.universe)).toEqual([1])
+  })
+
+  it('still says nothing on an ordinary tick with no change', () => {
+    // The saving that makes this layer worth having: a rig at 44 Hz must not
+    // become 44 messages a second per phone.
+    const dmx = listener()
+    dmx.state.apply(frame({ wireUniverse: 1 }), 1000)
+    const { push, sent } = watcher(dmx, [1])
+    push()
+    sent.length = 0
+    push()
+    expect(states(sent)).toHaveLength(0)
   })
 })

@@ -187,8 +187,24 @@ state_of() {
     grep -o '"state":"[^"]*"' | head -1 | sed 's/.*:"//;s/"//'
 }
 
-[ "$(state_of chat)" = "ok" ] || fail "chat/patch/lighting not ok"
-pass "chat, patch sheets and lighting ready"
+# The chat/patch/lighting readiness row is a constant in the box: those three
+# need nothing but the box itself, so the row has nothing to report and is
+# written 'ok'. Asserting it therefore proves the settings endpoint answered
+# with a well-formed list — worth knowing, and all it is claimed to be.
+[ "$(state_of chat)" = "ok" ] || fail "the readiness list came back without its chat row: $ready"
+pass "the readiness list answers"
+
+# What "patch sheets and lighting are there" actually depends on: the modules
+# this box is running. A box started with CREWBOX_MODULES missing one of them
+# serves a sidebar without that pane — and the readiness row above would still
+# say ok, because it says ok on every box ever built.
+config="$(curl -fsS "$BASE/api/config")" || fail "the box would not say which modules it runs"
+modules="$(echo "$config" | sed -n 's/.*"modules":\[\([^]]*\)\].*/\1/p')"
+for module in chat patch lighting; do
+  # `contains`, not `grep -q`: see its comment at the top of this file.
+  contains "$modules" "\"$module\"" || fail "$module is not enabled on this box: $config"
+done
+pass "chat, patch sheets and lighting are enabled"
 
 voice="$(state_of voice)"
 case "$voice" in
@@ -220,6 +236,14 @@ DATA_DIR="$DATA_ARG" "$BIN" --status >/dev/null 2>&1 ||
 pass "--status reports the running box"
 
 DATA_DIR="$DATA_ARG" "$BIN" --stop >/dev/null 2>&1 || fail "--stop failed"
+# Checked the moment it returns, with no grace period. `--stop` promises to
+# wait for the box to be gone — the caller's next move is usually to replace
+# the binary or take the port — and it used to wait for the *status file*,
+# which the shutdown handler removes before it closes anything. Sleeping here
+# would hide exactly the defect this line exists to catch.
+if kill -0 "$PID" 2>/dev/null; then
+  fail "--stop returned while the box process was still alive"
+fi
 if curl -fsS --max-time 3 "$BASE/api/health" >/dev/null 2>&1; then
   fail "--stop returned but the box is still serving"
 fi

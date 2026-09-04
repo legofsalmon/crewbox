@@ -12,7 +12,7 @@ import {
 } from './sheetDoc'
 import { sheetActs } from './lineup'
 import { patchKey } from './types'
-import { snapshotTimetable, updateAct } from '../../../shell/timetable/model.ts'
+import { addAct, snapshotTimetable, updateAct } from '../../../shell/timetable/model.ts'
 
 describe('parseDelimited', () => {
   it('parses plain CSV with CRLF and a BOM', () => {
@@ -41,7 +41,8 @@ describe('sheetFromCsv', () => {
   it('round-trips crewbox’s own export, act names and all', () => {
     const doc = new Y.Doc()
     const events = new Y.Doc()
-    initSheet(doc, events, { title: 'RT', date: '2026-07-24', channelCount: 2 })
+    initSheet(doc, { title: 'RT', date: '2026-07-24', channelCount: 2 })
+    addAct(events, { name: 'Act 1', stage: 'RT', date: '2026-07-24' })
     const snap0 = snapshotSheet(doc)
     const act = snapshotTimetable(events).acts[0]!.id
     updateAct(events, act, { name: 'Headliner' })
@@ -121,5 +122,78 @@ describe('buildImportedSheet', () => {
 
     // And the grid gets its columns back by asking the timetable.
     expect(sheetActs(snap, snapshotTimetable(events).acts).map((a) => a.name)).toEqual(['Band A'])
+  })
+})
+
+describe('a file that names two slots the same', () => {
+  /**
+   * "Changeover" twice, "TBC" twice, a support band playing an early and a
+   * late set. The upsert that reconciles a re-import with the day already on
+   * the box reconciled these two rows of one file with *each other*, so the
+   * sheet got one column where the file had two — and the second act's patch
+   * was written straight over the first's.
+   */
+  it('keeps them as separate acts, and says it did', () => {
+    const doc = new Y.Doc()
+    const events = new Y.Doc()
+    const report = buildImportedSheet(
+      doc,
+      events,
+      {
+        channels: [{ label: '1' }],
+        acts: [
+          { name: 'DJ set', start: '14:00' },
+          { name: 'Band A', start: '16:00' },
+          { name: 'DJ set', start: '23:00' },
+        ],
+        patches: [[{ input: 'Decks' }], [{ input: 'Kick' }], [{ input: 'CDJs' }]],
+      },
+      { title: 'Main', date: '2026-07-24' }
+    )
+
+    const acts = snapshotTimetable(events).acts
+    expect(acts.map((a) => a.name)).toEqual(['DJ set', 'Band A', 'DJ set'])
+    // Each slot kept its own start time, and its own patch.
+    expect(acts[0]!.start).toBe('14:00')
+    expect(acts[2]!.start).toBe('23:00')
+    const snap = snapshotSheet(doc)
+    const channel = snap.channels[0]!.id
+    expect(snap.patches[patchKey(acts[0]!.id, channel)]?.input).toBe('Decks')
+    expect(snap.patches[patchKey(acts[2]!.id, channel)]?.input).toBe('CDJs')
+
+    expect(report.duplicateActs).toEqual(['DJ set'])
+  })
+
+  it('still reconciles with a day already on the box', () => {
+    // The reason the upsert is there at all: a second sheet for the same
+    // stage, or a re-import after a correction, must not list the day twice.
+    const events = new Y.Doc()
+    const first = new Y.Doc()
+    buildImportedSheet(
+      first,
+      events,
+      {
+        channels: [{ label: '1' }],
+        acts: [{ name: 'Band A', start: '19:00' }],
+        patches: [[{ input: 'Kick' }]],
+      },
+      { title: 'Main', date: '2026-07-24' }
+    )
+    const second = new Y.Doc()
+    const report = buildImportedSheet(
+      second,
+      events,
+      {
+        channels: [{ label: '1' }],
+        acts: [{ name: 'Band A', end: '20:00' }],
+        patches: [[{ input: 'Kick' }]],
+      },
+      { title: 'Main', date: '2026-07-24' }
+    )
+    const acts = snapshotTimetable(events).acts
+    expect(acts).toHaveLength(1)
+    // The second file said nothing about the start, so the first one stands.
+    expect(acts[0]).toMatchObject({ name: 'Band A', start: '19:00', end: '20:00' })
+    expect(report.duplicateActs).toEqual([])
   })
 })

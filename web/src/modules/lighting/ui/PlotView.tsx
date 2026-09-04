@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
+import { deliveredNote, deliverText, type Delivered } from '../../../lib/download.ts'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
-import { registerShortcut } from '../../../shell/keys.ts'
+import { documentUndoTarget, registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { plotCsvFilename, plotSummary, plotToCsv } from '../model/csv'
@@ -9,6 +18,7 @@ import { addFixture, setPlotMeta } from '../model/plotDoc'
 import { DMX_UNIVERSE_SIZE } from '../model/types'
 import { importPlotFile, takeImportFlash } from '../store/importFile'
 import {
+  useDocMissing,
   usePlot,
   usePlotIssues,
   usePlotPeers,
@@ -41,14 +51,8 @@ const TABS: Array<{ id: PlotTab; label: string }> = [
   { id: '3d', label: '3D' },
 ]
 
-const download = (filename: string, text: string) => {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
+const download = (filename: string, text: string): Promise<Delivered> =>
+  deliverText(filename, 'text/csv;charset=utf-8', text)
 
 function PresenceAvatars({ plotId }: { plotId: string }) {
   const peers = usePlotRemotePeers(plotId)
@@ -102,11 +106,14 @@ function PlotDropZone({
   importing,
   onFiles,
   onReject,
+  rootRef,
   children,
 }: {
   importing: boolean
   onFiles: (files: File[]) => void
   onReject: (files: File[]) => void
+  /** The view's own subtree, for scoping its keyboard shortcuts to it. */
+  rootRef: RefObject<HTMLDivElement | null>
   children: ReactNode
 }) {
   const accept = useCallback((file: File) => /\.(csv|mvr)$/i.test(file.name), [])
@@ -114,7 +121,11 @@ function PlotDropZone({
   // already chewing through a 40 MB venue file.
   const drop = useFileDrop(onFiles, { disabled: importing, accept, onReject })
   return (
-    <div className={`${styles.view} ${drop.over ? styles.dropping : ''}`} {...drop.handlers}>
+    <div
+      ref={rootRef}
+      className={`${styles.view} ${drop.over ? styles.dropping : ''}`}
+      {...drop.handlers}
+    >
       {drop.over && <div className={styles.dropVeil}>Drop a CSV or MVR to import fixtures</div>}
       {children}
     </div>
@@ -123,6 +134,16 @@ function PlotDropZone({
 
 export default function PlotView({ plotId, onClose }: { plotId: string; onClose: () => void }) {
   const { doc, snapshot, loaded, undoManager } = usePlot(plotId)
+  /**
+   * `loaded` alone was the test, and it is not one: `useStoreDoc` always
+   * hands back a Y.Doc, so a link to a plot that has been deleted (or one
+   * from a different box) minted an empty document, reported it loaded, and
+   * rendered a blank plot rather than saying anything. The "Plot not found"
+   * branch beneath was unreachable.
+   */
+  const missing = useDocMissing(doc, loaded)
+  /** This view's own subtree, for scoping the undo shortcut to it. */
+  const rootRef = useRef<HTMLDivElement>(null)
   const issues = usePlotIssues(snapshot)
   const [tab, setTab] = useState<PlotTab>('fixtures')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -144,9 +165,9 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   useEffect(() => {
     if (!undoManager) return
     // Leave in-progress text edits to the browser's own undo — the doc-level
-    // shortcut would otherwise swallow a half-typed purpose.
-    const undoableTarget = (e: KeyboardEvent) =>
-      !(e.target as HTMLElement | null)?.closest('[data-dirty="true"]')
+    // shortcut would otherwise swallow a half-typed purpose — and leave
+    // everything outside this view alone entirely. See `documentUndoTarget`.
+    const undoableTarget = documentUndoTarget(() => rootRef.current)
     const offs = [
       registerShortcut({
         key: 'z',
@@ -176,8 +197,15 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
     [issues.usage]
   )
 
-  if (!doc || !snapshot) {
-    return <div className={styles.loading}>{loaded ? 'Plot not found.' : 'Opening plot…'}</div>
+  if (missing) {
+    return (
+      <div className={styles.loading}>
+        Plot not found. It may have been deleted, or this link may be from a different box.
+      </div>
+    )
+  }
+  if (!doc || !snapshot || !loaded) {
+    return <div className={styles.loading}>Opening plot…</div>
   }
 
   const showInList = (id: string) => {
@@ -205,6 +233,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   return (
     <PlotDropZone
       importing={importing}
+      rootRef={rootRef}
       onFiles={(files) => {
         // Sequential, not parallel: an MVR parse blocks the main thread for
         // seconds, and two at once would freeze the tab showing nothing.
@@ -264,7 +293,11 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
           <button
             type="button"
             className={styles.action}
-            onClick={() => download(plotCsvFilename(snapshot), plotToCsv(snapshot))}
+            onClick={() => {
+              void download(plotCsvFilename(snapshot), plotToCsv(snapshot)).then((result) =>
+                setFlash(deliveredNote(result, 'Plot'))
+              )
+            }}
           >
             Export
           </button>

@@ -37,6 +37,8 @@ let app: App
 let video: VideoService
 /** Every URL the fake HTTP client was asked for, so a test can assert silence. */
 let contacted: string[]
+/** Local addresses the SNMP sockets were bound to before sending. */
+let boundTo: string[]
 let probesSent: number
 
 const NEVER_ANSWERS: WatcherIo = {
@@ -55,6 +57,16 @@ const NEVER_ANSWERS: WatcherIo = {
     createSocket: () =>
       ({
         on: () => {},
+        // Bound before sending when the box has a video adapter pinned, so
+        // the datagram leaves on that network rather than whatever the
+        // routing table picks — which on a box holding the crew Wi-Fi is the
+        // difference between monitoring a wall and appearing on the crew's
+        // own network. Recorded so a regression that stopped binding shows up
+        // here rather than on site.
+        bind: (options: { address?: string }, cb?: () => void) => {
+          boundTo.push(options?.address ?? '')
+          cb?.()
+        },
         send: (_b: Buffer, _p: number, _h: string, cb?: (e: Error | null) => void) => {
           contacted.push('snmp')
           cb?.(new Error('EHOSTUNREACH'))
@@ -123,6 +135,7 @@ beforeEach(() => {
   store = new Store(db)
   store.createChannel('general', 'public', 'Everyone')
   contacted = []
+  boundTo = []
   probesSent = 0
   app = build()
 })
@@ -275,6 +288,22 @@ describe('naming a processor takes no password', () => {
       payload: { host: 'wall.local' },
     })
     expect(res.statusCode).toBe(400)
+  })
+
+  it('refuses a multicast group, which is four octets and not one processor', async () => {
+    // Adding and arming are both session-authed, so this is one thing typed
+    // by anybody on site — and the twenty-second SNMP GET that follows would
+    // leave on the default route, which is the crew Wi-Fi.
+    const auth = await asAdmin()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/video/processors',
+      headers: headers(auth),
+      payload: { host: '224.0.0.1' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(video.store.list()).toHaveLength(0)
+    expect(contacted).toEqual([])
   })
 
   it('is idempotent by address, so a scan run twice makes one row', async () => {
@@ -497,6 +526,11 @@ describe('watching one processor', () => {
     expect(video.store.get(processor.id)?.monitored).toBe(true)
     // Nobody should have to wait 20 s to find out the address was wrong.
     expect(contacted.length).toBeGreaterThan(0)
+    // And it went out of the adapter the admin pinned. Without this the
+    // routing table chooses, and on a box holding the crew Wi-Fi as well
+    // that is a coin flip whose wrong side puts monitoring traffic on the
+    // network the crew's phones are on.
+    expect(boundTo).toContain('10.0.30.9')
   })
 
   it('names the traffic and says it cannot change the wall', async () => {

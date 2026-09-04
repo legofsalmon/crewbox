@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { actsOnSheet, setSheetStage, sheetActs } from './lineup'
+import { actsOnSheet, setSheetDate, setSheetStage, sheetActs } from './lineup'
 import { emptyExtras, type SheetSnapshot } from './types'
 import { addAct, snapshotTimetable, type Act } from '../../../shell/timetable/model.ts'
 
@@ -176,5 +176,62 @@ describe('renaming the stage a sheet is for', () => {
         .acts.map((a) => a.stage)
         .sort()
     ).toEqual(['Barn', 'Main'])
+  })
+})
+
+describe('moving a sheet to another day', () => {
+  /**
+   * The same trap as the stage rename, on the other half of the join — and
+   * it was open. Between them the stage and the date decide the columns, so
+   * changing the date on its own left every act filed under the old one and
+   * the grid blank, with nothing saying why. It is the ordinary correction
+   * for a sheet an import stamped with the load-in day.
+   */
+  const seed = () => {
+    const events = new Y.Doc()
+    const mine = addAct(events, { name: 'Mine', stage: 'Main', date: '2026-08-09' })
+    const other = addAct(events, { name: 'Other Day', stage: 'Main', date: '2026-08-10' })
+    return { events, mine, other }
+  }
+  const showing = (events: Y.Doc, meta: { stage: string; date: string }) =>
+    sheetActs(withMeta(meta.stage, meta.date), snapshotTimetable(events).acts)
+
+  it('takes the sheet’s acts with it', () => {
+    const { events, mine } = seed()
+    const meta = { stage: 'Main', date: '2026-08-09' }
+
+    setSheetDate(events, meta, showing(events, meta), '2026-08-11')
+
+    expect(snapshotTimetable(events).acts.find((a) => a.id === mine)?.date).toBe('2026-08-11')
+    expect(showing(events, { stage: 'Main', date: '2026-08-11' }).map((a) => a.name)).toEqual([
+      'Mine',
+    ])
+  })
+
+  it('leaves another day’s acts where they are', () => {
+    const { events, other } = seed()
+    const meta = { stage: 'Main', date: '2026-08-09' }
+    setSheetDate(events, meta, showing(events, meta), '2026-08-11')
+    expect(snapshotTimetable(events).acts.find((a) => a.id === other)?.date).toBe('2026-08-10')
+  })
+
+  it('moves nothing when the sheet had no date yet', () => {
+    // A dateless sheet is showing every day. Dragging the whole festival
+    // onto one date would be a change to the event, not to a sheet.
+    const { events } = seed()
+    const meta = { stage: 'Main', date: '' }
+    setSheetDate(events, meta, showing(events, meta), '2026-08-11')
+    expect(
+      snapshotTimetable(events)
+        .acts.map((a) => a.date)
+        .sort()
+    ).toEqual(['2026-08-09', '2026-08-10'])
+  })
+
+  it('does nothing at all when the date has not changed', () => {
+    const { events, mine } = seed()
+    const meta = { stage: 'Main', date: '2026-08-09' }
+    setSheetDate(events, meta, showing(events, meta), '2026-08-09')
+    expect(snapshotTimetable(events).acts.find((a) => a.id === mine)?.date).toBe('2026-08-09')
   })
 })

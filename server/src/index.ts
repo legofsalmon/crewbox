@@ -17,6 +17,7 @@ import {
   lanIps,
   clearBoxStatus,
   extractWebDist,
+  pruneWebDists,
   isBox,
   openBrowser,
   portInUse,
@@ -26,18 +27,30 @@ import {
   startTrayHelper,
   stopRunningBox,
   writeBoxStatus,
+  type BoxStatus,
 } from './box.ts'
 import { startCaptive } from './captive.ts'
 import { certNames } from './environment.ts'
 import {
-  hasEmbeddedLiveKit,
+  canRunLiveKit,
   livekitCredentials,
   startEmbeddedLiveKit,
   type EmbeddedLiveKit,
   type SfuFailure,
+  type SpawnOutcome,
 } from './livekit.ts'
 import { preventSleep } from './nosleep.ts'
 import { loadTls } from './tls.ts'
+
+/**
+ * How long a release waits for the listener to actually let go.
+ *
+ * Generous, because the sockets have already been terminated by then and
+ * anything still holding the port is a surprise. It exists so that surprise
+ * is a failure the updater can roll back from, rather than a box that has
+ * swapped its binary and stopped answering with no way out.
+ */
+const RELEASE_TIMEOUT_MS = 5000
 
 // No top-level await: the single-binary build bundles this entry as CJS
 // (Node SEA requires a CommonJS main), so startup lives in an async main().
@@ -67,26 +80,130 @@ async function main(): Promise<void> {
   // at exactly the wrong moment. Which way to jump is decided by the version
   // now running, not by guesswork; see recoverInterruptedInstall.
   //
+  // It is also reached, every single time, by the box an update has just
+  // launched — which is why the supervisor is looked up first. That process
+  // is still alive and still deciding; anything this box did to the marker or
+  // the backup would be taken out from under it.
+  //
   // Only for a packaged box: from source there is no binary to swap, and a
   // marker in a developer's data directory would be somebody else's leftovers.
+  // Another crewbox already running: mid-update this is the process that
+  // launched us and is waiting to see whether we serve, and it still owns
+  // the way back. `readBoxStatus` checks the pid is alive, so a hard power
+  // cut leaves nothing to mistake for one. Read before the recovery below
+  // and before voice, both of which would otherwise take something of its.
+  const runningBox = readBoxStatus(dataDir)
+  const supervisor = runningBox && runningBox.pid !== process.pid ? runningBox.pid : null
+
+  // Refuse a second box before it touches anything, not after.
+  //
+  // The port pre-flight further down was the only guard, and by the time it
+  // ran this process had already re-extracted the web bundle over the
+  // running box's, opened its database and migrated it, minted a PIN and
+  // created a channel in it. A second launch is a mistake somebody makes in
+  // a field — a double-click on a box already running from a terminal — and
+  // it should cost nothing.
+  //
+  // The pid, not the port: a port answers a different question, and on macOS
+  // two launches can resolve different bind addresses and miss each other
+  // entirely. `readBoxStatus` has already checked the pid is alive.
+  //
+  // The exception is the box an update has just launched, which is supposed
+  // to start beside its supervisor. An install in flight is what says so.
+  if (supervisor !== null && (box || canRunLiveKit())) {
+    const inFlight = box ? (await import('./update/install.ts')).readInFlight(dataDir) : null
+    if (!inFlight) {
+      console.error(
+        `a crewbox is already running here (pid ${supervisor}) and owns ${dataDir}. ` +
+          `Stop it first: ${process.argv[0]} --stop`
+      )
+      process.exit(1)
+    }
+  }
+
   if (box) {
     const { recoverInterruptedInstall, sweepOldBinaries } = await import('./update/install.ts')
-    const outcome = recoverInterruptedInstall(dataDir, APP_VERSION)
+    // The database path, because a rollback has to put the data back too and
+    // this is the last moment at which it can: `openDb` is further down.
+    const outcome = recoverInterruptedInstall(
+      dataDir,
+      APP_VERSION,
+      supervisor,
+      join(dataDir, 'crewbox.db')
+    )
     if (outcome.action === 'rolled-back') {
       console.warn(
         `update to ${outcome.toVersion} was interrupted — put ${outcome.fromVersion} back`
       )
+      if (outcome.database === 'restored') {
+        console.warn(`the database was restored to match — ${outcome.databaseDetail}`)
+      } else if (outcome.database === 'failed') {
+        // The one combination worth shouting about: the old binary is back in
+        // front of a database a newer build migrated, which does not crash —
+        // it serves a schema it does not understand.
+        console.error(
+          `the database could NOT be restored: ${outcome.databaseDetail} — ` +
+            `this box is running ${outcome.fromVersion} against data migrated by ${outcome.toVersion}`
+        )
+      }
     } else if (outcome.action === 'confirmed') {
       console.log(`update to ${outcome.toVersion} completed`)
+    } else if (outcome.action === 'supervised') {
+      console.log(`installing ${outcome.toVersion}, watched by pid ${outcome.pid}`)
     } else if (outcome.action === 'failed') {
       console.warn(`update recovery: ${outcome.reason}`)
     }
+    // A database restore the running box could not do itself.
+    //
+    // An in-process rollback leaves the binary right and the database wrong:
+    // the failed build had already migrated it, and the box that put itself
+    // back had it open with crew typing into it. This is the moment that is
+    // safe — before `openDb` below — and the version guard is what keeps it
+    // safe: only the build the snapshot belongs to may be restored to, or a
+    // box someone later installed the new version on by hand would have its
+    // schema pulled backwards underneath it.
+    const { clearPendingRestore, readPendingRestore, restoreSnapshot } =
+      await import('./update/snapshot.ts')
+    const owed = readPendingRestore(dataDir)
+    if (owed) {
+      const { sameVersion } = await import('./update/install.ts')
+      if (!sameVersion(APP_VERSION, owed.fromVersion)) {
+        console.warn(
+          `a database restore to ${owed.fromVersion} was owed, but this box is running ` +
+            `${APP_VERSION} — leaving ${owed.snapshotPath} alone`
+        )
+        clearPendingRestore(dataDir)
+      } else {
+        const restored = restoreSnapshot({
+          dbPath: join(dataDir, 'crewbox.db'),
+          snapshotPath: owed.snapshotPath,
+        })
+        if (!restored.ok) {
+          console.error(`could not restore the database after rolling back: ${restored.reason}`)
+        } else {
+          if (restored.restored) {
+            console.warn(
+              `restored the database from before ${owed.toVersion} — ` +
+                `the migrated one is at ${restored.supersededPath}`
+            )
+          }
+          clearPendingRestore(dataDir)
+        }
+      }
+    }
+
     // Windows cannot delete the image it is running, so the previous binary
     // survives until a later start clears it. Never while an install is in
-    // flight — that file is the only way back.
+    // flight — that file is the only way back, and under a supervisor the
+    // marker is still there precisely so this does nothing.
     sweepOldBinaries(dataDir, process.execPath)
     const { sweepPartials } = await import('./update/download.ts')
     sweepPartials(dataDir)
+    // The extracted web bundles the other builds were serving, on the same
+    // terms: only once this box is the only one running and nothing is
+    // half-installed is the other version's client safe to delete.
+    const { readInFlight } = await import('./update/install.ts')
+    if (supervisor === null && !readInFlight(dataDir)) pruneWebDists(dataDir, APP_VERSION)
   }
 
   // Imported here rather than at the top so `--stop` and `--status` never
@@ -95,10 +212,14 @@ async function main(): Promise<void> {
   const { openDb } = await import('./db.ts')
   const { Store } = await import('./store.ts')
   const { MetricsStore } = await import('./audit/metrics.ts')
-  const webDist = box ? extractWebDist(dataDir) : config.webDist
+  const webDist = box ? extractWebDist(dataDir, APP_VERSION) : config.webDist
 
   const db = openDb(join(dataDir, 'crewbox.db'))
-  const store = new Store(db)
+  // The files directory goes to the store as well as the app: it is how a
+  // blob is located from its sha, rather than from an absolute path a
+  // different rig wrote. See Store.blobPath.
+  const filesDir = join(dataDir, 'files')
+  const store = new Store(db, filesDir)
   // Audit history (network module). index owns db; Store keeps its own.
   const metrics = new MetricsStore(db)
 
@@ -161,12 +282,28 @@ async function main(): Promise<void> {
   // server. Without this, the SFU reap in startEmbeddedLiveKit below would
   // kill *that* box's live SFU (taking voice down mid-show) and this start
   // would then die on the port bind regardless. Fail first, touch nothing.
-  if (box && (await portInUse(bindHost, config.port))) {
-    console.error(
-      `port ${config.port} is already in use on ${bindHost} — a crewbox is already running ` +
-        `here (stop it with: crewbox --stop), or something else holds the port. Not starting.`
-    )
-    process.exit(1)
+  //
+  // A source rig told to supervise an SFU is in exactly the same position as
+  // a packaged box, so it gets the same guard — and a source run that is not
+  // supervising anything still starts freely, which is what development is.
+  //
+  // Both the resolved bind and the wildcard: a box answering on 0.0.0.0 does
+  // not collide with a probe of one specific address on macOS, so two
+  // launches that resolved different addresses could miss each other here
+  // and both come up.
+  if (box || canRunLiveKit()) {
+    const held = (await portInUse(bindHost, config.port))
+      ? bindHost
+      : bindHost !== '0.0.0.0' && (await portInUse('0.0.0.0', config.port))
+        ? 'this machine'
+        : null
+    if (held) {
+      console.error(
+        `port ${config.port} is already in use on ${held} — a crewbox is already running ` +
+          `here (stop it with: crewbox --stop), or something else holds the port. Not starting.`
+      )
+      process.exit(1)
+    }
   }
 
   // Voice. An explicit LIVEKIT_URL always wins — someone pointing at an SFU
@@ -175,18 +312,45 @@ async function main(): Promise<void> {
   let livekit: { url: string; key: string; secret: string; embedded?: boolean } = config.livekit
   let embedded: EmbeddedLiveKit | null = null
   let voiceFailure: SfuFailure | undefined
-  if (box && !process.env.LIVEKIT_URL) {
-    if (hasEmbeddedLiveKit()) {
+  /**
+   * Start this box's own SFU, when the build carries one.
+   *
+   * A closure rather than a straight call because an update has to be able to
+   * do it again. The SFU holds 7880 and writes a pid file, and the box the
+   * updater launches reaps whatever that file names — which, mid-update, is
+   * the *supervising* process's SFU, still serving. So the release stops it
+   * (there is then nothing to reap, and the port is free for the new box) and
+   * a rollback starts it again. Without that, a box that rolled back kept
+   * minting tokens for an SFU somebody else had killed, and every voice join
+   * failed until a restart by hand.
+   *
+   * The credentials are persisted settings, so a restart gets the same key
+   * and secret and the app's view of voice — fixed at boot — stays true.
+   */
+  let startVoice: ((owner?: number | null) => Promise<SpawnOutcome>) | undefined
+  // Not `box &&`: a rig installed from source and run by systemd is the same
+  // product on better hardware, and `CREWBOX_LIVEKIT_BIN` lets it supervise
+  // an SFU on disk. Without this it fell through to whatever LIVEKIT_URL the
+  // unit file happened to carry — which shipped as an example host.
+  if (!process.env.LIVEKIT_URL) {
+    if (canRunLiveKit()) {
       const creds = livekitCredentials(
         (key) => store.getSetting(key),
         (key, value) => store.setSetting(key, value)
       )
-      const outcome = await startEmbeddedLiveKit({
-        dataDir,
-        ...creds,
-        ...(ifaceUp ? { iface: boot.iface } : {}),
-        log: console,
-      })
+      // `owner` only on the first start: mid-update the supervisor's SFU is
+      // its own and must not be reaped. By the time this is called again the
+      // box has rolled back, that process is this process, and the pid file
+      // names an SFU it stopped itself.
+      startVoice = (owner: number | null = null) =>
+        startEmbeddedLiveKit({
+          dataDir,
+          ...creds,
+          ...(ifaceUp ? { iface: boot.iface } : {}),
+          owner,
+          log: console,
+        })
+      const outcome = await startVoice(supervisor)
       embedded = outcome.sfu
       // Carried into the admin panel: "voice is off" with no reason reads as
       // a build limitation, and the fix for a held port is nothing like the
@@ -219,8 +383,11 @@ async function main(): Promise<void> {
   // exactly the way TLS does: one warning naming the fix, and a box that
   // works otherwise.
   const captiveOn = config.captive.enabled ?? box
-  const captive = captiveOn
-    ? await startCaptive({
+  // Kept so the responder can be started again after an update releases the
+  // port: a new box cannot take :80 while this process still holds it, and
+  // startCaptive deliberately does not retry EADDRINUSE.
+  const captiveOpts = captiveOn
+    ? {
         host: bindHost,
         port: config.captive.port,
         portFromEnv: config.captive.portFromEnv,
@@ -229,8 +396,9 @@ async function main(): Promise<void> {
         origin: certName
           ? `https://${certName}:${config.port}`
           : `${tls ? 'https' : 'http'}://${ifaceUp ? boot.iface : (lanIps()[0] ?? 'localhost')}:${config.port}`,
-      })
+      }
     : undefined
+  let captive = captiveOpts ? await startCaptive(captiveOpts) : undefined
 
   // Listening to the lighting network, when this box was asked to. Off by
   // default, and read-only however it is configured: the sockets it opens
@@ -316,12 +484,50 @@ async function main(): Promise<void> {
     log: console,
   })
 
+  /**
+   * What the menu-bar and tray helpers read, kept current.
+   *
+   * The event name and the crew PIN are the two things on that menu anybody
+   * actually asks for, and both were written once at startup. Rename the
+   * event in the admin panel, or hand out a new PIN, and the helper on the
+   * box's own screen went on reading out the boot-time answer for the rest
+   * of the event — the one screen where being wrong is most convincing.
+   *
+   * The addresses aren't in here because they can't change without a
+   * restart; only what a human can edit is re-read. Null until listen() has
+   * returned, because the file existing is the promise that the box is
+   * answering, so nothing writes it before that is true.
+   */
+  let statusBase: Omit<BoxStatus, 'eventPin' | 'eventName' | 'update'> | null = null
+  let latestUpdate: BoxStatus['update']
+  const publishStatus = (): void => {
+    if (!statusBase) return
+    writeBoxStatus(dataDir, {
+      ...statusBase,
+      eventPin: store.getSetting('eventPin') ?? config.eventPin,
+      eventName: store.getSetting('eventName') ?? '',
+      ...(latestUpdate ? { update: latestUpdate } : {}),
+    })
+  }
+
   const app = buildApp({
     store,
+    // Setup and the admin panel change the event name and the PIN; the
+    // helper beside the box has to follow them.
+    ...(box ? { onSettingsChanged: publishStatus } : {}),
+    // Whether this box may go off-site at all — the same switch as the
+    // update check, which the environment sweep used to ignore.
+    outbound: config.updateCheck ?? box,
+    // The address this process is actually listening on. The readiness row
+    // used to infer it from the adapters, which is a different question.
+    boundHost: bindHost,
     eventPin: config.eventPin,
+    // So the control API reads the running order against the festival's wall
+    // clock rather than the box's process timezone. See CREWBOX_TZ.
+    ...(config.timeZone ? { timeZone: config.timeZone } : {}),
     wifiSsid: config.wifiSsid,
     ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
-    filesDir: join(dataDir, 'files'),
+    filesDir,
     livekit,
     ...(voiceFailure ? { voiceFailure } : {}),
     ...(captive
@@ -359,7 +565,11 @@ async function main(): Promise<void> {
   })
   const hub = app.hub
 
-  const fatal = warnOnDefaults(app.log, Boolean(store.getSetting('eventPin')))
+  const fatal = warnOnDefaults(
+    app.log,
+    Boolean(store.getSetting('eventPin')),
+    store.getSetting('eventPin') ?? config.eventPin
+  )
   if (fatal) {
     app.log.error(fatal)
     process.exit(1)
@@ -382,25 +592,105 @@ async function main(): Promise<void> {
 
   // Bind the address resolved up top (see bindHost, before the voice block).
   await app.listen({ host: bindHost, port: config.port })
-  attachWs(app)
+  const ws = attachWs(app)
+
+  /**
+   * The net under everything, for a packaged box only.
+   *
+   * Node's default for an uncaught throw or an unhandled rejection is to
+   * exit, and most of the places one can come from here are socket callbacks
+   * with nothing above them to catch anything — which makes a single bug
+   * reachable from the network into a box that goes dark mid-show. Every one
+   * of those found so far is fixed where it happens, and that is the real
+   * work; this is what stops the next one being a festival's comms.
+   *
+   * Resuming from an unknown state is not something to be casual about, and
+   * Node's own advice is against it. The judgement here is the product's:
+   * crew on a working chat and a box that might be wrong somewhere beats a
+   * box that is definitely nothing. A `.app` somebody double-clicked has no
+   * supervisor to restart it either.
+   *
+   * Not armed from source, deliberately. In development a crash is
+   * information, and a box that swallowed it would hide the next one of
+   * these instead of surfacing it.
+   */
+  if (box) {
+    const survive = (what: string) => (err: unknown) => {
+      // console.error rather than app.log: the logger is one of the things
+      // that could be broken, and this line is the only record there will be.
+      console.error(`${what} — the box is still running, but something is wrong`)
+      console.error(err instanceof Error ? (err.stack ?? err.message) : String(err))
+    }
+    process.on('uncaughtException', survive('uncaught exception'))
+    process.on('unhandledRejection', survive('unhandled rejection'))
+  }
+
+  // Bound to one adapter, the box would lose localhost — which is the mic
+  // test, the health checks, and where a browser on the box itself goes. A
+  // small mirror keeps it. See mirrorOnLoopback.
+  let closeLoopback: (() => Promise<void>) | undefined
+  const openLoopback = async () => {
+    if (!ifaceUp || config.hostExplicit) return
+    try {
+      closeLoopback = await mirrorOnLoopback(app, config.port)
+    } catch (error) {
+      app.log.warn(`localhost mirror did not start (${String(error)}); use ${config.iface} locally`)
+    }
+  }
+  await openLoopback()
 
   // How an install lets go of the port, and takes it back if the new build
-  // never comes up. Assigned after listen() because there is nothing to close
-  // before it; the updater only ever calls these long afterwards.
+  // never comes up. Assigned after the mirror exists because it has to let go
+  // of that too; the updater only ever calls these long afterwards.
   //
-  // `closeAllConnections()` before `close()` is the part that matters.
-  // `close()` on its own stops accepting new connections and then waits for
-  // the existing ones to end — and crewbox's are WebSockets held open by
-  // every phone on site. Without this line an install would hang for ever on
+  // Three things hold a port between them, and a release that frees one of
+  // them is not a release:
+  //
+  // **The upgraded sockets go first.** `closeAllConnections()` looks like it
+  // covers this and does not — it only destroys connections the HTTP parser
+  // still owns, and every WebSocket has been detached from that list. Without
+  // terminating them `close()` waits for phones that will never hang up, on
   // exactly the box that has crew connected, which is every box worth
   // updating.
-  releaseListener = () =>
-    new Promise<void>((resolve, reject) => {
+  //
+  // **The mirror and the captive responder are ports too.** They live in this
+  // process, on 127.0.0.1 and on :80. A new box that finds either of them
+  // taken records the failure and gives up — `startCaptive` deliberately does
+  // not retry EADDRINUSE — so a box that updated would spend the rest of the
+  // event with no captive responder and no localhost.
+  //
+  // **So is the SFU.** It holds 7880 and a pid file, and the new box reaps
+  // whatever that file names — which mid-update is this process's SFU. See
+  // startVoice: stopping it here means there is nothing to reap and nothing
+  // held, and a rollback gets its voice back rather than minting tokens for a
+  // process somebody else killed.
+  //
+  // **It has to end.** A release that never returns leaves the binary already
+  // swapped and the box off the air with nothing to roll back to, so the wait
+  // is bounded and a timeout is a failure the updater can act on.
+  releaseListener = async () => {
+    ws.terminateUpgraded()
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`the port was still busy after ${RELEASE_TIMEOUT_MS} ms`)),
+        RELEASE_TIMEOUT_MS
+      )
       app.server.closeAllConnections()
-      app.server.close((err) => (err ? reject(err) : resolve()))
+      app.server.close((err) => {
+        clearTimeout(timer)
+        if (err) reject(err)
+        else resolve()
+      })
     })
-  regainListener = () =>
-    new Promise<void>((resolve, reject) => {
+    await closeLoopback?.()
+    closeLoopback = undefined
+    await captive?.portal?.close()
+    captive = undefined
+    await embedded?.stop()
+    embedded = null
+  }
+  regainListener = async () => {
+    await new Promise<void>((resolve, reject) => {
       const onError = (err: Error) => reject(err)
       app.server.once('error', onError)
       app.server.listen({ host: bindHost, port: config.port }, () => {
@@ -408,16 +698,23 @@ async function main(): Promise<void> {
         resolve()
       })
     })
-
-  // Bound to one adapter, the box would lose localhost — which is the mic
-  // test, the health checks, and where a browser on the box itself goes. A
-  // small mirror keeps it. See mirrorOnLoopback.
-  let closeLoopback: (() => Promise<void>) | undefined
-  if (ifaceUp && !config.hostExplicit) {
-    try {
-      closeLoopback = await mirrorOnLoopback(app, config.port)
-    } catch (error) {
-      app.log.warn(`localhost mirror did not start (${String(error)}); use ${config.iface} locally`)
+    await openLoopback()
+    if (captiveOpts) captive = await startCaptive(captiveOpts)
+    // Only when voice was this box's to run. `livekit.embedded` was decided
+    // at boot and is what the app was built with, so starting an SFU it does
+    // not know about would be worse than leaving voice off.
+    //
+    // The panel is not told the new reason, and does not need to be: it
+    // probes the SFU live on every open, so a rollback that lost voice shows
+    // up there whatever this says. The warning is for whoever has a terminal.
+    if (livekit.embedded && startVoice) {
+      const again = await startVoice()
+      embedded = again.sfu
+      if (!embedded) {
+        app.log.warn(
+          `voice: the SFU did not come back after the rollback (${again.failure ?? 'no reason given'}) — restart the box`
+        )
+      }
     }
   }
 
@@ -502,22 +799,21 @@ async function main(): Promise<void> {
       ...(certName ? { hostname: certName } : {}),
       iface: boot.iface,
     })
-    const status = {
+    statusBase = {
       pid: process.pid,
       port: config.port,
       secure: Boolean(tls),
       joinUrl: urls[0] ?? origin,
       urls,
-      eventPin,
-      eventName,
       version: process.env.DEPLOY_VERSION ?? '',
     }
-    writeBoxStatus(dataDir, status)
+    publishStatus()
 
     // Rewrite it when the answer arrives, so the tray icon picks the news up
     // on its next poll without the helper knowing what GitHub is.
     updates?.onAnswer((update) => {
-      writeBoxStatus(dataDir, { ...status, ...(update ? { update } : {}) })
+      latestUpdate = update ?? undefined
+      publishStatus()
     })
 
     // After the status file, which is the only thing it reads.
@@ -535,6 +831,14 @@ async function main(): Promise<void> {
       // First, so a helper watching this file stops offering to open a box
       // that is on its way down.
       if (box) clearBoxStatus(dataDir)
+      // Same reason as the release path: app.close() waits for every open
+      // connection, and a WebSocket is not something `closeAllConnections`
+      // can reach. `hub.close()` below terminates the chat sockets, but the
+      // docs relay closes its own gracefully — which waits for a phone to
+      // answer — and nothing at all closed the voice proxy's. Without this
+      // the 3 s fallback above is what ends the process, so the SFU is never
+      // stopped and the database never closed.
+      ws.terminateUpgraded()
       hub.close()
       netwatch?.stop()
       video?.stop()

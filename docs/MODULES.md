@@ -48,8 +48,9 @@ Three things are worth copying:
   sheet ask the same band different questions; neither answer may overwrite
   the other.
 - **Take the ordering from the shell.** `inRunningOrder` is exported from
-  `shell/timetable/agenda.ts` precisely so a module and the running order's
-  own board cannot put the same two acts in a different order.
+  `@crewbox/shared` (`shared/src/timetable.ts`) precisely so a module and the
+  running order's own board cannot put the same two acts in a different
+  order.
 
 An importer that brings acts in should use `upsertAct` rather than `addAct`:
 the same file gets imported twice, and a box with the day listed twice has

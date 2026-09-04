@@ -28,14 +28,69 @@ interface Room {
   awareness: awarenessProtocol.Awareness
   /** conn → awareness clientIds it controls (cleared when it drops). */
   conns: Map<WebSocket, Set<number>>
+  /** Encoded size of the document, last time it was measured. */
+  bytes: number
+  /** When that was, so the measurement is not taken per frame. */
+  measuredAt: number
+}
+
+/**
+ * How much state one shared document may hold.
+ *
+ * The relay applied whatever it was sent and broadcast the result to every
+ * other device in the room, so any crew member with a session could grow a
+ * sheet without bound — and the box would faithfully push every megabyte of
+ * it to every phone watching. Not even deliberately: a paste of a very large
+ * spreadsheet does it, and the phones on the receiving end are the ones that
+ * suffer.
+ *
+ * Eight megabytes is far past any real document. The largest festival master
+ * patch in the fixtures is under a hundred kilobytes encoded, and a plot with
+ * a thousand fixtures and their GDTF modes is a few hundred.
+ */
+const MAX_ROOM_BYTES = 8 * 1024 * 1024
+
+/**
+ * How often the size is actually measured.
+ *
+ * `encodeStateAsUpdate` serialises the whole document, so doing it per frame
+ * would cost more than the thing it is guarding against. Measuring every two
+ * seconds bounds a room to the cap plus two seconds of growth, which is the
+ * right trade: the point is that it stops, not the exact byte it stops at.
+ */
+const MEASURE_EVERY_MS = 2000
+
+/**
+ * Sync and awareness frames one connection may send in ten seconds.
+ *
+ * The chat hub has always had this and the relay did not, so one stuck or
+ * hostile client could loop updates at wire speed and have the box multiply
+ * them by every phone in the room. A whole-document sync is a handful of
+ * frames and a fast typist emits a few a second, so this is far above any
+ * real cadence.
+ */
+const FRAME_LIMIT = 300
+const FRAME_WINDOW_MS = 10_000
+
+/** What a relay will carry. Overridable so a test can use small numbers. */
+export interface RelayLimits {
+  maxRoomBytes: number
+  frameLimit: number
+  frameWindowMs: number
 }
 
 export class DocsRelay {
   private rooms = new Map<string, Room>()
   private heartbeat: NodeJS.Timeout
   private alive = new WeakSet<WebSocket>()
+  private limits: RelayLimits
 
-  constructor() {
+  constructor(limits: Partial<RelayLimits> = {}) {
+    this.limits = {
+      maxRoomBytes: limits.maxRoomBytes ?? MAX_ROOM_BYTES,
+      frameLimit: limits.frameLimit ?? FRAME_LIMIT,
+      frameWindowMs: limits.frameWindowMs ?? FRAME_WINDOW_MS,
+    }
     this.heartbeat = setInterval(() => {
       for (const room of this.rooms.values()) {
         for (const ws of room.conns.keys()) {
@@ -52,7 +107,13 @@ export class DocsRelay {
   }
 
   /**
-   * A room's document, if this box has ever relayed one.
+   * A room's document, if one is open on this box right now.
+   *
+   * Not "if it has ever relayed one": the last client out frees the doc (see
+   * the close handler below), because the durable copies live on the phones.
+   * So a caller gets a document while somebody has the pane open and null a
+   * few seconds after the last of them closed it — which is the honest
+   * answer, and the reason every caller here has a fallback.
    *
    * Read-only, and deliberately does *not* create the room — asking whether
    * anybody has put a running order on this box must not conjure an empty
@@ -67,13 +128,39 @@ export class DocsRelay {
     return this.rooms.get(name)?.doc ?? null
   }
 
+  /** Frame timestamps per connection, for `overFrameLimit`. */
+  private frames = new WeakMap<WebSocket, number[]>()
+
+  /** True (and records the frame) once a connection is over its rate. */
+  private overFrameLimit(ws: WebSocket): boolean {
+    const now = Date.now()
+    const recent = (this.frames.get(ws) ?? []).filter((t) => now - t < this.limits.frameWindowMs)
+    if (recent.length >= this.limits.frameLimit) {
+      this.frames.set(ws, recent)
+      return true
+    }
+    recent.push(now)
+    this.frames.set(ws, recent)
+    return false
+  }
+
+  /** Has this document reached the cap? Measured at most every few seconds. */
+  private roomIsFull(room: Room): boolean {
+    const now = Date.now()
+    if (now - room.measuredAt >= MEASURE_EVERY_MS) {
+      room.bytes = Y.encodeStateAsUpdate(room.doc).length
+      room.measuredAt = now
+    }
+    return room.bytes > this.limits.maxRoomBytes
+  }
+
   private getRoom(name: string): Room {
     let room = this.rooms.get(name)
     if (room) return room
     const doc = new Y.Doc()
     const awareness = new awarenessProtocol.Awareness(doc)
     awareness.setLocalState(null)
-    room = { doc, awareness, conns: new Map() }
+    room = { doc, awareness, conns: new Map(), bytes: 0, measuredAt: 0 }
     this.rooms.set(name, room)
 
     // Broadcast doc updates and awareness changes to every conn in the room.
@@ -125,6 +212,17 @@ export class DocsRelay {
     this.alive.add(ws)
     ws.binaryType = 'arraybuffer'
 
+    // First, before anything can emit. `ws` raises `error` for a framing
+    // violation — a reserved bit set, invalid UTF-8, a frame over maxPayload
+    // — and an `error` event with no listener is rethrown by EventEmitter,
+    // which here means the whole box exits. The chat hub has always had this;
+    // the relay did not, so a phone with a large enough patch sheet could
+    // take the box down by accident and one bad frame could do it on purpose.
+    //
+    // Nothing is logged: this is reachable per frame, and a line per frame is
+    // a way to fill a disk. The close is the response.
+    ws.on('error', () => ws.close())
+
     ws.on('pong', () => this.alive.add(ws))
 
     ws.on('message', (data: Buffer | ArrayBuffer) => {
@@ -137,9 +235,25 @@ export class DocsRelay {
       } catch {
         return
       }
+      // Both kinds of frame count. A flood of awareness updates is the
+      // same amount of work for every other phone in the room as a flood of
+      // document ones.
+      if (this.overFrameLimit(ws)) {
+        ws.close(1008, 'too many frames')
+        return
+      }
       try {
         switch (messageType) {
           case MESSAGE_SYNC: {
+            // Refuse to grow a room that is already too big. Yjs cannot
+            // un-apply an update, so the check has to come first — and it
+            // is the room that is bounded rather than the frame, because a
+            // document is grown by a thousand small writes as readily as by
+            // one large one.
+            if (this.roomIsFull(room)) {
+              ws.close(1009, 'document is full')
+              return
+            }
             const encoder = encoding.createEncoder()
             encoding.writeVarUint(encoder, MESSAGE_SYNC)
             syncProtocol.readSyncMessage(decoder, encoder, room.doc, ws)

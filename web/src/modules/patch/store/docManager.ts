@@ -8,6 +8,7 @@ import {
   initSheet,
   LOCAL_ORIGIN,
   type ImportedSheetData,
+  type ImportedSheetReport,
 } from '../model/sheetDoc'
 
 /**
@@ -51,13 +52,13 @@ export const openIndex = (): DocHandle => sheetStore.openIndex()
 export const openSheet = (sheetId: string): DocHandle => sheetStore.open(sheetId)
 
 /**
- * Create a new sheet: fresh id, default structure, index entry — and its
- * first act on the event's running order, which is where acts live now.
+ * Create a new sheet: fresh id, default structure, index entry.
+ *
+ * Nothing is written to the running order. Acts live there and are the whole
+ * event's, so a new patch sheet has no business adding one — see `initSheet`.
  */
 export const createSheet = (title: string): { sheetId: string; handle: DocHandle } => {
-  const { id, handle } = sheetStore.create((doc: Y.Doc) =>
-    initSheet(doc, timetable().doc, { title })
-  )
+  const { id, handle } = sheetStore.create((doc: Y.Doc) => initSheet(doc, { title }))
   return { sheetId: id, handle }
 }
 
@@ -71,11 +72,15 @@ export const createSheet = (title: string): { sheetId: string; handle: DocHandle
 export const createSheetFromImport = (
   title: string,
   data: ImportedSheetData
-): { sheetId: string; handle: DocHandle } => {
-  const { id, handle } = sheetStore.create((doc: Y.Doc) =>
-    buildImportedSheet(doc, timetable().doc, data, { title })
-  )
-  return { sheetId: id, handle }
+): { sheetId: string; handle: DocHandle; report: ImportedSheetReport } => {
+  // Caught in a closure rather than threaded through the shared store: the
+  // store's job is a doc's lifecycle, and what one module's importer wants to
+  // say about a file is not part of it.
+  let report: ImportedSheetReport = { duplicateActs: [] }
+  const { id, handle } = sheetStore.create((doc: Y.Doc) => {
+    report = buildImportedSheet(doc, timetable().doc, data, { title })
+  })
+  return { sheetId: id, handle, report }
 }
 
 /** Delete a sheet's local data and index entry. */

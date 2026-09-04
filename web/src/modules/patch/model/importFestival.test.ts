@@ -95,6 +95,28 @@ describe('not a festival sheet', () => {
     expect(sheetFromCsv(parseCsv(csv)).data.acts).toHaveLength(1)
   })
 
+  it('does not read an act name with a number range in it as the set times', () => {
+    /**
+     * `\d\s*[-–]\s*\d` was the test for "this row is the set times" — any
+     * digit, a dash, any digit. So an act billed "Sunset 6-8" classified its
+     * own row as times, the walk up took the row *above* as the names, and
+     * every act on the sheet came out named after whatever was there. One
+     * band with a number in its name renamed the whole running order.
+     */
+    const csv = [
+      ',,,PROMOTER COPY,',
+      ',,,Sunset 6-8,',
+      ',,,19:00 - 20:00,',
+      'CH,INPUT,CH,SUB-BOX,MIC / DI:',
+      '1,Kick,1,PINK 1,D6',
+    ].join('\n')
+    const { data, matched } = festivalSheetFromCsv(parseCsv(csv))
+    expect(matched).toBe(true)
+    expect(data.acts.map((a) => a.name)).toEqual(['Sunset 6-8'])
+    // And the times it really does have are still read.
+    expect(data.acts[0]).toMatchObject({ start: '19:00', end: '20:00' })
+  })
+
   it('does not invent sub-boxes from one stray legend-shaped row', () => {
     const csv = [
       'Some Title,,,,SPARE,8,USC',

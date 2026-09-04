@@ -201,6 +201,25 @@ describe('refusing what it cannot prove', () => {
   })
 })
 
+describe('when the disk will not take it', () => {
+  it('reports it rather than throwing out of a function that never throws', async () => {
+    // `downloadBuild` is documented never to throw, and its caller's catch
+    // says so in as many words — so an ENOSPC escaping here was reported to
+    // an admin as an internal bug rather than as a full disk. A build is
+    // exactly the size of thing a box runs out of room for.
+    const updates = join(dir, 'updates')
+    mkdirSync(updates, { recursive: true })
+    // A directory where the `.part` file wants to be: the write fails with
+    // EISDIR, which is a real errno from the same line as ENOSPC.
+    mkdirSync(join(updates, `${LINUX}.part`), { recursive: true })
+    const result = await run(fakeIo())
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.stage).toBe('asset')
+    expect(result.reason).toContain(`could not save ${LINUX}`)
+  })
+})
+
 describe('tidying up', () => {
   it('sweeps a part-file left by a killed process', async () => {
     const updates = join(dir, UPDATES_DIR)

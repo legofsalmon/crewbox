@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api.ts'
+import { nextPhase, shownStage, type UpdatePhase } from '../lib/updatewatch.ts'
+import { adminError } from '../lib/adminerror.ts'
 
 /**
  * Updating the box, from the panel.
@@ -37,17 +39,44 @@ export default function UpdateSection({
     interruption: api.Interruption
   } | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * What this panel is waiting for, which the box's own stage cannot say.
+   * `watching` starts the moment Install is pressed; lib/updatewatch.ts has
+   * why the outcome must be polled for rather than read from the reply.
+   */
+  const [phase, setPhase] = useState<UpdatePhase>('idle')
   const live = useRef(true)
 
-  const refresh = useCallback(async () => {
-    try {
-      const next = await api.adminGetUpdate(auth())
-      if (live.current) setStatus(next)
-    } catch {
-      // A panel that cannot read the updater is not worth a red banner: the
-      // rest of the screen is still useful, and the next poll may work.
-    }
-  }, [auth])
+  const refresh = useCallback(
+    async (watching = false) => {
+      try {
+        const next = await api.adminGetUpdate(auth())
+        if (!live.current) return
+        setStatus(next)
+        if (watching) setPhase((p) => nextPhase(p, { kind: 'stage', stage: next.flow.stage }))
+      } catch (err) {
+        if (!live.current) return
+        // A panel that cannot read the updater is not worth a red banner: the
+        // rest of the screen is still useful, and the next poll may work. But
+        // *which* failure it is decides an install, so it is passed on.
+        const locked = err instanceof api.ApiError && err.status === 403
+        if (watching) {
+          // Deliberately not `adminError`. While an install is being watched
+          // a 403 is the good news: unlocks live in one process's memory, so
+          // a box holding none of them is a box that restarted, which is the
+          // only positive evidence anywhere that the install worked. Giving
+          // the unlock back here would replace "the box came back on 0.19.0"
+          // with the password box.
+          setPhase((p) => nextPhase(p, locked ? { kind: 'locked' } : { kind: 'silent' }))
+        } else if (locked) {
+          // Not watching: an ordinary dead unlock, and the rest of the panel
+          // is about to fail the same way.
+          adminError(err, '')
+        }
+      }
+    },
+    [auth]
+  )
 
   useEffect(() => {
     live.current = true
@@ -59,12 +88,20 @@ export default function UpdateSection({
 
   // Poll only while something is actually moving. A box sitting idle has no
   // reason to be asked twice a second for ever.
-  const moving = status?.flow.stage === 'downloading' || status?.flow.stage === 'installing'
+  //
+  // `phase` is in here because the local stage is still `ready` at the moment
+  // Install is pressed — the box goes off the air before it can say
+  // otherwise. Without it nothing polled, and a rollback was never read.
+  const moving =
+    status?.flow.stage === 'downloading' ||
+    status?.flow.stage === 'installing' ||
+    phase === 'watching'
   useEffect(() => {
     if (!moving) return
-    const timer = setInterval(() => void refresh(), POLL_MS)
+    const watchingInstall = phase === 'watching'
+    const timer = setInterval(() => void refresh(watchingInstall), POLL_MS)
     return () => clearInterval(timer)
-  }, [moving, refresh])
+  }, [moving, phase, refresh])
 
   if (!status) return null
   const { flow, available, interruption } = status
@@ -82,6 +119,8 @@ export default function UpdateSection({
 
   const version = flow.version ?? available?.version ?? ''
 
+  const shown = shownStage(phase, flow.stage)
+
   async function download() {
     if (!available) return
     setBusy(true)
@@ -89,7 +128,7 @@ export default function UpdateSection({
       await api.adminDownloadUpdate(auth(), available.version)
       await refresh()
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Could not start the download')
+      onNote(adminError(err, 'Could not start the download'))
     } finally {
       setBusy(false)
     }
@@ -101,34 +140,32 @@ export default function UpdateSection({
       const { intent: armed } = await api.adminArmUpdate(auth(), version)
       setIntent(armed)
     } catch (err) {
-      onNote(err instanceof api.ApiError ? err.message : 'Could not prepare the update')
+      onNote(adminError(err, 'Could not prepare the update'))
     } finally {
       setBusy(false)
     }
   }
 
+  /**
+   * Start the install, then stop believing this request.
+   *
+   * Releasing the port destroys the socket carrying it, so the *successful*
+   * case can never reply and the 500 a rollback produces cannot get back
+   * either. Reading the rejection as "the box is restarting" is how a
+   * rollback used to be reported to the admin as a completed update. The poll
+   * decides instead, which is why the phase is set before the request rather
+   * than after it.
+   */
   async function install() {
     if (!intent) return
-    setBusy(true)
+    setIntent(null)
+    setPhase('watching')
     try {
       await api.adminInstallUpdate(auth(), intent.version, intent.token)
-      // Reaching here means the install *returned*, which only happens when
-      // something went wrong — on success the box is gone and this request
-      // died with it. Refresh to read the failure.
-      await refresh()
-    } catch (err) {
-      // Very likely the connection dropping as the box restarts, which is the
-      // good outcome. The panel cannot tell the difference from here, so it
-      // says the honest thing and lets the reconnect answer it.
-      onNote(
-        err instanceof api.ApiError && err.status
-          ? err.message
-          : 'The box is restarting — this page will reconnect on its own'
-      )
-    } finally {
-      setIntent(null)
-      setBusy(false)
+    } catch {
+      // Expected on every path worth having, and evidence of nothing.
     }
+    await refresh(true)
   }
 
   async function reset() {
@@ -147,7 +184,7 @@ export default function UpdateSection({
         <p className="admin-hint">{flow.blocked}</p>
       ) : (
         <>
-          {flow.stage === 'idle' && available && (
+          {shown === 'idle' && available && (
             <>
               <p className="admin-updater-lead">
                 <strong>{available.version}</strong> is available.{' '}
@@ -165,13 +202,13 @@ export default function UpdateSection({
             </>
           )}
 
-          {flow.stage === 'downloading' && (
+          {shown === 'downloading' && (
             <p className="admin-updater-lead" aria-live="polite">
               Downloading {version} and checking its signature…
             </p>
           )}
 
-          {flow.stage === 'ready' && (
+          {shown === 'ready' && (
             <>
               <p className="admin-updater-lead">
                 <strong>{version}</strong> is downloaded and verified.
@@ -186,13 +223,29 @@ export default function UpdateSection({
             </>
           )}
 
-          {flow.stage === 'installing' && (
+          {shown === 'installing' && (
             <p className="admin-updater-lead" aria-live="polite">
-              Installing {version}. The box is restarting — this page will reconnect on its own.
+              Installing {version}. The box is restarting — this page is watching for it to come
+              back and will say how it went.
             </p>
           )}
 
-          {flow.stage === 'failed' && (
+          {shown === 'restarted' && (
+            <>
+              <p className="admin-updater-lead" aria-live="polite">
+                The box came back on <strong>{version}</strong>.
+              </p>
+              <p className="admin-hint">
+                It is a new process, so the panel is locked again and everything on this screen is
+                from before the restart.
+              </p>
+              <button className="admin-btn" onClick={() => location.reload()}>
+                Reload the panel
+              </button>
+            </>
+          )}
+
+          {shown === 'failed' && (
             <>
               <p className="admin-updater-error" role="alert">
                 {flow.error}

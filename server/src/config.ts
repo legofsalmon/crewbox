@@ -13,6 +13,16 @@ function positiveDays(value: string | undefined, fallback: number): number {
 }
 
 export const config = {
+  /**
+   * The bind address, and the one setting that outranks `CREWBOX_IFACE`.
+   *
+   * Set `HOST` and the box binds exactly it — no loopback mirror, no
+   * adapter preference, whatever `CREWBOX_IFACE` says. That is right for a
+   * container or a reverse proxy, and wrong for a festival box, where
+   * `CREWBOX_IFACE` is the setting you want: it binds *and* advertises the
+   * crew network. Documented here and in the runbook because a box with
+   * both set behaves like neither.
+   */
   host: process.env.HOST ?? '0.0.0.0',
   /** Whether HOST was set by hand, in which case it outranks CREWBOX_IFACE. */
   hostExplicit: process.env.HOST !== undefined,
@@ -188,6 +198,17 @@ export const config = {
    * event router's DNS sends them here, which an admin pastes deliberately
    * (see the file /api/admin/dns-config generates).
    */
+  /**
+   * The timezone the festival is in (`CREWBOX_TZ`), as an IANA name.
+   *
+   * Unset, the box uses its own process timezone, which is right on a box
+   * whose clock was set up on site. A box imaged with UTC and driven to a
+   * field is not: it would tell a production desk the headliner is on an
+   * hour from when every crew phone says, during the show. This is the one
+   * place to say so once.
+   */
+  timeZone: process.env.CREWBOX_TZ?.trim() || undefined,
+
   captive: {
     enabled:
       process.env.CREWBOX_CAPTIVE === '1'
@@ -222,6 +243,20 @@ export const config = {
 }
 
 /**
+ * The shortest event PIN an internet-exposed box will start on.
+ *
+ * On a LAN a four-digit PIN is right: it is on a poster on a wall, and the
+ * threat is somebody in the field, not somebody with a script. Through a
+ * tunnel the same PIN is ten thousand guesses from anywhere — and the rate
+ * limiter is what stands between, which is not what a secret should be
+ * leaning on.
+ *
+ * Eight, matching the admin password's own floor, because a rig that is on
+ * the internet has one number that matters and this is it.
+ */
+export const EXPOSED_PIN_MIN_LENGTH = 8
+
+/**
  * Guard risky defaults at startup. Returns a fatal message when the config is
  * unsafe to run (caller should exit), or null. A tunnel-exposed server
  * (CREWBOX_TRUST_PROXY=1) running on the public default event PIN would let
@@ -230,13 +265,25 @@ export const config = {
 export function warnOnDefaults(
   log: { warn: (msg: string) => void },
   /** An admin-set PIN (settings table) overrides the default, so it's safe. */
-  hasStoredPin = false
+  hasStoredPin = false,
+  /**
+   * The PIN the box will actually serve. Checked for length only when the
+   * box is exposed — see EXPOSED_PIN_MIN_LENGTH.
+   */
+  effectivePin = ''
 ): string | null {
   if (!process.env.EVENT_PIN && !hasStoredPin) {
     if (config.trustProxy) {
       return 'EVENT_PIN is unset but CREWBOX_TRUST_PROXY=1 (internet-exposed). Refusing to start on the public default PIN — set EVENT_PIN (or set one in the admin panel first).'
     }
     log.warn('EVENT_PIN not set — using default dev PIN "1234". Set EVENT_PIN in production!')
+  }
+  // A PIN somebody chose, or one the box minted, still has to be long enough
+  // to be on the internet. The old guard only refused the *default* PIN, so a
+  // four-digit one set in the admin panel — or minted on first boot — sailed
+  // through, and the documented tunnel rig ran on a four-digit secret.
+  if (config.trustProxy && effectivePin && effectivePin.length < EXPOSED_PIN_MIN_LENGTH) {
+    return `The event PIN is ${effectivePin.length} characters and CREWBOX_TRUST_PROXY=1 (internet-exposed). Refusing to start: a PIN reachable from the internet needs at least ${EXPOSED_PIN_MIN_LENGTH}. Set a longer EVENT_PIN, or set one in the admin panel and restart.`
   }
   return null
 }

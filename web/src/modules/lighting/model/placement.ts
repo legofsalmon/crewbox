@@ -25,6 +25,16 @@ export interface FittedPosition {
   /** Input indices ordered along the fitted line, for unit numbering. */
   order: number[]
   /**
+   * There was no direction to find: no points, or all of them at one spot.
+   *
+   * `length` is then the default, which is a drawing convenience and not a
+   * measurement of anything. Callers that present a number to a person — the
+   * truss estimate goes on a hire order — have to know the difference; one
+   * did not, and told a production manager that a stack of fixtures at a
+   * single coordinate measured twelve metres of truss.
+   */
+  degenerate: boolean
+  /**
    * Largest distance from a point to the fitted line, in metres — how much
    * the group is a line at all.
    *
@@ -50,7 +60,16 @@ const DEFAULT_LENGTH = 12
 export function fitPosition(points: { x: number; y: number; z?: number }[]): FittedPosition {
   const order = points.map((_, i) => i)
   if (points.length === 0) {
-    return { x: 0, y: 0, z: 0, rotation: 0, length: DEFAULT_LENGTH, order, residual: 0 }
+    return {
+      x: 0,
+      y: 0,
+      z: 0,
+      rotation: 0,
+      length: DEFAULT_LENGTH,
+      order,
+      residual: 0,
+      degenerate: true,
+    }
   }
 
   const heights = points.map((p) => p.z ?? 0).sort((a, b) => a - b)
@@ -75,7 +94,16 @@ export function fitPosition(points: { x: number; y: number; z?: number }[]): Fit
   // bar of the default length is the least surprising thing to draw.
   const spread = Math.sqrt(cxx + cyy)
   if (spread < 1e-6) {
-    return { x: mx, y: my, z, rotation: 0, length: DEFAULT_LENGTH, order, residual: 0 }
+    return {
+      x: mx,
+      y: my,
+      z,
+      rotation: 0,
+      length: DEFAULT_LENGTH,
+      order,
+      residual: 0,
+      degenerate: true,
+    }
   }
 
   const angle = 0.5 * Math.atan2(2 * cxy, cxx - cyy)
@@ -100,6 +128,7 @@ export function fitPosition(points: { x: number; y: number; z?: number }[]): Fit
     length: Math.max(max - min, 0.5) * 1.05,
     order,
     residual,
+    degenerate: false,
   }
 }
 

@@ -105,6 +105,27 @@ describe('importing a running order that is already here', () => {
     expect(snapshotTimetable(d).acts[0]).toMatchObject({ start: '19:00', end: '19:45' })
   })
 
+  it('keeps the spelling the stage already had', () => {
+    /**
+     * The match is case-insensitive — "MAIN STAGE" and "Main Stage" are one
+     * stage to a crew — but writing the file's spelling back renamed the
+     * stage for everybody. A patch sheet finds its columns by comparing its
+     * own `meta.stage` to the act's *exactly*, so an import typed in
+     * capitals silently emptied the grid of every sheet already pointing at
+     * that stage. Nothing said why: the acts were still there, under a name
+     * the sheet no longer recognised.
+     */
+    const d = doc()
+    upsertAct(d, { ...opener, start: '19:00' })
+    upsertAct(d, { name: 'THE HARBOUR LIGHTS', stage: 'MAIN', date: opener.date, end: '19:45' })
+
+    const [act] = snapshotTimetable(d).acts
+    expect(snapshotTimetable(d).acts).toHaveLength(1)
+    expect(act).toMatchObject({ name: 'The Harbour Lights', stage: 'Main' })
+    // And the fields the file did add are still taken.
+    expect(act).toMatchObject({ start: '19:00', end: '19:45' })
+  })
+
   it('keeps the same name on two stages apart', () => {
     // An act genuinely can play twice — a second stage, or the next day.
     const d = doc()

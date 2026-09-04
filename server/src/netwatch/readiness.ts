@@ -34,9 +34,33 @@ export function mediaReadiness(
   ptp: ClockStatus,
   devices: MediaService[],
   streams: SapStream[],
-  now: number
+  now: number,
+  /** Announcements the rosters had no room for — see MAX_SERVICES. */
+  overflow: { devices: number; streams: number } = { devices: 0, streams: 0 }
 ): ReadinessCheck[] {
   const checks: ReadinessCheck[] = []
+
+  // A roster at its cap is not a big network, it is a misbehaving one — and
+  // the list stops being the answer to "what is on this network", which is
+  // what it is for. Said plainly rather than left to be inferred from a
+  // number that stopped growing.
+  if (overflow.devices > 0 || overflow.streams > 0) {
+    checks.push({
+      id: 'media-overflow',
+      label: 'Media roster',
+      state: 'limited',
+      detail:
+        'More announcements are arriving than this box will list: ' +
+        [
+          overflow.devices > 0 ? `${overflow.devices} mDNS` : '',
+          overflow.streams > 0 ? `${overflow.streams} SAP` : '',
+        ]
+          .filter(Boolean)
+          .join(' and ') +
+        ' refused. The lists below are what fitted, not everything on the wire.',
+      fix: 'Something on the media network is announcing names it is making up. Look for a device in a reboot loop, or a discovery tool left running.',
+    })
+  }
 
   // --- Are the watchers even open ------------------------------------------
   const dark = (['ptp', 'mdns', 'sap'] as const).filter(

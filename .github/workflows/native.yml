@@ -11,6 +11,11 @@ on:
     paths:
       - 'native/**'
       - 'web/src/lib/server.ts'
+      # The permission check this job runs. Without it listed, a change to
+      # the checker itself is next exercised by a release build — which is
+      # the worst place to find out it is wrong, and is how a fix to it went
+      # unverified once already.
+      - 'scripts/check-apk-permissions.mjs'
       - '.github/workflows/native.yml'
 
 jobs:
@@ -32,6 +37,9 @@ jobs:
       - run: npm run build:native
       - run: ./gradlew assembleDebug
         working-directory: native/android
+      # Same check the release runs, here so a manifest change is caught by
+      # the workflow that a manifest change triggers.
+      - run: node scripts/check-apk-permissions.mjs native/android/app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
           name: crewbox-debug-apk

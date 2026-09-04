@@ -180,7 +180,7 @@ export function liveSummary(
 export function syncNotice(
   sync: LiveSummary['sync']
 ): { tone: 'warn' | 'info'; text: string } | null {
-  const worst = (['frozen', 'lost', 'unwatched', 'held'] as const).find((state) =>
+  const worst = (['frozen', 'lost', 'unwatched', 'unsynchronised', 'held'] as const).find((state) =>
     sync.some((s) => s.state === state)
   )
   if (!worst) return null
@@ -208,6 +208,16 @@ export function syncNotice(
         text:
           `Universe${plural} ${list} sync on universe${on}, which this box ` +
           'is not listening to — these levels may not be on stage',
+      }
+    case 'unsynchronised':
+      // Not a frozen stage: nothing has ever synchronised these, so
+      // receivers are processing normally (§6.2.4.1). What is missing is
+      // the timing they were set up for.
+      return {
+        tone: 'warn',
+        text:
+          `Universe${plural} ${list} ask for sync on universe${on} and nothing is sending it ` +
+          '— levels are reaching the stage, but not together',
       }
     default:
       return {

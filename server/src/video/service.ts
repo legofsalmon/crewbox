@@ -56,6 +56,11 @@ export class VideoService {
       store: this.store,
       ...(options.io ? { io: options.io } : {}),
       ...(options.community ? { community: options.community } : {}),
+      // So a poll leaves on the video adapter rather than whatever the
+      // routing table picks — which on a box holding the crew Wi-Fi too is
+      // the difference between monitoring the wall and appearing on the
+      // network the crew's phones are on. See SnmpSession.
+      ...(options.interfaceIp ? { interfaceIp: options.interfaceIp } : {}),
       ...(options.log ? { log: options.log } : {}),
     })
     this.intents = new Intents(this.now)

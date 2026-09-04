@@ -216,6 +216,48 @@ describe('certificate and clock', () => {
   })
 })
 
+describe('a box told to make no outbound connections', () => {
+  it('does not make them, and says the internet was not checked', async () => {
+    // CREWBOX_UPDATE_CHECK=0 documents itself as "on a box whose network
+    // must make no outbound connections at all" — and this sweep made three
+    // at every startup regardless, so the promise was only ever true of the
+    // update check itself.
+    let reached = 0
+    const { checks } = await probeEnvironment(
+      probes({
+        tcpReachable: async () => {
+          reached++
+          return true
+        },
+        noContentOk: async () => {
+          reached++
+          return true
+        },
+      }),
+      false
+    )
+    expect(reached).toBe(0)
+    const internet = checks.find((c) => c.id === 'internet')!
+    expect(internet.state).toBe('info')
+    expect(internet.detail).toContain('Not checked')
+  })
+
+  it('still looks when it is allowed to', async () => {
+    let reached = 0
+    await probeEnvironment(
+      probes({
+        tcpReachable: async () => {
+          reached++
+          return true
+        },
+        noContentOk: async () => true,
+      }),
+      true
+    )
+    expect(reached).toBeGreaterThan(0)
+  })
+})
+
 describe('summary', () => {
   it('never lets info colour the result', async () => {
     // A box with no internet and nothing else wrong is a healthy box.

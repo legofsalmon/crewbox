@@ -41,7 +41,7 @@
 // box's data directory: that directory is what deploy/backup.sh copies to a
 // USB stick that lives gaffer-taped to the server.
 import { X509Certificate } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 
@@ -160,15 +160,74 @@ export function certHostname(dataDir) {
   }
 }
 
-export function localAddress() {
-  for (const addrs of Object.values(networkInterfaces())) {
+/**
+ * Where this box keeps its data, chosen the way the shell scripts choose it.
+ *
+ * The runbook's cron line for this script is a bare `node deploy/vercel-dns.mjs`
+ * on the systemd rig, whose data lives in /var/lib/crewbox — but the default
+ * here was `$HOME/.crewbox/data`, and cron's HOME is root's. So the
+ * certificate was never found, no hostname could be read from it, and the job
+ * exited 2 every night into a mailbox nobody reads while the record it was
+ * meant to maintain went stale.
+ */
+export function defaultDataDir(env = process.env, exists = existsSync) {
+  if (env.DATA_DIR) return env.DATA_DIR
+  if (exists('/var/lib/crewbox')) return '/var/lib/crewbox'
+  return join(env.HOME ?? '', '.crewbox', 'data')
+}
+
+/** Candidate crew-facing addresses on this machine, in enumeration order. */
+export function localAddresses(interfaces = networkInterfaces()) {
+  const found = []
+  for (const addrs of Object.values(interfaces)) {
     for (const addr of addrs ?? []) {
-      if (addr.family === 'IPv4' && !addr.internal && !addr.address.startsWith('169.254.')) {
-        return addr.address
-      }
+      if (addr.family !== 'IPv4' || addr.internal) continue
+      // A link-local address means DHCP never answered. Publishing one is
+      // publishing an address nothing can route to.
+      if (addr.address.startsWith('169.254.')) continue
+      found.push(addr.address)
     }
   }
-  return null
+  return found
+}
+
+/**
+ * Which address the DNS record should point at.
+ *
+ * This used to be "the first IPv4 the OS enumerated", which on the rig this
+ * is written for is a coin toss: a crewbox sits on the crew network *and*
+ * the lighting VLAN, and the lighting VLAN is exactly the address no phone
+ * can reach. A wrong answer here is a public record pointing crew at
+ * nothing, fixed by hand, at the venue.
+ *
+ * So: `CREWBOX_IFACE` decides when it is set — it is already how the box
+ * itself picks its crew-facing adapter, so the two agree by construction.
+ * With one candidate there is nothing to get wrong. With several and no
+ * pin, refuse and say what the choices are, because guessing is the failure
+ * this replaces.
+ */
+export function chooseAddress(candidates, iface) {
+  const pinned = iface?.trim()
+  if (pinned) {
+    return candidates.includes(pinned)
+      ? { address: pinned }
+      : {
+          error:
+            `CREWBOX_IFACE is ${pinned}, but no adapter on this machine has that address.\n` +
+            `  Found: ${candidates.join(', ') || '(none)'}`,
+        }
+  }
+  if (candidates.length === 1) return { address: candidates[0] }
+  if (candidates.length === 0) {
+    return { error: 'No routable address on this machine to point the record at.' }
+  }
+  return {
+    error:
+      `This machine has ${candidates.length} routable addresses and nothing says which one\n` +
+      `  crew are on: ${candidates.join(', ')}\n` +
+      `  Pass --ip, or set CREWBOX_IFACE to the crew network's address — the same value\n` +
+      `  the box itself uses. Guessing here publishes an address no phone can reach.`,
+  }
 }
 
 // --- CLI ------------------------------------------------------------------
@@ -184,7 +243,7 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run')
   const token = process.env.VERCEL_TOKEN
   const team = process.env.VERCEL_TEAM_ID
-  const dataDir = process.env.DATA_DIR ?? join(process.env.HOME ?? '', '.crewbox', 'data')
+  const dataDir = defaultDataDir()
 
   if (!token) {
     console.error('VERCEL_TOKEN is required (a Vercel account or team token).')
@@ -192,16 +251,20 @@ async function main() {
   }
 
   const hostname = arg('--hostname') ?? certHostname(dataDir)
-  const ip = arg('--ip') ?? localAddress()
   if (!hostname) {
     console.error(
       `No hostname: pass --hostname, or give the box a certificate in ${dataDir} to read it from.`
     )
     process.exit(2)
   }
+  let ip = arg('--ip')
   if (!ip) {
-    console.error('No routable address on this machine to point the record at.')
-    process.exit(2)
+    const chosen = chooseAddress(localAddresses(), process.env.CREWBOX_IFACE)
+    if (chosen.error) {
+      console.error(chosen.error)
+      process.exit(2)
+    }
+    ip = chosen.address
   }
 
   const call = async (method, path, body) => {

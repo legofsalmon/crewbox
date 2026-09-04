@@ -162,6 +162,22 @@ export default function Plot3D({
     return () => observer.disconnect()
   }, [])
 
+  /**
+   * The click handler, held by reference rather than depended on.
+   *
+   * The scene memo below rebuilds every fixture, truss and label in the rig
+   * — the expensive thing this component does — and `onSelect` was in its
+   * dependency list. The parent declares that callback inline, so every one
+   * of its renders (a keystroke in the plot's title, a tab change, a live
+   * DMX frame) minted a new function and rebuilt the whole 3D scene with it.
+   *
+   * Nothing about the scene *depends* on the callback: it is an event
+   * handler, called long after the geometry is decided. A ref keeps it
+   * current without making the geometry a function of its identity.
+   */
+  const select = useRef(onSelect)
+  select.current = onSelect
+
   const pivot = useMemo(() => plotPivot(snapshot.positions), [snapshot.positions])
   const radius = useMemo(() => plotRadius(snapshot.positions, pivot), [snapshot.positions, pivot])
 
@@ -381,13 +397,13 @@ export default function Plot3D({
             <g
               key={`fx-${fixture.id}`}
               className={styles.fixtureGroup}
-              onClick={() => onSelect(fixture.id)}
+              onClick={() => select.current(fixture.id)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  onSelect(fixture.id)
+                  select.current(fixture.id)
                 }
               }}
               aria-label={`${fixture.purpose || 'Fixture'}${
@@ -427,7 +443,7 @@ export default function Plot3D({
       scene: items.sort((a, b) => b.depth - a.depth).map((item) => item.node),
       labels: labelNodes,
     }
-  }, [snapshot, issues, selectedId, camera, pivot, radius, zoom, size, look, onSelect])
+  }, [snapshot, issues, selectedId, camera, pivot, radius, zoom, size, look])
 
   return (
     <div className={styles.wrap}>

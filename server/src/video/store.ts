@@ -1,10 +1,13 @@
+import { networkInterfaces } from 'node:os'
 import {
   MAX_PROCESSORS,
   MAX_PROCESSOR_NAME,
   isIpv4,
+  isUnicastIpv4,
   newId,
   type VideoProcessor,
 } from '@crewbox/shared'
+import { isOwnBroadcast } from './discovery.ts'
 
 /**
  * The list of processors the box knows about.
@@ -32,9 +35,17 @@ export class VideoStore {
   private readonly settings: SettingsIo
   private readonly now: () => number
 
-  constructor(settings: SettingsIo, now: () => number = Date.now) {
+  private readonly interfaces: typeof networkInterfaces
+
+  constructor(
+    settings: SettingsIo,
+    now: () => number = Date.now,
+    /** Injectable so the broadcast check is testable without a real adapter. */
+    interfaces: typeof networkInterfaces = networkInterfaces
+  ) {
     this.settings = settings
     this.now = now
+    this.interfaces = interfaces
   }
 
   /**
@@ -94,6 +105,17 @@ export class VideoStore {
   }): { ok: true; processor: VideoProcessor } | { ok: false; reason: string } {
     const host = input.host.trim()
     if (!isIpv4(host)) return { ok: false, reason: 'that is not an IPv4 address' }
+    // One processor, addressed on purpose. Adding a group or a broadcast
+    // address would turn the reader's twenty-second SNMP GET into a
+    // segment-wide beacon — and adding and arming are both session-authed, so
+    // this is one thing typed by anybody on site, on a box whose own rule is
+    // that segment-wide traffic needs the admin password. See isUnicastIpv4.
+    if (!isUnicastIpv4(host)) {
+      return { ok: false, reason: 'that address is a group or a broadcast, not one processor' }
+    }
+    if (isOwnBroadcast(host, this.interfaces)) {
+      return { ok: false, reason: 'that is the broadcast address of a network this box is on' }
+    }
     const processors = this.list()
     const existing = processors.find((p) => p.host === host)
     // Idempotent by address: a scan run twice, or an address typed in that a

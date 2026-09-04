@@ -534,6 +534,45 @@ describe('whether the levels are on stage', () => {
     times.forEach((t, i) => state.apply(frame({ ...over, sequence: i + 1 }), t))
   }
 
+  it('keeps a source alive whose sequence number is not moving', () => {
+    // A desk parked on a look re-sends the same frame. Its levels are
+    // rightly discarded as a straggler — but the arrival was still proof of
+    // life, and the code returned before recording it. So the sweep dropped
+    // the console every data-loss timeout, the next packet re-created it,
+    // and the panel showed a healthy rig losing and regaining its desk
+    // every couple of seconds, logging a silence each time.
+    const state = new DmxState()
+    state.apply(frame({ sequence: 5 }), 1000)
+    // Same sequence, again and again, past the sACN data-loss timeout.
+    for (const at of [2000, 3000, 4000, 5000]) state.apply(frame({ sequence: 5 }), at)
+    state.sweep(5100)
+    expect(state.health()[0].sources).toHaveLength(1)
+    expect(state.outages()).toEqual([])
+  })
+
+  it('reads a universe by whoever is winning it, not whoever arrived first', () => {
+    // A plot universe two protocols reach: the record's protocol and wire
+    // universe were frozen from the first frame, so which console powered
+    // up first decided the sync rules and the mapping for the whole run.
+    const state = new DmxState({ artnetBase: 1 })
+    state.apply(frame({ protocol: 'sacn', sourceId: 'desk', priority: 100 }), 1000)
+    expect(state.health()[0].protocol).toBe('sacn')
+
+    // A higher-priority Art-Net source takes the universe.
+    state.apply(
+      frame({
+        protocol: 'artnet',
+        sourceId: 'node',
+        priority: 150,
+        wireUniverse: 0,
+        sequenced: false,
+      }),
+      1100
+    )
+    expect(state.health()[0].protocol).toBe('artnet')
+    expect(state.health()[0].wireUniverse).toBe(0)
+  })
+
   it('says nothing about a rig that is not synchronising', () => {
     const state = new DmxState()
     state.apply(frame(), 1000)
@@ -582,6 +621,29 @@ describe('whether the levels are on stage', () => {
     // stream has stopped, and 2.5 s past the last one is E1.31's own
     // deadline for giving up on it.
     keepSending(state, { syncAddress: 7962, forceSync: false }, [3500])
+    state.sweep(3600)
+    expect(state.health()[0].sync).toBe('frozen')
+  })
+
+  it('does not call a rig frozen when sync was never sent in the first place', () => {
+    // §6.2.4.1: a receiver that has not had a synchronization packet
+    // processes data normally. So a desk configured to synchronise on a
+    // universe nobody is sending to has a stage that is following it
+    // perfectly — and the panel said "frozen on its last look" all night,
+    // which is the sentence that sends somebody running.
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    keepSending(state, { syncAddress: 7962, forceSync: false }, [1000, 2000, 3000])
+    state.sweep(3100)
+    expect(state.health()[0].sync).toBe('unsynchronised')
+  })
+
+  it('still calls it frozen once a stream has been seen and stops', () => {
+    // The distinction is the whole point: this rig had sync and lost it.
+    const state = new DmxState()
+    state.watchSyncUniverses([1, 7962])
+    state.noteSacnSync(7962, 1000)
+    keepSending(state, { syncAddress: 7962, forceSync: false }, [1000, 3500])
     state.sweep(3600)
     expect(state.health()[0].sync).toBe('frozen')
   })

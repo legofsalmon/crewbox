@@ -104,6 +104,19 @@ export interface Fixture {
   // --- Ops
   notes: string
   status: FixtureStatus
+  /**
+   * The `uuid` this fixture had in the MVR it came from.
+   *
+   * Identity across re-imports, and nothing else — never shown, never
+   * edited. A designer re-exporting after a change is the normal way an MVR
+   * arrives twice, and without this the second import added the whole rig
+   * again beside the first: every unit doubled, every address in conflict
+   * with its own twin, and the only way back a manual delete of 400 rows.
+   *
+   * Absent on hand-built fixtures and on anything imported from a CSV,
+   * which carries no such thing.
+   */
+  mvrUuid?: string
 }
 
 export interface FixtureMode {

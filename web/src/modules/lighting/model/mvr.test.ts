@@ -5,7 +5,7 @@
 // parser to every phone on site.
 import { zipSync, strToU8 } from 'fflate'
 import { describe, expect, it } from 'vitest'
-import { parseMvr, parseMvrMatrix } from './mvr'
+import { parseMvr, parseMvrAddress, parseMvrMatrix } from './mvr'
 import { fitPosition, isBar } from './placement'
 
 /**
@@ -38,7 +38,7 @@ interface FixtureSpec {
   name: string
   spec: string
   mode: string
-  address: number
+  address: number | string
   fixtureId: string
   unit: string
   matrix: string
@@ -182,6 +182,77 @@ describe('MVR import', () => {
       { [sharpy]: gdtf('Clay Paky', 'Sharpy', [['Standard', ['16']]]) }
     )
     expect(parseMvr(mvr).fixtures[0]).toMatchObject({ universe: 2, address: 25 })
+  })
+
+  it('reads the desk notation exporters write instead', () => {
+    // `2.001` is universe 2, address 1 — what the desk prints and what the
+    // person who exported the file reads back. Through Number() it was
+    // universe 1 address 2.001, a fractional address nothing downstream
+    // could compare, so the fixture sat a channel out and the overlap check
+    // called the rig clean.
+    const mvr = buildMvr(
+      [
+        {
+          name: 'L',
+          fixtures: [
+            {
+              name: 'A',
+              spec: sharpy,
+              mode: 'Standard',
+              address: '2.001',
+              fixtureId: '1',
+              unit: '1',
+              matrix: `${IDENTITY}{0,0,0}`,
+            },
+          ],
+        },
+      ],
+      { [sharpy]: gdtf('Clay Paky', 'Sharpy', [['Standard', ['16']]]) }
+    )
+    expect(parseMvr(mvr).fixtures[0]).toMatchObject({ universe: 2, address: 1 })
+  })
+
+  it('knows the two notations apart, and refuses what is neither', () => {
+    expect(parseMvrAddress('537')).toEqual({ universe: 2, address: 25 })
+    expect(parseMvrAddress('1')).toEqual({ universe: 1, address: 1 })
+    expect(parseMvrAddress('512')).toEqual({ universe: 1, address: 512 })
+    expect(parseMvrAddress('513')).toEqual({ universe: 2, address: 1 })
+    // Desk notation, in the three ways it gets written.
+    expect(parseMvrAddress('2.001')).toEqual({ universe: 2, address: 1 })
+    expect(parseMvrAddress('2.1')).toEqual({ universe: 2, address: 1 })
+    expect(parseMvrAddress('12.257')).toEqual({ universe: 12, address: 257 })
+    // Not addresses.
+    expect(parseMvrAddress('')).toBeNull()
+    expect(parseMvrAddress('0')).toBeNull()
+    expect(parseMvrAddress('1.0')).toBeNull()
+    expect(parseMvrAddress('1.513')).toBeNull()
+    expect(parseMvrAddress('nope')).toBeNull()
+    // A real decimal is not a patch; guessing at one would be worse than
+    // saying the fixture is unaddressed, which is what the summary reports.
+    expect(parseMvrAddress('1.5.3')).toBeNull()
+  })
+
+  it('carries each fixture uuid, so a re-import can find it again', () => {
+    const mvr = buildMvr(
+      [
+        {
+          name: 'L',
+          fixtures: [
+            {
+              name: 'A',
+              spec: sharpy,
+              mode: 'Standard',
+              address: 1,
+              fixtureId: '1',
+              unit: '1',
+              matrix: `${IDENTITY}{0,0,0}`,
+            },
+          ],
+        },
+      ],
+      { [sharpy]: gdtf('Clay Paky', 'Sharpy', [['Standard', ['16']]]) }
+    )
+    expect(parseMvr(mvr).fixtures[0]!.uuid).toBe('u-A')
   })
 
   it('uses a group name as the position when a fixture sits in one', () => {

@@ -144,6 +144,18 @@ export interface ClockStatus {
   /** Current v2 grandmaster, or null when none is announcing. */
   grandmasterId: string | null
   domain: number | null
+  /**
+   * How many PTP domains are announcing at once.
+   *
+   * A domain is a separate clock tree that shares the wire — Dante on 0 and
+   * a video reference on 127 is an ordinary rig, not a fault. The ledger
+   * used to keep one grandmaster across all of them, so two perfectly
+   * stable domains looked like two clocks trading the crown several times
+   * a second: the panel called it an election war for a network where
+   * nothing was wrong at all. Everything below describes the busiest
+   * domain; this says how many there are.
+   */
+  domains: number
   priority1: number | null
   clockClass: number | null
   /** When the current grandmaster's reign began. */
@@ -163,16 +175,36 @@ export interface ClockStatus {
  * has changed hands. Pure — frames and clocks in, judgement out — so every
  * election war is a unit test rather than a rig.
  */
-export class PtpState {
-  private grandmasterId: string | null = null
-  private domain: number | null = null
-  private priority1: number | null = null
-  private clockClass: number | null = null
-  private since: number | null = null
-  private lastAnnounce: number | null = null
-  private changes: ClockChange[] = []
+interface DomainLedger {
+  grandmasterId: string | null
+  priority1: number | null
+  clockClass: number | null
+  since: number | null
+  lastAnnounce: number
+  changes: ClockChange[]
   /** v2 clock id → last time it announced, for the election count. */
-  private readonly announcers = new Map<string, number>()
+  announcers: Map<string, number>
+}
+
+/**
+ * A domain that has never announced this session.
+ *
+ * `lastAnnounce: 0` rather than null so the sweep's arithmetic is total —
+ * a fresh ledger is only ever created by an arriving announce anyway.
+ */
+const emptyDomain = (): DomainLedger => ({
+  grandmasterId: null,
+  priority1: null,
+  clockClass: null,
+  since: null,
+  lastAnnounce: 0,
+  changes: [],
+  announcers: new Map(),
+})
+
+export class PtpState {
+  /** One ledger per PTP domain — see ClockStatus.domains. */
+  private readonly domains = new Map<number, DomainLedger>()
   private v1Packets = 0
   private v1WindowStart = 0
   private v1RateHz = 0
@@ -192,65 +224,89 @@ export class PtpState {
     }
     if (message.kind !== 'announce') return
 
-    this.announcers.set(message.grandmasterId, now)
-    this.lastAnnounce = now
-    this.domain = message.domain
-    this.priority1 = message.priority1
-    this.clockClass = message.clockClass
-
-    if (message.grandmasterId !== this.grandmasterId) {
-      // The best-master election has moved the clock. On a healthy network
-      // this happens once at power-up and then never again; each entry here
-      // after that is a device winning an argument mid-show.
-      this.changes.unshift({ at: now, from: this.grandmasterId, to: message.grandmasterId })
-      this.grandmasterId = message.grandmasterId
-      this.since = now
+    let ledger = this.domains.get(message.domain)
+    if (!ledger) {
+      ledger = emptyDomain()
+      this.domains.set(message.domain, ledger)
     }
+    ledger.announcers.set(message.grandmasterId, now)
+    ledger.lastAnnounce = now
+    ledger.priority1 = message.priority1
+    ledger.clockClass = message.clockClass
+
+    if (message.grandmasterId !== ledger.grandmasterId) {
+      // The best-master election has moved the clock. Only counted as a
+      // *change* when there was a previous holder to take it from: the
+      // first announce this box hears is the clock it arrived to, not a
+      // clock that moved, and recording it meant every start reported "the
+      // clock is moving" for ten minutes. `since` carries when the reign
+      // began, which is the thing that was worth knowing.
+      if (ledger.grandmasterId !== null) {
+        ledger.changes.unshift({ at: now, from: ledger.grandmasterId, to: message.grandmasterId })
+      }
+      ledger.grandmasterId = message.grandmasterId
+      ledger.since = now
+    }
+  }
+
+  /** The domain doing the most talking — what `status()` describes. */
+  private busiest(): { domain: number; ledger: DomainLedger } | null {
+    let best: { domain: number; ledger: DomainLedger } | null = null
+    for (const [domain, ledger] of this.domains) {
+      if (!best || ledger.lastAnnounce > best.ledger.lastAnnounce) best = { domain, ledger }
+    }
+    return best
   }
 
   /** Age out silence. Call on a timer, like DmxState.sweep. */
   sweep(now: number): void {
-    if (this.lastAnnounce !== null && now - this.lastAnnounce > GRANDMASTER_TIMEOUT_MS) {
-      if (this.grandmasterId !== null) {
+    for (const [domain, ledger] of this.domains) {
+      if (now - ledger.lastAnnounce > GRANDMASTER_TIMEOUT_MS && ledger.grandmasterId !== null) {
         // Not recorded as a change: silence is its own state, and counting
         // it as churn would report a powered-down rig as an election war.
-        this.grandmasterId = null
-        this.since = null
+        ledger.grandmasterId = null
+        ledger.since = null
+      }
+      for (const [id, seen] of ledger.announcers) {
+        if (now - seen > GRANDMASTER_TIMEOUT_MS) ledger.announcers.delete(id)
+      }
+      ledger.changes = ledger.changes.filter((change) => now - change.at <= CLOCK_HISTORY_MS)
+      // A domain that has been silent for longer than the whole history
+      // window has nothing left to say and is forgotten, so a network that
+      // cycles through domains does not accrete ledgers for ever.
+      if (
+        ledger.grandmasterId === null &&
+        ledger.announcers.size === 0 &&
+        ledger.changes.length === 0 &&
+        now - ledger.lastAnnounce > CLOCK_HISTORY_MS
+      ) {
+        this.domains.delete(domain)
       }
     }
-    for (const [id, seen] of this.announcers) {
-      if (now - seen > GRANDMASTER_TIMEOUT_MS) this.announcers.delete(id)
-    }
-    this.changes = this.changes.filter((change) => now - change.at <= CLOCK_HISTORY_MS)
     if (this.v1LastSeen !== 0 && now - this.v1LastSeen > GRANDMASTER_TIMEOUT_MS) {
       this.v1RateHz = 0
     }
   }
 
   status(now: number): ClockStatus {
+    const best = this.busiest()
     return {
-      grandmasterId: this.grandmasterId,
-      domain: this.domain,
-      priority1: this.priority1,
-      clockClass: this.clockClass,
-      since: this.since,
-      lastAnnounce: this.lastAnnounce,
-      changes: [...this.changes],
-      announcers: this.announcers.size,
+      grandmasterId: best?.ledger.grandmasterId ?? null,
+      domain: best?.domain ?? null,
+      domains: this.domains.size,
+      priority1: best?.ledger.priority1 ?? null,
+      clockClass: best?.ledger.clockClass ?? null,
+      since: best?.ledger.since ?? null,
+      lastAnnounce: best?.ledger.lastAnnounce || null,
+      changes: best ? [...best.ledger.changes] : [],
+      announcers: best?.ledger.announcers.size ?? 0,
       v1RateHz: this.v1RateHz,
       v1Seen: this.v1LastSeen !== 0 && now - this.v1LastSeen <= GRANDMASTER_TIMEOUT_MS,
     }
   }
 
   clear(): void {
-    this.grandmasterId = null
-    this.domain = null
-    this.priority1 = null
-    this.clockClass = null
-    this.since = null
-    this.lastAnnounce = null
-    this.changes = []
-    this.announcers.clear()
+    this.domains.clear()
     this.v1Packets = 0
     this.v1WindowStart = 0
     this.v1RateHz = 0

@@ -19,9 +19,21 @@ export function connectionScreen(input: {
   connection: Connection
   hasConnected: boolean
   hasCache: boolean
+  /**
+   * Whether a connection attempt has already failed this session.
+   *
+   * Sticky, and it has to be. A cold start with no cache retries on a
+   * backoff, and the state cycles offline → connecting → offline; without
+   * this the screen flapped between "Can't reach the crew server" and
+   * "Connecting…" every few seconds, which reads as a device that cannot
+   * make up its mind rather than a box that is not there. Once the first
+   * attempt has failed, the recovery screen stays up and says it is
+   * retrying — the message that is actually true.
+   */
+  hasFailed?: boolean
 }): ConnScreen {
   if (input.hasConnected || input.hasCache) return 'ok'
-  if (input.connection === 'offline') return 'unreachable'
+  if (input.connection === 'offline' || input.hasFailed) return 'unreachable'
   return 'connecting'
 }
 

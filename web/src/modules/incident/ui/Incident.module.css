@@ -346,3 +346,10 @@
   max-width: 46ch;
   margin-inline: auto;
 }
+
+/* "Load earlier entries", under the oldest day on screen. */
+.earlier {
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px 24px;
+}

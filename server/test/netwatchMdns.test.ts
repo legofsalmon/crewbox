@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MdnsState, parseMdns, serviceKind } from '../src/netwatch/mdns.ts'
+import { MAX_SERVICES, MdnsState, parseMdns, serviceKind } from '../src/netwatch/mdns.ts'
 
 /**
  * DNS wire format built by hand, compression pointers included — every real
@@ -184,5 +184,37 @@ describe('the device roster', () => {
     state.applyPacket(parseMdns(packet([dante('Stagebox')])), 1000)
     expect(state.roster()).toHaveLength(1)
     expect(state.roster()[0]!.lastSeen).toBe(1000)
+  })
+
+  it('stops listing at a bound, and says it did', () => {
+    // The instance name comes off the wire, and nothing bounded the roster.
+    // One sender can mint tens of thousands of names a second, and every
+    // consumer sorts the whole thing on every read — the panel, the audit
+    // sample, the probe count. A misbehaving device took the box's memory
+    // and then its event loop.
+    const state = new MdnsState()
+    for (let i = 0; i < MAX_SERVICES + 50; i++) {
+      state.applyPacket(parseMdns(packet([dante(`Made-Up-${i}`)])), 1000 + i)
+    }
+    expect(state.roster()).toHaveLength(MAX_SERVICES)
+    expect(state.overflow()).toBe(50)
+  })
+
+  it('makes room for a new device by dropping one that said goodbye', () => {
+    // ...and only one that said goodbye. A flood must not be able to push
+    // out a device that is really there, which is the list's whole job.
+    const state = new MdnsState()
+    state.applyPacket(parseMdns(packet([dante('Leaving')])), 500)
+    state.applyPacket(parseMdns(packet([dante('Leaving', 0)])), 600) // goodbye
+    for (let i = 0; i < MAX_SERVICES - 1; i++) {
+      state.applyPacket(parseMdns(packet([dante(`Real-${i}`)])), 1000 + i)
+    }
+    expect(state.roster()).toHaveLength(MAX_SERVICES)
+
+    state.applyPacket(parseMdns(packet([dante('Newcomer')])), 90_000)
+    const names = state.roster().map((s) => s.name.toLowerCase())
+    expect(names).toContain('newcomer')
+    expect(names).not.toContain('leaving')
+    expect(state.overflow()).toBe(0)
   })
 })

@@ -42,8 +42,18 @@ struct BoxStatus: Decodable {
     let update: UpdateInfo?
 }
 
+/// Where the box keeps its data — the same rule the box itself applies.
+///
+/// `DATA_DIR` when it is set, because this wrapper *passes that variable
+/// through* to the box it launches and then looked somewhere else for the
+/// status file. A Mac started with `DATA_DIR=/Volumes/Show/crewbox` got a
+/// menu bar reporting on `~/.crewbox/data`: no box running, nothing to quit,
+/// while one was serving the whole crew.
 func dataDir() -> URL {
-    FileManager.default.homeDirectoryForCurrentUser
+    if let dir = ProcessInfo.processInfo.environment["DATA_DIR"], !dir.isEmpty {
+        return URL(fileURLWithPath: dir)
+    }
+    return FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".crewbox")
         .appendingPathComponent("data")
 }
@@ -150,7 +160,26 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
     /// killed anyway, so the deadline is about not hanging Quit rather than
     /// about safety.
     private func stopBox() {
-        guard let process = box, process.isRunning else { return }
+        guard let process = box, process.isRunning else {
+            // Not ours to stop — but still stoppable.
+            //
+            // The menu reports on whatever box owns this data directory, not
+            // only the one this wrapper launched. Somebody who started the
+            // box from a terminal, or left an older wrapper's box running,
+            // got a menu saying "running" and a Quit that silently did
+            // nothing. The status file names the pid; the Windows tray has
+            // always done this.
+            if let pid = readStatus()?.pid {
+                stopping = true
+                kill(pid, SIGTERM)
+                let deadline = Date().addingTimeInterval(5)
+                while readStatus() != nil && Date() < deadline {
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+                }
+                stopping = false
+            }
+            return
+        }
         stopping = true
         process.terminate()
         let deadline = Date().addingTimeInterval(5)

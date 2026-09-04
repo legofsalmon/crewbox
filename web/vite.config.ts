@@ -5,11 +5,17 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
-let commit = 'dev'
+// The same token the server falls back to (server/src/version.ts). They used
+// to differ — 'dev' here, 'unknown' there — so a build made outside a git
+// checkout produced two version strings that could never match, and the
+// client raised "New version available" against a server running the very
+// same build, for ever.
+let commit = 'unknown'
 try {
   commit = execSync('git rev-parse --short HEAD').toString().trim()
 } catch {
-  // not a git checkout (e.g. release tarball) — fall back to 'dev'
+  // Not a git checkout (a release tarball). Both sides say 'unknown', and
+  // the reload pill declines to compare two of those.
 }
 // e.g. "0.2.0+a1b2c3d" — bump pkg.version for user-facing releases.
 const appVersion = `${pkg.version}+${commit}`
@@ -46,8 +52,36 @@ export default defineConfig({
       workbox: {
         // The app shell loads offline; live data comes over our own WS/API
         // (with its own Dexie cache), so never let the SW intercept those.
-        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/connect/, /^\/crewbox\.apk/],
+        // Server-rendered pages, which the app shell must never stand in
+        // for. `/setup` is the one that bit: a box reused for a second event
+        // has a service worker cached from the first, so its first-run page
+        // — the one that names the event and sets the PIN — was replaced by
+        // the app shell, which then asked for a PIN nobody had been given.
+        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/connect/, /^\/setup/, /^\/crewbox\.apk/],
+        /**
+         * The voice chunk is fetched when somebody uses voice, not on install.
+         *
+         * It is the LiveKit SDK: 484 KB, nearly 40% of what a phone downloads,
+         * and it is already a lazy import — but the service worker precached
+         * it, so "loaded on demand" was true exactly once, on the very first
+         * page load, and false for every install after. Every crew member on
+         * a chat-only box paid for it, over festival Wi-Fi, at the moment
+         * everybody is joining at once.
+         *
+         * The runtime rule below puts it in the cache the first time it is
+         * actually used, so it stays available afterwards.
+         */
+        globIgnores: ['**/voice-*.js', '**/voice-*.js.br', '**/voice-*.js.gz'],
         runtimeCaching: [
+          {
+            // Content-hashed, so a cached copy can never be the wrong one.
+            urlPattern: ({ url }) => /\/assets\/voice-.*\.js$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'crewbox-voice',
+              expiration: { maxEntries: 4 },
+            },
+          },
           {
             // Uploaded files are content-addressed → cache forever once seen.
             urlPattern: ({ url }) => url.pathname.startsWith('/api/files/'),

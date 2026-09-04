@@ -20,6 +20,22 @@ describe('connectionScreen', () => {
     )
   })
 
+  it('does not flap back to "connecting" between retries', () => {
+    // A cold start with no cache retries on a backoff, so the state cycles
+    // offline → connecting → offline. Without the latch the screen swapped
+    // between "Can't reach the crew server" and "Connecting…" every few
+    // seconds, which reads as a device that cannot make up its mind rather
+    // than a box that is not there.
+    expect(
+      connectionScreen({
+        connection: 'connecting',
+        hasConnected: false,
+        hasCache: false,
+        hasFailed: true,
+      })
+    ).toBe('unreachable')
+  })
+
   it('shows a calm connecting state during the first connect with no cache', () => {
     expect(
       connectionScreen({ connection: 'connecting', hasConnected: false, hasCache: false })

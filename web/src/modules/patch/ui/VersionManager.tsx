@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type * as Y from 'yjs'
 import {
   deleteVersion,
@@ -27,7 +27,11 @@ function VersionRow({
   version: SheetVersion
   onRestored: () => void
 }) {
-  const summary = (() => {
+  // Memoised on the version, which never changes once saved. This ran on
+  // every render of every row — a JSON parse of a whole sheet snapshot each
+  // — so opening the version list on a festival master patch parsed a
+  // megabyte or two per keystroke anywhere in the pane.
+  const summary = useMemo(() => {
     const snap = versionSnapshot(version)
     // Counted from what the version actually holds rather than from a stored
     // list: the acts themselves belong to the event's running order, and a
@@ -35,7 +39,7 @@ function VersionRow({
     const acts = new Set(Object.keys(snap.patches).map((key) => key.slice(0, key.indexOf(':'))))
     for (const actId of Object.keys(snap.extras)) acts.add(actId)
     return `${snap.channels.length} channels · ${acts.size} act${acts.size === 1 ? '' : 's'}`
-  })()
+  }, [version])
 
   const handleRestore = () => {
     if (
