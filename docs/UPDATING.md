@@ -115,8 +115,14 @@ executable, but you can rename it. The old one moves to `<name>.old`, the new
 one takes its place. At every instant in between there is a complete working
 binary on disk under a known name.
 
-**3. Only then is the port released.** The box stops listening, drops every
-WebSocket, and the new process starts.
+**3. Only then is the port released.** And every port, not just the obvious
+one: the box terminates every WebSocket (crew phones do not hang up on their
+own, and a listener waiting for them to would wait for ever), stops the
+mirror on 127.0.0.1 and the captive-portal responder on :80, and stops its
+own voice server so the new box finds 7880 free. Then the new process starts.
+The wait is bounded — a release that never returned would leave a box with a
+swapped binary and no way back, so a timeout is a failure the updater can
+roll back from.
 
 **4. The old process watches.** It stays alive, waiting for the new box to
 write its status file. This is the arrangement that makes rollback possible at
@@ -124,8 +130,17 @@ the moment it is needed: a build that will not start cannot be the thing that
 notices it did not start.
 
 **5. If the new box never answers**, within forty-five seconds, the old binary
-goes back, the old process starts listening again, and the panel says what
-happened. The box is exactly where it was.
+goes back, the old process starts listening again — with its voice server, its
+loopback mirror and its captive responder — and the panel says what happened.
+The box is exactly where it was, down to the web client it serves: each
+version's bundle is extracted to its own `<data dir>/web-dist/<version>/`, so
+a rollback keeps its own, and the verified download is put back under
+`<data dir>/updates/` so trying again costs a rename rather than the whole
+transfer over the venue's uplink.
+
+The one thing a rollback does not undo is a migration the new build ran. The
+copy from step 1 is named in the failure, because putting a database back over
+a live one while crew are typing into it is a decision for a person.
 
 ### On a Mac, the whole app is replaced
 
