@@ -20,6 +20,28 @@ test('sheet edits persist across reload and the URL deep-links the sheet', async
   await commitCell(page, 'Act 1', '2', 'Description', 'Snare top')
   await expect(page).toHaveURL(/\/m\/patch\/sheet\//)
 
+  /**
+   * Prove the last edit left this device before reloading it.
+   *
+   * `commitCell` returns once the keypress has been handled. The Yjs update
+   * reaches IndexedDB and the relay after that, asynchronously, and a reload
+   * inside that window takes the edit with it — which is a race in this
+   * test, not in the product: nobody reloads a page in the millisecond after
+   * typing. It has failed CI twice, both times on the *last* edit before the
+   * reload, with the one before it intact.
+   *
+   * A second device seeing the value is the only durability signal the app
+   * offers, and it is the right one: it proves the update is off this device
+   * and in the box. The witness is closed again before the reload, so the
+   * relay room dies with it and the reloaded page still has to restore from
+   * its own IndexedDB — which is what this test is about.
+   */
+  const witness = await newDevice(browser)
+  await openPatch(witness)
+  await openSheetByName(witness, name)
+  await expect(cell(witness, 'Act 1', '2', 'Description')).toHaveValue('Snare top')
+  await witness.context().close()
+
   await page.reload()
   // The route restores the same sheet without any navigation.
   await expect(page.locator('table')).toBeVisible()
