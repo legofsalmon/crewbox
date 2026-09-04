@@ -941,6 +941,53 @@ describe('files and search', () => {
     expect(store.searchMessages('spill', 'anyone', 10)).toEqual([])
     expect(store.searchMessages('lineup', 'anyone', 10).map((m) => m.id)).toEqual([successor.id])
   })
+
+  it('repairs an index a box damaged before the delete trigger existed', () => {
+    /**
+     * The trigger arrived in v3 and nothing repaired what its absence had
+     * already done, so every box older than that carries the damage: bodies
+     * left in the index by deletes, matched against whatever row holds that
+     * rowid now.
+     *
+     * Reproduced by removing the trigger, which is exactly what those boxes
+     * were: delete a message, insert one that takes its rowid, and the
+     * search for a word only the deleted message contained returns the new
+     * one. Then the migration.
+     */
+    const general = store.getChannelByName('general')!
+    db.exec('DROP TRIGGER messages_fts_delete')
+
+    const doomed = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'diesel spill cleanup',
+    }).message
+    db.prepare('DELETE FROM messages WHERE id = ?').run(doomed.id)
+    const successor = store.appendMessage({
+      channelId: general.id,
+      authorId: null,
+      kind: 'text',
+      body: 'stage two lineup',
+    }).message
+
+    // The damage, before anything is fixed: a message that does not contain
+    // the word, returned as the hit for it.
+    expect(store.searchMessages('spill', 'anyone', 10).map((m) => m.id)).toEqual([successor.id])
+
+    // What an upgrade does: v3's trigger, then v11's rebuild.
+    db.exec(`
+      CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+      END;
+      PRAGMA user_version = 10;
+    `)
+    runMigrations(db)
+
+    expect(store.searchMessages('spill', 'anyone', 10)).toEqual([])
+    // And the index still finds what is really there.
+    expect(store.searchMessages('lineup', 'anyone', 10).map((m) => m.id)).toEqual([successor.id])
+  })
 })
 
 describe('remote access', () => {

@@ -213,6 +213,65 @@ for (const scheme of ['light', 'dark'] as const) {
 
     await context.close()
   })
+
+  test(`the admin panel's destructive button stays readable in ${scheme} theme`, async ({
+    browser,
+  }) => {
+    /**
+     * Retire is the one button in the panel that takes something away from
+     * the whole crew, and it was the least readable thing on the page: the
+     * label is `--danger`, which is tuned against `--bg`, sitting on a
+     * button whose background is `--bg-hover` — 4.25 in the light theme,
+     * under AA. Pressing it once made that worse rather than better, because
+     * the confirm state washed the surface with 14% of the same red and
+     * dropped it to 3.52. Light theme is what an admin has outdoors.
+     */
+    const context = await browser.newContext({ colorScheme: scheme })
+    const page = await context.newPage()
+    page.on('pageerror', (e) => {
+      throw new Error(`Page error: ${e.message}`)
+    })
+
+    await page.goto('/?pin=4242')
+    await page.getByLabel('Your name').fill(`Panel ${scheme}`)
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join' }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+    // #general cannot be retired — deliberately — so the button only exists
+    // beside a channel somebody made.
+    const channel = `retire-${scheme}`
+    await page.getByRole('button', { name: 'New channel' }).click()
+    await page.getByPlaceholder('channel-name').fill(channel)
+    await page.getByPlaceholder('channel-name').press('Enter')
+    await expect(page.getByRole('button', { name: new RegExp(`#${channel}`) })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Admin panel' }).click()
+    await page.getByLabel('Admin password').fill('e2e-admin-password')
+    await page.getByRole('button', { name: 'Unlock' }).click()
+    await expect(page.getByRole('heading', { name: 'Crew' })).toBeVisible()
+
+    // Scoped to the row: the sidebar has a channel button of the same name.
+    const row = page.locator('.admin-channel', { hasText: channel })
+    const inRow = `.admin-channel:has-text("${channel}")`
+    await row.getByRole('button', { name: 'Edit' }).click()
+    const retire = row.getByRole('button', { name: 'Retire', exact: true })
+    await expect(retire).toBeVisible()
+    expect(await textContrast(page, `${inRow} .admin-btn.danger`)).toBeGreaterThan(4.5)
+
+    // And the state that actually does it.
+    await retire.click()
+    const confirm = row.getByRole('button', { name: 'Really retire?' })
+    await expect(confirm).toBeVisible()
+    expect(await textContrast(page, `${inRow} .admin-btn.danger.confirm`)).toBeGreaterThan(4.5)
+
+    // Go through with it, so the channel this test made does not follow the
+    // rest of the suite around the sidebar.
+    await confirm.click()
+    await expect(page.locator('.admin-channel', { hasText: channel })).toHaveCount(0)
+
+    await context.close()
+  })
 }
 
 /**

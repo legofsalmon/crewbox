@@ -42,6 +42,7 @@ import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
 import { currentRoute, navigate, onRouteChange, type Route } from './shell/router.ts'
 import { capTranscript } from './lib/transcript.ts'
+import { forgetPref, readPref, writePref } from './lib/prefs.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
 const TOKEN_KEY = 'crewbox:token'
@@ -99,10 +100,10 @@ const TYPING_THROTTLE_MS = 2500
  * shape has to survive a cold start.
  */
 function initialConfig(): PublicConfig {
-  const cachedModules = localStorage.getItem(MODULES_KEY)
+  const cachedModules = readPref(MODULES_KEY)
   return {
-    eventName: localStorage.getItem(EVENT_NAME_KEY) ?? '',
-    wifiSsid: localStorage.getItem(SSID_KEY) ?? '',
+    eventName: readPref(EVENT_NAME_KEY) ?? '',
+    wifiSsid: readPref(SSID_KEY) ?? '',
     voiceEnabled: true,
     // Chat is always on; the cache carries whatever else this box last ran.
     modules: cachedModules ? cachedModules.split(',').filter(Boolean) : ['chat'],
@@ -110,8 +111,8 @@ function initialConfig(): PublicConfig {
 }
 
 function remember(key: string, value: string | undefined): void {
-  if (value) localStorage.setItem(key, value)
-  else localStorage.removeItem(key)
+  if (value) writePref(key, value)
+  else forgetPref(key)
 }
 
 function rememberConfig(config: PublicConfig): void {
@@ -172,7 +173,7 @@ export function applyTheme(theme: Theme): void {
 }
 
 function initialTheme(): Theme {
-  const saved = localStorage.getItem(THEME_KEY)
+  const saved = readPref(THEME_KEY)
   if (saved === 'light' || saved === 'dark') return saved
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
@@ -419,7 +420,7 @@ const lastTypingSent = new Map<string, number>()
 let toastSeq = 0
 
 function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return readPref(TOKEN_KEY)
 }
 
 /** The crewbox session token, for modules that call platform services. */
@@ -666,7 +667,7 @@ export const useStore = create<AppState>()((set, get) => {
     // database that is not here any more, and two messages at the same seq
     // are two different messages. The outbox stays — what somebody typed is
     // theirs, and the box dedupes the replay by client id.
-    if (databaseChanged(localStorage.getItem(DB_EPOCH_KEY), msg.dbEpoch)) {
+    if (databaseChanged(readPref(DB_EPOCH_KEY), msg.dbEpoch)) {
       messages = {}
       void cache.wipeMessagesOnly()
     }
@@ -1214,7 +1215,7 @@ export const useStore = create<AppState>()((set, get) => {
 
     async join(name, eventPin, personalPin) {
       const { token } = await api.join({ name, eventPin, personalPin })
-      localStorage.setItem(TOKEN_KEY, token)
+      writePref(TOKEN_KEY, token)
       requestNotificationPermission()
       await get().boot()
     },
@@ -1637,7 +1638,7 @@ export const useStore = create<AppState>()((set, get) => {
 
     toggleTheme() {
       const theme: Theme = get().theme === 'dark' ? 'light' : 'dark'
-      localStorage.setItem(THEME_KEY, theme)
+      writePref(THEME_KEY, theme)
       applyTheme(theme)
       set({ theme })
     },
@@ -1663,7 +1664,7 @@ export const useStore = create<AppState>()((set, get) => {
         .catch(() => {})
       ws?.stop()
       ws = null
-      localStorage.removeItem(TOKEN_KEY)
+      forgetPref(TOKEN_KEY)
       clearQueuedIncidents()
       await cache.wipe()
       location.reload()
@@ -1689,7 +1690,7 @@ export const useStore = create<AppState>()((set, get) => {
         .catch(() => {})
       ws?.stop()
       ws = null
-      localStorage.removeItem(TOKEN_KEY)
+      forgetPref(TOKEN_KEY)
       // The cached messages are somebody's session and go; the outbox is
       // theirs to finish sending once they are back in.
       await cache.wipeExceptOutbox()
@@ -1722,7 +1723,7 @@ applyTheme(useStore.getState().theme)
 if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
   const light = window.matchMedia('(prefers-color-scheme: light)')
   const follow = (matches: boolean) => {
-    if (localStorage.getItem(THEME_KEY)) return
+    if (readPref(THEME_KEY)) return
     const theme: Theme = matches ? 'light' : 'dark'
     if (useStore.getState().theme === theme) return
     applyTheme(theme)

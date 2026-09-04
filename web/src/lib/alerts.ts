@@ -1,13 +1,15 @@
+import { readPref, writePref } from './prefs.ts'
+
 const SOUNDS_KEY = 'crewbox:sounds'
 
 let audioCtx: AudioContext | null = null
 
 export function soundsEnabled(): boolean {
-  return localStorage.getItem(SOUNDS_KEY) !== 'off'
+  return readPref(SOUNDS_KEY) !== 'off'
 }
 
 export function setSoundsEnabled(on: boolean): void {
-  localStorage.setItem(SOUNDS_KEY, on ? 'on' : 'off')
+  writePref(SOUNDS_KEY, on ? 'on' : 'off')
 }
 
 function tone(freq: number, start: number, duration: number, gainValue: number): void {

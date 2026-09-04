@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { isNative } from '../lib/server.ts'
+import { readPref, writePref } from '../lib/prefs.ts'
 
 const DISMISS_KEY = 'crewbox:ios-tip-dismissed'
 
@@ -14,7 +15,7 @@ function isIosSafariBrowser(): boolean {
 /** One-time nudge for iOS users: installed PWAs behave far better on site. */
 export default function IosInstallTip() {
   const [dismissed, setDismissed] = useState(
-    () => localStorage.getItem(DISMISS_KEY) === '1' || !isIosSafariBrowser()
+    () => readPref(DISMISS_KEY) === '1' || !isIosSafariBrowser()
   )
   if (dismissed) return null
   return (
@@ -42,7 +43,7 @@ export default function IosInstallTip() {
       <button
         aria-label="Dismiss"
         onClick={() => {
-          localStorage.setItem(DISMISS_KEY, '1')
+          writePref(DISMISS_KEY, '1')
           setDismissed(true)
         }}
       >

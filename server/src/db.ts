@@ -272,6 +272,34 @@ const MIGRATIONS: Migration[] = [
     db.exec('DROP TABLE sessions')
     db.exec('ALTER TABLE sessions_hashed RENAME TO sessions')
   },
+  // v11: rebuild the search index, because v3 only stopped the bleeding.
+  //
+  // v3 added the trigger that removes a deleted message from `messages_fts`.
+  // Nothing repaired what its absence had already done, and every box that
+  // was in the field before it carries the damage: the index is an
+  // external-content FTS5 table keyed on rowid, so a body left behind by a
+  // delete stays matchable, and SQLite answers the match by reading whatever
+  // row holds that rowid now. A search for a word returns a message that
+  // does not contain it — in the one place a crew member goes to find where
+  // they were told to be.
+  //
+  // 'rebuild' is the only thing that fixes rows already orphaned: it throws
+  // the index away and regenerates it from `messages`. Proportional to the
+  // messages on the box, so a festival's worth is a second or two, once, on
+  // the update that installs this.
+  //
+  // Guarded rather than plain SQL, because a migration that throws stops the
+  // box from starting. Every real box has this table — v1 creates it — but a
+  // database rebuilt by hand from a `.dump`, or one restored from a partial
+  // copy, might not, and "the search index is missing" is not a reason to
+  // leave a festival without its comms. It comes back on the next start.
+  (db) => {
+    const present = db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages_fts'`)
+      .get()
+    if (!present) return
+    db.exec(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild');`)
+  },
 ]
 
 /**

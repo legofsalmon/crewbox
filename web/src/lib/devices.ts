@@ -1,5 +1,6 @@
 /** Audio device preference persistence + fallback rules (unit-testable core). */
 import { isSafari, shouldMixThroughWebAudio } from './voice-playback.ts'
+import { forgetPref, readPref, writePref } from './prefs.ts'
 
 export type AudioKind = 'audioinput' | 'audiooutput'
 
@@ -14,12 +15,12 @@ const KEYS: Record<AudioKind, string> = {
 }
 
 export function savedDeviceId(kind: AudioKind): string | null {
-  return localStorage.getItem(KEYS[kind])
+  return readPref(KEYS[kind])
 }
 
 export function saveDeviceId(kind: AudioKind, deviceId: string | null): void {
-  if (deviceId === null) localStorage.removeItem(KEYS[kind])
-  else localStorage.setItem(KEYS[kind], deviceId)
+  if (deviceId === null) forgetPref(KEYS[kind])
+  else writePref(KEYS[kind], deviceId)
 }
 
 /**
