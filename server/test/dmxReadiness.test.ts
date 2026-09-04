@@ -174,6 +174,23 @@ describe('faults worth shouting about', () => {
     expect(check?.fix).toContain('igmp_max_memberships')
   })
 
+  it('says when it is not hearing universe discovery', () => {
+    // The listener has always set this flag and its comment said the admin
+    // panel reports it. Nothing did — so the one check that separates a
+    // typo in CREWBOX_DMX_UNIVERSES from a dead network was simply absent
+    // from the pane, with nothing saying why.
+    const checks = dmxReadiness(
+      status({
+        sacn: { listening: true, error: null, joined: [1, 2], failed: [], discovery: false },
+      }),
+      [universe()],
+      NOW
+    )
+    const check = find(checks, 'dmx-sacn')
+    expect(check?.state).toBe('limited')
+    expect(check?.detail).toContain('239.255.250.214')
+  })
+
   it('blames the interface, not the kernel limit, when that is what failed', () => {
     // A card that was not up, or a CREWBOX_DMX_IFACE typo. Sending an
     // electrician to read about igmp_max_memberships wastes the one person

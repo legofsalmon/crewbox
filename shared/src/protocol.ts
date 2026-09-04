@@ -389,10 +389,13 @@ export interface DmxUniverseWire {
    * sending — the fault this exists to catch. `lost` is the same failure
    * where the source allowed receivers to carry on regardless. `unwatched`
    * means the sync universe isn't one this box joined, so it can't tell.
+   * `unsynchronised` means nothing has *ever* arrived on that sync
+   * universe: the stage is following the desk (§6.2.4.1), but the
+   * multi-universe timing the source asked for is not happening at all.
    *
    * See `DmxSyncState` in the server for the clauses behind each.
    */
-  sync: 'none' | 'held' | 'frozen' | 'lost' | 'unwatched'
+  sync: 'none' | 'held' | 'frozen' | 'lost' | 'unwatched' | 'unsynchronised'
   /** The universe synchronization packets are expected on, or 0. */
   syncAddress: number
   /** When this universe was first heard — the window the verdicts speak for. */

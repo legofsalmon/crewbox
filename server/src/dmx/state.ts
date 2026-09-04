@@ -56,8 +56,20 @@ export type FixtureVerdict = 'no-data' | 'silent' | 'live'
  *   synchronization packets only to their own universe's multicast group, so
  *   this happens whenever the sync universe isn't in `CREWBOX_DMX_UNIVERSES`
  *   — and the fix is to add it.
+ * - `unsynchronised` — sync-addressed, this box is listening to that sync
+ *   universe, and nothing has *ever* arrived on it. Not `frozen`: §6.2.4.1
+ *   says a receiver that has not seen a synchronization packet processes
+ *   data normally, so the stage is following the desk. What is missing is
+ *   the multi-universe timing the source asked for — the sender is set up
+ *   for sync and nothing is sending it, which is a real fault and a
+ *   different one from a stream that stopped mid-show.
+ *
+ * The distinction is the whole point. `frozen` says "the stage stopped
+ * moving", which sends someone running; for a rig where sync was never
+ * configured at the sending end, that is both alarming and wrong, and it
+ * was what the panel said all night.
  */
-export type DmxSyncState = 'none' | 'held' | 'frozen' | 'lost' | 'unwatched'
+export type DmxSyncState = 'none' | 'held' | 'frozen' | 'lost' | 'unwatched' | 'unsynchronised'
 
 export interface DmxSource {
   id: string
@@ -149,6 +161,17 @@ interface DiscoveryRecord {
 }
 
 interface SourceRecord extends DmxSource {
+  /**
+   * The universe number this source puts on the wire.
+   *
+   * Kept per source because the record's copy used to be frozen from
+   * whichever frame arrived first. A plot universe that both an Art-Net
+   * node and an sACN desk send to would then be read with the wrong
+   * protocol's sync rules and the wrong mapping for the whole run — and
+   * which one won that race was decided by the order two consoles powered
+   * up in.
+   */
+  wireUniverse: number
   /** Packets in the second currently being counted. */
   packets: number
   windowStart: number
@@ -288,6 +311,12 @@ export class DmxState {
    * whether the stream exists at all.
    */
   private readonly sacnSync = new Map<number, number>()
+  /**
+   * Sync universes a packet has ever arrived on, for the life of this
+   * listener. Unlike `sacnSync` the sweep never clears it: "stopped" and
+   * "never started" are different faults and only this tells them apart.
+   */
+  private readonly sacnSyncEverSeen = new Set<number>()
   /** When the last ArtSync arrived. Art-Net's is one timer for the network. */
   private artSyncAt: number | null = null
   /**
@@ -362,6 +391,7 @@ export class DmxState {
   /** An sACN synchronization packet arrived for this sync universe. */
   noteSacnSync(syncAddress: number, now: number): void {
     this.sacnSync.set(syncAddress, now)
+    this.sacnSyncEverSeen.add(syncAddress)
   }
 
   /**
@@ -474,6 +504,7 @@ export class DmxState {
         id: frame.sourceId,
         name: frame.sourceName || (node ? node.longName || node.name : ''),
         protocol: frame.protocol,
+        wireUniverse: frame.wireUniverse,
         priority: frame.priority,
         lastSeen: now,
         rateHz: 0,
@@ -499,6 +530,14 @@ export class DmxState {
           source.lossMissed--
           source.lossReceived++
         }
+        // Its levels are discarded; its arrival is not. Returning before
+        // this meant a source whose sequence number never advances — a desk
+        // parked on a look, re-sending the same frame — was dropped by the
+        // sweep every data-loss timeout and re-created by its next packet.
+        // The panel showed a healthy rig losing and regaining its console
+        // every few seconds, and logged a silence each time.
+        source.lastSeen = now
+        record.lastSeen = now
         return
       }
       // The frames a forward jump skipped over never arrived. Jumps past
@@ -521,6 +560,7 @@ export class DmxState {
 
     if (frame.sourceName) source.name = frame.sourceName
     source.priority = frame.priority
+    source.wireUniverse = frame.wireUniverse
     source.lastSeen = now
     source.lastSequence = frame.sequence
     if (frame.sequenced) {
@@ -576,6 +616,11 @@ export class DmxState {
     // A sync universe we never joined would look identical to one nobody is
     // sending on. Only the joined case can honestly be called a failure.
     if (!this.joinedUniverses.has(record.syncAddress)) return 'unwatched'
+    // Never seen at all is not "it stopped". §6.2.4.1: a receiver that has
+    // not had a synchronization packet processes data normally, so the
+    // stage is following the desk — what is missing is the timing the
+    // source asked for.
+    if (!this.sacnSyncEverSeen.has(record.syncAddress)) return 'unsynchronised'
     return record.forceSync ? 'lost' : 'frozen'
   }
 
@@ -700,6 +745,13 @@ export class DmxState {
     const top = Math.max(...sources.map((s) => s.priority))
     const winner = sources.filter((s) => s.priority === top).reduce((a, b) => (b.id < a.id ? b : a))
     record.winnerId = winner.id
+    // The record describes whoever is actually winning, not whoever was
+    // first. Both of these decide how the universe is read — the protocol
+    // picks the sync rules, the wire universe is the mapping the panel
+    // prints — and freezing them from the first frame meant a universe two
+    // protocols reach was judged by whichever console powered up first.
+    record.protocol = winner.protocol
+    record.wireUniverse = winner.wireUniverse
   }
 
   /** Everything known, in universe order. */
@@ -803,6 +855,7 @@ export class DmxState {
     this.universes.clear()
     this.artNodes.clear()
     this.sacnSync.clear()
+    this.sacnSyncEverSeen.clear()
     this.joinedUniverses.clear()
     this.discovery.clear()
     this.recentSilences.length = 0

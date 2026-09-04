@@ -149,6 +149,22 @@ export function dmxReadiness(
             : ''),
         fix: joinFix(failed, status.interfaceIp),
       })
+    } else if (!status.sacn.discovery) {
+      // The listener has always set this flag and said the admin panel
+      // reports it; nothing did. Without the discovery group there is no
+      // "here is what the desks say they are sending", which is the one
+      // check that separates a typo in CREWBOX_DMX_UNIVERSES from a dead
+      // network — and the pane simply showed nothing where it would be.
+      checks.push({
+        id: 'dmx-sacn',
+        label: 'sACN',
+        state: 'limited',
+        detail:
+          `Listening on UDP 5568, joined ${plural(joined.length, 'universe')}, but not the ` +
+          'universe-discovery group (239.255.250.214) — so what the desks say they are ' +
+          'sending cannot be shown.',
+        fix: 'Everything else works. Usually the socket is at the kernel\u2019s membership limit; listening to fewer universes frees one.',
+      })
     } else {
       checks.push({
         id: 'dmx-sacn',
@@ -228,7 +244,8 @@ export function dmxReadiness(
           )
           .join(', ') +
         (nodes.length > 6 ? `, and ${nodes.length - 6} more` : '') +
-        '. Heard because consoles poll; crewbox never polls.',
+        '. Heard because consoles poll; crewbox never polls while monitoring — ' +
+        'the network audit sends exactly one ArtPoll, and only when an admin asks.',
     })
   }
 
@@ -270,7 +287,7 @@ export function dmxReadiness(
         status.packets > 0
           ? `Nothing arriving now. ${plural(status.packets, 'packet')} seen since start.`
           : 'Listening, but nothing has arrived.',
-      fix: 'Check the box is on the lighting network (right card, right VLAN), that the switch is not doing IGMP snooping without a querier, and that no firewall is dropping UDP 6454/5568. Crewbox never announces itself, so a console that only unicasts to nodes which answered its poll will not be seen.',
+      fix: 'Check the box is on the lighting network (right card, right VLAN), that the switch is not doing IGMP snooping without a querier, and that no firewall is dropping UDP 6454/5568. Crewbox never announces itself while monitoring, so a console that only unicasts to nodes which answered its poll will not be seen — the network audit can send one ArtPoll on request, which is what will wake them.',
     })
     return checks
   }
@@ -362,6 +379,10 @@ export function dmxReadiness(
   const stuck = live.filter((u) => u.sync === 'frozen' || u.sync === 'lost')
   const held = live.filter((u) => u.sync === 'held')
   const unwatched = live.filter((u) => u.sync === 'unwatched')
+  // Sync-addressed, listened to, and never once sent — which is a fault at
+  // the desk rather than on the network, and reads nothing like a stream
+  // that died mid-show.
+  const never = live.filter((u) => u.sync === 'unsynchronised')
 
   if (stuck.length > 0) {
     const frozen = stuck.some((u) => u.sync === 'frozen')
@@ -377,6 +398,19 @@ export function dmxReadiness(
           ? ' Receivers hold their last look until it comes back, so the stage may have stopped following the desk.'
           : ' The sources allow receivers to carry on, so the stage is live but no longer synchronised.'),
       fix: 'Check what is meant to be sending synchronization packets on that universe. Until it is back, levels shown here are not proof of what is on stage.',
+    })
+  } else if (never.length > 0) {
+    checks.push({
+      id: 'dmx-sync',
+      label: 'Universe synchronisation',
+      state: 'limited',
+      detail:
+        `${plural(never.length, 'universe')} asking to be synchronised on universe ` +
+        `${[...new Set(never.map((u) => u.syncAddress))].join(', ')}, and nothing has ever ` +
+        'been sent there. Receivers process data normally until the first synchronization ' +
+        'packet (E1.31 §6.2.4.1), so the stage is following the desk — but the timing these ' +
+        'universes were set up to land together with is not happening.',
+      fix: 'Either the source that should be sending synchronization packets is not, or these fixtures do not need synchronising and the sync address should be cleared at the desk.',
     })
   } else if (unwatched.length > 0) {
     checks.push({

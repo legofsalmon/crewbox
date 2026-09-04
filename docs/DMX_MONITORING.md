@@ -16,9 +16,18 @@ byte-level detail as careful but unconfirmed.
 
 ## The one rule
 
-**Crewbox never transmits DMX.** Not ArtDmx, not sACN, not ArtPoll, not a
-single byte of application-layer traffic onto the lighting network. It opens
-sockets and it reads.
+**Crewbox never transmits DMX.** Not ArtDmx, not sACN, not a single byte of
+application-layer traffic onto the lighting network. It opens sockets and it
+reads. The DMX sockets cannot transmit at all: `send` is taken off them
+before they are used (see `receiveOnly`), so a change that tried would fail
+in development rather than on a show network.
+
+There is exactly one deliberate exception, and it is not this module: the
+**network audit** sends a single ArtPoll — the same discovery packet every
+console on the network broadcasts every few seconds — from a socket of its
+own, only when an admin pushes the button, and it records the bytes it sent
+so venue IT can check them against a capture. See `docs/NETWORK_AUDIT.md`.
+Nothing in the monitoring path sends anything, ever.
 
 That is not a nicety. A festival lighting network carries the show, and an
 app that can transmit on it is a way to black out a stage from a phone in
@@ -157,9 +166,11 @@ from 0 where sACN counts from 1, and the UI must not silently conflate them.
 `Sequence` is 0 when disabled, otherwise 1–255 wrapping; used to spot
 out-of-order delivery, not to reorder.
 
-`ArtPollReply` is **listened for, never solicited**. Nodes emit it unsolicited
-on power-up and periodically, and it carries the node's short and long name —
-free source identification without us ever sending an ArtPoll.
+`ArtPollReply` is **listened for, never solicited by this module**. Nodes emit
+it unsolicited on power-up and periodically, and it carries the node's short
+and long name — free source identification with nothing sent from here. (The
+network audit's one admin-triggered ArtPoll will also wake replies; that is
+its purpose, and it is a different socket in a different module.)
 
 `ArtSync` (opcode **0x5200**) has no payload and no port address. From the
 moment a node sees one it buffers ArtDmx rather than outputting it, and it
@@ -374,8 +385,9 @@ received — nothing new is joined and nothing is ever sent:
   poll their nodes constantly, and replies are broadcast — is kept for the
   session with first/last-seen times. A node that stopped replying stays
   listed with how long ago it was last heard, because the vanishing is the
-  news. Crewbox itself never sends ArtPoll; the inventory is entirely
-  overheard.
+  news. The monitoring path never sends ArtPoll, so the inventory is
+  overheard — unless an admin has run a network audit, whose single ArtPoll
+  will have woken any node that only answers when asked.
 
 ## Deployment note for the runbook
 
