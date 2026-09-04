@@ -14,6 +14,7 @@ import { useFileDrop } from '../lib/useFileDrop.ts'
 import { useStore, type Pending } from '../store.ts'
 import { parseRoute } from '../shell/router.ts'
 import { formatBytes } from '../lib/files.ts'
+import { looking } from '../lib/attention.ts'
 import {
   hrefFor,
   isFiltering,
@@ -406,6 +407,10 @@ export default function MessageList({
   // The bottom of a gapped history view isn't the real latest message, and
   // neither is the bottom of a filtered one — marking read from either would
   // clear a badge for messages nobody has seen.
+  //
+  // Nor is a scroll that reached the bottom while nobody was looking at the
+  // window — see lib/attention.ts. The `focus` listener below is what catches
+  // up when somebody does look, so nothing is lost by waiting for them.
   const canMarkRead = !gapped && !filtering
 
   useEffect(() => {
@@ -423,7 +428,7 @@ export default function MessageList({
     nearBottomRef.current = fromBottom < NEAR_BOTTOM_PX
     if (nearBottomRef.current) {
       setNewBelow(false)
-      if (canMarkRead) markChannelRead(channelId)
+      if (canMarkRead && looking(document)) markChannelRead(channelId)
     }
     // Page in older history when scrolled to the top of actually-scrollable
     // content. Gated on settlingRef (not nearBottom) so the post-open glue

@@ -25,7 +25,18 @@
 export function pageFrom(input: {
   earliestSeq?: number | undefined
   lastSeq: number
+  /**
+   * A previous page came back empty, so there is provably nothing older.
+   *
+   * Needed because `seq > 1` is not the same question. Deleting a
+   * channel's first message makes the oldest held seq 2 for ever, so the
+   * scroll handler asked, got nothing, and asked again on the very next
+   * scroll event — for the life of the session, on the channel somebody
+   * was reading.
+   */
+  exhausted?: boolean
 }): number | null {
+  if (input.exhausted) return null
   // Something held: page back from the oldest of it. Seq 1 is the first
   // message there has ever been, so holding it means there is no older.
   if (input.earliestSeq !== undefined) {
@@ -74,3 +85,17 @@ export function databaseChanged(seen: string | null, offered: string | undefined
   if (!offered || !seen) return false
   return seen !== offered
 }
+
+/**
+ * Whether a page of older messages is safe to write to the durable cache.
+ *
+ * Not while the view is gapped. A search jump puts a detached block on
+ * screen — messages around seq 400 with nothing between them and the
+ * cached tail — and paging older from there fetches a block contiguous
+ * with the *jump*, not with anything cached. Writing it leaves a permanent
+ * hole: after a reload the channel reads 1-50, 380-420, 900-1000, with
+ * nothing saying anything is missing and no scroll that will ever fill it.
+ * On screen the block is still there and still useful; it is only the copy
+ * that outlives the session that has to stay honest.
+ */
+export const cacheable = (gapped: boolean): boolean => !gapped

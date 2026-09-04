@@ -208,7 +208,20 @@ describe('against a box that can actually die', () => {
 
   const start = () =>
     new Promise<void>((resolve, reject) => {
-      child = spawn('npx', ['tsx', FIXTURE], { stdio: ['ignore', 'pipe', 'ignore'] })
+      // Detached, so the box leads its own process group.
+      //
+      // `npx` spawns tsx, which spawns the node that is actually the box, and
+      // the pid this test holds is the outermost of those three. Killing it
+      // reaped the wrapper and left the box running: a live server holding a
+      // live port and a SQLite database under /tmp, for the rest of the
+      // machine's life. Two of those per run, on a laptop that runs the suite
+      // all day — the ones found while writing this had reached four hundred
+      // processes and a load average in the teens, at which point unrelated
+      // e2e specs started timing out and looking like flakes.
+      child = spawn('npx', ['tsx', FIXTURE], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        detached: true,
+      })
       const timer = setTimeout(
         () => reject(new Error('the box never said it was listening')),
         30_000
@@ -226,10 +239,49 @@ describe('against a box that can actually die', () => {
       })
     })
 
+  /** Signal the whole group. ESRCH means it has already gone, which is fine. */
+  const signalGroup = (signal: NodeJS.Signals) => {
+    if (child?.pid === undefined) return
+    try {
+      process.kill(-child.pid, signal)
+    } catch {
+      // Already reaped.
+    }
+  }
+
+  /** Stop the box and everything npx put between us and it. Idempotent. */
+  const stop = async () => {
+    if (child?.pid === undefined) return
+    const exited =
+      child.exitCode === null && child.signalCode === null
+        ? new Promise<void>((resolve) => child.once('exit', () => resolve()))
+        : Promise.resolve()
+    // SIGTERM first: the fixture removes its temp directory on the way out,
+    // and SIGKILL cannot be caught.
+    signalGroup('SIGTERM')
+    const forced = setTimeout(() => signalGroup('SIGKILL'), 2000)
+    await exited
+    clearTimeout(forced)
+    // The wrapper exiting is not the box exiting — only the pid we hold
+    // reports back — so mop up whatever is still standing in the group.
+    signalGroup('SIGKILL')
+  }
+
   beforeEach(start, 40_000)
-  afterEach(() => {
-    child.kill('SIGKILL')
-  })
+  afterEach(stop, 10_000)
+
+  /** Is anything still answering on the port the box had? */
+  const portFreed = async (): Promise<boolean> => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        await fetch(`http://127.0.0.1:${boxPort}/api/health`)
+      } catch {
+        return true
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    return false
+  }
 
   /** Alive *and* answering — a wedged process is not a survivor either. */
   const boxAnswers = async () => {
@@ -270,5 +322,15 @@ describe('against a box that can actually die', () => {
     )
     await closed
     await boxAnswers()
+  }, 40_000)
+
+  it('takes the box with it when the test ends', async () => {
+    // The teardown assertion, which is the one that had never been made.
+    // Every other test here kills the box and moves on without looking, so a
+    // teardown that reaped a wrapper and left a server running looked exactly
+    // like a teardown that worked.
+    await boxAnswers()
+    await stop()
+    expect(await portFreed()).toBe(true)
   }, 40_000)
 })

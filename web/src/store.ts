@@ -23,7 +23,7 @@ import {
   type QueuedIncident,
 } from './modules/incident/model/outbox.ts'
 import { flushOrder, shouldDrop } from './lib/flush.ts'
-import { databaseChanged, needsBackfill, pageFrom } from './lib/history.ts'
+import { cacheable, databaseChanged, needsBackfill, pageFrom } from './lib/history.ts'
 import { WsClient } from './lib/ws.ts'
 import * as api from './lib/api.ts'
 import {
@@ -172,6 +172,16 @@ export interface AppState {
    * returnToLatest() replaces the block with the real tail.
    */
   historyGapped: Record<string, boolean>
+  /**
+   * Channels whose history has been paged back to its beginning.
+   *
+   * The scroll handler pages older whenever the oldest message on screen
+   * has `seq > 1`, and deleting a channel's first message makes that true
+   * for ever — so it fetched, got nothing, and fetched again on the very
+   * next scroll event, for the life of the session. One empty answer is
+   * enough to stop asking.
+   */
+  historyExhausted: Record<string, boolean>
   /**
    * What the lighting network is doing, when a view has asked to watch it.
    *
@@ -567,6 +577,9 @@ export const useStore = create<AppState>()((set, get) => {
       messages,
       // Replay (or the truncated-channel reset) heals any search-jump gap.
       historyGapped: {},
+      // A welcome replays the tail; whether the top has been reached is a
+      // question about this session's paging, not about the replay.
+      historyExhausted: {},
     })
     ingestMessages(msg.missed)
     // Messages deleted while we were away must leave state and cache too.
@@ -904,6 +917,7 @@ export const useStore = create<AppState>()((set, get) => {
     activeModuleSubpath: '',
     jumpTarget: null,
     historyGapped: {},
+    historyExhausted: {},
     dmx: { listening: false, universes: [], everLit: new Map(), levels: new Map() },
     pendingDmUserId: null,
     sidebarOpen: false,
@@ -1298,6 +1312,7 @@ export const useStore = create<AppState>()((set, get) => {
       const before = pageFrom({
         earliestSeq: earliest?.seq,
         lastSeq: channels[channelId]?.lastSeq ?? 0,
+        exhausted: get().historyExhausted[channelId] ?? false,
       })
       if (loadingOlder || before === null) return
       set({ loadingOlder: true })
@@ -1310,7 +1325,23 @@ export const useStore = create<AppState>()((set, get) => {
               [channelId]: mergeMessages(get().messages[channelId], older),
             },
           })
-          void cache.saveMessages(older)
+          // Not while the view is gapped.
+          //
+          // A search jump puts a detached block on screen — messages around
+          // seq 400 with nothing between them and the cached tail. Paging
+          // older from there fetches a block that is contiguous *with the
+          // jump*, and writing it to the cache leaves a permanent hole:
+          // after a reload the channel reads 1-50, 380-420, 900-1000 with
+          // nothing saying anything is missing, and no scroll ever fills it.
+          // On screen the block is still there and still useful; it is only
+          // the durable copy that must stay honest.
+          if (cacheable(get().historyGapped[channelId] ?? false)) void cache.saveMessages(older)
+        } else {
+          // Nothing came back, so there is nothing older. Remembered, or the
+          // scroll handler asks again on every single scroll event once the
+          // channel's first message has been deleted — `seq > 1` stays true
+          // for ever and the fetch never stops.
+          set({ historyExhausted: { ...get().historyExhausted, [channelId]: true } })
         }
       } finally {
         set({ loadingOlder: false })

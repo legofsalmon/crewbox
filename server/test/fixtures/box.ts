@@ -9,7 +9,7 @@
  *
  * Prints `listening <port>` on stdout when it is up, and nothing else.
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { attachWs, buildApp } from '../../src/app.ts'
@@ -17,6 +17,24 @@ import { openDb } from '../../src/db.ts'
 import { Store } from '../../src/store.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'crewbox-abuse-box-'))
+
+/**
+ * Take the database with us.
+ *
+ * The test kills this process by signal, so nothing here runs unless it is
+ * hung off one — and the directory holds a SQLite database plus its WAL. The
+ * ones left behind by the teardown this fixture used to get had reached a
+ * hundred and sixty directories under /tmp.
+ */
+const tidy = () => rmSync(dir, { recursive: true, force: true })
+process.once('SIGTERM', () => {
+  tidy()
+  process.exit(0)
+})
+process.once('SIGINT', () => {
+  tidy()
+  process.exit(0)
+})
 const db = openDb(join(dir, 'test.db'))
 const app = buildApp({
   store: new Store(db),

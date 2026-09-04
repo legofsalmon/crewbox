@@ -53,6 +53,34 @@ test('an unsent draft survives switching channels and comes back', async ({ brow
   await expect(composer).toHaveValue(draft)
 })
 
+/**
+ * With a mouse and keyboard, switching channel still lands the caret in the
+ * composer. This is the half of the behaviour worth keeping — it saves a
+ * click for the crew chief typing all night at the production desk — and the
+ * half that made suppressing it on a phone a fix rather than a removal.
+ */
+test('switching channel with a keyboard puts the caret in the composer', async ({ browser }) => {
+  const page = await newDevice(browser)
+
+  await page.getByRole('button', { name: 'New channel' }).click()
+  await page.getByPlaceholder('channel-name').fill('foh')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '#foh' })).toBeVisible()
+
+  // Via #foh, so the last click is a real channel change wherever creating
+  // one happens to land.
+  await page.getByRole('button', { name: '#foh' }).click()
+  await page.getByRole('button', { name: '#general' }).click()
+  const composer = page.getByPlaceholder(/Message/)
+  await expect(composer).toHaveAttribute('placeholder', 'Message #general')
+  await expect(composer).toBeFocused()
+
+  // Typing goes straight into the box, no click needed.
+  const message = uniqueName('house open —')
+  await page.keyboard.type(message)
+  await expect(composer).toHaveValue(message)
+})
+
 /** The /connect QR carries ?pin= — scanning prefills the join form. */
 test('a ?pin= deep link prefills the event PIN on the join screen', async ({ browser }) => {
   const context = await browser.newContext()
