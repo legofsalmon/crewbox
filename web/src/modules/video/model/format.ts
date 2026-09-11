@@ -73,6 +73,7 @@ export function detailOf(reading: ProcessorReading | null): string {
 
   if (reading.fanFault) parts.push('a fan is abnormal')
   else if (reading.fanSpeed !== undefined) parts.push(`fans ${Math.round(reading.fanSpeed)}%`)
+  else if (reading.fanRpm !== undefined) parts.push(`fans up to ${Math.round(reading.fanRpm)} rpm`)
 
   const live = reading.inputs.filter((i) => i.signal === 'present').length
   const dark = reading.inputs.filter((i) => i.signal === 'no-signal').length

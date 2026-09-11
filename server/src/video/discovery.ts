@@ -10,20 +10,18 @@ import { DISCOVERY_PORT, isIpv4 } from '@crewbox/shared'
  * once, on demand.
  *
  * Why it is a send at all, given the rest of this module reads: novasun looked
- * at listening silently instead, and the answer came back UNKNOWN in the half
- * that matters. Probes are always visible on the segment, but whether the
- * *replies* are broadcast or unicast back to the requester is not established
- * — and unicast is the likelier design, which would mean a silent listener
- * sees NovaLCT scanning and never sees what answered. NovaLCT's own cadence
- * may also be driven by a human clicking rather than a timer, so a passive
- * wait could last all night. Passive discovery is not a thing crewbox can
- * promise, so it doesn't.
+ * at listening silently instead, and it does not work. OBSERVED, 2026-09-11:
+ * replies are unicast to the requester at both layer 2 and layer 3, so a
+ * silent listener never sees what answered; VMP does not probe on a timer --
+ * thirty minutes on a live-show network with VMP running and nobody pressing
+ * search overheard nothing; and an MX40 never announced itself in that time.
+ * Passive discovery is not a thing crewbox can promise, so it doesn't.
  *
  * What this probe is, precisely: a broadcast UDP read with no addressed
  * target, no register address and no write bit. It cannot change controller
- * state. That reasoning is REASONED rather than OBSERVED — nobody has run it
- * against hardware — which is exactly why it is behind two confirmations and
- * never on a timer. See docs/VIDEO_MONITORING.md.
+ * state. That much is REASONED; what is OBSERVED is that a UHD Jr and an MX40
+ * both answered it without any visible effect. It stays behind two
+ * confirmations and never on a timer. See docs/VIDEO_MONITORING.md.
  */
 
 /** The probe. Eight ASCII bytes, and the whole packet. */

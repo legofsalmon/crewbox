@@ -6,6 +6,7 @@ import {
   CoexReader,
   TOPOLOGY_EVERY,
   displayModeOf,
+  modelFromName,
   parseCabinets,
   parseInputs,
   readingIsEmpty,
@@ -315,5 +316,174 @@ describe('what the read-only adapter refuses', () => {
         expect(r.redirect).toBe('error')
       }
     })
+  })
+})
+
+/**
+ * The shapes a real MX40 Pro returns.
+ *
+ * Structure copied from novasun's `tests/fixtures/mx40_like_api.json`
+ * (commit 23bf080), which was taken from a live unit on 2026-09-11 with every
+ * value replaced. Three cabinets stand in for 288. Before these tests, the
+ * reader driven with this payload graded the wall `ok`, "3 cabinets online",
+ * with no temperatures, no identity and every input not-connected.
+ */
+const sensor = (value: number) => ({ name: '', nameEn: '', status: 0, value })
+const CAB_IDS = [700000000000001, 700000000000002, 700000000000003]
+
+const OBSERVED = {
+  // '/api/v1/device' deliberately absent: the unit answered HTTP 404.
+  '/api/v1/device/cabinet': CAB_IDS.map((id, i) => ({
+    id,
+    index: i,
+    outputID: 2048,
+    outputCardID: 8,
+    canvasID: 2048,
+    brightness: 0.8,
+    gamma: { r: 2.8, g: 2.8, b: 2.8 },
+    colorTemperature: 6500,
+    resolution: { width: 128, height: 128 },
+    rvCardName: 'A5sPlus',
+    shortName: '',
+  })),
+  '/api/v1/screen': {
+    screens: [{ screenID: '{s1}', screenName: 'Main', workingMode: 1, masterFrameRate: 50 }],
+    screenGroups: [{ isShow: false, name: 'Group', ordinal: 0, screenGroupID: '{g}' }],
+  },
+  '/api/v1/device/snmpstate': { state: false },
+  '/api/v1/device/monitor/info': {
+    name: 'MX40 Pro_000001',
+    runtime: 17160,
+    totalRuntime: 986580,
+    mainBoardTemperature: { name: 'Main_board Temperature', nameEn: '', status: 0, value: 42 },
+    mainBoardVoltage: { name: 'Main_board Voltage', nameEn: '', status: 0, value: 11.45 },
+    fanInfos: [
+      {
+        fanName: 'chassis Fan',
+        fanNameEn: '',
+        fanShowType: 0,
+        fanSpeed: 1293,
+        fanType: 0,
+        status: 0,
+      },
+      {
+        fanName: 'FPGA_A Fan',
+        fanNameEn: '',
+        fanShowType: 0,
+        fanSpeed: 2785,
+        fanType: 0,
+        status: 0,
+      },
+    ],
+    cardMonitorInfo: null,
+    // Every entry says cabinetID 0 and reads 0; the card underneath is real.
+    cabinets: CAB_IDS.map((id, i) => ({
+      cabinetID: 0,
+      canvasID: 0,
+      index: i,
+      outPutID: 2048,
+      outputCardID: 8,
+      rvCardID: 0,
+      temperature: sensor(0),
+      voltage: sensor(0),
+      rvCards: [
+        {
+          cabinetID: id,
+          rvCardID: id,
+          cabinetIndex: i,
+          temperature: sensor([39, 41, 37][i]),
+          voltage: sensor([4.2, 4.1, 4.4][i]),
+          humidity: sensor(0),
+          nextCabinetLinkStatus: { linkStatus: true, status: 0 },
+        },
+      ],
+    })),
+  },
+  '/api/v1/device/input/sources': [
+    {
+      id: 512,
+      name: 'HDMI 1',
+      type: 3,
+      sourceStatus: 1,
+      usable: true,
+      actualResolution: { width: 3840, height: 2160 },
+      actualRefreshRate: 50,
+    },
+    // Disconnected, and still reporting a resolution: the EDID default.
+    {
+      id: 768,
+      name: 'DP 1',
+      type: 5,
+      sourceStatus: 0,
+      usable: true,
+      actualResolution: { width: 3840, height: 3840 },
+      actualRefreshRate: 60,
+    },
+  ],
+}
+
+describe('the shapes a real MX40 Pro returns', () => {
+  it('takes cabinet identity and temperature from the receiving card', async () => {
+    const reading = await new CoexReader('10.0.30.11', fakeIo(OBSERVED)).poll()
+    expect(reading.cabinets.map((c) => c.id)).toEqual(CAB_IDS.map(String))
+    expect(reading.cabinets.map((c) => c.temperature)).toEqual([39, 41, 37])
+    expect(reading.cabinets.every((c) => c.online)).toBe(true)
+  })
+
+  it('calls a rostered cabinet that did not report offline, rather than dropping it', async () => {
+    const routes = structuredClone(OBSERVED) as typeof OBSERVED
+    routes['/api/v1/device/monitor/info'].cabinets.splice(1, 1)
+    const reading = await new CoexReader('10.0.30.11', fakeIo(routes)).poll()
+    expect(reading.cabinets.map((c) => [c.id, c.online])).toEqual([
+      [String(CAB_IDS[0]), true],
+      [String(CAB_IDS[1]), false],
+      [String(CAB_IDS[2]), true],
+    ])
+  })
+
+  it('reads signal from sourceStatus, and never from the resolution', async () => {
+    const reading = await new CoexReader('10.0.30.11', fakeIo(OBSERVED)).poll()
+    expect(reading.inputs).toEqual([
+      { id: '512', name: 'HDMI 1', connector: 'HDMI 2.0', signal: 'present' },
+      { id: '768', name: 'DP 1', connector: 'DP 1.2', signal: 'not-connected' },
+    ])
+  })
+
+  it('identifies the controller from monitor/info when /api/v1/device is absent', async () => {
+    const reading = await new CoexReader('10.0.30.11', fakeIo(OBSERVED)).poll()
+    expect(reading.errors).toContain('/api/v1/device answered 404')
+    expect(reading.reportedName).toBe('MX40 Pro_000001')
+    expect(reading.model).toBe('MX40 Pro')
+    expect(reading.snmpEnabled).toBe(false)
+  })
+
+  it('does not let monitor/info override a device endpoint that answered', async () => {
+    const routes = { ...OBSERVED, '/api/v1/device': { model: 'MX30', name: 'Side wall' } }
+    const reading = await new CoexReader('10.0.30.11', fakeIo(routes)).poll()
+    expect(reading.model).toBe('MX30')
+    expect(reading.reportedName).toBe('Side wall')
+  })
+
+  it('reads the main-board temperature and fan rpm from where they are', async () => {
+    const reading = await new CoexReader('10.0.30.11', fakeIo(OBSERVED)).poll()
+    expect(reading.temperature).toBe(42)
+    expect(reading.fanRpm).toBe(2785)
+    expect(reading.fanSpeed).toBeUndefined() // rpm is not a percentage
+  })
+
+  it('keeps numeric ids as their digits', () => {
+    expect(parseCabinets([{ id: 42 }])[0].id).toBe('42')
+    expect(parseInputs([{ id: 512 }])[0].id).toBe('512')
+  })
+
+  it('reads a { value } object as a reading and a bare number as before', () => {
+    expect(parseCabinets([{ id: 'A', temperature: sensor(39) }])[0].temperature).toBe(39)
+    expect(parseCabinets([{ id: 'B', temperature: 40 }])[0].temperature).toBe(40)
+  })
+
+  it('takes the model from the name suffix, and nothing from a plain name', () => {
+    expect(modelFromName('MX40 Pro_000001')).toBe('MX40 Pro')
+    expect(modelFromName('Main wall')).toBeUndefined()
+    expect(modelFromName(undefined)).toBeUndefined()
   })
 })

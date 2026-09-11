@@ -22,10 +22,18 @@ import {
  * which is why nothing here holds credentials: there are none to hold.
  *
  * Provenance: endpoint paths are OFFICIAL, from NovaStar's manual and
- * published clients. **Response field names are not verified against
- * firmware.** Every read below therefore tries the spellings the manual and
- * the published clients use, and leaves the field undefined when none match,
- * rather than guessing. See docs/VIDEO_MONITORING.md.
+ * published clients. Response field names were, until 2026-09-11, not
+ * verified against firmware, and every read tried the spellings the manual
+ * and the published clients use. novasun has since read a live MX40 Pro
+ * (`tests/fixtures/mx40_like_api.json` there), and **none of those spellings
+ * was the one**: cabinets and inputs are bare lists; ids are numbers; the
+ * receiving card under `rvCards[]` carries the cabinet's id and readings;
+ * every reading is a `{ value }` object; there is no online flag and no
+ * `connected`; input signal is `sourceStatus`; and `/api/v1/device` answers
+ * HTTP 404, leaving `monitor/info.name` as the only identity. The reader now
+ * reads those shapes first and still tolerates the manual's. Where a spelling
+ * is REASONED rather than OBSERVED it says so at the line. See
+ * docs/VIDEO_MONITORING.md.
  */
 
 export interface ReadOnlyInit {
@@ -159,6 +167,64 @@ const bool = (v: unknown): boolean | undefined => {
 
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
 
+/**
+ * An identifier, whether the firmware sent a string or a number.
+ *
+ * OBSERVED: a real MX40 Pro's cabinet and input ids are numbers -- `512`,
+ * `768`, and 64-bit cabinet ids -- so `str()` alone left every one of them
+ * falling back to its list position. A 64-bit id near 2^53 can lose precision
+ * in JSON.parse; equal wire ids still compare equal, which is what the join
+ * below needs, but the printed digits may differ from what VMP shows.
+ */
+const ident = (v: unknown): string | undefined =>
+  str(v) ?? (num(v) !== undefined && Number.isInteger(v) ? String(v) : undefined)
+
+/**
+ * A reading as a real MX40 Pro reports one: `{ name, nameEn, status, value }`,
+ * never a bare number (OBSERVED). A bare number is still accepted -- the
+ * manual-shaped payloads are not wrong, only unobserved.
+ */
+const sensorValue = (v: unknown): number | undefined => (isObject(v) ? num(v.value) : num(v))
+
+const temperatureOf = (obj: Json): { temperature?: number } => {
+  const t = sensorValue(pick(obj, ['temperature', 'temp', 'tempValue']))
+  return t !== undefined ? { temperature: t } : {}
+}
+
+/**
+ * The model from the name a controller reports in `monitor/info`.
+ *
+ * With `/api/v1/device` absent, an MX40 Pro identifies itself only there, as
+ * `"MX40 Pro_<digits>"`. REASONED from that one pattern: strip a trailing
+ * underscore-and-digits and what is left is the model. A name with no such
+ * suffix yields nothing rather than a guess.
+ */
+export function modelFromName(name: string | undefined): string | undefined {
+  const m = name?.match(/^(.*\S)_\d+$/)
+  return m ? m[1] : undefined
+}
+
+/**
+ * The layout is the roster; monitor/info is who reported.
+ *
+ * OBSERVED on an MX40 Pro: nothing anywhere says "online". A cabinet that is
+ * down is simply absent from monitor/info. So a rostered cabinet with no live
+ * report is offline, a reported one carries its readings, and one that
+ * reported without being rostered is listed too. A live entry keeps its own
+ * `online` -- a firmware that does say `online: false` is still believed.
+ */
+function mergeCabinets(layout: CabinetReading[], live: CabinetReading[]): CabinetReading[] {
+  if (layout.length === 0) return live
+  const byId = new Map(live.map((c) => [c.id, c]))
+  const merged = layout.map((c) => {
+    const l = byId.get(c.id)
+    if (!l) return { ...c, online: false }
+    byId.delete(c.id)
+    return { ...c, ...l }
+  })
+  return merged.concat([...byId.values()])
+}
+
 /** Unwrap `{ code, data }` when present. Returns null on a `Busying` answer. */
 export function unwrap(payload: unknown): { data: unknown; busy: boolean } {
   if (!isObject(payload)) return { data: payload, busy: false }
@@ -172,6 +238,20 @@ const SIGNAL_BY_CODE: Record<number, InputSignal> = {
   0: 'not-connected',
   1: 'present',
   2: 'no-signal',
+}
+
+/**
+ * Input `type` as a real MX40 Pro reports it: a number. REASONED from one
+ * unit's own input names -- "HDMI2.0 1" was 3, "DP1.2" was 5, "12G-SDI" was
+ * 9, "OPT" was 225, "internal-source" was 224. Display only; a code not in
+ * this table yields no connector rather than a wrong one.
+ */
+const INPUT_TYPES: Record<number, string> = {
+  3: 'HDMI 2.0',
+  5: 'DP 1.2',
+  9: '12G-SDI',
+  224: 'internal',
+  225: 'OPT',
 }
 
 const MODE_BY_CODE: Record<number, DisplayMode> = {
@@ -199,7 +279,21 @@ export function parseCabinets(payload: unknown): CabinetReading[] {
   const out: CabinetReading[] = []
   for (const [index, raw] of list.entries()) {
     if (!isObject(raw)) continue
-    const id = str(pick(raw, ['id', 'cabinetId', 'sn', 'serialNumber'])) ?? String(index + 1)
+    // OBSERVED on an MX40 Pro: monitor/info's cabinet entries carry
+    // `cabinetID: 0` and zero readings on every one of 288. The receiving card
+    // under `rvCards[]` has the id that matches /device/cabinet's `id` (288 of
+    // 288) and the real temperature. Read the cards, never the entry's own id.
+    const cards = arr(raw.rvCards)
+    if (cards.length > 0) {
+      for (const card of cards) {
+        if (!isObject(card)) continue
+        const id = ident(pick(card, ['cabinetID', 'rvCardID', 'id']))
+        if (id === undefined) continue
+        out.push({ id, online: true, ...temperatureOf(card) })
+      }
+      continue
+    }
+    const id = ident(pick(raw, ['id', 'cabinetId', 'sn', 'serialNumber'])) ?? String(index + 1)
     // Not `status`: it is a *code* everywhere else in this API — an input's
     // signal status is 0 not-connected, 1 present, 2 no-signal — and `bool`
     // turns 0 into false, so a firmware reporting `status: 0` for a normal
@@ -216,9 +310,7 @@ export function parseCabinets(payload: unknown): CabinetReading[] {
       // is not the same as one that said it was down. Default to online so a
       // sparse payload doesn't paint a working wall red.
       online: online ?? true,
-      ...(num(pick(raw, ['temperature', 'temp', 'tempValue'])) !== undefined
-        ? { temperature: num(pick(raw, ['temperature', 'temp', 'tempValue'])) }
-        : {}),
+      ...temperatureOf(raw),
     })
   }
   return out
@@ -229,7 +321,11 @@ export function parseInputs(payload: unknown): InputReading[] {
   const out: InputReading[] = []
   for (const [index, raw] of list.entries()) {
     if (!isObject(raw)) continue
-    const code = num(pick(raw, ['signalStatus', 'signal', 'status']))
+    // `sourceStatus` is what a real MX40 Pro sends: 1 on the inputs feeding
+    // a live show, 0 on the rest (REASONED from that pattern -- an unplug
+    // test would make it OBSERVED). A disconnected input still reports a
+    // resolution there, so signal is never inferred from one.
+    const code = num(pick(raw, ['signalStatus', 'sourceStatus', 'signal', 'status']))
     const connected = bool(pick(raw, ['connected', 'isConnected']))
     const signal: InputSignal =
       code !== undefined && SIGNAL_BY_CODE[code] !== undefined
@@ -237,14 +333,14 @@ export function parseInputs(payload: unknown): InputReading[] {
         : connected === true
           ? 'present'
           : 'not-connected'
+    const type = pick(raw, ['type', 'connector', 'connectorType', 'interfaceType'])
+    const connector = str(type) ?? (num(type) !== undefined ? INPUT_TYPES[num(type)!] : undefined)
     out.push({
-      id: str(pick(raw, ['id', 'sourceId', 'index'])) ?? String(index + 1),
+      id: ident(pick(raw, ['id', 'sourceId', 'index'])) ?? String(index + 1),
       ...(str(pick(raw, ['name', 'sourceName', 'label'])) !== undefined
         ? { name: str(pick(raw, ['name', 'sourceName', 'label'])) }
         : {}),
-      ...(str(pick(raw, ['type', 'connector', 'connectorType', 'interfaceType'])) !== undefined
-        ? { connector: str(pick(raw, ['type', 'connector', 'connectorType', 'interfaceType'])) }
-        : {}),
+      ...(connector !== undefined ? { connector } : {}),
       signal,
     })
   }
@@ -381,14 +477,35 @@ export class CoexReader {
     if (monitor.error) errors.push(monitor.error)
     else {
       answered++
-      const temp = num(pick(monitor.data, ['temperature', 'temp', 'deviceTemperature']))
+      // With /api/v1/device absent (OBSERVED: HTTP 404 on an MX40 Pro), the
+      // name here is the only identity the API offers. Never overrides a
+      // device endpoint that did answer.
+      if (this.topology.model === undefined && this.topology.reportedName === undefined) {
+        const name = str(pick(monitor.data, ['name']))
+        if (name !== undefined) {
+          reading.reportedName = name
+          const model = modelFromName(name)
+          if (model !== undefined) reading.model = model
+        }
+      }
+      const temp = sensorValue(
+        pick(monitor.data, ['temperature', 'temp', 'deviceTemperature', 'mainBoardTemperature'])
+      )
       const fan = num(pick(monitor.data, ['fanSpeed', 'fan', 'fanSpeedPercent']))
       if (temp !== undefined) reading.temperature = temp
       if (fan !== undefined) reading.fanSpeed = fan
-      // Per-cabinet monitoring is the live half; the cabinet endpoint gives
-      // the layout. Prefer whatever this poll actually saw.
-      const cabinets = parseCabinets(pick(monitor.data, ['cabinets', 'cabinetList']) ?? [])
-      if (cabinets.length > 0) reading.cabinets = cabinets
+      // OBSERVED: fans arrive as `fanInfos[]`, each with `fanSpeed` in rpm --
+      // 1293, 2785, 2733 on the unit -- which is not a percentage and must
+      // not be shown as one.
+      const rpm = arr(pick(monitor.data, ['fanInfos']))
+        .map((f) => num(pick(f, ['fanSpeed'])))
+        .filter((r): r is number => r !== undefined)
+      if (rpm.length > 0) reading.fanRpm = Math.max(...rpm)
+      // Per-cabinet monitoring is the live half; the cabinet endpoint is the
+      // roster. Merge, so a rostered cabinet that did not report shows as
+      // offline instead of vanishing.
+      const live = parseCabinets(pick(monitor.data, ['cabinets', 'cabinetList']) ?? [])
+      if (live.length > 0) reading.cabinets = mergeCabinets(this.topology.cabinets ?? [], live)
     }
 
     const mode = await this.get('/api/v1/device/screen/displaymode')

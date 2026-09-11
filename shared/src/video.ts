@@ -130,6 +130,12 @@ export interface ProcessorReading {
   temperature?: number
   /** Percent, when the controller reports fans that way. */
   fanSpeed?: number
+  /**
+   * The fastest fan in rpm, when the controller reports fans that way. An
+   * MX40 Pro does (OBSERVED: `fanInfos[].fanSpeed`, 1293-2785). Never the
+   * same number as `fanSpeed`, which is why it is not the same field.
+   */
+  fanRpm?: number
   /** A fan the controller calls abnormal. SNMP gives status, not a speed. */
   fanFault?: boolean
   /** Cards the controller calls abnormal — receiving, output or input. */
@@ -334,8 +340,17 @@ export function gradeReading(reading: ProcessorReading | null): {
     }
   }
 
+  // A list of cabinets is not evidence that they are fine. Driven with the
+  // shapes a real MX40 Pro returns, the reader once produced 288 cabinets with
+  // no temperature -- the field was an object it did not read -- and this
+  // branch graded the wall ok. A verdict is never more confident than the
+  // reading behind it: with no temperature and no status, the honest grade is
+  // unknown, and the summary says what is missing.
   if (reading.cabinets.length > 0) {
-    return { health: 'ok', summary: `${reading.cabinets.length} cabinets online` }
+    const evidence = reading.cabinets.some((c) => c.tempStatus !== undefined)
+    return evidence
+      ? { health: 'ok', summary: `${reading.cabinets.length} cabinets online` }
+      : { health: 'unknown', summary: `${reading.cabinets.length} cabinets, no readings` }
   }
   return { health: 'unknown', summary: 'answering, but reporting nothing' }
 }

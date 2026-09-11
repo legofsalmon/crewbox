@@ -187,3 +187,12 @@ describe('wording', () => {
     expect(ago(1_000, 1_000 + 3 * 60 * 60_000)).toBe('3 h ago')
   })
 })
+
+describe('fans in rpm', () => {
+  it('says rpm when the controller reports rpm, never a percentage', () => {
+    // An MX40 Pro reports fanInfos[].fanSpeed in rpm. Shown as a percentage it
+    // would read "fans 1293%".
+    expect(detailOf(reading({ fanRpm: 2785 }))).toContain('fans up to 2785 rpm')
+    expect(detailOf(reading({ fanRpm: 2785 }))).not.toContain('%')
+  })
+})
