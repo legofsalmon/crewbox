@@ -86,6 +86,18 @@ export interface CabinetReading {
   /** Screen it belongs to, when the controller groups them. */
   screen?: string
   online: boolean
+  /**
+   * True when `online` is crewbox's default rather than the firmware's answer.
+   *
+   * The MX40 Pro has **no online flag anywhere** (OBSERVED) — a cabinet that
+   * drops off the chain simply stops being listed. Defaulting to online is
+   * still right, because a sparse payload must not paint a working wall red,
+   * but it means "online" can mean either "it said so" or "it didn't say".
+   * Those are different claims and `gradeReading` is not allowed to confuse
+   * them: a wall whose every cabinet is online only by default is `unknown`,
+   * not `ok`. Absent here means the firmware actually told us.
+   */
+  onlineAssumed?: boolean
   /** Degrees Celsius. */
   temperature?: number
   /**
@@ -130,6 +142,16 @@ export interface ProcessorReading {
   temperature?: number
   /** Percent, when the controller reports fans that way. */
   fanSpeed?: number
+  /**
+   * Revolutions per minute, when it reports them that way instead.
+   *
+   * Kept apart from `fanSpeed` rather than normalised into it: the COEX API's
+   * `fanInfos[].fanSpeed` is rpm (OBSERVED — 1293 on a controller sitting at
+   * 42°C) and the pane prints `fanSpeed` with a per-cent sign, so folding one
+   * into the other puts "fans 1293%" on a screen. Nothing converts between
+   * them because nothing can: the ceiling is per-chassis and unpublished.
+   */
+  fanRpm?: number
   /** A fan the controller calls abnormal. SNMP gives status, not a speed. */
   fanFault?: boolean
   /** Cards the controller calls abnormal — receiving, output or input. */
@@ -149,6 +171,18 @@ export interface ProcessorReading {
   snmpEnabled?: boolean
   /** Endpoints that didn't answer, in words. Never thrown, always shown. */
   errors: string[]
+  /**
+   * Endpoints this firmware doesn't implement, so the pane can stop calling
+   * them failures.
+   *
+   * Three of the eight COEX endpoints answer 404 on an MX40 Pro (OBSERVED).
+   * A 404 that has repeated is a fact about the firmware, not a fault: it
+   * will read the same for the length of the show, and leaving it in `errors`
+   * puts a permanent "didn't answer" line under a healthy wall while still
+   * putting the request on the video network every poll. Once latched, the
+   * endpoint moves here and stops being asked.
+   */
+  absent?: string[]
   /**
    * How many endpoints answered at all, whatever they said.
    *
@@ -334,8 +368,30 @@ export function gradeReading(reading: ProcessorReading | null): {
     }
   }
 
-  if (reading.cabinets.length > 0) {
+  /**
+   * A cabinet count is not evidence of health.
+   *
+   * This used to be `cabinets.length > 0 → ok`, and on the first real
+   * controller anybody pointed crewbox at that returned **`ok, "3 cabinets
+   * online"`** for a live wall where the reader had recognised nothing at
+   * all: no temperature anywhere, no identity, every input reading
+   * not-connected, and "online" true on every cabinet only because that
+   * firmware has no online flag to read. Measured, not theorised — see
+   * `server/test/videoMx40.test.ts`.
+   *
+   * A count says the controller answered, which `answered` already says
+   * better. So `ok` now needs a cabinet that actually reported its own state;
+   * everything else is the honest answer, which is that we couldn't tell.
+   */
+  const reported = reading.cabinets.filter((c) => !c.onlineAssumed)
+  if (reported.length > 0) {
     return { health: 'ok', summary: `${reading.cabinets.length} cabinets online` }
+  }
+  if (reading.cabinets.length > 0) {
+    return {
+      health: 'unknown',
+      summary: `${reading.cabinets.length} cabinets, none reporting`,
+    }
   }
   return { health: 'unknown', summary: 'answering, but reporting nothing' }
 }
