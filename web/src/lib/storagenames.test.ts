@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { plotStore } from '../modules/lighting/store/docManager.ts'
 import { sheetStore } from '../modules/patch/store/docManager.ts'
+import { screensStore } from '../modules/video/store/screensStore.ts'
 
 /**
  * The names that reach phones in the field.
@@ -58,12 +59,18 @@ describe('the relay rooms and document names', () => {
     expect(plotStore.docName('abc123')).toBe('plot-abc123')
   })
 
+  it('is video/screens-<id>', () => {
+    expect(screensStore.room('abc123')).toBe('video/screens-abc123')
+    expect(screensStore.docName('abc123')).toBe('screens-abc123')
+  })
+
   it('gives each module one index, in its own namespace', () => {
     // The index is what makes a sheet appear in somebody else's selector.
     // Rename it and every device lists only what it made itself. `room()`
     // takes a doc *id*, so the index's own room is pinned at its source.
     expect(sheetStore.indexDocName).toBe('index')
     expect(plotStore.indexDocName).toBe('index')
+    expect(screensStore.indexDocName).toBe('index')
     const store = readFileSync(join(SRC, 'lib/docs/store.ts'), 'utf8')
     expect(store).toContain("const INDEX_DOC_NAME = 'index'")
   })
@@ -118,6 +125,9 @@ describe('the browser storage names', () => {
         'crewbox:sounds',
         'crewbox:theme',
         'crewbox:token',
+        // Which screen maps this device has opened (docs/SCREEN_MAPS.md); the
+        // registry `crewbox:video-docs` is derived by the store and not a literal.
+        'crewbox:video-screens-seen',
         'crewbox:wifi-ssid',
         // Not localStorage: an incident queue key, a notification tag, and the
         // timetable's own database and edit origin. Same rule applies — they

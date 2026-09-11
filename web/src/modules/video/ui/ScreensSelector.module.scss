@@ -1,0 +1,152 @@
+@use '../../_shared/ui/controls' as c;
+
+.selector {
+  padding: 24px;
+  max-width: 820px;
+  margin: 0 auto;
+  overflow-y: auto;
+  height: 100%;
+  position: relative;
+}
+
+.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -10px;
+}
+
+.dropVeil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.hero {
+  margin-bottom: 20px;
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    color: var(--text);
+  }
+}
+
+.heroTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 56ch;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.importButton {
+  @include c.primary-button;
+}
+
+.hiddenFile {
+  display: none;
+}
+
+.hint {
+  margin: 0 0 16px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+  }
+}
+
+.importError {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.empty {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.item {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.itemTitle {
+  font-weight: 600;
+}
+
+.itemMeta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.delete {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 18px;
+  padding: 0 14px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--danger);
+  }
+}
+
+@media (max-width: 720px) {
+  .selector {
+    padding: 14px;
+  }
+}

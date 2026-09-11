@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<XmlState name="Fixture Stage">
+	<versionInfo name="Resolume Arena" majorVersion="7" minorVersion="27" microVersion="1" revision="15990"/>
+	<ScreenSetup name="ScreenSetup">
+		<Params name="ScreenSetupParams"/>
+		<CurrentCompositionTextureSize width="1920" height="1080"/>
+		<screens>
+			<Screen name="LED" uniqueId="1001">
+				<Params name="Params">
+					<Param name="Name" T="STRING" default="" value="LED"/>
+					<Param name="Enabled" T="BOOL" default="1" value="1"/>
+					<Param name="Hidden" T="BOOL" default="0" value="0"/>
+				</Params>
+				<layers>
+					<Slice uniqueId="11">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="FAR LEFT"/>
+							<Param name="Enabled" T="BOOL" default="1" value="1"/>
+						</Params>
+						<Params name="Input">
+							<ParamChoice name="Input Source" default="0:1" value="0:1" storeChoices="0"/>
+							<Param name="Input Opacity" T="BOOL" default="1" value="1"/>
+							<Param name="Input Bypass/Solo" T="BOOL" default="1" value="1"/>
+							<Param name="SoftEdgeEnable" T="BOOL" default="0" value="0"/>
+						</Params>
+						<Params name="Output">
+							<Param name="Flip" T="UINT8" default="0" value="0"/>
+							<Param name="Is Key" T="BOOL" default="0" value="0"/>
+							<Param name="Black BG" T="BOOL" default="0" value="0"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="0" y="0"/><v x="480" y="0"/><v x="480" y="1080"/><v x="0" y="1080"/>
+						</InputRect>
+						<OutputRect orientation="0">
+							<v x="0" y="0"/><v x="480" y="0"/><v x="480" y="1080"/><v x="0" y="1080"/>
+						</OutputRect>
+						<Warper>
+							<Params name="Warper">
+								<ParamChoice name="Point Mode" default="PM_LINEAR" value="PM_LINEAR" storeChoices="0"/>
+								<Param name="Flip" T="UINT8" default="0" value="0"/>
+							</Params>
+							<BezierWarper controlWidth="4" controlHeight="4">
+								<vertices>
+									<v x="0" y="0"/><v x="160" y="0"/><v x="320" y="0"/><v x="480" y="0"/>
+									<v x="0" y="360"/><v x="160" y="360"/><v x="320" y="360"/><v x="480" y="360"/>
+									<v x="0" y="720"/><v x="160" y="720"/><v x="320" y="720"/><v x="480" y="720"/>
+									<v x="0" y="1080"/><v x="160" y="1080"/><v x="320" y="1080"/><v x="480" y="1080"/>
+								</vertices>
+							</BezierWarper>
+							<Homography>
+								<src><v x="0" y="0"/><v x="480" y="0"/><v x="480" y="1080"/><v x="0" y="1080"/></src>
+								<dst><v x="0" y="0"/><v x="480" y="0"/><v x="480" y="1080"/><v x="0" y="1080"/></dst>
+							</Homography>
+						</Warper>
+					</Slice>
+					<Slice uniqueId="12">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="LEFT"/>
+						</Params>
+						<Params name="Input">
+							<ParamChoice name="Input Source" default="0:1" value="1:2" storeChoices="0"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="480" y="0"/><v x="959" y="0"/><v x="959" y="1080"/><v x="480" y="1080"/>
+						</InputRect>
+						<OutputRect orientation="0">
+							<v x="481" y="0"/><v x="960" y="0"/><v x="960" y="1080"/><v x="481" y="1080"/>
+						</OutputRect>
+					</Slice>
+					<Slice uniqueId="13">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="CENTER"/>
+						</Params>
+						<Params name="Input">
+							<ParamChoice name="Input Source" default="0:1" value="3:4" storeChoices="0"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="960" y="0"/><v x="1442" y="0"/><v x="1442" y="1080"/><v x="960" y="1080"/>
+						</InputRect>
+						<OutputRect orientation="0">
+							<v x="958" y="0"/><v x="1440" y="0"/><v x="1440" y="1080"/><v x="958" y="1080"/>
+						</OutputRect>
+					</Slice>
+					<Slice uniqueId="14">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="RIGHT TOP"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="1440" y="0"/><v x="1920" y="0"/><v x="1920" y="540"/><v x="1440" y="540"/>
+						</InputRect>
+						<OutputRect orientation="0">
+							<v x="1440" y="0"/><v x="1920" y="0"/><v x="1920" y="540"/><v x="1440" y="540"/>
+						</OutputRect>
+					</Slice>
+					<Slice uniqueId="15">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="RIGHT BOTTOM"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="1440" y="543"/><v x="1920" y="543"/><v x="1920" y="1080"/><v x="1440" y="1080"/>
+						</InputRect>
+						<OutputRect orientation="0">
+							<v x="1440.5" y="543"/><v x="1920" y="543"/><v x="1920" y="1080"/><v x="1440.5" y="1080"/>
+						</OutputRect>
+					</Slice>
+					<Slice uniqueId="16">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="FULL (spare)"/>
+							<Param name="Enabled" T="BOOL" default="1" value="0"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="0" y="0"/><v x="1920" y="0"/><v x="1920" y="1080"/><v x="0" y="1080"/>
+						</InputRect>
+						<OutputRect orientation="0">
+							<v x="0" y="0"/><v x="1920" y="0"/><v x="1920" y="1080"/><v x="0" y="1080"/>
+						</OutputRect>
+					</Slice>
+					<Mask uniqueId="17">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="Camera hole"/>
+						</Params>
+						<Params name="Output">
+							<Param name="Invert" T="BOOL" default="1" value="1"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="-0.5" y="-0.5"/><v x="0.5" y="-0.5"/><v x="0.5" y="0.5"/><v x="-0.5" y="0.5"/>
+						</InputRect>
+						<OutputRect orientation="0">
+							<v x="800" y="400"/><v x="1100" y="400"/><v x="1100" y="700"/><v x="800" y="700"/>
+						</OutputRect>
+						<ShapeObject>
+							<Shape>
+								<Contour closed="1">
+									<points>
+										<v x="800" y="400"/><v x="1100" y="400"/><v x="1100" y="700"/><v x="800" y="700"/>
+									</points>
+									<segments>LLLL</segments>
+								</Contour>
+							</Shape>
+						</ShapeObject>
+					</Mask>
+				</layers>
+				<OutputDevice>
+					<OutputDeviceVirtual name="LED" deviceId="VirtualLED" idHash="1" width="1920" height="1080"/>
+				</OutputDevice>
+			</Screen>
+			<Screen name="Side" uniqueId="1002">
+				<Params name="Params">
+					<Param name="Name" T="STRING" default="" value="Side"/>
+				</Params>
+				<layers>
+					<Slice uniqueId="21">
+						<Params name="Common">
+							<Param name="Name" T="STRING" default="Layer" value="Portrait"/>
+						</Params>
+						<InputRect orientation="0">
+							<v x="0" y="0"/><v x="1920" y="0"/><v x="1920" y="1080"/><v x="0" y="1080"/>
+						</InputRect>
+						<OutputRect orientation="-1.5707963267948966">
+							<v x="0" y="1920"/><v x="0" y="0"/><v x="1080" y="0"/><v x="1080" y="1920"/>
+						</OutputRect>
+					</Slice>
+				</layers>
+				<OutputDevice>
+					<OutputDeviceDisplay name="Display 2" deviceId="Display 2" idHash="2" fullscreen="1" width="1920" height="1080"/>
+				</OutputDevice>
+			</Screen>
+		</screens>
+	</ScreenSetup>
+</XmlState>
