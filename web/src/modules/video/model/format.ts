@@ -71,9 +71,11 @@ export function detailOf(reading: ProcessorReading | null): string {
   const abnormal = reading.cabinets.filter((c) => c.tempStatus === 'abnormal').length
   if (abnormal > 0) parts.push(`${abnormal} reporting abnormal`)
 
+  // Percent and rpm are different numbers and get different words. The COEX
+  // API reports rpm; SNMP reports a status and no speed at all.
   if (reading.fanFault) parts.push('a fan is abnormal')
   else if (reading.fanSpeed !== undefined) parts.push(`fans ${Math.round(reading.fanSpeed)}%`)
-  else if (reading.fanRpm !== undefined) parts.push(`fans up to ${Math.round(reading.fanRpm)} rpm`)
+  else if (reading.fanRpm !== undefined) parts.push(`fans ${Math.round(reading.fanRpm)} rpm`)
 
   const live = reading.inputs.filter((i) => i.signal === 'present').length
   const dark = reading.inputs.filter((i) => i.signal === 'no-signal').length

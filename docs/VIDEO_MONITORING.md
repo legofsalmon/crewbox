@@ -7,14 +7,15 @@ involved, and — importantly — what is not.
 **Status.** Built: the SNMP and HTTP readers, the discovery probe, the
 double-confirmation gate, the poller and the pane.
 
-**None of it has met a NovaStar processor directly — but the sister project
-now has.** On 2026-09-11 novasun read a live MX40 Pro, read-only, and handed
-over the response shapes as a fixture. Driven with them, this module's HTTP
-reader graded a wall with no temperatures, no identity and every input
-not-connected as **ok**. The reader and the grading were changed against that
-fixture; the tests in `server/test/videoCoex.test.ts` under "the shapes a real
-MX40 Pro returns" are that fixture. Every claim below carries where it came
-from, and a claim without a source is a bug in this document.
+**Crewbox itself has still never met a NovaStar processor** — not one packet in
+this test suite came off a wire. But the sister project the protocol facts come
+from has now read two: a NovaPro UHD Jr on a bench, and a NovaPro MX40 Pro
+mid-show. Its findings arrive here as a fixture of that controller's real
+response shapes, which the reader is driven against, and they changed most of
+what this document used to say about the HTTP API.
+
+Every claim below carries where it came from, and a claim without a source is
+a bug in this document.
 
 ## The one rule
 
@@ -93,15 +94,24 @@ Confidence labels, matching the ones novasun uses:
 
 | Label        | Meaning                                                 |
 | ------------ | ------------------------------------------------------- |
+| **OBSERVED** | Seen on real hardware, and reproduced                   |
 | **OFFICIAL** | Stated in a NovaStar document                           |
 | **DERIVED**  | From decompiled NovaLCT assemblies or published clients |
 | **REASONED** | An inference from protocol properties, not observed     |
 | **UNKNOWN**  | Not established. Needs a bench. Do not design around it |
 
-Claims marked **OBSERVED** below rest on one unit — a NovaPro MX40 Pro running
-a live show, read twice, 35 minutes apart, over HTTP only — and on a NovaPro
-UHD Jr on a bench. One unit each, one firmware each. That is what OBSERVED
-means here; it does not mean "every controller".
+This module was written without hardware, and for a long time nothing in it
+was marked OBSERVED. Two units have since been read: a **NovaPro UHD Jr** on a
+bench, and a **NovaPro MX40 Pro** mid-show on 2026-09-11. What they settled is
+marked OBSERVED below, with the scope it deserves — two processors, two
+models, not a fleet.
+
+The MX40 Pro's whole API is checked in at
+`server/test/fixtures/mx40ProApi.json`: one object per endpoint path, real
+structure, synthetic values, three cabinets standing in for its 288, and the
+endpoints that answered 404 marked as 404s. `server/test/videoMx40.test.ts`
+drives the reader with it. That fixture is a record of what a controller
+returned, so it is not a file to edit when a test goes red.
 
 **The source of truth is `legofsalmon/novasun`**, specifically
 `docs/read-only-monitoring.md` and `src/novasun/snmp.py`. That repository
@@ -125,8 +135,12 @@ after the prefix, never observed, and **it has been withdrawn**. Nothing here
 decodes that payload into labelled fields; `discovery.ts` keeps the tail as an
 unlabelled string, and a test asserts it produces no `model` or `name`.
 
-If it had been built on, the pane would be printing invented labels beside a
-processor's address at two in the morning.
+A real reply has since been captured, and it does not rescue the guess: the
+tail is eight ASCII bytes with no model ID and no device name in them
+(**OBSERVED**). Keeping the withdrawal on the record was worth it even though
+a sample now exists — if it had been built on, the pane would have been
+printing invented labels beside a processor's address at two in the morning,
+and the sample would have arrived too late to stop it.
 
 ## The three read paths
 
@@ -166,40 +180,58 @@ decode bug costs a missing field on a pane rather than a packet on a show
 network. `server/test/videoBer.test.ts` pins the byte layout, including the
 hostile-input cases.
 
-### COEX HTTP on 8001 — easier, richer than it looked, and now observed
+### COEX HTTP on 8001 — easier, thinner, and now measured
 
-Endpoint paths are **OFFICIAL** (manual and published clients). Response field
-names are **OBSERVED** on one MX40 Pro, and every spelling the manual and the
-published clients had suggested was wrong on it:
+Endpoint paths are **OFFICIAL** (manual and published clients). The response
+field names used to be provisional — taken from the manual and from published
+clients — and reading them defensively, several spellings deep, was the whole
+defence. It was not enough: **the manual is wrong on every field that
+matters**, and when novasun drove this reader with the shapes a real MX40 Pro
+returns, it reported a live wall as `ok, "3 cabinets online"` with no
+temperature anywhere, no identity, and every input reading not-connected while
+HDMI 1 was carrying the show.
 
-- `/api/v1/device` answers **HTTP 404**, not a code-6 envelope. Identity comes
-  from `monitor/info.name`, `"MX40 Pro_<digits>"`; the model is the prefix
-  (REASONED from that one pattern).
-- `/device/cabinet` and `input/sources` are **bare lists**, and ids are
-  **numbers** — `512`, `768`, and 64-bit cabinet ids.
-- `monitor/info.cabinets[]` entries carry `cabinetID: 0` and zero readings on
-  every one; the receiving card under `rvCards[]` has the id that matches the
-  cabinet list (288 of 288) and the real `temperature.value` and
-  `voltage.value`. **Every reading is a `{ name, status, value }` object.**
-- There is **no online flag anywhere**. A cabinet that is down is absent from
-  `monitor/info`; the roster is `/device/cabinet`. The reader merges the two.
-- Input signal is `sourceStatus` — `1` on the inputs feeding the show, `0` on
-  the rest (REASONED from that pattern). A disconnected input **still reports
-  a resolution**, the EDID default, so signal is never inferred from one.
-- Fans are `fanInfos[]` with `fanSpeed` in **rpm**, not a percentage.
-- `snmpstate` is `{ "state": false }` — and SNMP was **off** on the unit.
-- `monitor/info` returns its cabinets in a **different order on every call**.
-  Nothing may be keyed on list position.
+What a real controller returns, all **OBSERVED** on that unit:
 
-`server/test/videoCoex.test.ts` pins both halves: that the observed payload is
-read, and that the manual's spellings still are; `parseCabinets` reads the
-card under `rvCards[]` first.
+| Endpoint                       | What it actually does                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/api/v1/device`               | **404.** Identity comes from `monitor/info.name` — `"MX40 Pro_000001"`                                                                                                               |
+| `/api/v1/device/audio`         | **404**                                                                                                                                                                              |
+| `/api/v1/device/monitor/info`  | `mainBoardTemperature.value` °C, `fanInfos[].fanSpeed` **rpm**, `cabinets[].rvCards[]` carrying `cabinetID` and `temperature.value`, `backupStatus`, `screenSourceStatus[]`          |
+| `/api/v1/device/cabinet`       | A bare list. `id` is a **64-bit number** matching `rvCards[].cabinetID`; `brightness` is a **0–1 fraction**. No name, no online flag, no temperature                                 |
+| `/api/v1/screen`               | `screens[]` with `screenName`, `workingMode`, `masterFrameRate`. **No screen-level brightness**                                                                                      |
+| `/api/v1/device/input/sources` | A bare list. Signal is **`sourceStatus`** — 1 feeding the show, 0 elsewhere. `type` is an int code nobody has mapped. A disconnected input still reports a resolution (EDID default) |
+| `/api/v1/device/snmpstate`     | `{"state": false}` — SNMP was **off**, and switching it on is a write                                                                                                                |
 
-Safe to poll while VMP is connected: **OBSERVED for one burst, still REASONED
-for a cadence.** Eight GETs against the unit mid-show answered in 0.1 s, no
-`Busying`, no visible effect — twice. What a sustained cadence does to VMP is
-not established; the 20 s policy stands. Two payloads are large: 342 KB of
-cabinets and 265 KB of monitoring for 288 cabinets.
+Three of those shape the reader more than the field names do:
+
+- **Every reading is an object** — `{ name, nameEn, status, value }`, never a
+  bare number. `metric()` in `coex.ts` exists for that, and novasun records a
+  reader that assumed otherwise crashing its refresh thread on first contact.
+- **`monitor/info` reorders its cabinets on every call.** All 288 changed list
+  position between two reads 35 minutes apart, with identical per-id readings.
+  A cabinet identified by list position is a label that holds still while the
+  hardware behind it rotates, so ids come from `rvCards[].cabinetID` and
+  position is the last resort. The `status` codes beside each reading are
+  **UNKNOWN** and nothing reads them: a working card carries
+  `errorBit[0].status: 1` while a working fan carries `status: 0`.
+- **There is no online flag anywhere.** A cabinet that drops off the chain
+  stops being listed, and that is the only signal. The reader joins the stable
+  `/api/v1/device/cabinet` list against each poll's receiving cards and marks
+  the difference offline (**REASONED** from the absence, guarded on the two id
+  sets overlapping at all).
+
+Everything the manual said is still tried first, so a firmware that follows it
+— and `coexsim` — keeps working. `server/test/videoCoex.test.ts` pins the
+manual's shapes; `server/test/videoMx40.test.ts` pins the real one.
+
+Safe to poll while VMP is connected: **REASONED, very probably, unverified.**
+The API is documented for third-party integration, it is a different port and
+a stateless protocol from the register bus, it has a `Busying` error code (5)
+which implies it expects concurrent callers, and it has no authentication or
+session for a poller to hold. What is not established is whether a GET can
+slow VMP's own operations, whether any GET has side effects despite the verb,
+or what rate a controller tolerates.
 
 The policy follows novasun's recommendation: status every 20 s, topology every
 tenth poll, 200 ms between requests, and a five-second back-off on code 5.
@@ -219,20 +251,36 @@ plan**, and novasun's investigation is what killed it:
   224.224.125.119 (**DERIVED**), so any host on the segment sees NovaLCT
   scanning. That half is fine.
 - The **reply is unicast** back to the requester, at both layer 2 and layer 3
-  (**OBSERVED**, by packet capture). A listener on a third host sees the probes
-  and never sees what answered.
-- VMP **does not probe on a timer** (**OBSERVED**: thirty minutes on a live-show
-  network with VMP running and nobody pressing search overheard nothing), and
-  an MX40 **never announced itself** in that time. A passive wait would last
-  all night.
+  — **OBSERVED**, from a packet capture of the exchange. A switch forwards it
+  to no other port, so a listener on a third host sees every probe and never
+  sees a single answer. **Passive discovery cannot yield an inventory.** This
+  was the guess the design was built on; it is now a measurement.
+- A controller announces nothing unsolicited: a listener sat for thirty
+  minutes on a live-show segment with an MX40 on it and heard nothing
+  (**OBSERVED**, with the caveat that broadcast filtering on the show switch
+  was not ruled out).
+- And the wait really is unbounded: through those same thirty minutes VMP was
+  driving the show and probed **zero** times. It discovers on user action, not
+  on a timer (**OBSERVED** for VMP; NovaLCT's cadence is still **UNKNOWN**).
 
 So crewbox sends the probe itself, once, when an admin asks. The packet is the
 eight ASCII bytes `rqProMI:` — a broadcast UDP read with no addressed target,
 no register address and no write bit. It cannot change controller state.
 
-That the probe cannot change state is **REASONED**; that a UHD Jr and an MX40
-both answered it with no visible effect is **OBSERVED**. The sweep stays behind
-two confirmations, never on a timer, and prints verbatim what it transmitted.
+That last sentence is **REASONED, not OBSERVED**, which is exactly why the
+sweep is behind two confirmations, never on a timer, and prints verbatim what
+it transmitted. novasun argues a sweep every few minutes would be safe enough;
+that is its own label REASONED, so the answer here stays no.
+
+Two more things the capture settled. The reply is 16 bytes — the `rpProMI:`
+prefix and an 8-byte ASCII tail, `App,0161` on a UHD Jr, stable across a power
+cycle — and it carries **no model ID and no device name** (**OBSERVED**). The
+earlier claim that it did was withdrawn, and the capture does not rescue it:
+identity has to come from the HTTP API or SNMP. And the device **ignored the
+multicast probe** entirely while answering the broadcast and unicast ones
+within 12 ms (**OBSERVED**, one model), with the capture confirming the
+multicast packet left the host correctly. Multicast is an extra that may work
+elsewhere, not a path to rely on.
 
 It goes to the directed broadcast of the segment `CREWBOX_VIDEO_IFACE` names,
 not 255.255.255.255. A limited broadcast leaves by whichever adapter the
@@ -344,18 +392,17 @@ dark. So:
 novasun names two things worth doing, in order, and both would change this
 document:
 
-1. ~~**Capture one `rpProMI:` reply.**~~ **Done.** Replies are unicast; the
-   payload is 16 bytes with an 8-byte ASCII tail (`App,0161` on a UHD Jr) that
-   carries neither model nor name. Passive discovery is not possible; the
-   active, on-demand probe was the right call.
-2. ~~**Check whether SNMP is enabled.**~~ **Done, and it was off** on the one
-   COEX unit seen. HTTP is the load-bearing read path, which is why its field
-   names being observed matters more than the OID map for now.
+1. **Capture one `rpProMI:` reply.** It settles whether replies are unicast
+   (and so whether passive discovery is possible at all) and what the payload
+   after the prefix actually contains. `python -m novasun listen` transmits
+   nothing.
+2. **Check whether SNMP is enabled.** If it is, most of the pane is already
+   available through an interface designed for exactly this.
 
-Still to do: run a COEX poll at 1 Hz for ten minutes with VMP connected and
-doing something visible. Two isolated bursts were harmless; a cadence has not
-been tried. And unplug one input on a bench day, so `sourceStatus` = signal
-becomes OBSERVED rather than reasoned.
+Beyond those: run a COEX poll at 1 Hz for ten minutes with VMP connected and
+doing something visible. If VMP does not stutter and no `Busying` appears,
+polling at 0.05 Hz is not going to be the thing that breaks a show — and the
+"REASONED, unverified" on §COEX HTTP above can become an observation.
 
 ## Out of scope, for now
 

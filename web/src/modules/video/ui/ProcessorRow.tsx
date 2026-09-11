@@ -97,6 +97,16 @@ export default function ProcessorRow({
         <p className={styles.errors}>Didn’t answer: {reading.errors.join('; ')}</p>
       )}
 
+      {/* Not a failure, so not in the line above. Three of the eight COEX
+          endpoints are missing from a real MX40 Pro's firmware, and calling
+          that "didn't answer" every poll puts a permanent complaint under a
+          working wall. Said once, in the past tense, and then left alone. */}
+      {reading && reading.absent && reading.absent.length > 0 && (
+        <p className={styles.errors}>
+          This firmware doesn’t have {reading.absent.join(', ')} — the box has stopped asking.
+        </p>
+      )}
+
       {/* Open to anyone signed in: everything these start is an addressed
           GET, so a screens tech should not need to find an admin to look at
           their own wall. The sweep is the one privileged thing here. */}

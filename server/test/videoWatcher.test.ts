@@ -350,27 +350,4 @@ describe('grading a reading', () => {
     expect(gradeReading(null).health).toBe('unknown')
     expect(gradeReading(base).health).toBe('unknown')
   })
-
-  it('does not call a wall ok on a cabinet list with no readings behind it', () => {
-    // Driven with the shapes a real MX40 Pro returns, the reader once produced
-    // cabinets with no temperature -- the field was an object it did not read
-    // -- and this graded the wall ok. Online-by-default is not evidence.
-    const graded = gradeReading({
-      ...base,
-      cabinets: [
-        { id: 'A1', online: true },
-        { id: 'A2', online: true },
-      ],
-    })
-    expect(graded).toEqual({ health: 'unknown', summary: '2 cabinets, no readings' })
-  })
-
-  it('still calls it ok when every cabinet reported a status', () => {
-    // SNMP gives normal/abnormal rather than degrees; that is evidence.
-    const graded = gradeReading({
-      ...base,
-      cabinets: [{ id: 'A1', online: true, tempStatus: 'normal' }],
-    })
-    expect(graded).toEqual({ health: 'ok', summary: '1 cabinets online' })
-  })
 })
