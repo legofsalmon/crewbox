@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { bboxOf, unionBox, type Box, type Pt } from '../model/screenSetup.ts'
+import { unionBox, type Box, type Pt } from '../model/screenSetup.ts'
 import { resolveOverlaps } from './labels.ts'
 import styles from './ScreenMap.module.scss'
 
@@ -26,6 +26,17 @@ import styles from './ScreenMap.module.scss'
 export interface MapItem {
   id: string
   poly: Pt[]
+  /**
+   * The polygon's bounding box and area, carried rather than derived.
+   *
+   * `bboxOf` walks the whole polygon, and on a 200-slice map every consumer
+   * wanted one: this component's `shapes`, `worldBox` and `labels` memos, and
+   * the caller's own row sort — which was calling it twice per comparison.
+   * They are computed once on `SliceView` (see `screenSetup.ts`) and passed
+   * through here.
+   */
+  bb: Box
+  area: number
   name: string
   sub: string
   color: string
@@ -92,7 +103,7 @@ export default function ScreenMap({
 
   const worldBox = useMemo(() => {
     let box: Box = { ...bounds }
-    for (const it of items) box = unionBox(box, bboxOf(it.poly))
+    for (const it of items) box = unionBox(box, it.bb)
     return box
   }, [bounds, items])
 
@@ -100,7 +111,7 @@ export default function ScreenMap({
     () =>
       items.map((it) => ({
         it,
-        bb: bboxOf(it.poly),
+        bb: it.bb,
         points: it.poly.map((p) => `${p.x},${p.y}`).join(' '),
       })),
     [items]
@@ -113,16 +124,29 @@ export default function ScreenMap({
       const r = entries[0]?.contentRect
       if (!r) return
       sizeRef.current = { W: r.width, H: r.height }
-      setSize({ W: r.width, H: r.height })
+      // Only when it really changed. `setSize` with a fresh object every
+      // callback made the fit effect below a dependency of its own identity,
+      // and ResizeObserver fires on plenty of non-changes.
+      setSize((prev) =>
+        prev.W === r.width && prev.H === r.height ? prev : { W: r.width, H: r.height }
+      )
     })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
 
+  /**
+   * Auto-fit, but never over the top of somebody's own zoom.
+   *
+   * A crew member who has zoomed into one tile of a 200-tile map to read its
+   * coordinates loses that view on any resize — toggling the drawer, turning
+   * the phone, dragging a desktop window. `view.s === view.fit` is the test
+   * for "still where we put it", and the Fit button is how they ask for this
+   * on purpose.
+   */
   useEffect(() => {
-    if (size.W > 0 && size.H > 0 && worldBox.w > 0 && worldBox.h > 0) {
-      setView(fitView(size.W, size.H, worldBox))
-    }
+    if (size.W <= 0 || size.H <= 0 || worldBox.w <= 0 || worldBox.h <= 0) return
+    setView((v) => (v.s === v.fit ? fitView(size.W, size.H, worldBox) : v))
   }, [size, worldBox])
 
   const fit = useCallback(() => {
@@ -185,9 +209,19 @@ export default function ScreenMap({
     onSelect(d.hit && d.hit !== selectedId ? d.hit : null)
   }
 
-  const labels = useMemo(() => {
+  /**
+   * Label geometry, and deliberately *not* a function of what is focused.
+   *
+   * `resolveOverlaps` is O(n²) in the labels it places, and this used to
+   * depend on `hoverId` and `selectedId` as well as `view` — so moving a
+   * pointer across a 215-slice map re-laid out every label in every map on
+   * the page, once per polygon entered, and a drag did the same on every
+   * frame. Hover and selection change which labels are *shown*, never where
+   * they sit, so they belong to the cheap pass below instead.
+   */
+  const placed = useMemo(() => {
     const rects: Box[] = []
-    const out: { it: MapItem; rect: Box; show: boolean; sub: boolean }[] = []
+    const out: { it: MapItem; rect: Box; fitsName: boolean; fitsSub: boolean }[] = []
     for (const { it, bb } of shapes) {
       const needName = it.name.length * 6.5 + 10
       const needSub = it.sub.length * 5 + 10
@@ -201,13 +235,23 @@ export default function ScreenMap({
         w: fitsSub ? Math.max(needName, needSub) : needName,
         h: fitsSub ? 24 : 13,
       }
-      const focus = it.id === hoverId || it.id === selectedId
       if (fitsName) rects.push(rect)
-      out.push({ it, rect, show: fitsName || focus, sub: fitsSub || focus })
+      out.push({ it, rect, fitsName, fitsSub })
     }
     resolveOverlaps(rects)
     return out
-  }, [shapes, view, hoverId, selectedId])
+  }, [shapes, view])
+
+  // A focused slice shows its label whether or not it fitted. One pass, no
+  // geometry: this is what re-runs on hover.
+  const labels = useMemo(
+    () =>
+      placed.map(({ it, rect, fitsName, fitsSub }) => {
+        const focus = it.id === hoverId || it.id === selectedId
+        return { it, rect, show: fitsName || focus, sub: fitsSub || focus }
+      }),
+    [placed, hoverId, selectedId]
+  )
 
   // Two hundred stacked full-screen slices at a third opacity each is a
   // solid block; thin the fill as the count grows.
@@ -217,7 +261,7 @@ export default function ScreenMap({
     <div ref={wrapRef} className={styles.wrap}>
       <svg
         ref={svgRef}
-        className={styles.map}
+        className={`${styles.map} ${view.s > view.fit * 1.01 ? styles.engaged : ''}`}
         role="img"
         aria-label={label}
         style={{ '--fill': fill.toFixed(3) } as CSSProperties}

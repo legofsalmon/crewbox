@@ -2,13 +2,17 @@
 import { describe, expect, it } from 'vitest'
 import fixture from './__fixtures__/screen-setup.xml?raw'
 import {
+  bboxOf,
   buildView,
+  convexOverlap,
   decodeSource,
   deviceLabel,
+  isAxisAligned,
   meshBoundary,
   parseScreenSetup,
   rectFromPts,
   warpDeviation,
+  type Pt,
 } from './screenSetup.ts'
 
 const checksOf = (name: string) => {
@@ -225,5 +229,206 @@ describe('geometry', () => {
     )
     expect(rect).toMatchObject({ w: 200, h: 100, normalized: false })
     expect(rectFromPts([{ x: 0, y: 0 }], 0)).toBeNull()
+  })
+})
+
+describe('geometry that is not square to the axes', () => {
+  // A 45°-rotated unit square, centred wherever asked. Its bounding box is
+  // much bigger than it is, which is the whole problem.
+  const diamond = (cx: number, cy: number, r = 10) => [
+    { x: cx, y: cy - r },
+    { x: cx + r, y: cy },
+    { x: cx, y: cy + r },
+    { x: cx - r, y: cy },
+  ]
+
+  it('knows a rectangle square to the axes from a rotated one', () => {
+    expect(
+      isAxisAligned([
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 5 },
+        { x: 0, y: 5 },
+      ])
+    ).toBe(true)
+    // A slice turned by exactly 90° is still square to the axes, and keeps
+    // the better message: this is a test of the polygon, not of `rot`.
+    expect(
+      isAxisAligned([
+        { x: 10, y: 0 },
+        { x: 10, y: 5 },
+        { x: 0, y: 5 },
+        { x: 0, y: 0 },
+      ])
+    ).toBe(true)
+    expect(isAxisAligned(diamond(0, 0))).toBe(false)
+  })
+
+  it('says two diagonal neighbours do not overlap, whatever their boxes say', () => {
+    // Corner to corner: the bounding boxes share a quadrant, the diamonds
+    // touch at a point and no further. Reported as a collision, this sends
+    // an LED tech to fix something that is not wrong.
+    const a = diamond(0, 0)
+    const b = diamond(19.9, 19.9)
+    const boxA = bboxOf(a)
+    const boxB = bboxOf(b)
+    expect(Math.min(boxA.x + boxA.w, boxB.x + boxB.w) - Math.max(boxA.x, boxB.x)).toBeGreaterThan(0)
+    expect(convexOverlap(a, b)).toBeNull()
+  })
+
+  it('measures the overlap when two rotated slices really do overlap', () => {
+    const depth = convexOverlap(diamond(0, 0), diamond(5, 0))
+    expect(depth).not.toBeNull()
+    expect(depth!).toBeGreaterThan(0)
+    expect(depth!).toBeLessThan(20)
+  })
+})
+
+describe('rects the file does not fully describe', () => {
+  it('does not mistake a zero-size rect for unit coordinates', () => {
+    // All four corners at the origin satisfy |x| <= 1, so this used to read
+    // as normalized — and a normalized input is skipped by the composition
+    // map, the scale check and the whole-pixel check alike. A slice added and
+    // never sized then vanished from the pane with nothing said about it.
+    const zero = rectFromPts(
+      [
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+      ],
+      0
+    )
+    expect(zero?.normalized).toBe(false)
+
+    const unit = rectFromPts(
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+      ],
+      0
+    )
+    expect(unit?.normalized).toBe(true)
+  })
+})
+
+describe('a Name the user cleared', () => {
+  it('falls back to the default rather than to an empty string', () => {
+    // Arena writes value="" for a field that has been cleared, and keeps the
+    // built-in default on the same element. `getAttribute` returns '' rather
+    // than null, so `??` kept it and every fallback below was dead: rows
+    // rendered blank, and because feeds are keyed by screen name, two unnamed
+    // screens both wrote to feeds[''].
+    const xml = fixture
+      .replace(
+        '<Param name="Name" T="STRING" default="Layer" value="CENTER"/>',
+        '<Param name="Name" T="STRING" default="Layer" value=""/>'
+      )
+      .replace(
+        '<Param name="Name" T="STRING" default="" value="LED"/>',
+        '<Param name="Name" T="STRING" default="" value=""/>'
+      )
+    const setup = parseScreenSetup(xml)
+    const names = setup.screens.flatMap((s) => s.layers.map((l) => l.name))
+    expect(names).not.toContain('')
+    expect(names).toContain('Layer')
+    expect(setup.screens.map((s) => s.name)).not.toContain('')
+  })
+})
+
+describe('the summary counters', () => {
+  it('counts warps and sub-pixel placements on enabled slices only', () => {
+    // `outside` and `scaled` have always filtered on `active`; these two did
+    // not, so a switched-off spare slice read as "2 warped" on a setup where
+    // nothing on any wall was warped — flatly contradicting the neighbouring
+    // chips, whose tooltips say "Enabled slices…".
+    const setup = parseScreenSetup(fixture)
+    const on = buildView(setup).stats
+
+    const off = buildView({
+      ...setup,
+      screens: setup.screens.map((s) => ({
+        ...s,
+        layers: s.layers.map((l) => ({ ...l, enabled: false })),
+      })),
+    }).stats
+
+    expect(off.warped).toBe(0)
+    expect(off.subpx).toBe(0)
+    expect(off.outside).toBe(0)
+    expect(off.scaled).toBe(0)
+    // The fixture has a sub-pixel placement while its slices are enabled, so
+    // the zeros above are the filter working rather than nothing to find.
+    expect(on.subpx).toBeGreaterThan(0)
+  })
+})
+
+describe('the overlap check on a wall of rotated slices', () => {
+  /** The fixture's first slice, with its output replaced by `pts`. */
+  const rotatedSetup = (a: Pt[], b: Pt[]) => {
+    const setup = parseScreenSetup(fixture)
+    const screen = setup.screens[0]!
+    const base = screen.layers.find((l) => l.kind === 'Slice')!
+    const slice = (name: string, pts: Pt[]) => ({
+      ...base,
+      name,
+      enabled: true,
+      warp: null,
+      contour: null,
+      output: rectFromPts(pts, -Math.PI / 4),
+    })
+    return {
+      ...setup,
+      screens: [{ ...screen, layers: [slice('PORT A', a), slice('PORT B', b)] }],
+    }
+  }
+  const diamond = (cx: number, cy: number, r = 100) => [
+    { x: cx, y: cy - r },
+    { x: cx + r, y: cy },
+    { x: cx, y: cy + r },
+    { x: cx - r, y: cy },
+  ]
+  const checks = (setup: ReturnType<typeof rotatedSetup>) =>
+    [...buildView(setup).byId.values()].flatMap((s) => s.checks.map((c) => c.kind))
+
+  it('does not report diagonal neighbours as colliding', () => {
+    // Bounding boxes overlap by 1 px in each axis; the slices themselves
+    // meet at a corner and no more. This was two "overlap" checks and a
+    // chip on the summary, on a wall with nothing wrong with it.
+    expect(checks(rotatedSetup(diamond(200, 200), diamond(399, 399)))).toEqual([])
+  })
+
+  it('still reports two rotated slices that genuinely overlap', () => {
+    const found = checks(rotatedSetup(diamond(200, 200), diamond(260, 200)))
+    expect(found).toEqual(['overlap', 'overlap'])
+    const view = buildView(rotatedSetup(diamond(200, 200), diamond(260, 200)))
+    const text = [...view.byId.values()].flatMap((s) => s.checks.map((c) => c.text))
+    expect(text[0]).toMatch(/^overlaps “PORT B” by [\d.]+ px$/)
+  })
+
+  it('leaves a disabled warped slice out of the warp count', () => {
+    const setup = parseScreenSetup(fixture)
+    const screen = setup.screens[0]!
+    const base = screen.layers.find((l) => l.kind === 'Slice')!
+    const warped = {
+      ...base,
+      name: 'SPARE',
+      enabled: false,
+      cornerPinEdited: true,
+    }
+    const stats = buildView({
+      ...setup,
+      screens: [{ ...screen, layers: [warped] }],
+    }).stats
+    expect(stats.warped).toBe(0)
+    // Enabled, the same slice counts — so the zero above is the filter.
+    expect(
+      buildView({
+        ...setup,
+        screens: [{ ...screen, layers: [{ ...warped, enabled: true }] }],
+      }).stats.warped
+    ).toBe(1)
   })
 })

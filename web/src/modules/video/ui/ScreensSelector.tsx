@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import { useStore } from '../../../store.ts'
@@ -13,7 +13,19 @@ import styles from './ScreensSelector.module.scss'
  * the device that has the file, and stored as a document — the box never
  * sees the XML and never needs Resolume.
  */
-export default function ScreensSelector({ onOpen }: { onOpen: (id: string) => void }) {
+export default function ScreensSelector({
+  onOpen,
+  startCreating = false,
+}: {
+  onOpen: (id: string) => void
+  /**
+   * Arrived from the sidebar's `+` rather than from the "All screen maps…"
+   * row, so put the cursor on the thing that button promised. Focus rather
+   * than opening the picker outright: a file dialog nobody asked for, off a
+   * navigation, is the sort of thing a phone user cannot get out of.
+   */
+  startCreating?: boolean
+}) {
   const me = useStore((s) => s.me)
   const by = me?.name ?? ''
   const { entries, loaded } = useScreensIndex()
@@ -53,6 +65,10 @@ export default function ScreensSelector({ onOpen }: { onOpen: (id: string) => vo
   }, [])
   const drop = useFileDrop(onDropFiles, { disabled: importing, accept: isXml, onReject })
   const now = Date.now()
+  const importButtonRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (startCreating) importButtonRef.current?.focus()
+  }, [startCreating])
 
   return (
     <div className={`${styles.selector} ${drop.over ? styles.dropping : ''}`} {...drop.handlers}>
@@ -72,6 +88,7 @@ export default function ScreensSelector({ onOpen }: { onOpen: (id: string) => vo
 
       <div className={styles.actions}>
         <button
+          ref={importButtonRef}
           type="button"
           className={styles.importButton}
           disabled={importing}

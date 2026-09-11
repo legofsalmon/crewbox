@@ -152,7 +152,21 @@ function paramValue(el: Element, group: string, name: string, fallback: string):
   for (const p of Array.from(el.children)) {
     if (tagOf(p) !== 'params' || p.getAttribute('name') !== group) continue
     for (const q of Array.from(p.children)) {
-      if (q.getAttribute('name') === name) return q.getAttribute('value') ?? fallback
+      if (q.getAttribute('name') !== name) continue
+      // An empty `value` is Arena saying the field was cleared, not saying
+      // nothing — `getAttribute` returns `''` rather than null, so `??` kept
+      // it and defeated every fallback below. That mattered most for `Name`:
+      // an unnamed slice rendered blank rows and blank aria-labels, and
+      // because feeds are keyed by screen name, two unnamed screens both
+      // wrote to `feeds['']` and mapping one silently mapped the other.
+      //
+      // Arena writes the built-in default on the same element, so prefer
+      // that over the caller's before giving up on it.
+      const value = q.getAttribute('value')
+      if (value !== null && value !== '') return value
+      const dflt = q.getAttribute('default')
+      if (dflt !== null && dflt !== '') return dflt
+      return fallback
     }
   }
   return fallback
@@ -203,14 +217,102 @@ export const degrees = (rad: number): number => Math.round(((rad * 180) / Math.P
 export function rectFromPts(pts: Pt[], rot: number): Rect | null {
   if (pts.length < 3) return null
   const [a, b, c] = pts as [Pt, Pt, Pt]
+  const w = dist(a, b)
+  const h = dist(b, c)
   return {
     pts,
     rot: rot || 0,
-    w: dist(a, b),
-    h: dist(b, c),
+    w,
+    h,
     bbox: bboxOf(pts),
-    normalized: pts.every((p) => Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1),
+    /**
+     * Unit coordinates rather than pixels — a magnitude test, because the
+     * file does not say which it wrote.
+     *
+     * `normalized` makes three call sites skip the rect entirely (the
+     * composition map, the scale check, the whole-pixel check), so a rect
+     * that lands here by accident disappears from the pane with no
+     * explanation. A **zero-size** rect did exactly that: all four corners
+     * at the origin satisfy `|x| <= 1`, so a slice that was added and never
+     * sized was silently dropped instead of being reported as having no
+     * input. Requiring a real size keeps it in view, where `degenerate`
+     * below says what is wrong with it.
+     *
+     * Still imperfect and knowingly so: a genuine 1×1-pixel input rect is
+     * indistinguishable from a unit rect by magnitude alone. Telling those
+     * apart needs the layer kind, which the three call sites already use to
+     * exclude masks — if a real preset ever turns one up, that is the fix.
+     */
+    normalized: w > 0 && h > 0 && pts.every((p) => Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1),
   }
+}
+
+/**
+ * Is this polygon a rectangle square to the axes?
+ *
+ * Only for such a polygon do "overlap by 12×8 px" and "3 px gap above" mean
+ * anything: both are read off the bounding box, and a box is the shape
+ * itself only when the shape is axis-aligned. Note this is a test of the
+ * *polygon*, not of `rot` — a slice rotated by exactly 90° is still square
+ * to the axes, and should keep the better message.
+ */
+export function isAxisAligned(pts: Pt[], tol = 0.01): boolean {
+  if (pts.length !== 4) return false
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i]!
+    const b = pts[(i + 1) % 4]!
+    if (Math.abs(a.x - b.x) > tol && Math.abs(a.y - b.y) > tol) return false
+  }
+  return true
+}
+
+/**
+ * How deeply two convex polygons overlap, by separating axis; null when they
+ * do not overlap at all.
+ *
+ * Needed because the bounding boxes of two rotated slices overlap long
+ * before the slices do. Two portrait screens turned 90° and set side by side
+ * — the shape a festival's IMAG wings actually take — were reported as
+ * colliding when they were merely diagonal neighbours, which sends an LED
+ * tech to fix a collision that does not exist.
+ *
+ * Convex only, which covers every quad. A warp or contour outline can be
+ * concave, and for those the caller stays with the bounding box and says so.
+ */
+export function convexOverlap(a: Pt[], b: Pt[]): number | null {
+  let depth = Infinity
+  for (const [p, q] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    for (let i = 0; i < p.length; i++) {
+      const s = p[i]!
+      const e = p[(i + 1) % p.length]!
+      // Outward normal of this edge, normalised so the depth is in pixels.
+      const len = Math.hypot(e.y - s.y, e.x - s.x)
+      if (len < 1e-9) continue
+      const nx = (e.y - s.y) / len
+      const ny = -(e.x - s.x) / len
+      let pMin = Infinity
+      let pMax = -Infinity
+      for (const v of p) {
+        const d = v.x * nx + v.y * ny
+        if (d < pMin) pMin = d
+        if (d > pMax) pMax = d
+      }
+      let qMin = Infinity
+      let qMax = -Infinity
+      for (const v of q) {
+        const d = v.x * nx + v.y * ny
+        if (d < qMin) qMin = d
+        if (d > qMax) qMax = d
+      }
+      const gap = Math.min(pMax, qMax) - Math.max(pMin, qMin)
+      if (gap <= 0) return null
+      if (gap < depth) depth = gap
+    }
+  }
+  return Number.isFinite(depth) ? depth : null
 }
 
 const parseRect = (el: Element | null): Rect | null =>
@@ -484,6 +586,20 @@ export interface SliceView {
   color: string
   inPoly: Pt[] | null
   outPoly: Pt[] | null
+  /**
+   * The bounding boxes of those two polygons, derived once here.
+   *
+   * Every consumer wants them and `bboxOf` walks the whole polygon, so
+   * recomputing was costing real work on the 200-slice target: the checks
+   * below, the row sort, each row's sub-line, and three memos inside
+   * `ScreenMap` each derived them again. Worst of those was a sort
+   * comparator calling it twice per comparison — about 3,400 polygon walks
+   * to order 215 rows. `outArea` is kept beside them so that sort is a plain
+   * numeric compare.
+   */
+  inBox: Box | null
+  outBox: Box | null
+  outArea: number
   inOutside: boolean
   outOutside: boolean
   scale: ScaleInfo | null
@@ -567,6 +683,11 @@ function runChecks(screens: ScreenView[]): void {
       s.checks = []
       const { layer } = s
       if (layer.kind !== 'Slice') continue
+      // A slice that is switched off is not on the wall, so its placement is
+      // not a problem with the wall. `outside` and `scaled` have always
+      // filtered this way; these two did not, and a disabled spare slice was
+      // the difference between "nothing is warped" and "2 warped".
+      if (!s.active) continue
       if (layer.input && !layer.input.normalized && offGrid(layer.input)) {
         s.checks.push({ kind: 'subpx', text: `input not on whole pixels (${where(layer.input)})` })
       }
@@ -580,7 +701,7 @@ function runChecks(screens: ScreenView[]): void {
 
     const items = screen.slices
       .filter((s) => s.layer.kind === 'Slice' && s.active && s.outPoly)
-      .map((s) => ({ s, b: bboxOf(s.outPoly!) }))
+      .map((s) => ({ s, b: s.outBox ?? bboxOf(s.outPoly!), square: isAxisAligned(s.outPoly!) }))
     for (let i = 0; i < items.length; i++) {
       for (let j = i + 1; j < items.length; j++) {
         const a = items[i]!
@@ -588,6 +709,26 @@ function runChecks(screens: ScreenView[]): void {
         // Positive: overlap along that axis. Negative: distance apart.
         const ox = Math.min(a.b.x + a.b.w, c.b.x + c.b.w) - Math.max(a.b.x, c.b.x)
         const oy = Math.min(a.b.y + a.b.h, c.b.y + c.b.h) - Math.max(a.b.y, c.b.y)
+        /**
+         * Both squared to the axes, so the bounding boxes *are* the shapes
+         * and every number below means what it says. Where either is
+         * rotated, the boxes overlap long before the slices do, and the
+         * per-axis numbers describe nothing: those pairs go through
+         * `convexOverlap` for the overlap and skip the gap check, which has
+         * no rotated equivalent worth inventing.
+         */
+        const square = a.square && c.square
+        if (!square) {
+          if (ox > 0.01 && oy > 0.01) {
+            const depth = convexOverlap(a.s.outPoly!, c.s.outPoly!)
+            if (depth !== null && depth > 0.01) {
+              const by = `${fmt(depth)} px`
+              a.s.checks.push({ kind: 'overlap', text: `overlaps “${c.s.layer.name}” by ${by}` })
+              c.s.checks.push({ kind: 'overlap', text: `overlaps “${a.s.layer.name}” by ${by}` })
+            }
+          }
+          continue
+        }
         if (ox > 0.01 && oy > 0.01) {
           const by = `${fmt(ox)}×${fmt(oy)} px`
           a.s.checks.push({ kind: 'overlap', text: `overlaps “${c.s.layer.name}” by ${by}` })
@@ -632,8 +773,10 @@ export function buildView(setup: ScreenSetup): SetupView {
       const inPoly =
         layer.input && !layer.input.normalized && layer.kind !== 'Mask' ? layer.input.pts : null
       const outPoly = outputPolygon(layer)
-      if (inPoly) inputExtent = unionBox(inputExtent, bboxOf(inPoly))
-      if (outPoly) outputExtent = unionBox(outputExtent, bboxOf(outPoly))
+      const inBox = inPoly ? bboxOf(inPoly) : null
+      const outBox = outPoly ? bboxOf(outPoly) : null
+      if (inBox) inputExtent = unionBox(inputExtent, inBox)
+      if (outBox) outputExtent = unionBox(outputExtent, outBox)
       const sliceHue = (hue + (li % 4) * 6) % 360
       const view: SliceView = {
         id: `${si}.${li}`,
@@ -645,6 +788,9 @@ export function buildView(setup: ScreenSetup): SetupView {
         color: `hsl(${sliceHue} 85% ${50 + (li % 3) * 5}%)`,
         inPoly,
         outPoly,
+        inBox,
+        outBox,
+        outArea: outBox ? outBox.w * outBox.h : 0,
         inOutside: false,
         outOutside: false,
         scale: scaleInfo(layer),
@@ -679,8 +825,8 @@ export function buildView(setup: ScreenSetup): SetupView {
 
   for (const screen of screens) {
     for (const s of screen.slices) {
-      s.inOutside = s.inPoly ? outsideBox(bboxOf(s.inPoly), comp) : false
-      s.outOutside = s.outPoly ? outsideBox(bboxOf(s.outPoly), screen.bounds) : false
+      s.inOutside = s.inBox ? outsideBox(s.inBox, comp) : false
+      s.outOutside = s.outBox ? outsideBox(s.outBox, screen.bounds) : false
     }
   }
   runChecks(screens)
@@ -695,7 +841,12 @@ export function buildView(setup: ScreenSetup): SetupView {
     disabled: all.filter((s) => !s.active).length,
     outside: all.filter((s) => s.active && (s.inOutside || s.outOutside)).length,
     scaled: all.filter((s) => s.active && s.scale !== null && s.scale.tag !== '1:1').length,
-    warped: all.filter((s) => s.layer.warp !== null || s.layer.cornerPinEdited).length,
+    // `s.active`, like `outside` and `scaled` beside it. A switched-off spare
+    // slice with a nudged corner pin is not a warp on anybody's wall, and
+    // counting it read as flatly contradicting the neighbouring chips, whose
+    // tooltips say "Enabled slices…".
+    warped: all.filter((s) => s.active && (s.layer.warp !== null || s.layer.cornerPinEdited))
+      .length,
     subpx: all.filter(has('subpx')).length,
     overlaps: all.filter(has('overlap')).length,
     gaps: all.filter(has('gap')).length,

@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { newDevice, test } from './helpers'
+import { newDevice, test, uniqueName } from './helpers'
 
 /**
  * Screen maps, through a real box.
@@ -17,13 +17,37 @@ const openScreenMaps = async (page: Page) => {
   await expect(page.getByRole('heading', { name: 'Screen maps' })).toBeVisible()
 }
 
+/**
+ * Import the fixture and give the map a name of its own.
+ *
+ * The fixture's embedded name is the fixed string "Fixture Stage", and this
+ * whole suite shares one box and one server (`workers: 1`, one `webServer`).
+ * Locating by that name would match every map any earlier test imported —
+ * and on a CI retry it matches the one the failed attempt left behind, so
+ * Playwright's strict mode fails on the locator instead of reproducing
+ * whatever actually broke. `uniqueName` is the convention the chat, drag-drop
+ * and lighting specs already follow; renaming is how a map gets one here.
+ */
+const importFixtureAs = async (page: Page, title: string) => {
+  await page.getByLabel('Import Advanced Output XML').setInputFiles(FIXTURE)
+  // `exact`, because the sidebar row for the same map is labelled
+  // "Open screen map <title>" and would match a substring locator too.
+  const heading = page.getByRole('button', { name: 'Fixture Stage', exact: true })
+  await expect(heading).toBeVisible()
+  await heading.click()
+  const field = page.getByLabel('Screen map name')
+  await field.fill(title)
+  await field.press('Enter')
+  await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
+}
+
 test('a preset imported on one device opens on another', async ({ browser }) => {
+  const title = uniqueName('Fixture Stage')
   const laptop = await newDevice(browser, 'Video Op')
   await openScreenMaps(laptop)
 
   // The file is read on the laptop; the box only ever sees the document.
-  await laptop.getByLabel('Import Advanced Output XML').setInputFiles(FIXTURE)
-  await expect(laptop.getByRole('heading', { name: 'Fixture Stage' })).toBeVisible()
+  await importFixtureAs(laptop, title)
   await expect(laptop.getByText('Composition 1920 × 1080 · 2 screens · 7 slices')).toBeVisible()
 
   // The checks an LED tech would otherwise do by eye, on the summary line.
@@ -42,10 +66,10 @@ test('a preset imported on one device opens on another', async ({ browser }) => 
 
   // A phone that never saw the file lists the map and opens it.
   const phone = await newDevice(browser, 'Screens Tech')
-  const row = phone.getByRole('button', { name: /^Open screen map Fixture Stage/ })
+  const row = phone.getByRole('button', { name: new RegExp(`^Open screen map ${title}`) })
   await expect(row).toBeVisible({ timeout: 15_000 })
   await row.click()
-  await expect(phone.getByRole('heading', { name: 'Fixture Stage' })).toBeVisible()
+  await expect(phone.getByRole('button', { name: title, exact: true })).toBeVisible()
   await expect(phone.getByRole('region', { name: 'Screen LED' })).toBeVisible()
   await expect(phone.getByRole('button', { name: /^CENTER/ })).toBeVisible()
   await expect(phone.getByText('5 with gaps')).toBeVisible()
@@ -56,8 +80,7 @@ test('which processor feeds a screen is shared, and the map says when nothing is
 }) => {
   const laptop = await newDevice(browser, 'Video Op Two')
   await openScreenMaps(laptop)
-  await laptop.getByLabel('Import Advanced Output XML').setInputFiles(FIXTURE)
-  await expect(laptop.getByRole('heading', { name: 'Fixture Stage' })).toBeVisible()
+  await importFixtureAs(laptop, uniqueName('Fixture Stage'))
 
   // The feed control is there for every screen. Whether it has anything to
   // offer depends on the LED pane: with no processor added on this box it

@@ -26,8 +26,16 @@ import styles from './VideoMain.module.scss'
  */
 export default function VideoMain({ subpath }: { subpath: string }) {
   const setActiveModule = useStore((s) => s.setActiveModule)
-  if (subpath === 'screens') {
-    return <ScreensSelector onOpen={(id) => setActiveModule('video', `screens/${id}`)} />
+  // `screens/new` before the prefix test below, and it is the sidebar's `+`:
+  // two controls that went to the same place, one of them labelled "Import a
+  // screen map" and unable to do it.
+  if (subpath === 'screens' || subpath === 'screens/new') {
+    return (
+      <ScreensSelector
+        startCreating={subpath === 'screens/new'}
+        onOpen={(id) => setActiveModule('video', `screens/${id}`)}
+      />
+    )
   }
   if (subpath.startsWith('screens/')) {
     const id = subpath.slice('screens/'.length)

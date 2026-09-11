@@ -12,11 +12,32 @@
   background: var(--bg);
   border-radius: 8px;
   cursor: grab;
-  touch-action: none;
+  /**
+   * `pan-y`, so a finger drag scrolls the pane rather than the map.
+   *
+   * This was `none`, which is right for a map that owns its viewport and
+   * wrong for these: the pane stacks the composition map and one map per
+   * screen in a single column on a phone, so they occupy nearly the whole
+   * scrollable height. Every vertical drag that began on a map was eaten as
+   * a pan, and a crew member with five screens could only advance the pane
+   * by finding the few pixels of gap between cards.
+   *
+   * Zooming in swaps it for `none` (see `.engaged`): past the fit scale the
+   * crew member is working inside the map and wants the drag, and Fit gives
+   * the page back. The desktop gesture is unchanged either way — ⌘/Ctrl +
+   * wheel zooms, and a mouse drag pans, neither of which `touch-action`
+   * governs.
+   */
+  touch-action: pan-y;
 
   &:active {
     cursor: grabbing;
   }
+}
+
+/** Zoomed past the fit scale: the map takes the drag. */
+.engaged {
+  touch-action: none;
 }
 
 .bounds {

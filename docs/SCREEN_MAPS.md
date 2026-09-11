@@ -32,7 +32,11 @@ Arena keeps its screen setups as XML:
   its default left out. Arena rewrites it as the setup changes.
 
 Both are read. Defaults are supplied where the preferences file is silent,
-which is why every `paramValue` call in the reader names its fallback.
+which is why every `paramValue` call in the reader names its fallback — and
+why an _empty_ `value` is treated as silence too: Arena writes `value=""` for
+a field somebody cleared and keeps the built-in `default` on the same element,
+so the reader prefers that over the caller's fallback. A name is the one this
+matters most for, because the feeds below are keyed by screen name.
 
 Two ways in, both from the machine that has the file:
 
@@ -44,7 +48,15 @@ Two ways in, both from the machine that has the file:
    whenever its modification time changes and replaces the document's setup.
    Every other device sees the change through the normal relay. A read that
    lands mid-write fails to parse and is retried next tick, keeping the map
-   it had. Safari and Firefox lack the API and do not show the button.
+   it had; five consecutive failures stop the watch and say so, rather than
+   re-reading a file this parser cannot read for the length of the show.
+   Safari and Firefox lack the API and do not show the button.
+
+   **A save whose screen setup did not change writes nothing.** Arena
+   rewrites that file on any preference change, and a `Y.Map` write keeps
+   every superseded value: at ~100 KB a setup, unconditional writes would
+   pass the relay's room cap inside a couple of hundred saves and sync would
+   stop — silently, while the pane still said it was watching.
 
 There is no agent to install and no box-side code: the operator's browser
 is the bridge, and only while that tab is open.
@@ -101,8 +113,19 @@ Run on every device from the stored setup, so they are the same everywhere:
 - Also on the summary line: slices outside the composition or their screen,
   slices whose output size is not their input size, and edited warps.
 
-Disabled slices and masks are left out of overlap and gap checks; a spare
-full-screen slice that is switched off overlaps everything and harms nothing.
+Disabled slices and masks are left out of every one of these; a spare
+full-screen slice that is switched off overlaps everything and harms nothing,
+and a switched-off slice with a nudged corner pin is not a warp on anybody's
+wall.
+
+**Rotated slices are compared as shapes, not as boxes.** "Overlaps by 12×8 px"
+and "3 px gap above" are read off a bounding box, and a box is the shape only
+when the shape is square to the axes — two portrait screens turned 90° and set
+side by side have overlapping boxes long before they touch. Such a pair goes
+through a separating-axis test instead and reports a single penetration depth;
+the gap check, which has no rotated equivalent worth inventing, is skipped for
+it. A slice rotated by exactly 90° is still square to the axes and keeps the
+per-axis message: the test is of the polygon, not of the stored rotation.
 
 ## Feeds and signal
 

@@ -29,7 +29,7 @@ export default function VideoSidebar() {
           className="icon-btn"
           aria-label="Import a screen map"
           title="Import a Resolume Advanced Output preset"
-          onClick={() => setActiveModule('video', 'screens')}
+          onClick={() => setActiveModule('video', 'screens/new')}
         >
           +
         </button>

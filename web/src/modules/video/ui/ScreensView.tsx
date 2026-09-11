@@ -18,7 +18,7 @@ import {
   type ScreenView,
   type SliceView,
 } from '../model/screenSetup.ts'
-import { replaceSetup, setFeed } from '../model/screensDoc.ts'
+import { replaceSetup, setFeed, setScreensTitle } from '../model/screensDoc.ts'
 import { deleteScreens, markScreensSeen, useScreensDoc } from '../store/screensStore.ts'
 import ScreenMap, { type MapItem } from './ScreenMap.tsx'
 import SliceDetails from './SliceDetails.tsx'
@@ -41,20 +41,26 @@ import styles from './ScreensView.module.scss'
 
 const POLL_MS = 10_000
 const WATCH_MS = 1_000
+/**
+ * Consecutive unreadable polls before the watcher gives up and says so.
+ *
+ * More than one, because the common failure is a read that lands mid-write
+ * and the next tick succeeds. Not unbounded, because the other failure is a
+ * file this parser cannot read at all, and re-reading that every second for
+ * the length of a show tells nobody anything.
+ */
+const WATCH_GIVE_UP = 5
 
 const fmtI = (n: number) => String(Math.round(n))
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'screen map'
-const byAreaDesc = (a: MapItem, b: MapItem) => {
-  const A = bboxOf(a.poly)
-  const B = bboxOf(b.poly)
-  return B.w * B.h - A.w * A.h
-}
+// Precomputed area (see `SliceView.outArea`): this runs O(n log n) times.
+const byAreaDesc = (a: MapItem, b: MapItem) => b.area - a.area
 
 const subFor = (s: SliceView, kind: 'input' | 'output'): string => {
   const poly = kind === 'input' ? s.inPoly : s.outPoly
   const r = kind === 'input' ? s.layer.input : s.layer.output
   if (!poly) return ''
-  const bb = bboxOf(poly)
+  const bb = (kind === 'input' ? s.inBox : s.outBox) ?? bboxOf(poly)
   if (kind === 'output' && s.layer.kind === 'Mask') {
     return `mask · ${s.layer.contour?.points.length ?? 0} pts`
   }
@@ -112,12 +118,31 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
   const { doc, snapshot, loaded } = useScreensDoc(id)
   const missing = useDocMissing(doc, loaded)
   const setup = snapshot?.setup ?? null
-  const view = useMemo(() => (setup ? buildView(setup) : null), [setup])
+  /**
+   * Belt as well as braces: `snapshotScreens` validates the shape, and this
+   * catches whatever the validator did not think of.
+   *
+   * A throw in here is a throw during render, and there is no error boundary
+   * in this app — React unmounts the whole tree, so a map written by a peer
+   * on a different build would cost a crew member their chat and anything
+   * they had not sent. Failing to `null` puts them on the "can't read this
+   * map" branch below instead, with the rest of the app still standing.
+   */
+  const view = useMemo(() => {
+    if (!setup) return null
+    try {
+      return buildView(setup)
+    } catch {
+      return null
+    }
+  }, [setup])
 
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [processors, setProcessors] = useState<ProcessorStatus[]>([])
   const [note, setNote] = useState('')
+  /** Non-null while the title is being edited. */
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [watching, setWatching] = useState<{ name: string; updatedAt: string } | null>(null)
   const watchRef = useRef<{
     handle: FileHandle
@@ -125,6 +150,8 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
     last: number | null
     retry: boolean
     busy: boolean
+    /** Consecutive parse failures, against `WATCH_GIVE_UP`. */
+    failures: number
   } | null>(null)
   const updateRef = useRef<HTMLInputElement>(null)
 
@@ -186,13 +213,29 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
             // have and try again on the next tick.
             applyFile(file, text)
             w.retry = false
+            w.failures = 0
             setWatching({ name: w.handle.name, updatedAt: new Date().toLocaleTimeString() })
             setNote('')
           } catch (err) {
+            /**
+             * A retry that never gives up, and never says so, is worse than
+             * stopping.
+             *
+             * A mid-write read is transient and retrying is right. A file
+             * this parser genuinely cannot read is not: before, only the
+             * *first* poll reported it, so a preset saved by a newer Arena —
+             * or truncated by a crash — was re-read and re-parsed every
+             * second for the rest of the show while the header still said
+             * "watching · 20:14:03" against a map that had stopped moving.
+             * The operator had no way to know the crew were looking at
+             * something stale.
+             */
             w.retry = true
-            if (first) {
+            w.failures++
+            if (first || w.failures >= WATCH_GIVE_UP) {
               setNote(
-                `Could not read ${file.name}: ${err instanceof Error ? err.message : 'unreadable file'}`
+                `Could not read ${file.name}: ${err instanceof Error ? err.message : 'unreadable file'}` +
+                  (first ? '' : ' — stopped watching, the map below is the last one that read')
               )
               stopWatch()
             }
@@ -233,7 +276,7 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
     }
     if (!handle) return
     stopWatch()
-    watchRef.current = { handle, timer: 0, last: null, retry: false, busy: false }
+    watchRef.current = { handle, timer: 0, last: null, retry: false, busy: false, failures: 0 }
     await pollWatch(true)
     const w = watchRef.current
     if (w) {
@@ -264,6 +307,8 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
         out.push({
           id: s.id,
           poly: s.inPoly,
+          bb: s.inBox ?? bboxOf(s.inPoly),
+          area: s.inBox ? s.inBox.w * s.inBox.h : 0,
           name: s.layer.name + (s.active ? '' : ' (off)'),
           sub: subFor(s, 'input'),
           color: s.color,
@@ -286,6 +331,8 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
         items.push({
           id: s.id,
           poly: s.outPoly,
+          bb: s.outBox ?? bboxOf(s.outPoly),
+          area: s.outArea,
           name: s.layer.name + (s.active ? '' : ' (off)'),
           sub: subFor(s, 'output'),
           color: s.color,
@@ -299,14 +346,25 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
     return m
   }, [view])
 
+  /**
+   * The "Fed by" choices, each carrying its `Feed` rather than a string to
+   * be taken apart again.
+   *
+   * The `<option value>` is the index into this list, so nothing about a
+   * processor or input id has to survive a round trip through the DOM. Ids
+   * come from a controller's own JSON and one containing the separator used
+   * to be truncated on the way back.
+   */
   const feedOptions = useMemo(
     () =>
       processors.flatMap((p) => {
         const name = p.processor.name || p.processor.host
         const inputs = p.reading?.inputs ?? []
-        if (inputs.length === 0) return [{ value: `${p.processor.id}|`, label: name }]
+        if (inputs.length === 0) {
+          return [{ feed: { processorId: p.processor.id, inputId: '' }, label: name }]
+        }
         return inputs.map((i) => ({
-          value: `${p.processor.id}|${i.id}`,
+          feed: { processorId: p.processor.id, inputId: i.id },
           label: `${name} · ${i.name ?? i.id}${i.connector ? ` (${i.connector})` : ''}`,
         }))
       }),
@@ -381,7 +439,40 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
     <div className={styles.pane}>
       <header className={styles.header}>
         <DrawerButton />
-        <h1 className={styles.title}>{meta.title}</h1>
+        {/* A map imported from Preferences/AdvancedOutput.xml is called
+            "AdvancedOutput" until somebody says otherwise, and this is how
+            they say it. The title is a normal Y.Map key, so two people
+            renaming at once merges like anything else a person types. */}
+        <h1 className={styles.title}>
+          {renaming === null ? (
+            <button
+              type="button"
+              className={styles.titleButton}
+              title="Rename this screen map"
+              onClick={() => setRenaming(meta.title)}
+            >
+              {meta.title || 'Untitled screen map'}
+            </button>
+          ) : (
+            <input
+              className={styles.titleInput}
+              aria-label="Screen map name"
+              value={renaming}
+              autoFocus
+              maxLength={80}
+              onChange={(e) => setRenaming(e.target.value)}
+              onBlur={() => {
+                const next = renaming.trim()
+                if (doc && next && next !== meta.title) setScreensTitle(doc, next)
+                setRenaming(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') setRenaming(null)
+              }}
+            />
+          )}
+        </h1>
         <div className={styles.toolbar}>
           <button
             type="button"
@@ -519,14 +610,22 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
         <div className={styles.screens}>
           {view.screens.map((sc) => {
             const feed = snapshot.feeds[sc.screen.name]
-            const value = feed ? `${feed.processorId}|${feed.inputId}` : ''
+            // A feed whose processor or input is no longer in the live list
+            // still has to be selectable, or the menu would silently drop
+            // what the crew recorded. It goes on the end and says so.
+            const known = feed
+              ? feedOptions.findIndex(
+                  (o) => o.feed.processorId === feed.processorId && o.feed.inputId === feed.inputId
+                )
+              : -1
             const options =
-              value && !feedOptions.some((o) => o.value === value)
+              feed && known < 0
                 ? [
                     ...feedOptions,
-                    { value, label: `${feed!.processorId} · ${feed!.inputId} (not listed now)` },
+                    { feed, label: `${feed.processorId} · ${feed.inputId} (not listed now)` },
                   ]
                 : feedOptions
+            const value = feed ? String(known < 0 ? options.length - 1 : known) : ''
             const status = feedStatus(feed, processors)
             const affected = sc.slices
               .filter((s) => s.active && s.layer.kind === 'Slice')
@@ -571,15 +670,22 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
                           setFeed(doc, sc.screen.name, null)
                           return
                         }
-                        const [processorId = '', inputId = ''] = v.split('|')
-                        setFeed(doc, sc.screen.name, { processorId, inputId })
+                        // The option's index, not its two ids joined by a
+                        // pipe. An input id comes straight out of the
+                        // controller's JSON, so one containing the separator
+                        // was silently truncated by the `split('|')` that
+                        // unpacked it: the feed stored a prefix, matched no
+                        // input, and the chip then said "input not reported"
+                        // about an option picked from the live list.
+                        const picked = options[Number(v)]
+                        if (picked) setFeed(doc, sc.screen.name, picked.feed)
                       }}
                     >
                       <option value="">
                         {processors.length === 0 ? 'no processors listed' : 'not mapped'}
                       </option>
-                      {options.map((o) => (
-                        <option key={o.value} value={o.value}>
+                      {options.map((o, i) => (
+                        <option key={`${o.feed.processorId}|${o.feed.inputId}`} value={i}>
                           {o.label}
                         </option>
                       ))}

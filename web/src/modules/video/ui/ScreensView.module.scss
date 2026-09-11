@@ -31,6 +31,48 @@
   min-width: 0;
 }
 
+/**
+ * The title, as a button that turns into a field.
+ *
+ * A map imported from `Preferences/AdvancedOutput.xml` has no name of its own
+ * and falls back to the filename, so without this every box ends up with a
+ * map called "AdvancedOutput" and no way to say what it is.
+ */
+.titleButton {
+  appearance: none;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: left;
+  padding: 2px 6px;
+  cursor: text;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    border-color: var(--border);
+  }
+}
+
+.titleInput {
+  min-width: 0;
+  max-width: 22ch;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  padding: 2px 6px;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
