@@ -9,15 +9,25 @@ import { DISCOVERY_PORT, isIpv4 } from '@crewbox/shared'
  * `rqProMI:`, on UDP 3800 and reading what answers. That is what this does,
  * once, on demand.
  *
- * Why it is a send at all, given the rest of this module reads: novasun looked
- * at listening silently instead, and the answer came back UNKNOWN in the half
- * that matters. Probes are always visible on the segment, but whether the
- * *replies* are broadcast or unicast back to the requester is not established
- * — and unicast is the likelier design, which would mean a silent listener
- * sees NovaLCT scanning and never sees what answered. NovaLCT's own cadence
- * may also be driven by a human clicking rather than a timer, so a passive
- * wait could last all night. Passive discovery is not a thing crewbox can
- * promise, so it doesn't.
+ * Why it is a send at all, given the rest of this module reads: listening
+ * silently instead does not work, and that is now measured rather than
+ * suspected. Probes are always visible on the segment, but **the reply is
+ * unicast back to the requester** at both layer 2 and layer 3 — OBSERVED, in
+ * a packet capture of the exchange — so a switch forwards it to no other
+ * port and a silent listener sees NovaLCT scanning and never sees what
+ * answered. Passive discovery cannot produce an inventory at all.
+ *
+ * The wait would also be unbounded: a listener sat for thirty minutes on a
+ * live-show segment with an MX40 on it and heard zero probes, because VMP
+ * discovers on user action rather than on a timer (OBSERVED for VMP;
+ * NovaLCT's own cadence is still UNKNOWN). Passive discovery is not a thing
+ * crewbox can promise, so it doesn't.
+ *
+ * One more thing the capture settled, which shapes what goes on the wire
+ * below: the device answered the subnet broadcast and a unicast probe within
+ * 12 ms each and **ignored the multicast one**, with the capture confirming
+ * that packet left the host correctly. Multicast is an extra here, never the
+ * path relied on.
  *
  * What this probe is, precisely: a broadcast UDP read with no addressed
  * target, no register address and no write bit. It cannot change controller
@@ -49,10 +59,15 @@ export interface DiscoveredProcessor {
    *
    * Deliberately not parsed into model or name. An earlier note in novasun
    * claimed the reply "appears to carry model and name information"; that was
-   * an inference from a published client discarding the bytes, it was never
-   * observed, and it has since been withdrawn. Until somebody captures a real
-   * reply this is shown as an unlabelled string or not at all — a wrong label
-   * on a screen is worse than a blank.
+   * an inference from a published client discarding the bytes, and it was
+   * withdrawn. A real reply has since been captured and it does not rescue
+   * the guess: 16 bytes, the `rpProMI:` prefix and an 8-byte ASCII tail —
+   * `App,0161` on a NovaPro UHD Jr, stable across a power cycle — carrying
+   * **no model ID and no device name** (OBSERVED). What `App` and `0161` mean
+   * is UNKNOWN, and whether the tail is fixed-width on other models is too.
+   *
+   * So this stays an unlabelled string: identity comes from the HTTP API or
+   * SNMP, and a wrong label on a screen is worse than a blank.
    */
   payload?: string
 }
