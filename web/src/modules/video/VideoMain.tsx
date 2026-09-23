@@ -14,7 +14,37 @@ import {
 import { byUrgency } from './model/format.ts'
 import ConfirmTransmit from './ui/ConfirmTransmit.tsx'
 import ProcessorRow from './ui/ProcessorRow.tsx'
+import ScreensSelector from './ui/ScreensSelector.tsx'
+import ScreensView from './ui/ScreensView.tsx'
 import styles from './VideoMain.module.scss'
+
+/**
+ * The module's main pane, routed by subpath: the LED walls at /m/video,
+ * the screen-map selector at /m/video/screens, one map at
+ * /m/video/screens/<id>. Navigation goes through the shell, so a map is
+ * deep-linkable and a link to one posted in chat opens it.
+ */
+export default function VideoMain({ subpath }: { subpath: string }) {
+  const setActiveModule = useStore((s) => s.setActiveModule)
+  // `screens/new` before the prefix test below, and it is the sidebar's `+`:
+  // two controls that went to the same place, one of them labelled "Import a
+  // screen map" and unable to do it.
+  if (subpath === 'screens' || subpath === 'screens/new') {
+    return (
+      <ScreensSelector
+        startCreating={subpath === 'screens/new'}
+        onOpen={(id) => setActiveModule('video', `screens/${id}`)}
+      />
+    )
+  }
+  if (subpath.startsWith('screens/')) {
+    const id = subpath.slice('screens/'.length)
+    // Keyed by map: switching maps from the sidebar is a different document,
+    // and the pinned slice and hover belong to the one being left.
+    return <ScreensView key={id} id={id} onClose={() => setActiveModule('video', 'screens')} />
+  }
+  return <LedWallsPane />
+}
 
 /**
  * Video → LED: what the walls are doing, from the other side of the site.
@@ -40,7 +70,7 @@ import styles from './VideoMain.module.scss'
 
 const POLL_MS = 10_000
 
-export default function VideoMain(_props: { subpath: string }) {
+function LedWallsPane() {
   const adminToken = useStore((s) => s.adminToken)
   const [state, setState] = useState<VideoState | null>(null)
   const [error, setError] = useState('')

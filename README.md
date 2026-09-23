@@ -19,7 +19,9 @@ and sACN listener, [docs/NETWATCH.md](docs/NETWATCH.md) for the
 audio/media-network watchers (PTP clock health, Dante/NDI rosters, AES67
 streams — same read-only guarantee), and
 [docs/VIDEO_MONITORING.md](docs/VIDEO_MONITORING.md) for reading NovaStar LED
-processors without any way to control them, and
+processors without any way to control them,
+[docs/SCREEN_MAPS.md](docs/SCREEN_MAPS.md) for Resolume screen setups shared
+with the crew, and
 [docs/UPDATING.md](docs/UPDATING.md) for how a box updates itself — the
 signing chain, rolling the release key, and getting a box back by hand.
 
@@ -35,15 +37,15 @@ modules. A box chooses which to run with `CREWBOX_MODULES`; chat is always on.
 Seven ship, and all seven are on unless a box says otherwise: the default is
 `schedule,patch,lighting,incident,video,network` on top of chat.
 
-| Module            | id         | What it does                                                                                                                                                                                    |
-| ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Chat**          | `chat`     | Channels, DMs, mentions, files, push-to-talk voice. Always enabled; cannot be turned off.                                                                                                       |
-| **Running order** | `schedule` | The event's timetable — who is on which stage when, with the countdown to the next changeover.                                                                                                  |
-| **Patch Sheets**  | `patch`    | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                                                                                     |
-| **Lighting**      | `lighting` | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import. |
-| **Show log**      | `incident` | The record of what happened and when — append-only, corrected underneath rather than edited, exported as the show report.                                                                       |
-| **Video**         | `video`    | Read-only monitoring of LED processors: temperatures, fans, cabinets. It watches walls; it never drives them.                                                                                   |
-| **Network**       | `network`  | A continuous audit of the networks the box can see, graded for A/V use, with a report for venue IT.                                                                                             |
+| Module            | id         | What it does                                                                                                                                                                                                                             |
+| ----------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**          | `chat`     | Channels, DMs, mentions, files, push-to-talk voice. Always enabled; cannot be turned off.                                                                                                                                                |
+| **Running order** | `schedule` | The event's timetable — who is on which stage when, with the countdown to the next changeover.                                                                                                                                           |
+| **Patch Sheets**  | `patch`    | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                                                                                                                              |
+| **Lighting**      | `lighting` | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import.                                          |
+| **Show log**      | `incident` | The record of what happened and when — append-only, corrected underneath rather than edited, exported as the show report.                                                                                                                |
+| **Video**         | `video`    | Read-only monitoring of LED processors: temperatures, fans, cabinets. It watches walls; it never drives them. Screen maps: Resolume Advanced Output presets shared with the crew, each screen tied to the processor input that feeds it. |
+| **Network**       | `network`  | A continuous audit of the networks the box can see, graded for A/V use, with a report for venue IT.                                                                                                                                      |
 
 ## Why it's built the way it is
 

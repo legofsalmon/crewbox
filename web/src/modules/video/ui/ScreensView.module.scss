@@ -1,0 +1,400 @@
+@use '../../_shared/ui/controls' as c;
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  position: relative;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-raised);
+  z-index: 3;
+}
+
+.title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/**
+ * The title, as a button that turns into a field.
+ *
+ * A map imported from `Preferences/AdvancedOutput.xml` has no name of its own
+ * and falls back to the filename, so without this every box ends up with a
+ * map called "AdvancedOutput" and no way to say what it is.
+ */
+.titleButton {
+  appearance: none;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: left;
+  padding: 2px 6px;
+  cursor: text;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    border-color: var(--border);
+  }
+}
+
+.titleInput {
+  min-width: 0;
+  max-width: 22ch;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  padding: 2px 6px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool {
+  @include c.secondary-button;
+  font-size: 13px;
+  padding: 6px 12px;
+}
+
+.danger {
+  color: var(--danger-strong);
+}
+
+.linkButton {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.smallTool {
+  @include c.secondary-button;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  margin-left: auto;
+}
+
+.hiddenFile {
+  display: none;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 120px;
+}
+
+.meta,
+.note {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.note {
+  padding: 14px;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+
+  b {
+    color: var(--text);
+  }
+}
+
+.watching {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.warn {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  color: var(--accent);
+}
+
+.bad {
+  background: color-mix(in srgb, var(--danger) 22%, var(--bg));
+  color: var(--danger-strong);
+}
+
+.ok {
+  background: color-mix(in srgb, var(--ok) 22%, var(--bg));
+  color: var(--ok);
+}
+
+.accent {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  color: var(--text);
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cardMeta {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.inputMap {
+  height: 42vh;
+  min-height: 240px;
+}
+
+.screens {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 12px;
+}
+
+.outputMap {
+  height: 300px;
+}
+
+.feedRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.feedLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.feedSelect {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  max-width: 320px;
+}
+
+.affected {
+  font-size: 12px;
+  color: var(--danger-strong);
+}
+
+.slices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.sliceRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.rowHover {
+  background: var(--bg-hover);
+}
+
+.rowSelected {
+  background: var(--bg-active);
+  border-left-color: var(--accent);
+}
+
+.rowOff .sliceName {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.sliceName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dim {
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.detailsBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+  max-height: 38vh;
+  overflow-y: auto;
+}
+
+.details {
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.detailsTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.detailsTable {
+  border-collapse: collapse;
+  width: 100%;
+
+  td {
+    padding: 2px 0;
+    vertical-align: top;
+  }
+
+  td:first-child {
+    color: var(--text-muted);
+    width: 80px;
+    padding-right: 8px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .body {
+    padding: 10px 10px 140px;
+  }
+
+  .screens {
+    grid-template-columns: 1fr;
+  }
+
+  .inputMap {
+    height: 34vh;
+  }
+
+  .outputMap {
+    height: 240px;
+  }
+}
