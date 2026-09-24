@@ -508,6 +508,19 @@ ul {
   color: var(--danger);
 }
 
+/*
+ * The box has no licence. Deliberately small — the crew are not who can fix
+ * it — but --text-muted rather than --text-faint, so the one word it says
+ * clears AA in daylight as well as in the tent (e2e/theme.spec.ts).
+ */
+.unlicensed-mark {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .app-version {
   font-size: 11px;
   color: var(--text-faint);
@@ -2337,6 +2350,139 @@ ul {
   white-space: normal;
   overflow-wrap: anywhere;
   user-select: all;
+}
+
+/*
+ * The box's licence.
+ *
+ * The banner sits outside the scroll, between the header and the notes, so it
+ * is on screen for as long as the panel is. Accent-edged rather than red: an
+ * unlicensed box is not a fault, nothing is broken, and painting it like one
+ * trains people to ignore the rows that are. Tokens only — this is read in
+ * daylight on a stage and in a dark FOH tent.
+ */
+.admin-licence-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.admin-licence-banner span {
+  flex: 1;
+}
+
+.admin-licence {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-licence-status {
+  padding: 0 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.admin-licence-status strong {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.admin-licence-ok strong {
+  color: var(--ok);
+}
+
+.admin-licence-problem strong {
+  color: var(--accent);
+}
+
+.admin-licence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.admin-licence-name {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.admin-licence-offline {
+  margin: 4px 20px 8px;
+  padding: 4px 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.admin-licence-offline summary {
+  padding: 8px 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.admin-licence-offline .admin-setting,
+.admin-licence-offline .admin-hint {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.admin-licence-steps {
+  list-style: decimal;
+  padding: 0 0 10px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.admin-licence-steps a {
+  color: var(--accent);
+}
+
+/* The request code gets read off this screen and typed on a phone. */
+.admin-licence-code {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.admin-licence-token {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  resize: vertical;
+}
+
+.admin-licence-use {
+  align-self: flex-start;
 }
 
 /*

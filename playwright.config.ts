@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test'
+import { E2E_LICENCE_PUBLIC_KEY } from './e2e/licenceKey.ts'
 
 /**
  * E2E against the real crewbox server in box mode: built web app served by
@@ -25,13 +26,20 @@ export default defineConfig({
       : {}),
   },
   webServer: {
-    command: 'npm run start -w server',
+    // Licensed first — see e2e/seedLicence.ts. The shipped policy locks
+    // event setup on an unlicensed box, and the suite starts with setup.
+    command: 'npx tsx e2e/seedLicence.ts && npm run start -w server',
     url: 'http://localhost:4299/api/health',
     reuseExistingServer: false,
     timeout: 30_000,
     env: {
       CREWBOX_PORT: '4299',
       DATA_DIR: dataDir,
+      // Trust the suite's test signing key (e2e/licenceKey.ts), and point the
+      // licence service at a port nothing answers on: no run ever calls
+      // letissier.ie, and a release is the offline case it always is in a field.
+      CREWBOX_LICENCE_PUBLIC_KEY: E2E_LICENCE_PUBLIC_KEY,
+      CREWBOX_LICENCE_URL: 'http://127.0.0.1:9',
       WEB_DIST: `${process.cwd()}/web/dist`,
       EVENT_PIN: '4242',
       // Listen to a lighting network on loopback, so the live-rig features
