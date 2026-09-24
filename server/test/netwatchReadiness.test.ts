@@ -97,7 +97,9 @@ describe('the rosters', () => {
     expect(check?.state).toBe('ok')
     expect(check?.detail).toContain('foh-stagebox')
     expect(check?.detail).toContain('10.10.0.5')
-    expect(check?.detail).toContain('never queries')
+    // It does ask once, when an admin runs the deep probe, so "never" was
+    // not true of a box whose admin had pressed the button.
+    expect(check?.detail).toContain('asks only when an admin runs the deep probe')
   })
 
   it('turns a goodbye or a long silence into a check-the-power line', () => {

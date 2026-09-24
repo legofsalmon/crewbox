@@ -33,11 +33,17 @@ account removes your identity from the box.
 
 ## What leaves the venue
 
-Nothing from your phone goes anywhere but the box. The box needs no internet
-and works the same without it. When it does have internet it makes the few
-requests below, and nothing else. If the operator sets up a remote support
-tunnel, connections through it are marked — that's the `office` badge in the
-DM list.
+Nothing from your phone goes anywhere but the box, or, for voice, a voice
+server of the operator's own if they have set the box up to use one. The
+box's own voice server tells phones to ask nobody else how to reach it. A
+voice server run elsewhere hands phones its own list of servers to ask, and
+a LiveKit server given no list of its own sends each phone joining voice to
+Google's and Twilio's public STUN servers to learn its internet address.
+
+The box needs no internet and works the same without it. When it does have
+internet it makes the few requests below, and nothing else. If the operator
+sets up a remote support tunnel, connections through it are marked — that's
+the `office` badge in the DM list.
 
 **One request a day, if the box has internet at all.** A box asks GitHub
 whether a newer crewbox exists, so the admin panel can say so. That request
@@ -47,6 +53,17 @@ be told a newer one exists. Nothing else: no event name, no crew, no message
 counts, no identifier. The reply is a version number and a link. Nothing is downloaded or installed unless an
 admin asks for it, twice. `CREWBOX_UPDATE_CHECK=0` stops the box asking at
 all; see [Updating the box](/docs/updating).
+
+**A check that the internet works, when the box starts and when an admin
+asks.** So the admin panel can say whether the box has internet, and whether
+a venue login page is in the way, the box opens a connection to 1.1.1.1 or
+8.8.8.8 (Cloudflare's and Google's public addresses) and asks Google for the
+empty page Android phones use for the same test
+(`connectivitycheck.gstatic.com/generate_204`). The connection carries
+nothing. The request says it comes from a Node.js program and, as any
+request does, carries this box's IP address. It runs when the box starts,
+when an admin presses **Check again**, and when an admin runs the
+[Network audit's](/docs/network) deep probe.
 
 **The box's licence, if it has internet.** A licensed box checks in with
 letissier.ie about once a day when it can: the licence key, an id for the
@@ -66,9 +83,15 @@ screen on your phone breaks, the same kind of report goes only if you press
 you wrote, the Crewbox version and platform, and your email only if you typed
 it. It goes via the box.
 
-These go to LeTissier Creative Studios at letissier.ie and nowhere else — no
-analytics or crash-reporting company. `CREWBOX_UPDATE_CHECK=0` stops the box
-making any outbound connection; reports then stay on the box.
+The licence check, reports and feedback go to LeTissier Creative Studios at
+letissier.ie and nowhere else — no analytics or crash-reporting company.
+`CREWBOX_UPDATE_CHECK=0` stops the box making any outbound connection;
+reports then stay on the box.
+
+One question stays on the venue's network. To check crew phones can find the
+box by the name on its certificate, the box looks that name up in the
+network's own DNS when it starts and when an admin asks. Whether that DNS
+server asks anyone else is up to whoever runs the network.
 
 ## What the box says on the crew network
 
@@ -93,11 +116,15 @@ The [Network audit](/docs/network) grades networks by **passive
 listening** — it reads what's already broadcast on the wire (DMX frames,
 clock announcements, device advertisements) and transmits nothing. The one
 exception, the admin-triggered deep probe, prints every packet it sent,
-verbatim, in its results. Two numbers involve crew devices:
+verbatim, in its results. Three kinds of number involve crew devices:
 
 - Each phone reports its own Wi-Fi round trip to the box, once a minute:
   one number, no identity attached beyond the connection it rode in on,
   kept as minute-averages for about seven days.
+- A phone on voice reports how the calls it hears sound, every 15 seconds:
+  how much of the audio was lost, how unevenly it arrived, and how much its
+  decoder had to fill in, for whichever call was worst. Kept the same way,
+  with how many phones reported in each minute and nothing to say which.
 - Connection counts — how many devices are on, not who.
 
 ## The formal bit

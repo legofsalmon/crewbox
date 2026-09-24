@@ -10,7 +10,8 @@ blurb: Three graded networks, the history behind every finding, the admin deep p
 The **Network** module answers one question continuously: _is this site's
 networking good enough for A/V — and if not, what exactly is wrong and what
 is the fix?_ Everyone on the crew can see it; it grades from what the box
-passively hears, and it never transmits on a show network.
+passively hears, and it transmits on a show network only when an admin
+runs the [deep probe](#the-deep-probe).
 
 ## The three cards
 

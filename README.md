@@ -169,7 +169,10 @@ can find it; unset, the admin panel's choice stands, and a packaged box starts
 automatic and a source run off; see `docs/DISCOVERY.md`) and `CREWBOX_TZ` (the
 festival's timezone as an IANA name, e.g. `Europe/London`).
 Setting `LIVEKIT_URL` points voice at an SFU you run instead of the one
-inside the box.
+inside the box. Phones then use the STUN and TURN servers that SFU hands
+them, and a LiveKit server with none configured hands out Google's and
+Twilio's public STUN servers; set its `rtc.stun_servers` or TURN if phones
+should not ask them. The box's own SFU tells phones to ask no STUN server.
 
 `CREWBOX_TZ` is worth setting on any box that was not set up on site. Crew
 phones read the running order against their own local time; without it the

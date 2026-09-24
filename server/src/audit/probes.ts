@@ -21,10 +21,12 @@ import type { MetricsStore } from './metrics.ts'
  *   on their wire and they can verify it against a capture.
  * - What is deliberately absent is as designed as what is present: nothing
  *   on the PTP ports (transmitting near a clock election risks the fault
- *   the audit exists to find), no IGMP (impossible without root, and
- *   winning the querier election only to vanish would *cause* cyclic
- *   outages), no ICMP sweeps or port scans (root-required; show-network
- *   device watchdogs). sACN needs no probe at all — E1.31 universe
+ *   the audit exists to find), no IGMP (receiving it needs a raw socket
+ *   the box is not granted, and winning the querier election only to
+ *   vanish would *cause* cyclic outages), no ICMP sweeps or port scans
+ *   (show-network devices' watchdogs treat them as attacks; privilege is
+ *   not the reason, since a connect needs none and on most systems a ping
+ *   needs none either). sACN needs no probe at all — E1.31 universe
  *   discovery is already broadcast every 10 s and collected passively.
  *
  * The Art-Net probe is one ArtPoll — the discovery packet every console on

@@ -28,7 +28,7 @@
       </aside>
       <main class="content">
         <h1 id="live-dmx-on-the-plot"><a class="anchor" href="#live-dmx-on-the-plot">Live DMX on the plot</a></h1>
-<p>When the box is listening on the lighting network, the plot stops being paperwork alone: every fixture's row shows whether data is reaching its address, and the drawings can dim and colour by what the desk is sending. The box only ever <strong>listens</strong> — it never transmits on a lighting network.</p>
+<p>When the box is listening on the lighting network, the plot stops being paperwork alone: every fixture's row shows whether data is reaching its address, and the drawings can dim and colour by what the desk is sending. The box <strong>listens</strong>, and never sends DMX. The only packet crewbox itself sends on a lighting network is one Art-Net poll, when an admin runs the Network audit's <a href="/docs/network#the-deep-probe">deep probe</a>.</p>
 <h2 id="the-live-bar"><a class="anchor" href="#the-live-bar">The live bar</a></h2>
 <p>Above the tabs, the live bar reports plainly:</p>
 <ul><li><strong>&quot;Not watching a lighting network&quot;</strong> — the box isn't listening at all. That's an operator setting (<strong>Admin → Lighting network</strong>), not something in the plot.</li><li><strong>&quot;Listening, but none of this plot's universes has been heard&quot;</strong> — the box is on the network but this plot's addresses have seen nothing.</li><li><strong>&quot;● Live — 12 receiving · 4 nothing sent · 1 universe not heard, since 18:42&quot;</strong> — the working state, counted fixture by fixture.</li></ul>

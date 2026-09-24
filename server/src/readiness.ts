@@ -491,7 +491,10 @@ function voiceQualityCheck(quality: NonNullable<ReadinessInput['voiceQuality']>)
       ...base,
       state: 'off',
       detail: `Comms are breaking up — ${heard}.`,
-      fix: 'Someone is at the edge of the Wi-Fi, or an access point is overloaded. The Network pane names which link, and the running order says who is where.',
+      // The box hears how bad it is, not whose it is: the phones' reports
+      // are pooled with nothing to say which came from where. So the fix
+      // sends people to the ones who can say.
+      fix: 'Someone is at the edge of the Wi-Fi, or an access point is overloaded. The box can tell it is happening but not to whom: ask on comms who is breaking up, and look at the access point nearest them.',
     }
   }
   if (quality.concealedPct >= 1) {
@@ -499,7 +502,7 @@ function voiceQualityCheck(quality: NonNullable<ReadinessInput['voiceQuality']>)
       ...base,
       state: 'limited',
       detail: `Comms are audibly rough in places — ${heard}.`,
-      fix: 'Worth a look before it matters: the Network pane shows which link is struggling.',
+      fix: 'Worth a look before it matters: ask who is hearing it, and check the access point nearest them.',
     }
   }
   return {

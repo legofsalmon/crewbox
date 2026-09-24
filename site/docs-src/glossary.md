@@ -82,8 +82,9 @@ import brings none of that — [the import guide](/docs/lighting-import) has
 the honest comparison.
 
 **sACN / Art-Net** — the two protocols desks use to send DMX over a
-network. The box can listen to either (listen only — it never transmits on a
-lighting network).
+network. The box can listen to either and never sends DMX. The only packet
+crewbox itself sends on a lighting network is one Art-Net poll, when an
+admin runs the [deep probe](/docs/network#the-deep-probe).
 
 ## The rest
 

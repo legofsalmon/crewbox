@@ -210,9 +210,11 @@ which address is in play, and flags the coin flip if you forgot to set this
 on a two-network machine.
 
 What crewbox puts on the lighting network, in full: the IGMP membership
-reports the OS must send to receive sACN multicast — nothing else. The DMX
-sockets structurally cannot transmit (their `send` is removed; a test
-asserts it throws). One honest residual: the voice server's _media_ ports
+reports the OS must send to receive sACN multicast, and one ArtPoll
+broadcast each time an admin runs the Network audit's deep probe — nothing
+else. The box announces itself for the phone apps only on the crew adapter.
+The DMX sockets structurally cannot transmit (their `send` is removed; a
+test asserts it throws). One honest residual: the voice server's _media_ ports
 (TCP 7881/UDP 7882) still bind every adapter — they only ever speak to
 crew phones that have joined a channel, but a probe of those two ports
 would get an answer where everything else stays silent.
