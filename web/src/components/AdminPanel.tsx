@@ -7,6 +7,7 @@ import { adminError } from '../lib/adminerror.ts'
 import { adapterMissing, listeningMode } from '../lib/adminnetwork.ts'
 import UpdateSection from './UpdateSection.tsx'
 import LicenceSection from './LicenceSection.tsx'
+import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
 
 const PIN_RE = /^\d{4,8}$/
@@ -40,12 +41,18 @@ export default function AdminPanel() {
    * not there, rather than a row saying it could not tell.
    */
   const [licence, setLicence] = useState<api.LicenceStatus | null>(null)
+  /** Null on a box without crash reporting (an older server answers 404). */
+  const [reports, setReports] = useState<api.ReportsSummary | null>(null)
 
   useEffect(() => {
     let live = true
     api
       .adminGetLicence(auth())
       .then(({ licence: l }) => live && setLicence(l))
+      .catch(() => {})
+    api
+      .adminGetReports(auth())
+      .then(({ reports: r }) => live && setReports(r))
       .catch(() => {})
     return () => {
       live = false
@@ -126,6 +133,9 @@ export default function AdminPanel() {
             </button>
           </div>
         )}
+        {reports && (
+          <CrashPrompt reports={reports} auth={auth} onReports={setReports} onNote={setNote} />
+        )}
         {note && <div className="admin-note">{note}</div>}
         <div className="admin-scroll">
           <section>
@@ -169,6 +179,17 @@ export default function AdminPanel() {
                 licence={licence}
                 auth={auth}
                 onLicence={setLicence}
+                onNote={setNote}
+              />
+            </section>
+          )}
+          {reports && (
+            <section>
+              <h3 className="admin-section-title">Crash reports</h3>
+              <ReportsSection
+                reports={reports}
+                auth={auth}
+                onReports={setReports}
                 onNote={setNote}
               />
             </section>

@@ -57,7 +57,14 @@ export default defineConfig({
         // has a service worker cached from the first, so its first-run page
         // — the one that names the event and sets the PIN — was replaced by
         // the app shell, which then asked for a PIN nobody had been given.
-        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/connect/, /^\/setup/, /^\/crewbox\.apk/],
+        navigateFallbackDenylist: [
+          /^\/api/,
+          /^\/ws/,
+          /^\/connect/,
+          /^\/setup/,
+          /^\/crewbox\.apk/,
+          /^\/third-party-notices\.txt/,
+        ],
         /**
          * The voice chunk is fetched when somebody uses voice, not on install.
          *

@@ -13,6 +13,9 @@ import { realRestartIo, statusFileProbe } from './update/restart.ts'
 import { APP_VERSION, BUILD_DATE } from './version.ts'
 import { LicenceService } from './licence/service.ts'
 import { readFingerprint } from './licence/fingerprint.ts'
+import { ReportService } from './reports/service.ts'
+import { REPORTS_DIR } from './reports/queue.ts'
+import { claimRunMarker, releaseRunMarker } from './reports/marker.ts'
 import {
   advertisedUrls,
   boxDataDir,
@@ -53,6 +56,31 @@ import { loadTls } from './tls.ts'
  * swapped its binary and stopped answering with no way out.
  */
 const RELEASE_TIMEOUT_MS = 5000
+
+/**
+ * The crash-report queue, once there is a data directory to put it in.
+ *
+ * Module-level because the places a crash is noticed — the process-wide
+ * handlers and the catch at the bottom of this file — are outside main().
+ * Undefined until main() has opened the database; a failure before that is a
+ * box that never started, which prints its reason and is not a crash.
+ */
+let crashReports:
+  | {
+      record: (kind: 'exception', err: unknown) => void
+      /** This run's crash has been written down; drop its run marker. */
+      recorded: () => void
+    }
+  | undefined
+
+/** First line and stack of whatever was thrown, for a crash report. */
+function describeThrown(err: unknown): { summary: string; detail?: string } {
+  if (err instanceof Error) {
+    const summary = `${err.name}: ${err.message}`
+    return { summary, ...(err.stack ? { detail: err.stack } : {}) }
+  }
+  return { summary: String(err) }
+}
 
 // No top-level await: the single-binary build bundles this entry as CJS
 // (Node SEA requires a CommonJS main), so startup lives in an async main().
@@ -224,6 +252,28 @@ async function main(): Promise<void> {
   const store = new Store(db, filesDir)
   // Audit history (network module). index owns db; Store keeps its own.
   const metrics = new MetricsStore(db)
+
+  // Crash reports and feedback. Queued on disk, sent only with an admin's yes
+  // or a person pressing Send, and only when this box may go off-site at all
+  // — the same switch as the update check. See server/src/reports/.
+  const reports = new ReportService({
+    dir: join(dataDir, REPORTS_DIR),
+    settings: store,
+    version: APP_VERSION,
+    outbound: config.updateCheck ?? box,
+    ...(config.reports.serviceUrl ? { baseUrl: config.reports.serviceUrl } : {}),
+    log: console,
+  })
+  crashReports = {
+    record: (kind, err) => {
+      try {
+        reports.recordCrash({ kind, ...describeThrown(err) })
+      } catch {
+        // Recording a crash must never be the second crash.
+      }
+    },
+    recorded: () => releaseRunMarker(dataDir),
+  }
 
   // First boot of a box: mint a random event PIN instead of shipping "1234"
   // everywhere. It prints below, shows on /connect, and the admin can change
@@ -477,7 +527,11 @@ async function main(): Promise<void> {
     healthUrl: '',
     releasePort: () => releaseListener?.() ?? Promise.resolve(),
     regainPort: () => regainListener?.() ?? Promise.resolve(),
-    exit: () => process.exit(0),
+    exit: () => {
+      // Handing over to the new build is a clean exit, not a crash.
+      releaseRunMarker(dataDir)
+      process.exit(0)
+    },
     packaged: box,
     restartIo: {
       ...realRestartIo,
@@ -527,6 +581,7 @@ async function main(): Promise<void> {
   const app = buildApp({
     store,
     licence,
+    reports,
     // Setup and the admin panel change the event name and the PIN; the
     // helper beside the box has to follow them.
     ...(box ? { onSettingsChanged: publishStatus } : {}),
@@ -609,6 +664,36 @@ async function main(): Promise<void> {
   await app.listen({ host: bindHost, port: config.port })
   const ws = attachWs(app)
 
+  // Was the last run a clean one? Asked only now that this box is serving:
+  // everything a crash could have cost — the update half-done, the database —
+  // has already been put right above, so recovery comes first and the report
+  // second. A run that died is queued as a crash; unless an admin has turned
+  // on automatic sending, the admin panel asks once before anything leaves.
+  for (const run of claimRunMarker(dataDir, {
+    pid: process.pid,
+    version: APP_VERSION,
+    startedAt: Date.now(),
+  })) {
+    reports.recordCrash({
+      kind: 'unclean-exit',
+      summary: `Crewbox ${run.version} closed unexpectedly`,
+      ...(run.startedAt ? { detail: `started ${new Date(run.startedAt).toISOString()}` } : {}),
+    })
+  }
+
+  // A throw nothing caught. On a packaged box the handlers below keep the box
+  // up, and record it as they do; from source, Node's default still ends the
+  // process (a crash is information in development) — this only writes it
+  // down first. `uncaughtExceptionMonitor` observes without changing that.
+  if (!box) {
+    process.on('uncaughtExceptionMonitor', (err) => {
+      crashReports?.record('exception', err)
+      // Reported with its stack; the marker would only add a second, vaguer
+      // report of the same death on the next start.
+      crashReports?.recorded()
+    })
+  }
+
   /**
    * The net under everything, for a packaged box only.
    *
@@ -635,6 +720,9 @@ async function main(): Promise<void> {
       // that could be broken, and this line is the only record there will be.
       console.error(`${what} — the box is still running, but something is wrong`)
       console.error(err instanceof Error ? (err.stack ?? err.message) : String(err))
+      // Queued, not sent: see server/src/reports/. The same fault twice is
+      // recorded once, so a loop cannot fill the queue.
+      crashReports?.record('exception', err)
     }
     process.on('uncaughtException', survive('uncaught exception'))
     process.on('unhandledRejection', survive('unhandled rejection'))
@@ -754,6 +842,9 @@ async function main(): Promise<void> {
   // connections still re-reads its token, but only checks in when an admin
   // asks. The first automatic check-in is a minute after serving.
   licence.start({ checkIn: config.updateCheck ?? box })
+  // Sending what may be sent, from a timer that starts well after the box is
+  // serving. Nothing crew do waits on it; a box with no uplink keeps its queue.
+  reports.start()
 
   if (video) {
     video.start()
@@ -841,8 +932,20 @@ async function main(): Promise<void> {
     openBrowser(`${origin}${firstRun ? '/setup' : '/'}`)
   }
 
+  // `on`, not `once`, with the second signal handled by hand. Under tsx
+  // (development, CI) there is a second SIGINT/SIGTERM listener, tsx's own,
+  // which exits the process with 128+signal if it finds no other listener
+  // when it runs. When it happened to be registered after this one, a `once`
+  // listener had already removed itself by then, so tsx ended the process a
+  // few milliseconds into this shutdown: database not closed, run marker left
+  // behind, and the next start reporting a crash that never happened.
+  let stopping = false
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, async () => {
+    process.on(signal, async () => {
+      // A second Ctrl-C still means "now", as it did with `once`; the marker
+      // stays, because a shutdown cut short is not a clean one.
+      if (stopping) process.exit(1)
+      stopping = true
       app.log.info(`${signal} received, shutting down`)
       // Belt and braces: if anything hangs, exit anyway so the supervisor
       // (systemd/tsx watch) can start a fresh process.
@@ -863,11 +966,14 @@ async function main(): Promise<void> {
       video?.stop()
       updates?.stop()
       licence.stop()
+      reports.stop()
       await captive?.portal?.close()
       await closeLoopback?.()
       await app.close()
       await embedded?.stop()
       db.close()
+      // Last, so a box that hangs anywhere above is still an unclean exit.
+      releaseRunMarker(dataDir)
       process.exit(0)
     })
   }
@@ -875,5 +981,9 @@ async function main(): Promise<void> {
 
 void main().catch((err: unknown) => {
   console.error(err)
+  // Written before exiting, so the next start can offer it. Only once main()
+  // got as far as the database; before that there is nowhere to put it.
+  crashReports?.record('exception', err)
+  crashReports?.recorded()
   process.exit(1)
 })

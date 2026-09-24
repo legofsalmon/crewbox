@@ -82,6 +82,22 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
     /// Set while we are deliberately stopping the box, so the termination
     /// handler doesn't report a crash for a shutdown we asked for.
     private var stopping = false
+    /// When the running box was launched, to tell a box that crashed from one
+    /// that never managed to start.
+    private var startedAt = Date()
+    /// When this wrapper last restarted a box on its own, newest last.
+    private var restarts: [Date] = []
+
+    /// A box that dies after running this long is restarted without asking.
+    ///
+    /// One that dies sooner never got going — a port somebody else holds, a
+    /// second copy of the app, a data folder it cannot write — and starting it
+    /// again would only fail the same way, so that still gets the alert.
+    private static let restartAfterUptime: TimeInterval = 30
+    /// At most this many automatic restarts inside `restartWindow`. A box that
+    /// keeps dying needs a person, not a loop.
+    private static let maxRestarts = 5
+    private static let restartWindow: TimeInterval = 10 * 60
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -138,6 +154,29 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
                 // for: with no terminal and no Dock icon, silence here is
                 // exactly the failure this whole file exists to end.
                 if proc.terminationStatus != 0 {
+                    // Unless it can simply be started again. A box that was
+                    // serving and then died — out of memory, a crash in native
+                    // code, anything the box's own safety net cannot catch —
+                    // is restarted after two seconds, the way systemd restarts
+                    // a Linux box. Crew phones reconnect by themselves and the
+                    // outbox resends; the box itself notices the unclean exit
+                    // on its way up and offers the crash report in the admin
+                    // panel. Only when that keeps happening does it stop and
+                    // say so.
+                    let now = Date()
+                    self.restarts = self.restarts.filter {
+                        now.timeIntervalSince($0) < Self.restartWindow
+                    }
+                    if now.timeIntervalSince(self.startedAt) >= Self.restartAfterUptime
+                        && self.restarts.count < Self.maxRestarts
+                    {
+                        self.restarts.append(now)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                            guard let self, self.box == nil, !self.stopping else { return }
+                            self.startBox()
+                        }
+                        return
+                    }
                     self.alert(
                         "Crewbox stopped",
                         "The box exited unexpectedly (status \(proc.terminationStatus)). "
@@ -147,6 +186,7 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
             }
         }
         do {
+            startedAt = Date()
             try process.run()
             box = process
         } catch {

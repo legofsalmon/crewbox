@@ -195,16 +195,20 @@ appears in a build log.
 ## Versioning & updates
 
 The build version (`package.json` version + short git commit, e.g.
-`0.1.0+dbed74e`) shows on the join screen and at the foot of the sidebar, and
+`1.0.0+dbed74e`) shows on the join screen and at the foot of the sidebar, and
 is returned by `GET /api/health` and in the WebSocket `welcome`. Bump the
-`web`/`server` `package.json` version for a user-facing release.
+root, `web`, `server`, `shared` and `native` `package.json` versions together
+(and regenerate the lockfile with `npm install --package-lock-only`) for a
+user-facing release; the Release workflow refuses a tag that disagrees with
+the root one. Numbering restarted at **1.0.0** on 24 September 2026 — every
+earlier release is 0.x — see `docs/UPDATING.md`.
 
 To cut a release (box binaries for Linux/Windows/macOS + the Android APK,
-attached to a GitHub release), either push a `v*` tag, or run the **Release**
-workflow from the Actions tab: pick the branch to build and type the version
-(e.g. `v0.1.1`). The tag is created at that commit, so no local tag push is
-needed. The run refuses to publish a version whose tag already points at a
-different commit.
+attached to a GitHub release), run the **Release** workflow from the Actions
+tab: pick the branch to build and type the version (e.g. `v1.0.0`). The tag is
+created at that commit, so no local tag push is needed (and tag pushes are
+blocked for automated sessions anyway). The run refuses to publish a version
+whose tag already points at a different commit.
 
 When you deploy a new build, updates reach crew **without forcing anyone to do
 anything mid-task** (the service worker registers in `prompt` mode):

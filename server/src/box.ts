@@ -12,6 +12,7 @@ import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
+import { releaseRunMarker } from './reports/marker.ts'
 
 /**
  * Single-binary "box" support. scripts/build-box.mjs packages the server and
@@ -431,6 +432,9 @@ export async function stopRunningBox(dataDir: string): Promise<number> {
   // any of it, and the promise in this comment was not kept.
   for (let i = 0; i < 100; i++) {
     if (!running(status.pid)) {
+      // On Windows that signal was a hard kill, so the box never got to
+      // remove its own run marker; an operator's --stop is not a crash.
+      releaseRunMarker(dataDir, status.pid)
       console.log(`Stopped ${label}.`)
       return 0
     }

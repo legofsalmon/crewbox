@@ -2,7 +2,7 @@
 title: The admin panel
 section: Running the box
 order: 20
-blurb: Unlocking it, the five sections, resetting PINs, readiness lists and the post-event export.
+blurb: Unlocking it, the sections, resetting PINs, readiness lists, the licence, crash reports and the post-event export.
 ---
 
 # The admin panel
@@ -89,6 +89,39 @@ phones fetch to decide whether a network has internet. Adding it stops
 iPhones abandoning the crew Wi-Fi for mobile data — see
 [the "no internet" problem](/docs/phones-and-platforms#the-no-internet-problem)
 for what that failure looks like and why it's worth doing.
+
+## Licence
+
+A licence belongs to the **box**, never to a crew phone: one seat, and the box
+can go 90 days without checking in with letissier.ie. Nothing about the
+licence ever touches crew comms — chat, voice, files and every module work the
+same on an unlicensed box. What an unlicensed box won't do is set up or
+configure an event until a key or a 30-day trial is entered.
+
+In **Licence**: type a key and **Activate** (the box needs the internet for a
+moment), or **Start a 30-day trial**, or — the usual case on site — **Activate
+offline**: read this box's request code off the panel, get a token for it at
+letissier.ie/account on any phone with signal, and paste the token back in.
+
+## Crash reports
+
+If the box ever closes without being stopped — a crash, a power cut, a lid
+closed on a laptop with a dead battery — the next time you open the panel it
+asks once: **Crewbox closed unexpectedly last time. Send a crash report to
+LeTissier Creative Studios?** **Send** queues it; **Don't send** deletes it.
+Tick **Always send crash reports** to stop being asked.
+
+**Send crash reports automatically** starts off. A report holds the Crewbox
+version, the operating system, a random id for this install, and the error
+with its stack trace; home folders, user names, network addresses and
+anything after `?` in a web address are removed on the box before it is
+saved. It never holds messages, names, files, the event or the licence.
+
+Reports wait on the box and go when it next has internet — that may be
+after the show, and that's fine. A box set with `CREWBOX_UPDATE_CHECK=0`
+makes no outbound connections, so its reports stay on the box. They are
+plain files in the `reports` folder of the box's data directory, if you want
+to read or delete one.
 
 ## Export
 

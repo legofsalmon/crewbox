@@ -40,6 +40,8 @@ export default defineConfig({
       // letissier.ie, and a release is the offline case it always is in a field.
       CREWBOX_LICENCE_PUBLIC_KEY: E2E_LICENCE_PUBLIC_KEY,
       CREWBOX_LICENCE_URL: 'http://127.0.0.1:9',
+      // Crash reports and feedback, likewise: nowhere that answers.
+      LETISSIER_API: 'http://127.0.0.1:9',
       WEB_DIST: `${process.cwd()}/web/dist`,
       EVENT_PIN: '4242',
       // Listen to a lighting network on loopback, so the live-rig features

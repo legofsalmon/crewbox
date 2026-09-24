@@ -61,6 +61,7 @@ export default function Sidebar() {
   const sounds = useStore((s) => s.sounds)
   const toggleSounds = useStore((s) => s.toggleSounds)
   const setAdminOpen = useStore((s) => s.setAdminOpen)
+  const setFeedbackOpen = useStore((s) => s.setFeedbackOpen)
   const latencyMs = useStore((s) => s.latencyMs)
   const configModules = useStore((s) => s.config.modules)
   const eventName = useStore((s) => displayName(s.config.eventName))
@@ -137,6 +138,13 @@ export default function Sidebar() {
         </div>
       )}
       <div className="sidebar-footer-links">
+        {/* Beside the version, where "about this app" lives: a bug, an idea,
+            a question or praise, to the people who make Crewbox. */}
+        {me && (
+          <button className="feedback-link" onClick={() => setFeedbackOpen(true)}>
+            Send feedback…
+          </button>
+        )}
         {me && (
           <button className="delete-account-link" onClick={() => setDeleteOpen(true)}>
             Delete account
@@ -146,9 +154,17 @@ export default function Sidebar() {
             a crew member does is blocked or slowed by it. Sized with the
             version beside it so it is there without being in the way. */}
         {unlicensed && <span className="unlicensed-mark">Unlicensed</span>}
-        <span className="app-version" title={`Crewbox ${APP_VERSION}`}>
+        {/* The version opens the licences of everything Crewbox ships that
+            it did not write (scripts/third-party-notices.mjs). */}
+        <a
+          className="app-version"
+          href="/third-party-notices.txt"
+          target="_blank"
+          rel="noreferrer"
+          title={`Crewbox ${APP_VERSION} — open-source licences`}
+        >
           v{APP_VERSION}
-        </span>
+        </a>
       </div>
       {deleteOpen && <DeleteAccountDialog onClose={() => setDeleteOpen(false)} />}
     </aside>

@@ -511,6 +511,57 @@ export function adminReleaseLicence(
   return licencePost(auth, 'release')
 }
 
+/**
+ * Crash reports and feedback waiting on the box. Mirrors `ReportsSummary` in
+ * server/src/reports/service.ts.
+ */
+export interface ReportsSummary {
+  /** "Send crash reports automatically". Off until an admin turns it on. */
+  autoSend: boolean
+  /** Box crashes waiting for the one-time question. */
+  pending: Array<{ id: string; kind: string; summary: string; occurredAt: string | null }>
+  /** Reports that may go, waiting for the box to have internet. */
+  waiting: number
+  /** False on a box told to make no outbound connections. */
+  outbound: boolean
+  lastSentAt: number | null
+  lastError: string | null
+}
+
+export function adminGetReports(auth: AdminAuth): Promise<{ reports: ReportsSummary }> {
+  return request('/api/admin/reports', { headers: adminHeaders(auth) })
+}
+
+export function adminSetAutoSend(
+  auth: AdminAuth,
+  autoSend: boolean
+): Promise<{ reports: ReportsSummary }> {
+  return request('/api/admin/reports', {
+    method: 'PATCH',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ autoSend }),
+  })
+}
+
+/** The answer to "closed unexpectedly — send a crash report?". */
+export function adminDecideReports(
+  auth: AdminAuth,
+  send: boolean,
+  always: boolean
+): Promise<{ reports: ReportsSummary }> {
+  return request('/api/admin/reports/decide', {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ send, always }),
+  })
+}
+
+export function adminSendReports(
+  auth: AdminAuth
+): Promise<{ result: { sent: number; dropped: number; kept: number }; reports: ReportsSummary }> {
+  return request('/api/admin/reports/send', { method: 'POST', headers: adminHeaders(auth) })
+}
+
 /** The export is downloaded as a blob so the UI can save it as a file. */
 export async function adminExport(auth: AdminAuth): Promise<Blob> {
   const res = await fetch(apiUrl('/api/admin/export'), { headers: adminHeaders(auth) })
