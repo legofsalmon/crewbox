@@ -121,6 +121,9 @@ describe('the browser storage names', () => {
         'crewbox:modules',
         'crewbox:patch-seen',
         'crewbox:patch-sheets',
+        // Feedback and crash reports this device is holding until the box
+        // can take them (lib/reports.ts).
+        'crewbox:report-outbox',
         'crewbox:server-url',
         'crewbox:sounds',
         'crewbox:theme',

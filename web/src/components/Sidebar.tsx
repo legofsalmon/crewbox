@@ -61,6 +61,7 @@ export default function Sidebar() {
   const sounds = useStore((s) => s.sounds)
   const toggleSounds = useStore((s) => s.toggleSounds)
   const setAdminOpen = useStore((s) => s.setAdminOpen)
+  const setFeedbackOpen = useStore((s) => s.setFeedbackOpen)
   const latencyMs = useStore((s) => s.latencyMs)
   const configModules = useStore((s) => s.config.modules)
   const eventName = useStore((s) => displayName(s.config.eventName))
@@ -137,6 +138,13 @@ export default function Sidebar() {
         </div>
       )}
       <div className="sidebar-footer-links">
+        {/* Beside the version, where "about this app" lives: a bug, an idea,
+            a question or praise, to the people who make Crewbox. */}
+        {me && (
+          <button className="feedback-link" onClick={() => setFeedbackOpen(true)}>
+            Send feedback…
+          </button>
+        )}
         {me && (
           <button className="delete-account-link" onClick={() => setDeleteOpen(true)}>
             Delete account

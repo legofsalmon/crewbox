@@ -2823,3 +2823,214 @@ ul {
   gap: 10px;
   align-items: center;
 }
+
+/* ------------------------------------------- feedback and crash screens */
+
+/* Beside "Delete account", but --text-muted rather than --text-faint: this is
+   the one people are meant to find, and it has to clear AA in daylight. */
+.feedback-link {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.feedback-link:hover {
+  color: var(--accent);
+}
+
+.feedback-panel {
+  width: min(480px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.feedback-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.feedback-types legend {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.feedback-type,
+.feedback-tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.feedback-type input,
+.feedback-tick input {
+  accent-color: var(--accent);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.confirm-field textarea {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+  resize: vertical;
+}
+
+.confirm-field textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.confirm-send {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 14px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.confirm-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* What a pane shows when it threw. Laid out like an empty pane, so the drawer
+   button is where every module puts it. */
+.crash-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  overflow-y: auto;
+}
+
+/* The outermost boundary has no shell around it. */
+#root > .crash-screen {
+  min-height: 100dvh;
+}
+
+.crash-body {
+  width: min(520px, 100%);
+  margin: 0 auto;
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.crash-body h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.crash-body p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.crash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.crash-primary,
+.crash-secondary {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.crash-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.crash-secondary {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  align-self: flex-start;
+}
+
+.crash-secondary:disabled {
+  opacity: 0.5;
+}
+
+.crash-report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.crash-report summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.crash-report[open] > * + * {
+  margin-top: 10px;
+}
+
+.crash-detail {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.crash-note {
+  color: var(--text) !important;
+}
+
+/* The admin panel's one-time question after the box crashed. */
+.admin-crash-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px;
+  font-size: 13.5px;
+  color: var(--text);
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.admin-crash-prompt p {
+  margin: 0;
+  font-weight: 600;
+}
