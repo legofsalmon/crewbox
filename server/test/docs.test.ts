@@ -69,6 +69,42 @@ afterAll(async () => {
 })
 
 describe('docs relay auth', () => {
+  /** The status a raw upgrade gets, or 101 when it is let in. */
+  const upgradeStatus = (path: string) =>
+    new Promise<number>((resolve) => {
+      const ws = new WebSocket(`${wsBase}${path}`)
+      ws.on('unexpected-response', (_req, res) => {
+        resolve(res.statusCode ?? 0)
+        ws.terminate()
+      })
+      ws.on('open', () => {
+        resolve(101)
+        ws.terminate()
+      })
+      ws.on('error', () => {})
+    })
+
+  it('refuses a phone that has another event open, and lets in one naming this event', async () => {
+    // A spare box with a fresh database, at the address a phone knows: the
+    // phone's documents belong to the old event and must not reach it. The
+    // phone names the event it has open, and the box turns away one that
+    // is not its own, before anything is relayed.
+    const res = await app.inject({ method: 'GET', url: '/api/config' })
+    const { eventId } = res.json() as { eventId: string }
+    expect(eventId).toBeTruthy()
+    const room = `/ws/docs/patch/sheet-x?token=${encodeURIComponent(token)}`
+    expect(await upgradeStatus(`${room}&event=${encodeURIComponent('another-event')}`)).toBe(409)
+    expect(await upgradeStatus(`${room}&event=${encodeURIComponent(eventId)}`)).toBe(101)
+    // One that names none predates the check, and is let in as before.
+    expect(await upgradeStatus(room)).toBe(101)
+  })
+
+  it('asks for the session before it says anything about the event', async () => {
+    // Otherwise a stranger could learn whether a guess was this box's event.
+    const status = await upgradeStatus(`/ws/docs/patch/sheet-x?token=nope&event=another-event`)
+    expect(status).toBe(401)
+  })
+
   it('rejects an upgrade without a valid session token', async () => {
     const status = await new Promise<number>((resolve, reject) => {
       const ws = new WebSocket(`${wsBase}/ws/docs/patch/sheet-x?token=not-a-session`)

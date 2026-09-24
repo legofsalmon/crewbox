@@ -1403,6 +1403,7 @@ describe('settings & config', () => {
       wifiSsid: '',
       voiceEnabled: true,
       modules: ['chat'],
+      eventId: store.dbEpoch(),
     })
 
     // A member cannot change settings.
@@ -1803,6 +1804,32 @@ describe('a box whose database went backwards', () => {
     const token = await join('Epoch')
     const { welcome } = await connect(token)
     expect(welcome.dbEpoch).toBeTruthy()
+  })
+
+  it('says which event it is before sign-in, and with a sign-in, as the same ID', async () => {
+    // A phone keeps each event's data apart, and has to know which event a
+    // box is before it holds anything of that box's: the join screen, and
+    // the sign-in it is about to file, come first.
+    const config = (await (await fetch(`${baseUrl}/api/config`)).json()) as { eventId?: string }
+    const joined = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Early', eventPin: EVENT_PIN, personalPin: '4321' },
+    })
+    const { token, eventId } = joined.json() as { token: string; eventId?: string }
+    const { welcome } = await connect(token)
+    expect(config.eventId).toBeTruthy()
+    expect(eventId).toBe(config.eventId)
+    expect(welcome.dbEpoch).toBe(config.eventId)
+    expect(welcome.config.eventId).toBe(config.eventId)
+
+    // And signing back in to an existing name says it too.
+    const again = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Early', eventPin: '', personalPin: '4321' },
+    })
+    expect((again.json() as { eventId?: string }).eventId).toBe(config.eventId)
   })
 
   it('keeps the same epoch across reconnects, so a phone is not reset for nothing', async () => {

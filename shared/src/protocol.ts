@@ -211,6 +211,20 @@ export interface PublicConfig {
   voiceEnabled: boolean
   /** Module ids this box enables; clients hide modules not listed here. */
   modules: string[]
+  /**
+   * Which event this box is running: its database's ID, the one the welcome
+   * carries as `dbEpoch`.
+   *
+   * Public, because a phone needs it before sign-in. The app talks to every
+   * box from one origin, so this is what tells it which of the events it
+   * already holds a box is, and where to keep what that box is about to give
+   * it. Without it one event's sheets and running order synced into the
+   * next box a phone joined.
+   *
+   * Optional: a box that predates it does not send it, and a phone that
+   * sees none carries on as it always has.
+   */
+  eventId?: string
 }
 
 export interface WelcomeMessage {

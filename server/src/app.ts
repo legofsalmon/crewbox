@@ -458,6 +458,8 @@ export type App = FastifyInstance & {
   authSession: (token: string) => User | undefined
   /** Module ids this box enables (docs room namespaces are checked against it). */
   enabledModules: string[]
+  /** Which event this box is running (its database's ID; see PublicConfig.eventId). */
+  eventId: () => string
   /** SFU port to proxy voice signalling to, when the box runs its own. */
   voiceProxyPort?: number
 }
@@ -597,6 +599,7 @@ export function buildApp({
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
     voiceEnabled: voiceAvailable,
     modules,
+    eventId: store.dbEpoch(),
   })
 
   // Warmed at startup so the admin panel reads a result rather than waiting
@@ -1222,7 +1225,9 @@ export function buildApp({
       const token = newToken()
       store.createSession(token, existing.id)
       const { pinHash: _, ...user } = existing
-      return { token, user, created: false }
+      // The event with the token, so a phone files the sign-in under the
+      // event it belongs to (see PublicConfig.eventId).
+      return { token, user, created: false, eventId: store.dbEpoch() }
     }
 
     if (suppliedEventPin !== effectiveEventPin()) {
@@ -1243,7 +1248,7 @@ export function buildApp({
     const general = store.getChannelByName(HOME_CHANNEL)
     if (general) hub.systemMessage(general.id, `${user.name} joined`)
 
-    return { token, user, created: true }
+    return { token, user, created: true, eventId: store.dbEpoch() }
   })
 
   fastify.get('/api/me', (req, reply) => {
@@ -2534,6 +2539,7 @@ export function buildApp({
     docs,
     authSession: (token: string) => store.getSessionUser(token, sessionTtlMs),
     enabledModules: modules,
+    eventId: () => store.dbEpoch(),
     voiceProxyPort: livekit?.embedded ? (livekit.port ?? LIVEKIT_PORT) : undefined,
   })
 }
@@ -2612,6 +2618,18 @@ export function attachWs(app: App): WsHandles {
       const user = token ? app.authSession(token) : undefined
       if (!user) {
         reject(socket, 401, 'Unauthorized')
+        return
+      }
+      // The event the phone has open, when it says. A phone keeps each
+      // event's documents apart, and a box that is running a different one —
+      // a spare with a fresh database, at the address the phone knows — must
+      // not be handed the old event's sheets and running order however the
+      // socket got here. Nothing else stops them: a y-websocket provider
+      // reconnects by itself, and the old token is only usually refused. A
+      // phone that does not say is one that predates this, and is let in.
+      const event = url.searchParams.get('event')
+      if (event && event !== app.eventId()) {
+        reject(socket, 409, 'Conflict')
         return
       }
       let rawRoom: string
