@@ -285,6 +285,10 @@ public class CrewboxTray : ApplicationContext
             // is not. Readers check the pid, so a leftover is harmless — but
             // tidy anyway, so `--status` doesn't have to reason about it.
             try { File.Delete(Path.Combine(dataDir, "box-status.json")); } catch { }
+            // Its run marker too, for the same reason: the box removes it on a
+            // clean exit and treats one left behind as a crash, which would
+            // make every Quit from this icon read as "closed unexpectedly".
+            try { File.Delete(Path.Combine(dataDir, "running-" + status.Pid + ".json")); } catch { }
         }
         Quit();
     }
