@@ -38,7 +38,7 @@ import {
 import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
 import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
-import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
+import { isIosApp, isNative, nativeAlerts, nativeSystemBars, serverOrigin } from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
 import { currentRoute, navigate, onRouteChange, type Route } from './shell/router.ts'
 import { capTranscript } from './lib/transcript.ts'
@@ -170,6 +170,26 @@ export function applyTheme(theme: Theme): void {
    * both honour changes to this tag at runtime.
    */
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme])
+  /**
+   * And the iPhone app's status bar.
+   *
+   * The app's page runs under the bar (`viewport-fit=cover`, with `.app`
+   * padded down by the safe area), so the clock and battery sit on the page's
+   * own background. But iOS colours them from the phone's appearance, not the
+   * page's: anyone who switched the app to the other theme got white text on
+   * the cream page, or black on navy. `theme-color` is Safari's, not an app's.
+   *
+   * iPhone only. Below Android 15 the Android app's bar is a solid system
+   * colour, black when the phone is dark, and dark icons for a light page
+   * would vanish into it. Android 15 and later put the page under the bar
+   * too, but only with WebView 140 or later, so that is left for testing on
+   * real phones.
+   */
+  if (isIosApp()) {
+    void nativeSystemBars()
+      ?.setStyle({ style: theme === 'dark' ? 'DARK' : 'LIGHT' })
+      .catch(() => {})
+  }
 }
 
 function initialTheme(): Theme {

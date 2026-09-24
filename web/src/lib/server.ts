@@ -35,6 +35,14 @@ interface HapticsPlugin {
   notification(options: { type: 'SUCCESS' | 'WARNING' | 'ERROR' }): Promise<void>
 }
 
+/**
+ * Capacitor's SystemBars plugin, built into Capacitor 8 on both platforms.
+ * The style names the bar, not its text: `DARK` gets light text.
+ */
+interface SystemBarsPlugin {
+  setStyle(options: { style: 'DARK' | 'LIGHT' | 'DEFAULT' }): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -45,6 +53,7 @@ declare global {
         App?: AppPlugin
         CrewboxVoice?: VoicePlugin
         Haptics?: HapticsPlugin
+        SystemBars?: SystemBarsPlugin
       }
     }
   }
@@ -58,6 +67,11 @@ export function isNative(): boolean {
 /** True inside the Android app, as opposed to the iPhone app or any browser. */
 export function isAndroidApp(): boolean {
   return isNative() && window.Capacitor?.getPlatform?.() === 'android'
+}
+
+/** True inside the iPhone app, as opposed to the Android app or any browser. */
+export function isIosApp(): boolean {
+  return isNative() && window.Capacitor?.getPlatform?.() === 'ios'
 }
 
 /** The Android background-alerts bridge, when present (native builds only). */
@@ -78,6 +92,11 @@ export function nativeVoice(): VoicePlugin | undefined {
 /** Capacitor's Haptics plugin (native only). */
 export function nativeHaptics(): HapticsPlugin | undefined {
   return window.Capacitor?.Plugins?.Haptics
+}
+
+/** Capacitor's SystemBars plugin: the colour of the status bar's text (native only). */
+export function nativeSystemBars(): SystemBarsPlugin | undefined {
+  return window.Capacitor?.Plugins?.SystemBars
 }
 
 /**
