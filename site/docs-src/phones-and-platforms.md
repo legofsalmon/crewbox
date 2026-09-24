@@ -70,6 +70,16 @@ the main reason it exists. But read the last row of the table again:
 > app is open. Don't promise lock-screen alerts on iOS; hand the on-call
 > radio roles an Android.
 
+One rule about addresses, which iOS enforces inside the phone: **the iPhone
+app uses plain HTTP only with an IP address** like `192.168.8.1`, a `.local`
+name, or a one-word name like `crewbox`. A box without a certificate
+advertises its IP address, so its poster and QR already work. What doesn't
+is a name the network knows the box by, like `crewbox.lan`, typed without
+`https://`: iOS refuses to send anything to it, and the join screen says so
+rather than trying. A name needs the box to have a certificate for it (see
+[HTTPS, names and certificates](/docs/https-and-voice)), and `https://` in
+front.
+
 ## The "no internet" problem
 
 Every phone tests a Wi-Fi network the moment it joins: it fetches one fixed
@@ -132,7 +142,9 @@ connection error.
 
 Both phone apps show one extra field on the join screen — **Crew server** —
 because unlike a browser, the app doesn't know which box it belongs to.
-It's on the join poster, or baked into the QR so scanning fills it in.
+It's on the join poster, or baked into the QR so scanning fills it in. On an
+iPhone, a name there needs `https://` in front; an IP address doesn't
+([why](#the-ios-app)).
 
 ## Desktop helpers
 

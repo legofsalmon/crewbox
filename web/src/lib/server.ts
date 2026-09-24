@@ -138,6 +138,31 @@ export function normalizeOrigin(input: string): string {
   }
 }
 
+/**
+ * Whether the iPhone app refuses this origin before a request leaves the phone.
+ *
+ * App Transport Security lets the app use plain HTTP only where its
+ * `NSAllowsLocalNetworking` exemption reaches: IP addresses, `.local` names,
+ * and names with no dot in them (Apple's documentation of that key). Plain
+ * HTTP to any other name fails every request inside the phone, which on
+ * screen is exactly a box that is switched off. The box itself only ever
+ * advertises a name when it has a certificate for it, so this is somebody
+ * typing a name the box is also known by, without `https://`.
+ */
+export function iphoneRefusesPlainHttp(origin: string): boolean {
+  let url: URL
+  try {
+    url = new URL(origin)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'http:') return false
+  const host = url.hostname
+  // A parsed URL writes every IPv4 address as a dotted quad, and IPv6 in brackets.
+  const ip = host.startsWith('[') || /^\d+\.\d+\.\d+\.\d+$/.test(host)
+  return !ip && host.includes('.') && !host.endsWith('.local')
+}
+
 /** The configured server origin, or '' meaning same-origin (PWA default). */
 export function serverOrigin(): string {
   try {

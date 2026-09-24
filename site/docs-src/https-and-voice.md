@@ -13,7 +13,10 @@ home screen**. Both are browser security rules tied to HTTPS — so if you
 want them, the box needs a certificate, and a certificate needs a name.
 
 If your crew uses the Android/iOS apps for voice and nobody installs the
-web app, you can skip this whole page.
+web app, you can skip this whole page. iPhones then join by the box's IP
+address, which is what a box without a certificate advertises anyway: the
+iPhone app won't use a name over plain HTTP
+([why](/docs/phones-and-platforms#the-ios-app)).
 
 ## The two-names idea
 

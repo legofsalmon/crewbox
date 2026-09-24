@@ -3,7 +3,14 @@ import { useStore } from '../store.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { displayName, effectiveSsid } from '../lib/settings.ts'
-import { isNative, normalizeOrigin, serverOrigin, setServerOrigin } from '../lib/server.ts'
+import {
+  iphoneRefusesPlainHttp,
+  isIosApp,
+  isNative,
+  normalizeOrigin,
+  serverOrigin,
+  setServerOrigin,
+} from '../lib/server.ts'
 
 /** Native builds aren't served by the crew server, so they must be told
  * where it is. A `?server=` param (QR-poster deep link) also enables it. */
@@ -36,8 +43,18 @@ export default function Join() {
     e.preventDefault()
     setError(null)
     if (showServer) {
-      if (!normalizeOrigin(server)) {
+      const origin = normalizeOrigin(server)
+      if (!origin) {
         setError('Enter the crew server address (it’s on the join poster)')
+        return
+      }
+      // Said now, rather than after a timeout as "can't reach the server":
+      // the phone would refuse the address without trying it.
+      if (isIosApp() && iphoneRefusesPlainHttp(origin)) {
+        setError(
+          `An iPhone only connects to a name like ${new URL(origin).hostname} over HTTPS. ` +
+            'Type https:// before it if the box has a certificate, or use the box’s IP address, like 192.168.8.1.'
+        )
         return
       }
       setServerOrigin(server)

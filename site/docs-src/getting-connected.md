@@ -68,6 +68,10 @@ The app tells you what it's doing rather than spinning forever:
 - **"Can't reach the crew server"** — your phone can't see the box. Check
   you're on the event Wi-Fi (the screen names it), then tap **Retry now**.
   It also keeps retrying by itself.
+- **"An iPhone only connects to a name like … over HTTPS"** — in the iPhone
+  app, you typed the box's name without `https://`. Type `https://` before
+  it if the box has a certificate, or use the box's IP address from the join
+  poster instead.
 - **Yellow "Connecting…" banner** — you were connected and it dropped.
   Anything you send is queued on your device and delivered when the
   connection returns; nothing is lost.
