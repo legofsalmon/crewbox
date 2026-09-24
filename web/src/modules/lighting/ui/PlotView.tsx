@@ -13,6 +13,7 @@ import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import { documentUndoTarget, registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useDraft } from '../../_shared/ui/useDraft'
+import { useUndoRedo } from '../../_shared/useUndo'
 import { plotCsvFilename, plotSummary, plotToCsv } from '../model/csv'
 import { addFixture, setPlotMeta } from '../model/plotDoc'
 import { DMX_UNIVERSE_SIZE } from '../model/types'
@@ -161,6 +162,8 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   const title = useDraft(snapshot?.meta.title ?? '', (next) => {
     if (doc) setPlotMeta(doc, 'title', next)
   })
+  // Buttons as well as the shortcuts: a phone has no Cmd+Z.
+  const history = useUndoRedo(undoManager)
 
   useEffect(() => {
     if (!undoManager) return
@@ -268,6 +271,31 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
             </button>
           ))}
         </div>
+
+        {/* Beside the tabs rather than with the actions, so on a phone they
+            share the tabs' row instead of pushing Share onto a third. */}
+        <span className={styles.undoGroup}>
+          <button
+            type="button"
+            className={`${styles.action} ${styles.undoButton}`}
+            onClick={history.undo}
+            disabled={!history.canUndo}
+            title="Undo (Ctrl/Cmd+Z)"
+            aria-label="Undo"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            className={`${styles.action} ${styles.undoButton}`}
+            onClick={history.redo}
+            disabled={!history.canRedo}
+            title="Redo (Ctrl/Cmd+Shift+Z)"
+            aria-label="Redo"
+          >
+            ↷
+          </button>
+        </span>
 
         <div className={styles.actions}>
           <button type="button" className={styles.action} onClick={() => setShowPositions(true)}>

@@ -515,3 +515,38 @@ test('the plan zooms about its middle and every edge of it can be reached', asyn
 
   await context.close()
 })
+
+/** A phone has no Cmd+Z, and on a lighting plot that was all undo was. */
+test('a plot is undone and redone from a phone', async ({ browser }) => {
+  const page = await phone(browser, 'Undo Tech')
+  await page.getByRole('button', { name: 'Open channels' }).first().tap()
+  await page.getByRole('button', { name: 'All plots…' }).tap()
+  await page.getByRole('button', { name: '+ New Plot' }).tap()
+  await page.locator('#new-plot-name').fill(uniqueName('Phone Rig'))
+  await page.getByRole('button', { name: 'Create', exact: true }).tap()
+  await expect(page.getByRole('tab', { name: 'Fixtures' })).toBeVisible()
+
+  const undo = page.getByRole('button', { name: 'Undo', exact: true })
+  const redo = page.getByRole('button', { name: 'Redo', exact: true })
+  // Making the plot is not something to take back.
+  await expect(undo).toBeDisabled()
+  await expect(redo).toBeDisabled()
+
+  // The plot's own count, above the list; each position has one too.
+  const fixtures = page.getByText(/^\d+ fixtures?$/).first()
+  await expect(fixtures).toHaveText('0 fixtures')
+  await page.locator('main').getByRole('button', { name: '+ Fixture' }).first().tap()
+  await expect(fixtures).toHaveText('1 fixture')
+  await undo.tap()
+  await expect(fixtures).toHaveText('0 fixtures')
+  await expect(undo).toBeDisabled()
+  await redo.tap()
+  await expect(fixtures).toHaveText('1 fixture')
+
+  // They share the tabs' row rather than taking a line of their own.
+  const tabs = (await page.getByRole('tablist').boundingBox())!
+  const button = (await undo.boundingBox())!
+  expect(Math.abs(button.y + button.height / 2 - (tabs.y + tabs.height / 2))).toBeLessThan(4)
+
+  await page.context().close()
+})

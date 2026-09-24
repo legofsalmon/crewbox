@@ -19,8 +19,10 @@ arriving — that's [the live page](/docs/lighting-live).
 
 The **Lighting** sidebar section lists recent plots; **All plots…** shows
 everything. **+ New Plot** asks for a name and an optional venue. Open a
-plot and you get four tabs — **Fixtures · Plan · Front · 3D** — plus the
-actions row: **Positions · + Fixture · Import · Export · Share**.
+plot and you get four tabs — **Fixtures · Plan · Front · 3D** — with
+**undo ↶ and redo ↷** beside them (they take back your own edits, never a
+colleague's), plus the actions row: **Positions · + Fixture · Import ·
+Export · Share**.
 
 The summary line above the tabs keeps the totals honest: fixture count,
 per-universe usage ("U1: 64/512"), and "⚠ 2 addressing problems" when
