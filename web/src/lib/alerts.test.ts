@@ -62,7 +62,9 @@ describe('an alert in the apps', () => {
   })
 
   it('shrugs off a haptic the phone refused', async () => {
-    const plugin = { notification: vi.fn(() => Promise.reject(new Error('no vibrator'))) }
+    // A plain function, not `vi.fn`: a mock records how its promise settles,
+    // which handles the rejection and would let this pass without a catch.
+    const plugin = { notification: () => Promise.reject(new Error('no vibrator')) }
     window.Capacitor = { isNativePlatform: () => true, Plugins: { Haptics: plugin } }
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
