@@ -140,7 +140,8 @@
         app and needed no permission of its own: with CAMERA declared,
         Android refuses that to an app that has not been granted it, so
         Capacitor's web view asks for CAMERA first. Whoever says yes to one
-        has said yes to both.
+        has said yes to both. A no leaves the page a cancelled photo, and
+        the message box says why (web/src/components/Composer.tsx).
 
         No camera is required: a phone without one installs the app and
         types the poster's address, and the scanner uses a camera on the

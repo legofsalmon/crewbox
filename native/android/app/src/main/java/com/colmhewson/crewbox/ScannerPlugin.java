@@ -37,6 +37,10 @@ import com.getcapacitor.annotation.PermissionCallback;
  * The camera is asked for here, the first time somebody scans. Once they
  * have said no twice Android stops asking and answers no at once, and the
  * page offers {@code openSettings}, the app's own page in Settings.
+ *
+ * Capacitor's own {@code checkPermissions} answers for the same "camera",
+ * which "Take a photo" in the attach menu needs too: the message box asks it
+ * when a photo comes back with nothing (web/src/components/Composer.tsx).
  */
 @CapacitorPlugin(
     name = "CrewboxScanner",

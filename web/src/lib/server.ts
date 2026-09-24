@@ -114,6 +114,13 @@ export type ScanOutcome =
   | { result: 'unavailable' }
 
 /**
+ * Android's answer on the camera: `granted`, or not (yet): `prompt` and
+ * `prompt-with-rationale` when asking would show the question, `denied` when
+ * Capacitor has seen Android stop asking.
+ */
+export type CameraPermission = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale'
+
+/**
  * Both apps' QR scanner (native ScannerPlugin): VisionKit's data scanner on
  * the iPhone, and on Android CameraX for the picture with ZXing to read it.
  * Both read on the phone with no network, and hand back the first QR code's
@@ -124,6 +131,11 @@ export interface ScannerPlugin {
   scan(): Promise<ScanOutcome>
   /** The app's page in the phone's settings, where the camera is allowed. */
   openSettings(): Promise<void>
+  /**
+   * Android only, and Capacitor's own: whether the app may use the camera,
+   * which "Take a photo" in the attach menu needs as much as the scanner.
+   */
+  checkPermissions?(): Promise<{ camera: CameraPermission }>
 }
 
 declare global {
@@ -198,6 +210,21 @@ export function nativeDiscovery(): DiscoveryPlugin | undefined {
 /** The apps' QR scanner, when present (native builds only). */
 export function nativeScanner(): ScannerPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxScanner
+}
+
+/**
+ * Whether the Android app may use the camera: false when it may not, and
+ * undefined when there is nobody to ask, as in a browser or the iPhone app.
+ */
+export async function cameraAllowed(): Promise<boolean | undefined> {
+  const scanner = nativeScanner()
+  if (!scanner?.checkPermissions) return undefined
+  try {
+    const { camera } = await scanner.checkPermissions()
+    return camera === 'granted'
+  } catch {
+    return undefined
+  }
 }
 
 /**

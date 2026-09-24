@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useStore } from '../store.ts'
 import { goBack } from '../shell/back.ts'
+import type { CameraPermission } from '../lib/server.ts'
 import Composer from './Composer.tsx'
 
 /**
@@ -184,5 +185,125 @@ describe('the attach button in the Android app', () => {
     expect(document.activeElement).toBe(item(/Take a photo/))
     key(menu()!, 'ArrowUp')
     expect(document.activeElement).toBe(item(/Choose a photo or file/))
+  })
+})
+
+describe('a camera the Android app is not allowed', () => {
+  let camera: CameraPermission
+  const checkPermissions = vi.fn(async () => ({ camera }))
+  const openSettings = vi.fn(async () => {})
+
+  beforeEach(() => {
+    camera = 'denied'
+    checkPermissions.mockClear()
+    openSettings.mockClear()
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'android',
+      Plugins: {
+        CrewboxScanner: {
+          scan: async () => ({ result: 'cancelled' }),
+          openSettings,
+          checkPermissions,
+        },
+      },
+    }
+  })
+
+  const note = () => host.querySelector('.camera-note')
+  const button = (name: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+      (el) => el.textContent === name || el.getAttribute('aria-label') === name
+    )
+  /** Take a photo, and the web view handing back nothing, as it does for a refused camera. */
+  async function takePhotoAndGetNothing(): Promise<void> {
+    tap(attach())
+    tap(item(/Take a photo/))
+    const input = opened.at(-1)!
+    expect(input.getAttribute('capture')).toBe('environment')
+    await act(async () => {
+      input.dispatchEvent(new Event('cancel'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  it.each<CameraPermission>(['denied', 'prompt', 'prompt-with-rationale'])(
+    'says so when Take a photo comes back with nothing and the camera is %s',
+    async (state) => {
+      camera = state
+      render()
+      await takePhotoAndGetNothing()
+      expect(checkPermissions).toHaveBeenCalledTimes(1)
+      expect(note()?.textContent).toContain('Crewbox isn’t allowed to use the camera')
+      expect(note()?.textContent).toContain('choose a photo already on the phone')
+      expect(note()?.getAttribute('role')).toBe('status')
+      tap(button('Open Settings')!)
+      expect(openSettings).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('says nothing when somebody backs out of the camera', async () => {
+    camera = 'granted'
+    render()
+    await takePhotoAndGetNothing()
+    expect(checkPermissions).toHaveBeenCalledTimes(1)
+    expect(note()).toBeNull()
+  })
+
+  it('says nothing when there is nobody to ask', async () => {
+    window.Capacitor!.Plugins = {}
+    render()
+    await takePhotoAndGetNothing()
+    expect(note()).toBeNull()
+  })
+
+  it('says nothing when asking fails', async () => {
+    checkPermissions.mockRejectedValueOnce(new Error('bridge gone'))
+    render()
+    await takePhotoAndGetNothing()
+    expect(note()).toBeNull()
+  })
+
+  it('goes once the camera is allowed in Settings and the app is back', async () => {
+    render()
+    await takePhotoAndGetNothing()
+    expect(note()).not.toBeNull()
+    camera = 'granted'
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(note()).toBeNull()
+  })
+
+  it('stays when the app is back and the camera still is not allowed', async () => {
+    render()
+    await takePhotoAndGetNothing()
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(note()).not.toBeNull()
+  })
+
+  it('goes on ✕, on the next try, and when a photo comes through', async () => {
+    render()
+    await takePhotoAndGetNothing()
+    tap(button('Dismiss')!)
+    expect(note()).toBeNull()
+
+    await takePhotoAndGetNothing()
+    tap(attach())
+    expect(note()).toBeNull()
+    tap(attach())
+
+    await takePhotoAndGetNothing()
+    const input = opened.at(-1)!
+    const photo = new File(['jpeg'], 'JPEG_20260924_171500_1.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(input, 'files', { value: [photo], configurable: true })
+    act(() => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(note()).toBeNull()
   })
 })

@@ -9,7 +9,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { useStore } from '../store.ts'
-import { isAndroidApp } from '../lib/server.ts'
+import { cameraAllowed, isAndroidApp, nativeScanner } from '../lib/server.ts'
 import AttachMenu from './AttachMenu.tsx'
 
 const coarsePointer =
@@ -56,6 +56,7 @@ export default function Composer({
   const closeAttach = useCallback(() => setAttachOpen(false), [])
   // The one place the phone's own picker has no camera (see AttachMenu).
   const offersCamera = isAndroidApp()
+  const [cameraRefused, setCameraRefused] = useState(false)
 
   // Track the value in the per-channel draft store so it survives a switch,
   // and clear the entry once nothing is left to keep.
@@ -70,6 +71,7 @@ export default function Composer({
     setValue(drafts.get(channelId) ?? '')
     setMention(null)
     setAttachOpen(false)
+    setCameraRefused(false)
     // Not on a phone. Focusing the box opens the soft keyboard, so every tap
     // on a channel in the drawer arrived with half the screen gone and the
     // messages the crew member had just navigated to pushed out of sight —
@@ -79,6 +81,37 @@ export default function Composer({
     if (!coarsePointer) ref.current?.focus()
     requestAnimationFrame(autogrow)
   }, [channelId])
+
+  // Android doesn't open the camera for an app that isn't allowed it, and
+  // the web view tells the page no more than that the photo was cancelled,
+  // as it does when somebody backs out of the camera. So a cancel asks
+  // whether the camera is allowed, and a camera that isn't gets said: once
+  // somebody has said no twice, Android stops asking, and Take a photo would
+  // otherwise do nothing at all, for good.
+  useEffect(() => {
+    const camera = cameraRef.current
+    if (!camera) return
+    const onCancel = () => {
+      void cameraAllowed().then((allowed) => {
+        if (allowed === false) setCameraRefused(true)
+      })
+    }
+    camera.addEventListener('cancel', onCancel)
+    return () => camera.removeEventListener('cancel', onCancel)
+  }, [offersCamera])
+
+  // Back from Settings with the camera allowed, the note has nothing to say.
+  useEffect(() => {
+    if (!cameraRefused) return
+    const recheck = () => {
+      if (document.visibilityState !== 'visible') return
+      void cameraAllowed().then((allowed) => {
+        if (allowed) setCameraRefused(false)
+      })
+    }
+    document.addEventListener('visibilitychange', recheck)
+    return () => document.removeEventListener('visibilitychange', recheck)
+  }, [cameraRefused])
 
   const mentionMatches = useMemo(() => {
     if (!mention) return []
@@ -156,6 +189,7 @@ export default function Composer({
     const file = e.target.files?.[0]
     if (file) void sendFile(channelId, file)
     e.target.value = ''
+    setCameraRefused(false)
   }
 
   function onAttach() {
@@ -164,6 +198,7 @@ export default function Composer({
       return
     }
     setMention(null)
+    setCameraRefused(false)
     setAttachOpen((open) => !open)
   }
 
@@ -199,6 +234,33 @@ export default function Composer({
           onFile={() => fileRef.current?.click()}
           onClose={closeAttach}
         />
+      )}
+      {cameraRefused && (
+        <div className="camera-note" role="status">
+          <div className="camera-note-body">
+            <span>
+              Crewbox isn’t allowed to use the camera. Allow it in Settings, or choose a photo
+              already on the phone.
+            </span>
+            <button
+              className="admin-btn"
+              onClick={() =>
+                void nativeScanner()
+                  ?.openSettings()
+                  .catch(() => {})
+              }
+            >
+              Open Settings
+            </button>
+          </div>
+          <button
+            className="camera-note-close"
+            aria-label="Dismiss"
+            onClick={() => setCameraRefused(false)}
+          >
+            ✕
+          </button>
+        </div>
       )}
       <div className="composer">
         <input ref={fileRef} type="file" hidden onChange={onPicked} />

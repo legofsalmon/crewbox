@@ -56,9 +56,11 @@ notification permission and to be excused from battery optimisation — say
 yes to both, that's the superpower asking.
 
 Scanning the join poster asks to use the camera the first time, and **Take
-a photo** in the attach menu needs the same yes. Say no and both stop: the
-scan says so, and the photo option quietly does nothing. Allow it again
-under Settings → Apps → Crewbox → Permissions → Camera.
+a photo** in the attach menu needs the same yes. Say no and both stop, and
+each says so with an **Open Settings** button, which goes to Crewbox's page
+in Settings: allow it again under Permissions → Camera. Android stops
+asking once somebody has said no twice, so Settings is then the only way
+back.
 
 Sideloading means Android warns about "unknown apps" once; that's the
 price of installing from your own box instead of a store.

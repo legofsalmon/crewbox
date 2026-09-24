@@ -1,5 +1,6 @@
 import { truncateSync, writeFileSync } from 'node:fs'
 import { expect, type Browser } from '@playwright/test'
+import { textContrast } from './contrast.ts'
 import { test, uniqueName } from './helpers'
 
 /**
@@ -12,20 +13,43 @@ import { test, uniqueName } from './helpers'
  * here: the camera opening is the web view's to do, and this stops at the
  * page asking for it.
  */
-async function androidApp(browser: Browser, colorScheme: 'light' | 'dark' = 'dark') {
+async function androidApp(
+  browser: Browser,
+  colorScheme: 'light' | 'dark' = 'dark',
+  camera?: 'granted' | 'denied'
+) {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     hasTouch: true,
     isMobile: true,
     colorScheme,
   })
-  await context.addInitScript(() => {
-    ;(window as unknown as { Capacitor: unknown }).Capacitor = {
+  await context.addInitScript((camera) => {
+    const w = window as unknown as Record<string, unknown>
+    const calls: string[] = []
+    w.__scanner = calls
+    w.__camera = camera
+    w.Capacitor = {
       isNativePlatform: () => true,
       getPlatform: () => 'android',
-      Plugins: {},
+      // Given a camera, the scanner plugin answers for its permission, which
+      // "Take a photo" needs too; `__camera` changes the answer.
+      Plugins: camera
+        ? {
+            CrewboxScanner: {
+              scan: async () => ({ result: 'cancelled' }),
+              checkPermissions: async () => {
+                calls.push('checkPermissions')
+                return { camera: w.__camera }
+              },
+              openSettings: async () => {
+                calls.push('openSettings')
+              },
+            },
+          }
+        : {},
     }
-  })
+  }, camera)
   const page = await context.newPage()
   page.on('pageerror', (error) => {
     throw new Error(`Page error: ${error.message}`)
@@ -35,7 +59,8 @@ async function androidApp(browser: Browser, colorScheme: 'light' | 'dark' = 'dar
   await page.goto('/?server=http://localhost:4299&pin=4242')
   await page.getByLabel('Your name').fill(uniqueName('Android Tech'))
   await page.getByLabel('Your PIN').fill('1234')
-  await page.getByRole('button', { name: 'Join' }).click()
+  // Exact: given a camera, the join screen also has "Scan the join poster".
+  await page.getByRole('button', { name: 'Join', exact: true }).click()
   await expect(page.getByPlaceholder(/Message/)).toBeVisible()
   return { context, page }
 }
@@ -79,6 +104,58 @@ test('the Android app offers the camera from the attach button', async ({ browse
 
   await context.close()
 })
+
+for (const scheme of ['dark', 'light'] as const) {
+  test(`the Android app says why Take a photo didn't open, in ${scheme} theme`, async ({
+    browser,
+  }) => {
+    const { context, page } = await androidApp(browser, scheme, 'denied')
+    const scanner = () =>
+      page.evaluate(() => (window as unknown as { __scanner: string[] }).__scanner)
+    const takePhotoAndGetNothing = async () => {
+      await page.getByRole('button', { name: 'Attach a file or photo' }).tap()
+      const chooser = page.waitForEvent('filechooser')
+      await page.getByRole('menuitem', { name: 'Take a photo' }).tap()
+      const picker = await chooser
+      // Android doesn't open the camera for an app that isn't allowed it, and
+      // the web view hands the page back nothing, which the input hears as a
+      // cancel. Backing out of the camera app sounds the same.
+      await picker.element().evaluate((input) => input.dispatchEvent(new Event('cancel')))
+    }
+
+    await takePhotoAndGetNothing()
+    const note = page.locator('.camera-note')
+    await expect(note).toContainText('Crewbox isn’t allowed to use the camera')
+    for (const part of [
+      '.camera-note-body > span',
+      '.camera-note .admin-btn',
+      '.camera-note-close',
+    ]) {
+      expect(await textContrast(page, part), part).toBeGreaterThan(4.5)
+    }
+    // On the screen, above the message box rather than over it.
+    const box = (await note.boundingBox())!
+    const composer = (await page.getByPlaceholder(/Message/).boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(390)
+    expect(box.y + box.height).toBeLessThanOrEqual(composer.y)
+
+    await note.getByRole('button', { name: 'Open Settings' }).tap()
+    expect(await scanner()).toEqual(['checkPermissions', 'openSettings'])
+    await note.getByRole('button', { name: 'Dismiss' }).tap()
+    await expect(note).toBeHidden()
+
+    // With the camera allowed, a cancel is somebody backing out of it.
+    await page.evaluate(() => {
+      ;(window as unknown as { __camera: string }).__camera = 'granted'
+    })
+    await takePhotoAndGetNothing()
+    await expect.poll(scanner).toEqual(['checkPermissions', 'openSettings', 'checkPermissions'])
+    await expect(note).toBeHidden()
+
+    await context.close()
+  })
+}
 
 test('the Android app keeps the ordinary picker one tap further in', async ({ browser }) => {
   const { context, page } = await androidApp(browser, 'light')
