@@ -217,9 +217,20 @@ export function parseMvr(data: Uint8Array): MvrResult {
   // 10 MB festival rig carried 218 of them against a single scene XML — and
   // inflating those costs seconds on a laptop and far worse on the phone
   // someone is actually holding. We never draw them.
-  const files = unzipSync(data, { filter: wantedEntry(/\.(xml|gdtf)$/i) })
+  //
+  // The profiles aren't inflated here either, but one at a time as the
+  // fixtures ask for them (`typeFor`), each let go once it has been read.
+  // All at once they were a second copy of every profile, held to the end:
+  // an MVR that is mostly profiles took twice its own size in memory to
+  // read, where one at a time takes about one and a half (desktop Chromium,
+  // measured). A web view that runs out doesn't fail the import: the
+  // Android app closes, and the iPhone app starts over.
+  const wanted = wantedEntry(/\.(xml|gdtf)$/i)
+  const inflate = (match: (name: string) => boolean) =>
+    unzipSync(data, { filter: (file) => wanted(file) && match(file.name.toLowerCase()) })
+  const isScene = (name: string) => name.endsWith('generalscenedescription.xml')
 
-  const sceneBytes = findEntry(files, (name) => name.endsWith('generalscenedescription.xml'))
+  const sceneBytes = findEntry(inflate(isScene), isScene)
   if (!sceneBytes) {
     throw new Error('Not an MVR file — no GeneralSceneDescription.xml inside.')
   }
@@ -236,8 +247,9 @@ export function parseMvr(data: Uint8Array): MvrResult {
     if (existing) return existing
     if (failedTypes.has(spec)) return null
 
-    const wanted = spec.toLowerCase()
-    const bytes = findEntry(files, (name) => name === wanted || name.endsWith(`/${wanted}`))
+    const profile = spec.toLowerCase()
+    const isProfile = (name: string) => name === profile || name.endsWith(`/${profile}`)
+    const bytes = findEntry(inflate(isProfile), isProfile)
     if (!bytes) {
       failedTypes.add(spec)
       return null

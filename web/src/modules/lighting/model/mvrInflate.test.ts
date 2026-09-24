@@ -50,7 +50,7 @@ const gdtfWithModels = (): Uint8Array =>
     'wheels/gobo1.png': new Uint8Array(64),
   })
 
-const mvrWith = (profile: Uint8Array): Uint8Array =>
+const mvrWith = (profile: Uint8Array, extra: Record<string, Uint8Array> = {}): Uint8Array =>
   zipSync({
     'GeneralSceneDescription.xml': strToU8(
       `<?xml version="1.0" encoding="UTF-8"?><GeneralSceneDescription verMajor="1" verMinor="5">` +
@@ -63,6 +63,7 @@ const mvrWith = (profile: Uint8Array): Uint8Array =>
         `</Fixture></ChildList></Layer></Layers></Scene></GeneralSceneDescription>`
     ),
     'Heavy.gdtf': profile,
+    ...extra,
   })
 
 describe('inflating an MVR', () => {
@@ -71,13 +72,30 @@ describe('inflating an MVR', () => {
     const result = parseMvr(mvrWith(gdtfWithModels()))
     expect(result.types[0]?.name).toBe('Robe Heavy')
 
-    // Both unzips: the archive, then the profile inside it.
-    expect(seen).toHaveLength(2)
-    const inner = seen[1]!.filter
+    // Three unzips: the scene, the profile, then the one file inside it.
+    expect(seen).toHaveLength(3)
+    const inner = seen[2]!.filter
     expect(inner).toBeTypeOf('function')
     expect(inner!({ name: 'description.xml', originalSize: 4096 })).toBe(true)
     expect(inner!({ name: 'models/3ds/base.3ds', originalSize: 4_000_000 })).toBe(false)
     expect(inner!({ name: 'wheels/gobo1.png', originalSize: 2_000_000 })).toBe(false)
+  })
+
+  it('inflates each profile on its own, and only once a fixture asks for it', () => {
+    // All at once, the profiles were a second copy of most of the file, held
+    // until the import finished: twice the file's size in memory on a phone.
+    seen.length = 0
+    parseMvr(mvrWith(gdtfWithModels(), { 'Spare.gdtf': gdtfWithModels() }))
+    expect(seen).toHaveLength(3)
+    const [scene, profile] = seen.map((call) => call.filter!)
+    const entry = (name: string) => ({ name, originalSize: 4096 })
+
+    expect(scene!(entry('GeneralSceneDescription.xml'))).toBe(true)
+    expect(scene!(entry('Heavy.gdtf'))).toBe(false)
+    expect(profile!(entry('Heavy.gdtf'))).toBe(true)
+    expect(profile!(entry('GeneralSceneDescription.xml'))).toBe(false)
+    // In the archive, and no fixture is one: never inflated at all.
+    for (const call of seen) expect(call.filter!(entry('Spare.gdtf'))).toBe(false)
   })
 
   it('refuses an entry whose declared size is not a real file', () => {
