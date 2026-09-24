@@ -73,6 +73,29 @@ The app treats a dropped connection as expected weather, not an error:
 - On reconnect the app fetches only what it missed, so catching up is quick
   even on bad Wi-Fi.
 
+## If a screen goes wrong
+
+If something on a screen breaks, you get **Something went wrong on this
+screen** instead of a blank page, with **Try again** and **Reload the app**.
+Your messages are safe either way: anything you sent that the box hasn't
+confirmed is still queued on your device. The sidebar, voice and every other
+module keep working — open the menu and go somewhere else.
+
+Under **Send a crash report** you can pass the error on to the people who
+make Crewbox, with a note about what you were doing if you like. It goes to
+the crew box, which sends it when it next has internet. Nothing is sent unless
+you press **Send report**.
+
+## Send feedback
+
+**Send feedback…** at the bottom of the sidebar, beside the version, is for
+anything you'd tell the people who make Crewbox: something broken, an idea, a
+question, or something that worked. Add your email if you'd like a reply.
+Tick **OK to post this publicly** and a bug or idea may be filed on the public
+issue tracker — message only, never your name or email. It goes through the
+crew box, so it may arrive after the show; if the box is out of reach, your
+phone keeps it and hands it over later.
+
 ## When a new version arrives
 
 If the box has been updated, a pill appears: **New version available —
