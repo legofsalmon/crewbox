@@ -224,6 +224,16 @@ export const config = {
     serviceUrl: process.env.CREWBOX_LICENCE_URL?.trim() || undefined,
   },
 
+  /**
+   * Where crash reports and feedback go (server/src/reports/). Unset, the
+   * studio's own intake at https://letissier.ie; `LETISSIER_API` points a test
+   * or a staging box somewhere else. Nothing is sent without an admin's yes
+   * (crashes) or somebody pressing Send (feedback) either way.
+   */
+  reports: {
+    serviceUrl: process.env.LETISSIER_API?.trim() || undefined,
+  },
+
   captive: {
     enabled:
       process.env.CREWBOX_CAPTIVE === '1'
