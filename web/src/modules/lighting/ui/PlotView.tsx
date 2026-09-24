@@ -408,7 +408,11 @@ function ShareMenu({
     .sort((a, b) => a.createdAt - b.createdAt)
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
+    <div
+      className={styles.overlay}
+      onClick={onClose}
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
+    >
       <div
         className={styles.shareMenu}
         role="dialog"

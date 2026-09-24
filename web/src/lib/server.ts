@@ -14,11 +14,21 @@ interface AlertsPlugin {
   stop(): Promise<void>
 }
 
+/**
+ * Capacitor's App plugin, as the native side puts it on the page. The web app
+ * does not bundle @capacitor/core, so this is the raw bridge: `addListener`
+ * returns a handle rather than a promise. Only Android fires `backButton`.
+ */
+interface AppPlugin {
+  addListener(event: 'backButton', listener: (event: { canGoBack: boolean }) => void): unknown
+  minimizeApp(): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
       isNativePlatform?: () => boolean
-      Plugins?: { CrewboxAlerts?: AlertsPlugin }
+      Plugins?: { CrewboxAlerts?: AlertsPlugin; App?: AppPlugin }
     }
   }
 }
@@ -31,6 +41,11 @@ export function isNative(): boolean {
 /** The Android background-alerts bridge, when present (native builds only). */
 export function nativeAlerts(): AlertsPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxAlerts
+}
+
+/** Capacitor's App plugin: the back button and the app's lifecycle (native only). */
+export function nativeApp(): AppPlugin | undefined {
+  return window.Capacitor?.Plugins?.App
 }
 
 /**
