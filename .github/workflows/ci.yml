@@ -35,6 +35,32 @@ jobs:
           git add -N site
           git diff --exit-code -- site/docs site/sitemap.xml
 
+  # The release's own smoke test, on the Linux box only. It used to run
+  # nowhere but release.yml, so when the licence gate changed what a new box
+  # serves at /setup, every PR stayed green and the v1.0.0 release run was
+  # the first thing to notice. Same steps as the release's Linux box job,
+  # minus publishing, in parallel with the jobs below. The macOS and Windows
+  # boxes stay release-only: those are the expensive runners.
+  box:
+    name: Box binary builds and runs (Linux smoke test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w web
+      - run: node scripts/fetch-livekit.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LIVEKIT_VERSION: ${{ vars.LIVEKIT_VERSION }}
+      - run: node scripts/build-box.mjs
+      - name: Smoke-test the box
+        run: ./scripts/smoke-box.sh build/box/crewbox-*
+
   e2e:
     name: End-to-end (two-device sheet sync, chat, undo)
     runs-on: ubuntu-latest
