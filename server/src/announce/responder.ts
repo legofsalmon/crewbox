@@ -522,12 +522,21 @@ export class Announcer {
     const { srv, txt, a } = this.records()
     // The records we would claim go in the authority section, without the
     // cache-flush bit, which belongs to responses (RFC 6762 §8.1, §10.2).
+    //
+    // The questions ask for a multicast defence, not the unicast one §8.1
+    // suggests. Port 5353 is shared with the machine's own responder, and a
+    // unicast packet to it reaches one socket only (§15.1): mDNSResponder's
+    // on a Mac, an unpredictable one on Windows, usually the newest on
+    // Linux. A defender answering by unicast would tell the OS's responder,
+    // and the box would take a name somebody has. Multicast reaches every
+    // socket on the port. §15.1 asks this of a responder that is not the
+    // first on the port, and on a Mac or Windows the box never is.
     this.send({
       id: 0,
       response: false,
       questions: [
-        { name: instance, type: TYPE_ANY, unicast: true },
-        { name: host, type: TYPE_ANY, unicast: true },
+        { name: instance, type: TYPE_ANY, unicast: false },
+        { name: host, type: TYPE_ANY, unicast: false },
       ],
       answers: [],
       authorities: [srv, txt, a].map((r) => ({ ...r, cacheFlush: false })),

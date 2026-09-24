@@ -184,9 +184,12 @@ describe('claiming a name', () => {
     expect(first?.address).toBe('224.0.0.251')
     expect(first?.port).toBe(5353)
     expect(first?.message.response).toBe(false)
+    // Asking for a multicast defence: 5353 is shared with the machine's own
+    // responder, and a unicast one would reach only one socket on the port,
+    // often not ours (RFC 6762 §15.1).
     expect(first?.message.questions).toEqual([
-      { name: instance(), type: TYPE_ANY, unicast: true },
-      { name: host(), type: TYPE_ANY, unicast: true },
+      { name: instance(), type: TYPE_ANY, unicast: false },
+      { name: host(), type: TYPE_ANY, unicast: false },
     ])
     // What it would claim goes in the authority section, without the
     // cache-flush bit, which only responses carry.

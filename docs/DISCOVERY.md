@@ -336,9 +336,10 @@ What RFC 6762 asks of a responder, and where the code does it
 (`server/src/announce/responder.ts`):
 
 - **Claims its names first.** Three probes 250 ms apart (the first after a
-  random 0 to 250 ms), questions of type ANY with the unicast-response bit,
+  random 0 to 250 ms), questions of type ANY asking for a multicast answer,
   and the records it would claim in the authority section (§8.1). Then two
-  announcements a second apart (§8.3).
+  announcements a second apart (§8.3). §8.1 suggests asking for a unicast
+  answer; why the box doesn't is under [Sharing port 5353](#sharing-port-5353).
 - **Never takes a name another device has.** A reply showing either name in
   use, while probing or afterwards, moves it to the next number: `Event (2)`,
   `crewbox-3f9a1c-2` (§8.1, §9). Two devices probing for one name at once
@@ -372,12 +373,22 @@ What RFC 6762 asks of a responder, and where the code does it
 
 ## Sharing port 5353
 
-The operating system's own responder (mDNSResponder, Avahi, Windows' DNS
-Client) holds 5353 too. The box's socket opens with address reuse, as the
-media watchers' does, so both can listen. Where the operating system still
-refuses, the admin panel says the port would not open and the box tries again
-every fifteen seconds; everything else about the box is unaffected, and crew
-join by address or QR as before.
+The operating system's own responder (mDNSResponder, Avahi, systemd-resolved,
+Windows' DNS Client) holds 5353 too. The box's socket opens with address
+reuse, as the media watchers' does, so both can listen. Where the operating
+system still refuses, the admin panel says the port would not open and the box
+tries again every fifteen seconds; everything else about the box is
+unaffected, and crew join by address or QR as before.
+
+Sharing the port decides how the box asks. Multicast to 5353 reaches every
+socket on it, but a unicast packet reaches only one: mDNSResponder's on a Mac,
+whichever Windows picks, usually the newest on Linux (RFC 6762 §15.1). A
+device defending a name the box probes for may answer by unicast if asked to
+(§5.4), and that answer would go to the operating system's responder, so the
+box would take a name another device holds. So its probes ask for a multicast
+answer, which §15.1 asks of a responder that isn't first on the port; on a Mac
+or Windows the box never is. A phone that asks the box for a unicast answer
+still gets one, since that goes to the phone.
 
 ## What has been checked
 
