@@ -30,7 +30,7 @@
         <h1 id="updating-the-box"><a class="anchor" href="#updating-the-box">Updating the box</a></h1>
 <p>A box checks once a day whether a newer crewbox exists and says so — in the tray icon, and in the admin panel beside the version. It never installs anything on its own. Two separate presses stand between that notice and a restart, and the second one shows you what the restart would interrupt.</p>
 <h2 id="what-youll-see"><a class="anchor" href="#what-youll-see">What you'll see</a></h2>
-<p>When there's news, the admin panel grows a line above the version list: <strong>v0.18.0 is available</strong>, with a link to what changed.</p>
+<p>When there's news, the admin panel grows a line above the version list: <strong>v1.0.1 is available</strong>, with a link to what changed.</p>
 <p>A box with nothing to do says nothing at all. There's no &quot;up to date&quot; row — a row that's almost always the same word is a row nobody reads.</p>
 <h2 id="downloading-changes-nothing"><a class="anchor" href="#downloading-changes-nothing">Downloading changes nothing</a></h2>
 <p><strong>Download</strong> fetches the build and checks it. It does not install it, and it does not restart anything. You can download during a show and install at half four in the morning; the box will still have it.</p>
@@ -54,7 +54,7 @@ Chat, voice and every module go down for about 20 seconds while the box restarts
 <h2 id="checking-a-build-yourself"><a class="anchor" href="#checking-a-build-yourself">Checking a build yourself</a></h2>
 <p>Every release carries a <code>SHA256SUMS-&lt;version&gt;</code> file listing every download's fingerprint, and a signature over it. The box checks both automatically — the signature against keys built into the program, so a stranger who got hold of our GitHub account still couldn't publish something a box would run.</p>
 <p>If you want to check by hand, or your venue's IT wants to:</p>
-<pre><code>sha256sum -c SHA256SUMS-v0.18.0</code></pre>
+<pre><code>sha256sum -c SHA256SUMS-v1.0.0</code></pre>
 <p>The full procedure, including checking the signature, is in <code>docs/UPDATING.md</code> in the source.</p>
 <h2 id="if-something-goes-wrong"><a class="anchor" href="#if-something-goes-wrong">If something goes wrong</a></h2>
 <p><strong>The panel says the install failed.</strong> Read the line — it says what failed and whether the previous version is back. In almost every case it is, and the box you're looking at is the one you had. <strong>Try again</strong> re-uses the download.</p>
