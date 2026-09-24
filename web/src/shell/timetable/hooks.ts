@@ -27,11 +27,23 @@ export function useAgenda(): { stages: StageAgenda[]; acts: Act[]; loaded: boole
   })
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const tick = () => {
       const at = new Date()
       setClock({ now: nowMinutes(at), today: showDate(at) })
-    }, TICK_MS)
-    return () => clearInterval(timer)
+    }
+    const timer = setInterval(tick, TICK_MS)
+    // A phone that has been locked shows the countdown from before it was
+    // put away until the next tick, up to fifteen seconds later, and a
+    // show-log entry written in that time is stamped with whoever was on
+    // then. So tick the moment the page is looked at again.
+    const onVisible = () => {
+      if (!document.hidden) tick()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   return {
