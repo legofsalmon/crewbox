@@ -362,6 +362,12 @@ export interface AppState {
   sendMessage: (channelId: string, body: string) => void
   /** File a show-log entry. Queued locally first, so nothing is lost offline. */
   logIncident: (entry: Omit<QueuedIncident, 'clientMsgId'>) => void
+  /**
+   * Queue another event's unsent messages and show-log entries here, as if
+   * they had been written here, and send them. Resolves with the ones this
+   * device has saved, which are the ones the other event can let go of.
+   */
+  queueMoved: (messages: OutboxEntry[], entries: QueuedIncident[]) => Promise<Set<string>>
   /** Fetch the log's scrollback. Idempotent; the pane calls it on open. */
   loadIncidents: () => Promise<void>
   /** Fetch one page older than the earliest held. False when there was none. */
@@ -722,6 +728,38 @@ export const useStore = create<AppState>()((set, get) => {
     schedulePersistSnapshot()
   }
 
+  /**
+   * Send everything queued: everything unacked goes out again (server dedupes).
+   *
+   * Paced, because the box's flood guard counts frames per socket and does
+   * not care that these are a replay: a phone back from a dead spot with
+   * thirty-five queued messages sent all thirty-five at once and the box
+   * refused five of them. The gap comes from the guard's own numbers (see
+   * OUTBOX_FLUSH_GAP_MS) rather than a constant here that could drift away
+   * from it.
+   *
+   * `generation` is what stops two flushes overlapping. A reconnect during a
+   * flush would otherwise run a second one alongside the first, at twice the
+   * rate, which is the thing being avoided.
+   */
+  async function flushQueues(): Promise<void> {
+    const mine = ++flushGeneration
+    const paced = async (frames: ClientMessage[]): Promise<void> => {
+      for (let i = 0; i < frames.length; i++) {
+        // A drop mid-flush leaves the rest queued, which is where they
+        // belong: the next welcome starts again from the outbox.
+        if (mine !== flushGeneration || get().connection !== 'online') return
+        ws?.send(frames[i]!)
+        if (i < frames.length - 1) await sleep(OUTBOX_FLUSH_GAP_MS)
+      }
+    }
+
+    const outbox = await cache.loadOutbox()
+    // The show log's own queue goes through the same pacing, because it
+    // shares the same counter — see flushOrder.
+    void paced(flushOrder(outbox, queuedIncidents()))
+  }
+
   async function handleWelcome(msg: WelcomeMessage): Promise<void> {
     // Before anything else is taken from it or sent to it. See otherEventHere.
     if (!openEventHere(msg.dbEpoch ?? msg.config.eventId, msg.config.eventName)) return
@@ -902,33 +940,7 @@ export const useStore = create<AppState>()((set, get) => {
       markRead(activeChannel.id, activeChannel.lastSeq)
     }
 
-    // Flush the outbox: everything unacked goes out again (server dedupes).
-    //
-    // Paced, because the box's flood guard counts frames per socket and does
-    // not care that these are a replay: a phone back from a dead spot with
-    // thirty-five queued messages sent all thirty-five at once and the box
-    // refused five of them. The gap comes from the guard's own numbers (see
-    // OUTBOX_FLUSH_GAP_MS) rather than a constant here that could drift away
-    // from it.
-    //
-    // `generation` is what stops two flushes overlapping. A reconnect during
-    // a flush would otherwise run a second one alongside the first, at twice
-    // the rate, which is the thing being avoided.
-    const mine = ++flushGeneration
-    const paced = async (frames: ClientMessage[]): Promise<void> => {
-      for (let i = 0; i < frames.length; i++) {
-        // A drop mid-flush leaves the rest queued, which is where they
-        // belong: the next welcome starts again from the outbox.
-        if (mine !== flushGeneration || get().connection !== 'online') return
-        ws?.send(frames[i]!)
-        if (i < frames.length - 1) await sleep(OUTBOX_FLUSH_GAP_MS)
-      }
-    }
-
-    const outbox = await cache.loadOutbox()
-    // The show log's own queue goes through the same pacing, because it
-    // shares the same counter — see flushOrder.
-    void paced(flushOrder(outbox, queuedIncidents()))
+    await flushQueues()
 
     persistSnapshot()
     void cache.prune(Object.keys(get().channels))
@@ -1382,6 +1394,31 @@ export const useStore = create<AppState>()((set, get) => {
       // has to survive the screen going dark a moment later.
       queueIncident(queued)
       ws?.send({ type: 'logIncident', ...queued })
+    },
+
+    async queueMoved(messages, entries) {
+      for (const entry of messages) await cache.putOutbox(entry)
+      for (const entry of entries) queueIncident(entry)
+      // Read back rather than trusted: the cache swallows a failed write, and
+      // the other event's copy is deleted on the strength of this answer.
+      const saved = new Set([
+        ...(await cache.loadOutbox()).map((entry) => entry.clientMsgId),
+        ...queuedIncidents().map((entry) => entry.clientMsgId),
+      ])
+      const landed = messages.filter((entry) => saved.has(entry.clientMsgId))
+      if (landed.length) {
+        const pending = { ...get().pending }
+        for (const entry of landed) {
+          pending[entry.channelId] = [
+            ...(pending[entry.channelId] ?? []).filter((p) => p.clientMsgId !== entry.clientMsgId),
+            entry,
+          ]
+        }
+        set({ pending })
+      }
+      if (get().connection === 'online') void flushQueues()
+      const moving = new Set([...messages, ...entries].map((entry) => entry.clientMsgId))
+      return new Set([...saved].filter((id) => moving.has(id)))
     },
 
     async loadIncidents() {

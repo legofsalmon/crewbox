@@ -95,6 +95,12 @@ shows a **Backup** row saying how long ago that last ran, so a regime that
 quietly stopped is visible rather than discovered. `deploy/restore.sh` goes
 the other way, onto the spare: it picks the newest backup that actually
 finished and whose database reads, and passes over — out loud — any that
-does not. Updating the box is: stop it, replace the binary (or app), start
-it. Crew phones notice the new version and offer a **Reload** pill; nothing
-they had queued is lost.
+does not. A spare restored from a backup is the same event to every phone,
+and they carry straight on. One started with a fresh database is a new
+event: phones say the box has changed and send it nothing, and each one,
+once it has joined, offers to bring its documents, running order and
+unsent messages across
+([what crew see](/docs/getting-connected#more-than-one-event)). Updating
+the box is: stop it, replace the binary (or app), start it. Crew phones
+notice the new version and offer a **Reload** pill; nothing they had queued
+is lost.

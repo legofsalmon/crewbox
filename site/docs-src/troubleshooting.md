@@ -36,6 +36,15 @@ Symptom-first. Crew problems first, box problems at the end.
   Nothing is lost while this lasts. Everything you can see is on your device,
   and anything you send is queued and delivers the moment the box is back.
 
+## "The box at … has changed"
+
+The box at that address is running another event than the one your device
+has open: a spare box that started afresh, or the next event's box. Your
+device keeps the event you had, sends the new box nothing of it, and waits
+for you to tap **Open it**. After you join, it offers to bring your work
+across. More in
+[Getting connected](/docs/getting-connected#more-than-one-event).
+
 ## "I can hear voice but nobody hears me"
 
 That's the HTTPS microphone rule — the voice bar will say **listen-only**.

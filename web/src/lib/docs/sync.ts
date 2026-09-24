@@ -209,6 +209,28 @@ class SyncManager {
     this.peerCache.delete(room)
   }
 
+  /**
+   * Whether a room has caught up with the box, waiting a while for it to.
+   * False without a connection to the box, or with none in time.
+   */
+  whenSynced(room: string, timeoutMs = 8_000): Promise<boolean> {
+    const provider = this.providers.get(room)
+    if (!provider) return Promise.resolve(false)
+    if (provider.synced) return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const onSync = (synced: boolean) => {
+        if (synced) done(true)
+      }
+      const done = (synced: boolean) => {
+        clearTimeout(timer)
+        provider.off('sync', onSync)
+        resolve(synced)
+      }
+      const timer = setTimeout(() => done(false), timeoutMs)
+      provider.on('sync', onSync)
+    })
+  }
+
   /** Overall status: connected if any room is, connecting if trying, off without a session. */
   status(): SyncStatus {
     if (this.providers.size === 0) return 'off'

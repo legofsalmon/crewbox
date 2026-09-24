@@ -112,3 +112,14 @@ export const INCIDENT_SEVERITY_LABELS: Record<IncidentSeverity, string> = {
 
 /** Longest an entry may be. Long enough for an account, short of an essay. */
 export const MAX_INCIDENT_LENGTH = 2000
+
+/**
+ * How far from the box's clock a show-log entry's time may be.
+ *
+ * A day either side. Back-dating by hours is ordinary — an entry written at
+ * the end of a shift about something at the start of it — and a phone that
+ * never reached NTP on an offline site is off by minutes, not months. What
+ * this stops is the wrong-by-years clock putting the headliner's show stop
+ * in 1970, where nobody would ever find it again.
+ */
+export const INCIDENT_CLOCK_SLACK_MS = 24 * 60 * 60_000

@@ -2895,6 +2895,7 @@ ul {
 
 .boxes-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
@@ -2993,4 +2994,49 @@ button.boxes-pick:hover .boxes-name {
 .boxes-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* A row whose box came back as the open one: its work can come here. */
+.boxes-move {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.boxes-move .admin-btn-primary {
+  height: 36px;
+}
+
+.confirm-go {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 14px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.confirm-go:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.confirm-go:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.confirm-panel .move-items {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
 }

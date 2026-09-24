@@ -169,6 +169,16 @@ test('the app keeps each event’s sheets and running order to its own box', asy
   }
 })
 
+/** The Boxes screen, from the menu. */
+async function openBoxes(page: Page) {
+  await page.getByRole('button', { name: 'Your boxes', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Your boxes' })).toBeVisible()
+}
+
+/** A row of the Boxes screen, by the address it shows. */
+const boxRow = (page: Page, address: string) =>
+  page.getByRole('dialog', { name: 'Your boxes' }).locator('.boxes-row', { hasText: address })
+
 test('a box that comes back with a new database is sent nothing of the old event’s', async ({
   browser,
 }) => {
@@ -221,27 +231,31 @@ test('a box that comes back with a new database is sent nothing of the old event
     await expect(page.getByLabel('Crew server')).toHaveValue('http://127.0.0.1:4311')
     await expect(page.getByRole('button', { name: 'Your other boxes' })).toBeVisible()
     await joinBox(page, box.address, crew, '4444')
-    // ...which starts empty, on this phone as on the box.
+    // ...which asks, once, whether to bring the old event's work across...
+    const offer = page.getByRole('dialog', { name: 'Bring your work across?' })
+    await expect(offer).toContainText('1 shared document')
+    await expect(offer).toContainText('1 unsent message')
+    await offer.getByRole('button', { name: 'Not now' }).click()
+    // ...and without a yes starts empty, on this phone as on the box.
     await expect(page.locator('.msg', { hasText: 'Doors in ten' })).toHaveCount(0)
     await expect(page.locator('.msg', { hasText: queued })).toHaveCount(0)
     await openPatch(page)
     await expect(page.locator('main').getByText(sheet)).toHaveCount(0)
+    expect(await relayOf(box)).toMatchObject({ kept: 0 })
+    // Not asked again, and the old event's row still offers it.
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Patch Sheets' })).toBeVisible()
+    await openBoxes(page)
+    await expect(offer).toHaveCount(0)
+    await expect(
+      boxRow(page, '127.0.0.1:4311').getByRole('button', { name: 'Bring its work here' })
+    ).toBeVisible()
   } finally {
     await box.stop()
     rmSync(box.dataDir, { recursive: true, force: true })
     rmSync(firstDir, { recursive: true, force: true })
   }
 })
-
-/** The Boxes screen, from the menu. */
-async function openBoxes(page: Page) {
-  await page.getByRole('button', { name: 'Your boxes', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Your boxes' })).toBeVisible()
-}
-
-/** A row of the Boxes screen, by the address it shows. */
-const boxRow = (page: Page, address: string) =>
-  page.getByRole('dialog', { name: 'Your boxes' }).locator('.boxes-row', { hasText: address })
 
 test('the Boxes screen opens each event this phone holds, and forgets one', async ({ browser }) => {
   test.setTimeout(150_000)
@@ -365,5 +379,133 @@ test('the app is told where its box has gone, and carries on there', async ({ br
   } finally {
     await box.stop()
     rmSync(box.dataDir, { recursive: true, force: true })
+  }
+})
+
+const openLog = async (page: Page) => {
+  await page
+    .getByRole('button', { name: /Show log/ })
+    .first()
+    .click()
+  await expect(page.getByRole('heading', { name: 'Show log' })).toBeVisible()
+}
+
+test('the old event’s work comes across to the box that took its place', async ({ browser }) => {
+  test.setTimeout(150_000)
+  let box = await startBox(4315, '4646')
+  const firstDir = box.dataDir
+  try {
+    const page = await appDevice(browser)
+    const crew = uniqueName('Move Tech')
+    await joinBox(page, box.address, crew, '4646')
+    // A channel of the old box's own, which the box taking over will not have.
+    await page.getByRole('button', { name: 'New channel' }).click()
+    await page.getByPlaceholder('channel-name').fill('rigging')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: '#rigging' })).toBeVisible()
+    // A sheet, and an act on the running order.
+    const sheet = uniqueName('Main Stage')
+    await openPatch(page)
+    await createSheet(page, sheet)
+
+    // The box goes down with work still to send: a message each to #general
+    // and #rigging, and a show-log entry.
+    await box.stop()
+    await page.getByRole('button', { name: '#general' }).click()
+    await expect(page.locator('.conn-banner')).toBeVisible({ timeout: 15_000 })
+    const toGeneral = 'Barrier moved at stage left'
+    await page.getByPlaceholder(/Message/).fill(toGeneral)
+    await page.getByPlaceholder(/Message/).press('Enter')
+    await page.getByRole('button', { name: '#rigging' }).click()
+    const toRigging = 'Truss at trim height'
+    await page.getByPlaceholder(/Message/).fill(toRigging)
+    await page.getByPlaceholder(/Message/).press('Enter')
+    await expect(page.locator('.msg', { hasText: toRigging })).toHaveClass(/pending/)
+    await openLog(page)
+    await page.getByRole('button', { name: 'Log an entry' }).click()
+    const entry = 'Wind reading over limit'
+    await page.getByLabel('What happened').fill(entry)
+    await page.getByRole('button', { name: 'Log it' }).click()
+    // And one written two days ago, which no box would file now.
+    const queue = 'crewbox:incident-outbox'
+    await expect
+      .poll(() => page.evaluate((key) => localStorage.getItem(key) ?? '', queue))
+      .toContain(entry)
+    await page.evaluate((key) => {
+      const queued: unknown[] = JSON.parse(localStorage.getItem(key) ?? '[]')
+      queued.push({
+        clientMsgId: 'written-two-days-ago',
+        kind: 'note',
+        severity: 'note',
+        body: 'Generator refuelled',
+        at: Date.now() - 2 * 24 * 60 * 60_000,
+        stage: '',
+        actId: '',
+        actName: '',
+      })
+      localStorage.setItem(key, JSON.stringify(queued))
+    }, queue)
+
+    // A spare with a fresh database goes where it was, and the phone joins it.
+    box = await startBox(4315, '4646')
+    await page.reload()
+    await page.getByRole('button', { name: /has changed.*Open it/ }).click()
+    await joinBox(page, box.address, crew, '4646')
+
+    const offer = page.getByRole('dialog', { name: 'Bring your work across?' })
+    for (const item of [
+      '1 shared document',
+      'the running order',
+      '2 unsent messages',
+      '2 unsent show-log entries',
+    ]) {
+      await expect(offer.getByRole('listitem').filter({ hasText: item })).toHaveCount(1)
+    }
+    await offer.getByRole('button', { name: 'Move it here' }).click()
+    const done = page.getByRole('dialog', { name: 'Brought across' })
+    await expect(done).toContainText(
+      'Brought here: 1 document, the running order, 1 message and 1 show-log entry.'
+    )
+    await expect(done).toContainText('1 message stayed behind: its channel is not on this box yet.')
+    await expect(done).toContainText(
+      '1 show-log entry stayed behind: a box only files entries written in the last day.'
+    )
+    await done.getByRole('button', { name: 'Done' }).click()
+    await expect(done).toBeHidden()
+
+    // On the box now, for anybody who joins it: the message in #general, the
+    // sheet, the act, and the entry in the log.
+    const other = await browserAt(browser, box, '4646')
+    await expect(other.locator('.msg', { hasText: toGeneral })).toBeVisible()
+    await expect(page.locator('.msg', { hasText: toGeneral })).not.toHaveClass(/pending/)
+    await openPatch(other)
+    await expect(other.locator('main').getByText(sheet).first()).toBeVisible()
+    await other.goto(`http://${box.address}/m/schedule`)
+    await other.getByRole('button', { name: 'Edit' }).click()
+    await expect(other.getByRole('button', { name: 'Remove Act 1' })).toHaveCount(1)
+    await openLog(other)
+    await expect(other.getByText(entry)).toBeVisible()
+    await expect(other.getByText('Generator refuelled')).toHaveCount(0)
+
+    // The phone keeps no second copy of what came across, and is not asked
+    // again. The message whose channel is not here yet stays with the old
+    // event, whose row offers it again for when an admin has made #rigging.
+    const databases = await page.evaluate(async () =>
+      (await indexedDB.databases()).map((db) => db.name ?? '')
+    )
+    expect(databases.filter((name) => name.startsWith('crewbox-patch-sheet-'))).toEqual([])
+    expect(databases).not.toContain('crewbox-timetable-event')
+    expect(databases.some((name) => /^crewbox@\w+-patch-sheet-/.test(name))).toBe(true)
+    await page.reload()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+    await openBoxes(page)
+    await expect(offer).toHaveCount(0)
+    const old = boxRow(page, 'Last here')
+    await expect(old).toContainText('2 unsent')
+    await expect(old.getByRole('button', { name: 'Bring its work here' })).toBeVisible()
+  } finally {
+    await box.stop()
+    rmSync(box.dataDir, { recursive: true, force: true })
+    rmSync(firstDir, { recursive: true, force: true })
   }
 })

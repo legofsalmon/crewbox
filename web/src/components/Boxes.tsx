@@ -9,7 +9,9 @@ import {
   type Holdings,
 } from '../lib/boxes.ts'
 import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
+import { hasWork, movableOf, type Movable } from '../lib/moveWork.ts'
 import { isNative } from '../lib/server.ts'
+import { MoveWorkDialog } from './MoveWork.tsx'
 
 /** An address as a row shows it: without the scheme, as the join poster prints it. */
 const addressOf = (origin: string): string => origin.replace(/^https?:\/\//i, '')
@@ -29,9 +31,14 @@ export default function Boxes() {
   const switchEvent = useStore((s) => s.switchEvent)
   const openEventAt = useStore((s) => s.openEventAt)
   const events = useSyncExternalStore(subscribeKnownEvents, knownEvents)
+  const signedIn = useStore((s) => s.phase === 'chat')
   const open = openEvent()
   const [holdings, setHoldings] = useState<Record<string, Holdings>>({})
+  // For an event whose box came back as the open one: what could come here.
+  const [movable, setMovable] = useState<Record<string, Movable>>({})
   const [forgetting, setForgetting] = useState<KnownEvent | null>(null)
+  // Held apart from `movable`, which a move changes while its answer is showing.
+  const [moving, setMoving] = useState<{ from: KnownEvent; held: Movable } | null>(null)
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +57,19 @@ export default function Boxes() {
       live = false
     }
   }, [events])
+
+  useEffect(() => {
+    let live = true
+    const replaced = signedIn ? events.filter((event) => open && event.replacedBy === open) : []
+    void Promise.all(replaced.map(async (event) => [event.id, await movableOf(event.id)] as const))
+      .then((entries) => {
+        if (live) setMovable(Object.fromEntries(entries))
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [events, open, signedIn])
 
   const now = Date.now()
   const rows = [...events].sort((a, b) => {
@@ -96,6 +116,10 @@ export default function Boxes() {
     } finally {
       setBusy(false)
     }
+  }
+
+  if (moving) {
+    return <MoveWorkDialog from={moving.from} held={moving.held} onClose={() => setMoving(null)} />
   }
 
   if (forgetting) {
@@ -150,8 +174,9 @@ export default function Boxes() {
           <ul className="boxes-list" aria-label="Events on this device">
             {rows.map((event) => {
               const isOpen = event.id === open
-              const held = holdings[event.id]
-              const unsent = held ? held.unsentMessages + held.unsentEntries : 0
+              const kept = holdings[event.id]
+              const unsent = kept ? kept.unsentMessages + kept.unsentEntries : 0
+              const held = movable[event.id]
               const status = isOpen
                 ? ''
                 : signedInTo(event.id)
@@ -193,6 +218,20 @@ export default function Boxes() {
                     >
                       Forget
                     </button>
+                  )}
+                  {held && hasWork(held) && (
+                    <div className="boxes-move">
+                      <span>Its box started afresh.</span>
+                      <button
+                        className="admin-btn admin-btn-primary"
+                        onClick={() => {
+                          setError(null)
+                          setMoving({ from: event, held })
+                        }}
+                      >
+                        Bring its work here
+                      </button>
+                    </div>
                   )}
                 </li>
               )

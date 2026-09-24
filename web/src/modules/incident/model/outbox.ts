@@ -61,9 +61,13 @@ export function queuedIncidentsOf(event: string | null): QueuedIncident[] {
   return read(storageNameFor(event, KEY))
 }
 
-/** Empty another event's queue, once its entries are somewhere else. */
-export function clearQueuedIncidentsOf(event: string | null): void {
-  write([], storageNameFor(event, KEY))
+/** Take entries out of another event's queue, once they are somewhere else. */
+export function unqueueIncidentsOf(event: string | null, clientMsgIds: ReadonlySet<string>): void {
+  const key = storageNameFor(event, KEY)
+  write(
+    read(key).filter((e) => !clientMsgIds.has(e.clientMsgId)),
+    key
+  )
 }
 
 function read(key: string): QueuedIncident[] {

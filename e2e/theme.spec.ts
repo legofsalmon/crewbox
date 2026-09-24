@@ -389,6 +389,8 @@ for (const scheme of ['light', 'dark'] as const) {
         name: 'Harbour Tour',
         origin: 'http://10.0.0.9',
         seenAt: lastWeek,
+        // Its box came back as this one, so its work can come here.
+        replacedBy: localStorage.getItem('crewbox:db-epoch'),
       })
       localStorage.setItem('crewbox:boxes', JSON.stringify(events))
       localStorage.setItem('crewbox@harbour:token', 'a-sign-in')
@@ -398,7 +400,7 @@ for (const scheme of ['light', 'dark'] as const) {
           {
             clientMsgId: 'q1',
             kind: 'note',
-            severity: 'info',
+            severity: 'note',
             body: 'Barrier moved',
             at: 1,
             stage: 'Main',
@@ -411,6 +413,14 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.reload()
     await expect(page.getByPlaceholder(/Message/)).toBeVisible()
 
+    // Asked whether to bring that work across.
+    const offer = page.getByRole('dialog', { name: 'Bring your work across?' })
+    await expect(offer).toContainText('1 unsent show-log entry')
+    for (const part of ['p', '.move-items li', '.confirm-go', '.confirm-cancel']) {
+      expect(await textContrast(page, `.confirm-panel ${part}`), part).toBeGreaterThan(4.5)
+    }
+    await offer.getByRole('button', { name: 'Not now' }).click()
+
     expect(await textContrast(page, '.sidebar-boxes')).toBeGreaterThan(4.5)
     await page.getByRole('button', { name: 'Your boxes', exact: true }).click()
     const row = '.boxes-row:has-text("Harbour Tour")'
@@ -418,6 +428,8 @@ for (const scheme of ['light', 'dark'] as const) {
     for (const part of ['.boxes-name', '.boxes-detail', '.boxes-unsent', '.admin-btn']) {
       expect(await textContrast(page, `${row} ${part}`), part).toBeGreaterThan(4.5)
     }
+    expect(await textContrast(page, `${row} .boxes-move span`)).toBeGreaterThan(4.5)
+    expect(await textContrast(page, `${row} .boxes-move button`)).toBeGreaterThan(4.5)
     expect(await textContrast(page, '.boxes-badge')).toBeGreaterThan(4.5)
     expect(await textContrast(page, '.boxes-address label')).toBeGreaterThan(4.5)
     expect(await textContrast(page, '.boxes-address .hint')).toBeGreaterThan(4.5)

@@ -1,9 +1,21 @@
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { newId } from '@crewbox/shared'
-import { storageName, storageNameFor } from '../eventScope.ts'
-import { deletedIds, removeIndexEntry, upsertIndexEntry } from './indexDoc.ts'
-import { whenPersisted } from './persistence.ts'
+import { openEvent, storageName, storageNameFor } from '../eventScope.ts'
+import {
+  deletedIds,
+  hasIndexEntry,
+  removeIndexEntry,
+  snapshotIndex,
+  upsertIndexEntry,
+} from './indexDoc.ts'
+import {
+  deleteLocalDatabase,
+  holdsAllOf,
+  MOVED_ORIGIN,
+  readLocalCopy,
+  whenPersisted,
+} from './persistence.ts'
 import { syncManager } from './sync.ts'
 
 /**
@@ -106,6 +118,16 @@ export interface DocStore {
    * not: nothing here opens a database.
    */
   storageOf: (event: string | null) => ModuleStorage
+  /**
+   * Bring another event's copies of this module's documents to the open
+   * event: merged into its own the way two phones' copies merge, listed in
+   * its index, and deleted from the other event once this one is known to
+   * hold them. What was deleted at either event stays deleted.
+   *
+   * `left` is how many are still the other event's: this device could not
+   * show they had been saved here, and a later move can try them again.
+   */
+  moveFrom: (event: string) => Promise<{ moved: number; left: number }>
 }
 
 /** One event's copies of one module's documents, by name. */
@@ -171,9 +193,9 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     }
   }
 
-  function writeRegistry(ids: string[]): void {
+  function writeRegistry(ids: string[], key = storageName(registryKey)): void {
     try {
-      localStorage.setItem(storageName(registryKey), JSON.stringify(ids))
+      localStorage.setItem(key, JSON.stringify(ids))
     } catch {
       // Registry is best-effort; the synced index is the primary listing.
     }
@@ -424,6 +446,59 @@ export function createDocStore(config: DocStoreConfig): DocStore {
         database: (id) => storageNameFor(event, dbPrefix + config.docName(id)),
         indexDatabase: storageNameFor(event, dbPrefix + INDEX_DOC_NAME),
       }
+    },
+
+    moveFrom: async (event) => {
+      const from = store.storageOf(event)
+      const here = store.storageOf(openEvent())
+      // The open event's own would be read, merged into itself, and deleted.
+      if (from.registryKey === here.registryKey) throw new Error('That is the open event.')
+      const ids = from.ids()
+      if (!ids.length || !hasIndexedDb) return { moved: 0, left: ids.length }
+      const theirIndex = await readLocalCopy(from.indexDatabase)
+      // This event's deletions are in its index, which may still be loading.
+      await openIndex().whenLoaded
+      const listed = new Map(
+        (theirIndex ? snapshotIndex(theirIndex, config.defaultTitle) : []).map((e) => [e.id, e])
+      )
+      const index = openIndex().doc
+      const gone = new Set([...(theirIndex ? deletedIds(theirIndex) : []), ...deletedIds(index)])
+      const left: string[] = []
+      let moved = 0
+      for (const id of ids) {
+        const theirs = gone.has(id) ? null : await readLocalCopy(from.database(id))
+        if (theirs && docHasContent(theirs)) {
+          const handle = open(id, { present: false })
+          await handle.whenLoaded
+          Y.applyUpdate(handle.doc, Y.encodeStateAsUpdate(theirs), MOVED_ORIGIN)
+          // Listed as the other event listed it. Another phone may have
+          // brought it here already, and its entry is as good as this one.
+          if (!hasIndexEntry(index, id)) {
+            const entry = listed.get(id)
+            upsertIndexEntry(
+              index,
+              id,
+              entry
+                ? { ...entry.meta, title: entry.title, lastModified: entry.lastModified }
+                : { ...config.indexFields(handle.doc), lastModified: new Date().toISOString() },
+              config.localOrigin
+            )
+          }
+          handle.destroy()
+          // Read back from this device's storage, not the open document: the
+          // other event's copy is deleted next, and only a saved one counts.
+          const landed = await readLocalCopy(here.database(id))
+          if (!landed || !holdsAllOf(landed, theirs)) {
+            left.push(id)
+            continue
+          }
+          moved++
+        }
+        // Here now, deleted, or empty: none of it is the other event's to keep.
+        await deleteLocalDatabase(from.database(id))
+      }
+      writeRegistry(left, from.registryKey)
+      return { moved, left: left.length }
     },
   }
   made.push(store)

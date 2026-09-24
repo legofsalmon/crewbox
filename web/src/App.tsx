@@ -17,6 +17,7 @@ import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import ConnectionHelp from './components/ConnectionHelp.tsx'
 import Boxes from './components/Boxes.tsx'
+import MoveWorkOffer from './components/MoveWork.tsx'
 import { connectionScreen, elsewhereCopy, STUCK_AFTER_MS } from './lib/connscreen.ts'
 import { serverLabel } from './lib/server.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
@@ -66,6 +67,7 @@ export default function App() {
     <>
       {phase === 'join' ? <Join /> : <Shell />}
       {boxesOpen && <Boxes />}
+      <MoveWorkOffer />
     </>
   )
 }

@@ -90,7 +90,7 @@ describe('what a device holds for an event', () => {
         {
           clientMsgId: 'q1',
           kind: 'note',
-          severity: 'info',
+          severity: 'note',
           body: 'Barrier moved',
           at: 1,
           stage: 'Main',

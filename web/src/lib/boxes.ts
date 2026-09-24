@@ -1,5 +1,6 @@
 import { getConfigAt } from './api.ts'
 import { chatDatabase, chatDatabaseName } from './db.ts'
+import { deleteLocalDatabase } from './docs/persistence.ts'
 import { allDocStores } from './docs/store.ts'
 import {
   eventIdFrom,
@@ -34,7 +35,7 @@ export interface Holdings {
 }
 
 /** Every IndexedDB database this device has, or null where the browser will not say. */
-async function databaseNames(): Promise<string[] | null> {
+export async function databaseNames(): Promise<string[] | null> {
   if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') return null
   try {
     return (await indexedDB.databases()).flatMap((db) => (db.name ? [db.name] : []))
@@ -71,15 +72,6 @@ export async function holdingsOf(event: string): Promise<Holdings> {
   }
 }
 
-function deleteDatabase(name: string): Promise<void> {
-  return new Promise((resolve) => {
-    const req = indexedDB.deleteDatabase(name)
-    // Blocked is somebody else still holding it open, another tab perhaps:
-    // the delete goes through when they let go, and nothing here waits.
-    req.onsuccess = req.onerror = req.onblocked = () => resolve()
-  })
-}
-
 function localStorageKeys(): string[] {
   try {
     return Object.keys(localStorage)
@@ -112,7 +104,7 @@ export async function forgetEvent(event: string): Promise<void> {
   for (const name of (await databaseNames()) ?? []) {
     if (isEventDatabase(name, event)) databases.add(name)
   }
-  if (typeof indexedDB !== 'undefined') await Promise.all([...databases].map(deleteDatabase))
+  await Promise.all([...databases].map(deleteLocalDatabase))
   for (const key of keys) forgetPref(key)
   releaseEvent(event)
   forgetEventRecord(event)
@@ -171,10 +163,11 @@ export function lastHere(seenAt: number, now: number): string {
   return `Last here ${then.toLocaleDateString([], { day: 'numeric', month: 'short' })}`
 }
 
-const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
+export const plural = (n: number, one: string, many: string): string =>
+  `${n} ${n === 1 ? one : many}`
 
 /** "a, b and c". */
-const list = (parts: string[]): string =>
+export const list = (parts: string[]): string =>
   parts.length < 2 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
 
 /**

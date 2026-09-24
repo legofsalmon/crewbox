@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ClientMessage, PublicConfig, WelcomeMessage } from '@crewbox/shared'
+import type { QueuedIncident } from './modules/incident/model/outbox.ts'
 
 /**
  * A phone at an address where the box is running another event.
@@ -209,6 +210,46 @@ describe('a box refusing this phone’s session', () => {
     expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
     expect(reload).not.toHaveBeenCalled()
     expect(store.getState().elsewhere?.id).toBe('spare')
+  })
+})
+
+describe('work brought across from the event this box replaced', () => {
+  it('is queued here as if written here, and sent', async () => {
+    localStorage.setItem('crewbox:incident-outbox', '[]')
+    const store = await loadStore()
+    await store.getState().boot()
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    sent.length = 0
+    const saved = await store
+      .getState()
+      .queueMoved([], [{ ...QUEUED, clientMsgId: 'from-the-old-box' } as QueuedIncident])
+    expect(saved).toEqual(new Set(['from-the-old-box']))
+    expect(JSON.parse(localStorage.getItem('crewbox:incident-outbox') ?? '[]')).toMatchObject([
+      { clientMsgId: 'from-the-old-box', body: QUEUED.body },
+    ])
+    await settle()
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: 'logIncident', clientMsgId: 'from-the-old-box' })
+    )
+  })
+
+  it('claims only what it saved, so the other event keeps the rest', async () => {
+    // A chat outbox that could not take the message, which the cache does not
+    // say: the other event's copy is all there is, and must not be let go of.
+    const store = await loadStore()
+    const { cache } = await import('./lib/db.ts')
+    vi.spyOn(cache, 'putOutbox').mockResolvedValue()
+    vi.spyOn(cache, 'loadOutbox').mockResolvedValue([])
+    await store.getState().boot()
+    const saved = await store
+      .getState()
+      .queueMoved(
+        [{ clientMsgId: 'unsent', channelId: 'general-here', body: 'Doors in ten', createdAt: 1 }],
+        []
+      )
+    expect(saved.has('unsent')).toBe(false)
+    expect(store.getState().pending['general-here']).toBeUndefined()
   })
 })
 

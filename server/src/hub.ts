@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import type { WebSocket, WebSocketServer } from 'ws'
 import {
   clientMessageSchema,
+  INCIDENT_CLOCK_SLACK_MS,
   PROTOCOL_VERSION,
   SEND_LIMIT,
   SEND_WINDOW_MS,
@@ -60,17 +61,6 @@ interface Conn {
   /** Cheap fingerprint of the last state message, to avoid resending it. */
   dmxSummary?: string
 }
-
-/**
- * How far from the box's clock a show-log entry's time may be.
- *
- * A day either side. Back-dating by hours is ordinary — an entry written at
- * the end of a shift about something at the start of it — and a phone that
- * never reached NTP on an offline site is off by minutes, not months. What
- * this stops is the wrong-by-years clock putting the headliner's show stop
- * in 1970, where nobody would ever find it again.
- */
-const INCIDENT_CLOCK_SLACK_MS = 24 * 60 * 60_000
 
 /**
  * Second, looser limit for the other state-changing / fan-out message types.

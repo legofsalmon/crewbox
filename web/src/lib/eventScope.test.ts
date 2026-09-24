@@ -204,6 +204,26 @@ describe('the events a device knows', () => {
     ])
   })
 
+  it('stops asking about moving an event’s work once asked, and forgets the link once done', async () => {
+    const scope = await load()
+    scope.rememberEvent({ id: 'friday', name: '', origin: 'http://10.0.0.2' })
+    scope.rememberEvent({ id: 'friday', replacedBy: 'spare' })
+    // "Not now", or a move that left something a later one could bring.
+    scope.answerMove('friday', false)
+    expect(scope.knownEvent('friday')).toMatchObject({ replacedBy: 'spare', moveAnswered: true })
+    // Everything that could come has.
+    scope.answerMove('friday', true)
+    expect(scope.knownEvent('friday')).toEqual({
+      id: 'friday',
+      name: '',
+      origin: 'http://10.0.0.2',
+      seenAt: 0,
+    })
+    // An event it has never heard of is no answer to anything.
+    scope.answerMove('nobody', true)
+    expect(scope.knownEvents()).toHaveLength(1)
+  })
+
   it('reads junk in the slot as nothing known', async () => {
     localStorage.setItem('crewbox:boxes', '{not json')
     expect((await load()).knownEvents()).toEqual([])

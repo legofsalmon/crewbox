@@ -61,13 +61,40 @@ If you type a name that's already taken and the PIN doesn't match, crewbox
 says so — either you've misremembered your PIN, or someone else got to that
 name first. Pick another name, or ask an admin to reset your PIN.
 
+## More than one event
+
+Each event keeps its own messages, documents and unsent work on your
+device, so last week's sheets never turn up at this week's box. To go on to
+the next event's box, sign out and join it. Your device keeps the old event
+too: **Your boxes**, at the top of the menu, lists every event it holds, and
+one tap opens another.
+
+- **"The box at … has changed, and is starting afresh"**, or **"… is running
+  … now"**: the box at that address is running another event than the one
+  you had open, a spare box or next week's. Your device has sent it nothing.
+  Tap **Open it** to join it. Everything from before stays on your device.
+- **"Bring your work across?"** is asked once, after you join a box that
+  started afresh where your event's box was. **Move it here** brings your
+  documents and running order, sends your unsent messages to the channels
+  with the same names, and files your unsent show-log entries in its log.
+  Messages to a person or with a file stay behind, and so do show-log
+  entries written more than a day ago, which no box takes. Messages for a
+  channel the new box doesn't have yet stay too: once an admin has made it,
+  bring them across from that event's row in **Your boxes**. The old chat
+  stays on your device to read.
+- **Forget**, beside an event in **Your boxes**, deletes what your device
+  keeps for it. It says first what that is, and warns you about anything
+  that never reached the box, because nothing else has a copy of that.
+
 ## When it won't connect
 
 The app tells you what it's doing rather than spinning forever:
 
 - **"Can't reach the crew server"** — your phone can't see the box. Check
   you're on the event Wi-Fi (the screen names it), then tap **Retry now**.
-  It also keeps retrying by itself.
+  It also keeps retrying by itself. In the phone apps, a box that has moved
+  to a new address never answers the old one: tap **Your boxes** and type
+  the address from its join poster.
 - **"An iPhone only connects to a name like … over HTTPS"** — in the iPhone
   app, you typed the box's name without `https://`. Type `https://` before
   it if the box has a certificate, or use the box's IP address from the join

@@ -283,6 +283,25 @@ export function rememberEvent(update: Partial<KnownEvent> & { id: string }): voi
   writeKnown([...events.filter((event) => event.id !== update.id), next])
 }
 
+/**
+ * The offer to bring an event's work to the event that took its place has
+ * been answered.
+ *
+ * `settled` once nothing is left that a later move could still bring: then
+ * the two events have nothing more to do with each other. Otherwise the
+ * question is not asked again, and the event's row goes on offering it.
+ */
+export function answerMove(id: string, settled: boolean): void {
+  const event = knownEvent(id)
+  if (!event) return
+  if (!settled) {
+    rememberEvent({ id, moveAnswered: true })
+    return
+  }
+  const { replacedBy: _, moveAnswered: __, ...rest } = event
+  writeKnown([...knownEvents().filter((known) => known.id !== id), rest])
+}
+
 /** Stop listing an event, and anything pointing at it. */
 export function forgetEventRecord(id: string): void {
   writeKnown(
