@@ -112,7 +112,8 @@ the way a printer does (multicast DNS, often called Bonjour). Anyone on
 that network can hear it, and it says only what the join screen already
 shows anybody who reaches the box: the event's name, the box's version,
 whether it has been set up, the name on its certificate, and the event's
-ID, a random string that tells one event's box from another's. Never a
+ID, a random string that tells one event's box from another's. A box an
+admin has said carries on another event gives that event's ID too. Never a
 PIN, a password or the Wi-Fi's. It is not announced on a lighting or media
 network the box listens to, and it never leaves the venue. An admin can
 turn it off under **Admin → This box**.

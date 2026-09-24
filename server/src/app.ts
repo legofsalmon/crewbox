@@ -44,6 +44,7 @@ import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
 import { ANNOUNCE_KEY, ANNOUNCE_SETTINGS, type AnnounceStatus } from './announce/index.ts'
 import { boxIdentity, hostToSign, NONCE_RE } from './identity.ts'
+import { continuesOf, EVENT_ID, saveContinues } from './continues.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, BUNDLE_PAGE, type MetricsStore } from './audit/metrics.ts'
@@ -230,6 +231,14 @@ const settingsPatchSchema = z.object({
   adminPassword: z.string().min(8).max(128).optional(),
   /** Whether the box announces itself on the crew network (server/src/announce). */
   announce: z.enum(ANNOUNCE_SETTINGS).optional(),
+  /**
+   * The event this box carries on (server/src/continues.ts), or null for
+   * none: its ID as phones hold it, and its name as the admin's device knew it.
+   */
+  continues: z
+    .object({ id: z.string().regex(EVENT_ID, 'not an event ID'), name: z.string().trim().max(64) })
+    .nullable()
+    .optional(),
 })
 
 /**
@@ -689,6 +698,12 @@ export function buildApp({
     return { concealedPct: worst.concealedPct, lossPct: worst.lossPct, devices: worst.devices }
   }
 
+  /** The event an admin said this box carries on, as phones are told it: its ID. */
+  const continuesField = (): { continues?: string } => {
+    const continued = continuesOf(store)
+    return continued ? { continues: continued.id } : {}
+  }
+
   const publicConfig = (): PublicConfig => ({
     eventName: store.getSetting('eventName') ?? '',
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
@@ -696,6 +711,7 @@ export function buildApp({
     modules,
     eventId: store.dbEpoch(),
     eventKey: identity.publicKey,
+    ...continuesField(),
     // Only ever a mark. Nothing the crew use reads this to decide anything.
     ...(licence?.effects().watermark ? { unlicensed: true } : {}),
   })
@@ -1400,14 +1416,15 @@ export function buildApp({
       store.createSession(token, existing.id)
       const { pinHash: _, ...user } = existing
       // The event with the token, so a phone files the sign-in under the
-      // event it belongs to (see PublicConfig.eventId), and the key it will
-      // hold that event's box to from then on.
+      // event it belongs to (see PublicConfig.eventId), the key it will hold
+      // that event's box to from then on, and any event it carries on.
       return {
         token,
         user,
         created: false,
         eventId: store.dbEpoch(),
         eventKey: identity.publicKey,
+        ...continuesField(),
       }
     }
 
@@ -1429,7 +1446,14 @@ export function buildApp({
     const general = store.getChannelByName(HOME_CHANNEL)
     if (general) hub.systemMessage(general.id, `${user.name} joined`)
 
-    return { token, user, created: true, eventId: store.dbEpoch(), eventKey: identity.publicKey }
+    return {
+      token,
+      user,
+      created: true,
+      eventId: store.dbEpoch(),
+      eventKey: identity.publicKey,
+      ...continuesField(),
+    }
   })
 
   fastify.get('/api/me', (req, reply) => {
@@ -2766,7 +2790,11 @@ export function buildApp({
       ...(voiceQuality ? { voiceQuality } : {}),
     })
     return {
-      settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },
+      settings: {
+        eventName: publicConfig().eventName,
+        wifiSsid: publicConfig().wifiSsid,
+        continues: continuesOf(store),
+      },
       serverInfo: {
         version: APP_VERSION,
         // Null when this box was told not to check, which the panel shows as
@@ -2864,8 +2892,20 @@ export function buildApp({
           'This box takes its announcement setting from CREWBOX_ANNOUNCE in its service file. Change it there and restart, or unset it to choose here.',
       })
     }
+    // Refused before anything is saved, like the two above. An event can't
+    // take over from itself, and a phone told so would offer to move its
+    // work into the event it is already in.
+    if (parsed.data.continues?.id === store.dbEpoch()) {
+      return reply.code(400).send({ error: 'This box is running that event already.' })
+    }
     if (parsed.data.announce !== undefined) {
       store.setSetting(ANNOUNCE_KEY, parsed.data.announce)
+    }
+    // Not withheld for want of a licence, as the event PIN is not. It is
+    // said mid-show, when an event's box has died and its spare had no
+    // backup, and all it does is let crew bring their own work across.
+    if (parsed.data.continues !== undefined) {
+      saveContinues(store, parsed.data.continues)
     }
     if (parsed.data.eventName !== undefined) {
       store.setSetting('eventName', parsed.data.eventName)
@@ -2910,6 +2950,7 @@ export function buildApp({
         eventName: config.eventName,
         wifiSsid: config.wifiSsid,
         eventPin: effectiveEventPin(),
+        continues: continuesOf(store),
       },
       network: networkPayload(),
       ...(reissued ? { adminToken: reissued } : {}),

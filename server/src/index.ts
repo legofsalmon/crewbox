@@ -43,6 +43,7 @@ import {
 } from './box.ts'
 import { startCaptive } from './captive.ts'
 import { certNames } from './environment.ts'
+import { continuesOf } from './continues.ts'
 import {
   canRunLiveKit,
   livekitCredentials,
@@ -525,15 +526,19 @@ async function main(): Promise<void> {
     port: config.port,
     // What the join screen already tells anyone before sign-in, and nothing
     // more: never a PIN, a password or the Wi-Fi's.
-    details: () => ({
-      eventId: store.dbEpoch(),
-      eventName: store.getSetting('eventName') ?? '',
-      version: APP_VERSION,
-      protocol: PROTOCOL_VERSION,
-      setUp: store.getSetting(SETUP_DONE_KEY) === '1' || store.countUsers() > 0,
-      tls: Boolean(tls),
-      ...(certName ? { tlsName: certName } : {}),
-    }),
+    details: () => {
+      const continued = continuesOf(store)
+      return {
+        eventId: store.dbEpoch(),
+        eventName: store.getSetting('eventName') ?? '',
+        version: APP_VERSION,
+        protocol: PROTOCOL_VERSION,
+        setUp: store.getSetting(SETUP_DONE_KEY) === '1' || store.countUsers() > 0,
+        tls: Boolean(tls),
+        ...(certName ? { tlsName: certName } : {}),
+        ...(continued ? { continues: continued.id } : {}),
+      }
+    },
     log: console,
   })
 

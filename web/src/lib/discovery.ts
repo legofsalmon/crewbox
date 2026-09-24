@@ -228,6 +228,12 @@ export interface NearbyBox {
   setUp: boolean
   /** Another box on the list goes by the same event or the same name. */
   lookalike: boolean
+  /**
+   * The name of an event this device holds that the box says it carries on
+   * (its TXT record's `continues`), '' for one with no name. A claim, as the
+   * rest of the announcement is: the box is asked before it is used.
+   */
+  carries?: string
 }
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
@@ -272,7 +278,8 @@ const sameName = (name: string): string => name.trim().toLocaleLowerCase()
  * What the list shows, from what was found and the events this device holds.
  *
  * - `boxes`: those running an event this device does not hold, one row each,
- *   the ones set up first, then by name and address.
+ *   the ones set up first, then by name and address. A box saying it carries
+ *   on an event this device holds says which.
  * - `here`: events this device holds whose box is announcing at the very
  *   address the device knows it by, so its row can say it is on this Wi-Fi.
  *
@@ -298,6 +305,8 @@ export function nearby(
       continue
     }
     if (byOrigin.has(origin)) continue
+    const continues = eventIdFrom(service.txt.continues)
+    const carried = continues ? known.find((event) => event.id === continues) : undefined
     byOrigin.set(origin, {
       key: service.name,
       origin,
@@ -306,6 +315,7 @@ export function nearby(
       eventName: (service.txt.name ?? '').trim(),
       setUp: service.txt.setup !== '0',
       lookalike: false,
+      ...(carried ? { carries: carried.name.trim() } : {}),
     })
   }
   const boxes = [...byOrigin.values()]

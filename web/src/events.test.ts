@@ -46,7 +46,9 @@ vi.mock('./lib/ws.ts', () => ({
 
 const api = {
   getConfig: vi.fn<() => Promise<PublicConfig>>(),
-  join: vi.fn<() => Promise<{ token: string; eventId?: string; eventKey?: string }>>(),
+  join: vi.fn<
+    () => Promise<{ token: string; eventId?: string; eventKey?: string; continues?: string }>
+  >(),
 }
 vi.mock('./lib/api.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./lib/api.ts')>()),
@@ -387,6 +389,135 @@ describe('a box refusing this phone’s session', () => {
     expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
     expect(reload).not.toHaveBeenCalled()
     expect(store.getState().elsewhere?.id).toBe('spare')
+  })
+})
+
+describe('a box saying which event it carries on', () => {
+  // Its admin's word (Admin → This box): a spare with no backup, or a bigger
+  // box, taking over from an event's box. Phones holding that event offer to
+  // bring its work across once they have joined, at whatever address.
+
+  /** Friday's welcome, from a box its admin says carries on `continues`. */
+  const carrying = (eventId: string, continues: string, eventName?: string): WelcomeMessage => {
+    const message = welcome(eventId, eventName)
+    return { ...message, config: { ...message.config, continues } }
+  }
+
+  /** Thursday's event, held at another box's address. */
+  async function holdThursday() {
+    const { rememberEvent } = await import('./lib/eventScope.ts')
+    rememberEvent({ id: 'thursday', name: 'Quay Stage', origin: 'http://10.0.0.4:8787', seenAt: 1 })
+  }
+
+  it('is offered once the phone is on the box, from the welcome', async () => {
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    const { toOffer } = await import('./lib/moveWork.ts')
+    const { knownEvents } = await import('./lib/eventScope.ts')
+    await holdThursday()
+    await store.getState().boot()
+    socket!.onMessage(carrying('friday', 'thursday'))
+    await settle()
+    expect(knownEvent('thursday')).toMatchObject({
+      origin: 'http://10.0.0.4:8787',
+      replacedBy: 'friday',
+      continuedBy: 'friday',
+    })
+    expect(toOffer(knownEvents(), 'friday')?.id).toBe('thursday')
+    // Nothing of Thursday's has gone anywhere by itself.
+    expect(sent.map((m) => m.type)).not.toContain('send')
+  })
+
+  it('is heard live from a box already joined', async () => {
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdThursday()
+    await store.getState().boot()
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    expect(knownEvent('thursday')?.continuedBy).toBeUndefined()
+    socket!.onMessage({ type: 'config', config: { ...config('friday'), continues: 'thursday' } })
+    expect(knownEvent('thursday')).toMatchObject({ replacedBy: 'friday', continuedBy: 'friday' })
+  })
+
+  it('is heard from the box’s config at the start, before the socket has said anything', async () => {
+    api.getConfig.mockResolvedValue({ ...config('friday'), continues: 'thursday' })
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdThursday()
+    await store.getState().boot()
+    await settle()
+    expect(knownEvent('thursday')).toMatchObject({ replacedBy: 'friday', continuedBy: 'friday' })
+  })
+
+  it('is taken only from the box running the open event', async () => {
+    // A box at this address running another event can say what it likes;
+    // nothing is offered until the crew member has joined it.
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdThursday()
+    await store.getState().boot()
+    socket!.onMessage(carrying('spare', 'thursday'))
+    await settle()
+    expect(knownEvent('thursday')?.continuedBy).toBeUndefined()
+    expect(knownEvent('thursday')?.replacedBy).toBeUndefined()
+  })
+
+  it('says a box at this address carries on the open event, where its admin said so', async () => {
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().boot()
+    socket!.onMessage(carrying('spare', 'friday', 'Harbour Fest 2'))
+    await settle()
+    expect(sent).toEqual([])
+    expect(store.getState().elsewhere).toEqual({
+      id: 'spare',
+      name: 'Harbour Fest 2',
+      continues: 'friday',
+      carriesOpen: true,
+    })
+    expect(knownEvent('friday')?.replacedBy).toBe('spare')
+  })
+
+  it('takes a box at this address carrying on another event as no stand-in for this one', async () => {
+    // The next event's box, set up to carry on an event of its own: its
+    // admin has said which, and it isn't this one.
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().boot()
+    socket!.onMessage(carrying('spare', 'thursday'))
+    await settle()
+    expect(store.getState().elsewhere).toEqual({
+      id: 'spare',
+      name: 'Harbour Fest',
+      continues: 'thursday',
+    })
+    expect(knownEvent('friday')?.replacedBy).toBeUndefined()
+    expect(knownEvent('spare')).toMatchObject({ origin: location.origin })
+  })
+
+  it('decides, on joining a box at this address, whether it stands in for the open event', async () => {
+    /** Friday's record after joining the spare now at Friday's address. */
+    const joinAt = async (continues?: string) => {
+      localStorage.clear()
+      localStorage.setItem('crewbox:db-epoch', 'friday')
+      const store = await loadStore()
+      const { knownEvent, rememberEvent } = await import('./lib/eventScope.ts')
+      rememberEvent({ id: 'friday', name: 'Harbour Fest', origin: location.origin, seenAt: 1 })
+      api.join.mockResolvedValue({
+        token: 'spares-sign-in',
+        eventId: 'spare',
+        ...(continues ? { continues } : {}),
+      })
+      await store.getState().join('Sam', '4242', '1234')
+      return knownEvent('friday')
+    }
+    // A guess from the address, which only Your boxes acts on...
+    expect((await joinAt())?.replacedBy).toBe('spare')
+    // ...its admin's word...
+    expect((await joinAt('friday'))?.replacedBy).toBe('spare')
+    // ...and its admin's word that it is some other event's.
+    expect((await joinAt('thursday'))?.replacedBy).toBeUndefined()
   })
 })
 

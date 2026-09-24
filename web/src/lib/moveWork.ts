@@ -17,15 +17,18 @@ import {
  * A spare box with a fresh database, put where the event's box was, knows
  * nothing of the event: its channels have IDs of their own, and it has none
  * of the documents. A phone keeps the old event's work apart
- * (lib/eventScope.ts), and once it has joined the new box it is asked, once,
- * whether to bring that work across. Documents and the running order merge
- * the way phones' copies always merge, unsent messages go to the channels
- * with the same names, and unsent show-log entries to the new box's log. The
- * old chat stays on the phone to read.
+ * (lib/eventScope.ts), and can bring it across once it has joined the new box.
+ * Documents and the running order merge the way phones' copies always merge,
+ * unsent messages go to the channels with the same names, and unsent show-log
+ * entries to the new box's log. The old chat stays on the phone to read.
  *
- * Nothing tells a phone whether the new box carries on the same event or
- * starts another, which is for an admin to say in a later phase. So it is a
- * question, and "Not now" leaves everything where it was.
+ * Whether the new box carries on the event or starts another is its admin's
+ * to say (Admin → This box, server/src/continues.ts). Where one has, the
+ * phone asks, once, and the new box can be at any address. Where none has,
+ * a new database at the event's address is as likely to be next week's event
+ * as a spare, and a question would invite last week's sheets into it: the
+ * old event's row in Your boxes offers the move, for somebody who goes
+ * looking. Either way "Not now" leaves everything where it was.
  */
 
 /** What a device holds for an event that could be brought across. */
@@ -43,8 +46,8 @@ export const hasWork = (held: Movable): boolean =>
   held.documents + held.acts + held.unsentMessages + held.unsentEntries > 0
 
 /**
- * The event to ask about, if any: one whose box came back as the open one,
- * and not asked about yet. The latest first, where there are several.
+ * The event to ask about, if any: one the open event's box says it carries
+ * on, and not asked about yet. The latest first, where there are several.
  */
 export function toOffer(
   events: readonly KnownEvent[],
@@ -52,9 +55,18 @@ export function toOffer(
 ): KnownEvent | undefined {
   if (!open) return undefined
   return events
-    .filter((event) => event.replacedBy === open && !event.moveAnswered)
+    .filter(
+      (event) => event.replacedBy === open && event.continuedBy === open && !event.moveAnswered
+    )
     .sort((a, b) => b.seenAt - a.seenAt)[0]
 }
+
+/**
+ * Whether the open event's box says it carries this one on, rather than
+ * only standing where its box stood.
+ */
+export const carriedHere = (event: KnownEvent): boolean =>
+  event.continuedBy !== undefined && event.continuedBy === event.replacedBy
 
 /** Why an unsent message stayed behind. */
 export type Staying = 'person' | 'file' | 'channel' | 'unsaved'
@@ -210,10 +222,18 @@ export async function moveWork(from: string): Promise<MoveResult> {
 /** The offer: what this device holds, from which event. */
 export function offerCopy(from: KnownEvent, held: Movable): { lede: string; items: string[] } {
   const name = from.name.trim()
-  return {
-    lede: name
+  let lede: string
+  if (carriedHere(from)) {
+    lede = name
+      ? `This box carries on ${name}, and this phone still has work from it:`
+      : 'This box carries on an event this phone still has work from:'
+  } else {
+    lede = name
       ? `This phone still has work from ${name}, from before this box started afresh:`
-      : 'This phone still has work from before this box started afresh:',
+      : 'This phone still has work from before this box started afresh:'
+  }
+  return {
+    lede,
     items: [
       ...(held.documents ? [plural(held.documents, 'shared document', 'shared documents')] : []),
       ...(held.acts ? ['the running order'] : []),

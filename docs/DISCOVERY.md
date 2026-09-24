@@ -60,15 +60,16 @@ One service instance of type **`_crewbox._tcp`** in `local.`:
 TXT keys, all lower case. An app must ignore keys it does not know, since
 later boxes may add some.
 
-| Key       | Value                                                                                                                               |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `txtvers` | `1`, the version of this table.                                                                                                     |
-| `id`      | The event's ID (`PublicConfig.eventId`): its database's, minted once. Tells one event's box from another's at the same address.     |
-| `name`    | The event's name in full, up to 250 bytes, where the instance label may have been cut or numbered. Empty before the event is named. |
-| `ver`     | The box's version, as `/api/health` gives it.                                                                                       |
-| `proto`   | The wire protocol's generation (`PROTOCOL_VERSION`).                                                                                |
-| `setup`   | `1` once the box has been set up, `0` for a new box nobody has.                                                                     |
-| `tls`     | Present when the crew port speaks HTTPS. Its value, when there is one, is the name on the certificate, which is what to connect by. |
+| Key         | Value                                                                                                                               |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `txtvers`   | `1`, the version of this table.                                                                                                     |
+| `id`        | The event's ID (`PublicConfig.eventId`): its database's, minted once. Tells one event's box from another's at the same address.     |
+| `name`      | The event's name in full, up to 250 bytes, where the instance label may have been cut or numbered. Empty before the event is named. |
+| `ver`       | The box's version, as `/api/health` gives it.                                                                                       |
+| `proto`     | The wire protocol's generation (`PROTOCOL_VERSION`).                                                                                |
+| `setup`     | `1` once the box has been set up, `0` for a new box nobody has.                                                                     |
+| `tls`       | Present when the crew port speaks HTTPS. Its value, when there is one, is the name on the certificate, which is what to connect by. |
+| `continues` | Present when an admin has said this box carries on another event: that event's ID ([below](#a-box-that-carries-on-another-event)).  |
 
 Nothing else, and never a PIN, a password or the Wi-Fi's: the TXT record says
 what the join screen already shows anybody who reaches the box. The privacy
@@ -338,6 +339,57 @@ the phone knows it by, is sent a fresh challenge and nothing else
   a port forward. Its address can still be typed.
 - **Never while the app reaches its box**, even where the same box announces
   itself at a second address too.
+
+## A box that carries on another event
+
+A spare with no backup, or a bigger box brought in mid-event, starts with a
+database of its own, so to every phone it is another event: they send it
+nothing of the one they had ([above](#how-the-apps-check-a-box)). What it can
+be given is its admin's word that it carries that event on
+(`server/src/continues.ts`):
+
+- **Where it is said.** **Admin → This box → Carries on another event** lists
+  the events the admin's device has been on, other than this box's own, since
+  an event's ID is nothing anybody types. The panel reads it from
+  `GET /api/admin/settings` as `continues: { id, name } | null` and sets it with
+  `PATCH /api/admin/settings`, which refuses the box's own event and anything
+  that isn't an event ID. It is kept in the settings table under `continues`,
+  a storage name. It stays open on an unlicensed box, since it is how a spare
+  takes over mid-show.
+- **Where the box says it.** The event's ID, and nothing else, as `continues`
+  in `/api/config`, in the answer to `/api/join`, in the welcome's config and
+  live to phones already on the box, and in the TXT record.
+- **It is not a proof.** Only the old event's own database could sign for it,
+  and that is on the box that has gone. So a phone takes it only as leave to
+  ask. Nothing moves without a yes, and nothing about the old event's box
+  changes: the new box stays another event, with its own key, and the old
+  event keeps its address and key, for when its box is back.
+
+What the apps do with it (`web/src/lib/eventScope.ts`, `lib/moveWork.ts`):
+
+- **From the box running the open event only.** A phone that has joined a box
+  saying it carries on an event this phone holds asks, once,
+  _Bring your work across?_, wherever the old event's box was. The old event's
+  row in **Your boxes** keeps the offer, saying _This box carries it on._ The
+  question is asked once for each box that says so; another box saying it
+  carries on the same event asks again.
+- **Not without it.** A new database at the address a phone knows its event
+  by is as likely to be next week's event as a spare, and a question would
+  invite last week's sheets into it. So nothing asks: the old event's row in
+  **Your boxes** offers the move, saying _Its box started afresh_, for
+  somebody who goes looking. A box at that address saying it carries on some
+  other event doesn't get even that.
+- **Before joining,** a box at the phone's own address saying it carries on
+  the open event says so on the screen, _The box at … has changed, and
+  carries on “…”_, and still waits for **Open it**. In the list of boxes on
+  this Wi-Fi, a box whose TXT record says it carries on an event this phone
+  holds says _Carries on …_, with the name this phone knows. Picking it is as
+  for any box.
+
+What moves is the same either way: documents and the running order merge,
+unsent messages go to the channels with the same names, and unsent show-log
+entries from the last day go to the new box's log. The chat history comes
+back only from a backup.
 
 ## How it behaves on the network
 

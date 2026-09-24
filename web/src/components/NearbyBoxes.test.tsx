@@ -277,6 +277,29 @@ describe('the Boxes screen', () => {
     expect(button('Join Harbour Fest')).toBeUndefined()
   })
 
+  it('says which of this device’s events a box carries on, as its admin said', async () => {
+    rememberEvent({ id: 'friday', name: 'Quay Stage', origin: 'http://10.0.0.2', seenAt: 1 })
+    rememberEvent({ id: 'thursday', name: '', origin: 'http://10.0.0.4', seenAt: 1 })
+    inApp('android')
+    await render(<Boxes />)
+    const carrying = (name: string, address: string, continues: string) =>
+      service({ name, addresses: [address], txt: { id: name, name, setup: '1', continues } })
+    plugin.emit('boxes', {
+      boxes: [
+        carrying('A', '10.0.0.9', 'friday'),
+        carrying('B', '10.0.0.10', 'thursday'),
+        carrying('C', '10.0.0.11', 'wednesday'),
+      ],
+    })
+    const rows = [...(section()?.querySelectorAll('li') ?? [])].map((row) => row.textContent)
+    expect(rows).toEqual([
+      'A10.0.0.9:8080Carries on Quay StageJoin',
+      'B10.0.0.10:8080Carries on an event this phone hasJoin',
+      // Not one this device holds: the box's word would be all there is.
+      'C10.0.0.11:8080Join',
+    ])
+  })
+
   it('offers nothing to join on a box nobody has set up, and says how', async () => {
     inApp('android')
     await render(<Boxes />)

@@ -240,6 +240,13 @@ export interface KnownEvent {
   /** The offer to move this event's work across has been answered. */
   moveAnswered?: boolean
   /**
+   * The event whose box says it carries this one on, as its admin told it
+   * to (Admin → This box): a spare with no backup, or a bigger box. Kept
+   * once this device has heard it from that box, so the offer to move the
+   * work across is made once for each box that says so.
+   */
+  continuedBy?: string
+  /**
    * The event's public key, kept from the first box that let this device
    * in for it and never replaced by a box's say-so: what a box at another
    * address has to sign with to be followed there (lib/identity.ts).
@@ -311,6 +318,24 @@ export function eventMoved(id: string, origin: string): void {
 }
 
 /**
+ * The open event's box says it carries this event on: its admin said so
+ * (server/src/continues.ts). The work this device holds for it can go there,
+ * and is offered once, unless this box has said so before.
+ *
+ * The admin's word, not a proof, which only this event's own box could give.
+ * So it is only ever asked about, of a crew member who has joined that box.
+ */
+export function carriedOn(id: string, by: string): void {
+  const event = knownEvent(id)
+  if (!event || id === by || event.continuedBy === by) return
+  const { moveAnswered: _, ...rest } = event
+  writeKnown([
+    ...knownEvents().filter((known) => known.id !== id),
+    { ...rest, replacedBy: by, continuedBy: by },
+  ])
+}
+
+/**
  * Keep an event's public key, if this device has none for it yet.
  *
  * Only ever the first: a box offering another key for an event this device
@@ -347,9 +372,14 @@ export function forgetEventRecord(id: string): void {
     knownEvents()
       .filter((event) => event.id !== id)
       .map((event) => {
-        if (event.replacedBy !== id) return event
-        const { replacedBy: _, moveAnswered: __, ...rest } = event
-        return rest
+        if (event.replacedBy !== id && event.continuedBy !== id) return event
+        const next = { ...event }
+        if (next.replacedBy === id) {
+          delete next.replacedBy
+          delete next.moveAnswered
+        }
+        if (next.continuedBy === id) delete next.continuedBy
+        return next
       })
   )
 }

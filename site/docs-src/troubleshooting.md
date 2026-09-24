@@ -48,7 +48,9 @@ The box at that address is running another event than the one your device
 has open: a spare box that started afresh, or the next event's box. Your
 device keeps the event you had, sends the new box nothing of it, and waits
 for you to tap **Open it**. After you join, it offers to bring your work
-across. More in
+across when whoever runs the box has said it carries your event on, and
+otherwise **Bring its work here**, beside the old event in **Your boxes**,
+does it. More in
 [Getting connected](/docs/getting-connected#more-than-one-event).
 
 ## "I can hear voice but nobody hears me"

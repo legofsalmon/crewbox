@@ -71,8 +71,22 @@ export interface AnnounceStatus {
 
 export type AnnounceSetting = 'auto' | 'on' | 'off'
 
+/**
+ * The event a box carries on, as its admin said (server/src/continues.ts):
+ * its ID, and its name as the admin's device knew it.
+ */
+export interface Continues {
+  id: string
+  name: string
+}
+
 export interface AdminSettings {
-  settings: { eventName: string; wifiSsid: string }
+  settings: {
+    eventName: string
+    wifiSsid: string
+    /** Null when it carries on no other event; absent from a box that predates it. */
+    continues?: Continues | null
+  }
   network: AdminNetwork
   serverInfo: {
     version: string
@@ -164,6 +178,8 @@ export function join(input: { name: string; eventPin: string; personalPin: strin
   eventId?: string
   /** That event's public key (PublicConfig.eventKey); absent from a box that predates it. */
   eventKey?: string
+  /** The event its admin says it carries on (PublicConfig.continues), if any. */
+  continues?: string
 }> {
   return request('/api/join', {
     method: 'POST',
@@ -352,9 +368,11 @@ export function adminUpdateSettings(
     dmxIface?: string
     dmxUniverses?: string
     announce?: AnnounceSetting
+    /** The event this box carries on; null for none. */
+    continues?: Continues | null
   }
 ): Promise<{
-  settings: { eventName: string; wifiSsid: string; eventPin: string }
+  settings: { eventName: string; wifiSsid: string; eventPin: string; continues?: Continues | null }
   network: AdminNetwork
   /**
    * Present only when the admin password changed. Changing it revokes every

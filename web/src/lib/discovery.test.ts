@@ -166,6 +166,24 @@ describe('what the list shows', () => {
     expect(boxes[0]).toMatchObject({ setUp: false, eventName: '' })
   })
 
+  it('says which event of this device’s a box carries on, by the name this device knows', () => {
+    const carries = (continues: string) =>
+      nearby(
+        [service({ addresses: ['10.0.0.9'], txt: { ...service().txt, id: 'spare', continues } })],
+        [
+          known({ id: 'friday', name: ' Harbour Fest ', origin: 'http://10.0.0.2' }),
+          known({ id: 'thursday', origin: 'http://10.0.0.4' }),
+        ]
+      ).boxes[0]?.carries
+    expect(carries('friday')).toBe('Harbour Fest')
+    expect(carries('thursday')).toBe('')
+    // An event this device never had, or no event at all, says nothing: a
+    // box may claim anything, and its name here would be the box's word.
+    expect(carries('wednesday')).toBeUndefined()
+    expect(carries('../friday')).toBeUndefined()
+    expect(carries('')).toBeUndefined()
+  })
+
   it('lists a box whose announced ID could not be an event, for the box itself to answer', () => {
     const { boxes } = nearby([service({ txt: { id: 'not/an:id', name: 'Odd' } })], [])
     expect(boxes[0]).toMatchObject({ eventId: undefined, eventName: 'Odd' })

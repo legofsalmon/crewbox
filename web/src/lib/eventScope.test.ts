@@ -224,6 +224,71 @@ describe('the events a device knows', () => {
     expect(scope.knownEvents()).toHaveLength(1)
   })
 
+  it('takes the open event’s box at its word that it carries one on, once for each box', async () => {
+    const scope = await load()
+    scope.rememberEvent({ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.2' })
+    scope.rememberEvent({ id: 'spare', name: 'Harbour Fest', origin: 'http://10.0.0.9' })
+    const heard = vi.fn()
+    const stop = scope.subscribeKnownEvents(heard)
+    // At any address: the admin's word, where a box at the same address is
+    // only a guess.
+    scope.carriedOn('friday', 'spare')
+    expect(scope.knownEvent('friday')).toEqual({
+      id: 'friday',
+      name: 'Harbour Fest',
+      origin: 'http://10.0.0.2',
+      seenAt: 0,
+      replacedBy: 'spare',
+      continuedBy: 'spare',
+    })
+    expect(heard).toHaveBeenCalledTimes(1)
+    // "Not now" is an answer the same box saying it again doesn't undo...
+    scope.answerMove('friday', false)
+    scope.carriedOn('friday', 'spare')
+    expect(scope.knownEvent('friday')).toMatchObject({ continuedBy: 'spare', moveAnswered: true })
+    // ...nor, once everything came, does it offer the move again.
+    scope.answerMove('friday', true)
+    scope.carriedOn('friday', 'spare')
+    expect(scope.knownEvent('friday')?.replacedBy).toBeUndefined()
+    expect(scope.knownEvent('friday')?.continuedBy).toBe('spare')
+    expect(heard).toHaveBeenCalledTimes(3)
+    // Another box saying so is asked about afresh.
+    scope.answerMove('friday', false)
+    scope.carriedOn('friday', 'bigger-box')
+    expect(scope.knownEvent('friday')).toMatchObject({
+      replacedBy: 'bigger-box',
+      continuedBy: 'bigger-box',
+    })
+    expect(scope.knownEvent('friday')?.moveAnswered).toBeUndefined()
+    stop()
+  })
+
+  it('takes no word about an event it doesn’t hold, or about a box’s own', async () => {
+    const scope = await load()
+    scope.rememberEvent({ id: 'spare', name: '', origin: 'http://10.0.0.9' })
+    scope.carriedOn('thursday', 'spare')
+    scope.carriedOn('spare', 'spare')
+    expect(scope.knownEvents()).toEqual([
+      { id: 'spare', name: '', origin: 'http://10.0.0.9', seenAt: 0 },
+    ])
+  })
+
+  it('forgets which box carried an event on, with that box', async () => {
+    const scope = await load()
+    scope.rememberEvent({ id: 'friday', name: '', origin: 'http://10.0.0.2' })
+    scope.rememberEvent({ id: 'thursday', name: '', origin: 'http://10.0.0.4' })
+    scope.rememberEvent({ id: 'spare', name: '', origin: 'http://10.0.0.9' })
+    scope.carriedOn('friday', 'spare')
+    scope.carriedOn('thursday', 'spare')
+    // Everything of Thursday's came, and only the box's word is left.
+    scope.answerMove('thursday', true)
+    scope.forgetEventRecord('spare')
+    expect(scope.knownEvents()).toEqual([
+      { id: 'friday', name: '', origin: 'http://10.0.0.2', seenAt: 0 },
+      { id: 'thursday', name: '', origin: 'http://10.0.0.4', seenAt: 0 },
+    ])
+  })
+
   it('reads junk in the slot as nothing known', async () => {
     localStorage.setItem('crewbox:boxes', '{not json')
     expect((await load()).knownEvents()).toEqual([])

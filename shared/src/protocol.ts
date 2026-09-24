@@ -239,6 +239,19 @@ export interface PublicConfig {
    */
   eventKey?: string
   /**
+   * The event this box carries on, by its ID, when an admin has said so
+   * (Admin → This box): a spare with no backup, or a bigger box, taking over
+   * from that event's box.
+   *
+   * A phone that holds that event offers, once it has joined this box, to
+   * bring its work across. The admin's word rather than a proof, since only
+   * the old event's database could sign for it, so the phone asks and
+   * never moves anything by itself (server/src/continues.ts).
+   *
+   * Absent when no admin has said so, and from a box that predates it.
+   */
+  continues?: string
+  /**
    * The box has no usable licence and its policy marks that. The drawer shows
    * a small "Unlicensed" line and nothing else changes — crew comms are never
    * blocked or degraded over a licence. Absent means licensed, or a policy

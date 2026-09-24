@@ -147,10 +147,24 @@ export function connectionCauses(input: {
  * the one this device has open — a spare with a fresh database, or the next
  * event's box — and so has been given nothing of this one's.
  *
- * Its name is all there is to go on. A spare set up under the event's own
- * name is the same name starting over, and one not set up has none.
+ * Its admin's word first, where there is one: a spare they say carries on
+ * the event. Otherwise its name is all there is to go on. A spare set up
+ * under the event's own name is the same name starting over, and one not
+ * set up has none.
  */
-export function elsewhereCopy(input: { address: string; open: string; here: string }): string {
+export function elsewhereCopy(input: {
+  address: string
+  open: string
+  here: string
+  /** Its admin says it carries on the open event (server/src/continues.ts). */
+  carriesOpen?: boolean
+}): string {
+  if (input.carriesOpen) {
+    const open = input.open.trim()
+    return open
+      ? `The box at ${input.address} has changed, and carries on “${open}”.`
+      : `The box at ${input.address} has changed, and carries on this event.`
+  }
   const here = input.here.trim()
   if (!here) return `The box at ${input.address} has changed, and is starting afresh.`
   if (here === input.open.trim()) {
@@ -207,10 +221,10 @@ export function elsewhereView(input: { address: string; open: string; here: Else
   copy: string
   opens: boolean
 } {
-  const { held, name } = input.here
+  const { held, name, carriesOpen } = input.here
   if (!held) {
     return {
-      copy: elsewhereCopy({ address: input.address, open: input.open, here: name }),
+      copy: elsewhereCopy({ address: input.address, open: input.open, here: name, carriesOpen }),
       opens: true,
     }
   }

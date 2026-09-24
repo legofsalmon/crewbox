@@ -283,6 +283,14 @@ describe('claiming a name', () => {
     ])
   })
 
+  it('says which event it carries on, once an admin has said so', async () => {
+    make({ continues: 'mf3k2a1b0c9d8e7f6g5h4' })
+    await announcer.start()
+    await vi.advanceTimersByTimeAsync(750)
+    const txt = txtOf(socket.take().at(-1)!.message.answers)
+    expect(txt.at(-1)).toBe('continues=mf3k2a1b0c9d8e7f6g5h4')
+  })
+
   it('says a new box is not set up, and that a box without a certificate has no TLS', async () => {
     make({ setUp: false, tls: false, tlsName: undefined })
     await announcer.start()

@@ -156,6 +156,27 @@ describe('a box at this address running another event', () => {
       'The box at 10.0.0.2 has changed, and is starting afresh.'
     )
   })
+
+  it('says it carries the event on when its admin has said so, whatever its name', () => {
+    for (const here of ['Harbour Fest', 'Harbour Fest 2', '']) {
+      expect(elsewhereCopy({ address, open: 'Harbour Fest', here, carriesOpen: true }), here).toBe(
+        'The box at 10.0.0.2 has changed, and carries on “Harbour Fest”.'
+      )
+    }
+    expect(elsewhereCopy({ address, open: ' ', here: '', carriesOpen: true })).toBe(
+      'The box at 10.0.0.2 has changed, and carries on this event.'
+    )
+    expect(
+      elsewhereView({
+        address,
+        open: 'Harbour Fest',
+        here: { id: 'spare', name: 'Harbour Tour', carriesOpen: true },
+      })
+    ).toEqual({
+      copy: 'The box at 10.0.0.2 has changed, and carries on “Harbour Fest”.',
+      opens: true,
+    })
+  })
 })
 
 describe('a box at this address saying it runs an event this phone holds elsewhere', () => {

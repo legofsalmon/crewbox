@@ -322,6 +322,19 @@ describe('the lock policy', () => {
     expect(password.statusCode).toBe(200)
   })
 
+  it('never locks saying which event a spare carries on, which is recovery mid-show', async () => {
+    const { app } = newApp('lock')
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/admin/settings',
+      headers: await asAdmin(app),
+      payload: { continues: { id: 'mf3k2a1b0c9d8e7f6g5h4', name: 'Ashton Court' } },
+    })
+    expect(res.statusCode).toBe(200)
+    const config = (await app.inject({ url: '/api/config' })).json() as { continues?: string }
+    expect(config.continues).toBe('mf3k2a1b0c9d8e7f6g5h4')
+  })
+
   it('unlocks the moment a licence is entered', async () => {
     const { app, licence } = newApp('lock')
     const headers = await asAdmin(app)

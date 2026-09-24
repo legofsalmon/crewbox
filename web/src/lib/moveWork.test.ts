@@ -4,6 +4,7 @@ import { INCIDENT_CLOCK_SLACK_MS, type Channel } from '@crewbox/shared'
 import type { OutboxEntry } from './db.ts'
 import type { KnownEvent } from './eventScope.ts'
 import {
+  carriedHere,
   hasWork,
   movedCopy,
   offerCopy,
@@ -101,8 +102,8 @@ const event = (fields: Partial<KnownEvent> & { id: string }): KnownEvent => ({
 })
 
 describe('when to ask', () => {
-  it('asks about an event whose box came back as the open one, until answered', () => {
-    const friday = event({ id: 'friday', replacedBy: 'spare' })
+  it('asks about an event the open event’s box says it carries on, until answered', () => {
+    const friday = event({ id: 'friday', replacedBy: 'spare', continuedBy: 'spare' })
     expect(toOffer([friday], 'spare')).toBe(friday)
     expect(toOffer([{ ...friday, moveAnswered: true }], 'spare')).toBeUndefined()
     // Not from any other event, or with none open.
@@ -110,10 +111,31 @@ describe('when to ask', () => {
     expect(toOffer([friday], null)).toBeUndefined()
   })
 
+  it('doesn’t ask on a guess from the address alone', () => {
+    // A new database where the event's box was is as likely next week's
+    // event as a spare: Your boxes offers the move, and nothing asks.
+    const friday = event({ id: 'friday', replacedBy: 'spare' })
+    expect(toOffer([friday], 'spare')).toBeUndefined()
+    // Nor when it was another box that said it carries the event on.
+    expect(toOffer([{ ...friday, continuedBy: 'bigger-box' }], 'spare')).toBeUndefined()
+  })
+
   it('asks about the latest first, where two came back as it', () => {
-    const older = event({ id: 'friday', replacedBy: 'spare', seenAt: 1 })
-    const newer = event({ id: 'thursday', replacedBy: 'spare', seenAt: 2 })
+    const older = event({ id: 'friday', replacedBy: 'spare', continuedBy: 'spare', seenAt: 1 })
+    const newer = event({ id: 'thursday', replacedBy: 'spare', continuedBy: 'spare', seenAt: 2 })
     expect(toOffer([older, newer], 'spare')).toBe(newer)
+  })
+
+  it('knows a box its admin says carries an event on from one standing where its box stood', () => {
+    expect(carriedHere(event({ id: 'friday', replacedBy: 'spare', continuedBy: 'spare' }))).toBe(
+      true
+    )
+    expect(carriedHere(event({ id: 'friday', replacedBy: 'spare' }))).toBe(false)
+    expect(carriedHere(event({ id: 'friday', replacedBy: 'spare', continuedBy: 'other' }))).toBe(
+      false
+    )
+    // Everything came, and only the word is left.
+    expect(carriedHere(event({ id: 'friday', continuedBy: 'spare' }))).toBe(false)
   })
 
   it('has something to ask about only when the device holds some of its work', () => {
@@ -148,6 +170,16 @@ describe('what the question says', () => {
     })
     expect(copy.lede).toBe('This phone still has work from before this box started afresh:')
     expect(copy.items).toEqual(['1 shared document', '1 unsent message'])
+  })
+
+  it('says the box carries the event on, where its admin said so', () => {
+    const carried = { replacedBy: 'spare', continuedBy: 'spare' }
+    expect(offerCopy(event({ id: 'friday', name: 'Harbour Fest', ...carried }), held).lede).toBe(
+      'This box carries on Harbour Fest, and this phone still has work from it:'
+    )
+    expect(offerCopy(event({ id: 'friday', name: '', ...carried }), held).lede).toBe(
+      'This box carries on an event this phone still has work from:'
+    )
   })
 })
 

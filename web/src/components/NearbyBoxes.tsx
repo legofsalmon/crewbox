@@ -105,6 +105,13 @@ export function NearbyBoxes({
                 <div className="boxes-pick">
                   <span className="boxes-name">{nameOf(box)}</span>
                   <span className="boxes-detail">{box.address}</span>
+                  {box.setUp && box.carries !== undefined && (
+                    <span className="boxes-detail">
+                      {box.carries
+                        ? `Carries on ${box.carries}`
+                        : 'Carries on an event this phone has'}
+                    </span>
+                  )}
                   {!box.setUp && (
                     <span className="nearby-warn">
                       Not set up yet. Open {addressOf(box.origin)}/setup in a browser to set it up.

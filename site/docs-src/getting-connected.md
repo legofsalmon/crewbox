@@ -85,6 +85,11 @@ is the same one.
   … now"**: the box at that address is running another event than the one
   you had open, a spare box or next week's. Your device has sent it nothing.
   Tap **Open it** to join it. Everything from before stays on your device.
+- **"The box at … has changed, and carries on …"**: a spare, or a bigger
+  box, has taken over from your event's box, and whoever runs it says it
+  carries your event on. It is still a new box to your device, which has
+  sent it nothing. Tap **Open it** and join it, and your device offers to
+  bring your work across.
 - **"The box at … is running …, which this phone knew at …"**: your
   event's own box, now at another address. Your device checked it first,
   with the key it kept when you joined, so **Open it** carries on there.
@@ -95,15 +100,19 @@ is the same one.
   from the event's join poster in **Your boxes**. If you are sure it is your
   event's box, restored from an old backup, **Open it anyway** is beside
   the message there.
-- **"Bring your work across?"** is asked once, after you join a box that
-  started afresh where your event's box was. **Move it here** brings your
-  documents and running order, sends your unsent messages to the channels
-  with the same names, and files your unsent show-log entries in its log.
-  Messages to a person or with a file stay behind, and so do show-log
-  entries written more than a day ago, which no box takes. Messages for a
-  channel the new box doesn't have yet stay too: once an admin has made it,
-  bring them across from that event's row in **Your boxes**. The old chat
-  stays on your device to read.
+- **"Bring your work across?"** is asked once, after you join a box whose
+  admin says it carries on an event your device has. **Move it here**
+  brings your documents and running order, sends your unsent messages to
+  the channels with the same names, and files your unsent show-log entries
+  in its log. Messages to a person or with a file stay behind, and so do
+  show-log entries written more than a day ago, which no box takes.
+  Messages for a channel the new box doesn't have yet stay too: once an
+  admin has made it, bring them across from that event's row in **Your
+  boxes**. The old chat stays on your device to read.
+- **Bring its work here**, beside an event in **Your boxes**, does the same
+  whenever you like. A box that started afresh where your event's box was
+  doesn't ask by itself when nobody has said it carries your event on,
+  since it may be next week's; the row offers it instead.
 - **Forget**, beside an event in **Your boxes**, deletes what your device
   keeps for it. It says first what that is, and warns you about anything
   that never reached the box, because nothing else has a copy of that.

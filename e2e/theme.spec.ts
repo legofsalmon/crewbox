@@ -180,6 +180,9 @@ for (const scheme of ['light', 'dark'] as const) {
     // The line saying whether the apps can find the box is read, not a
     // footnote: it started out in the panel's faint grey, 3.5:1.
     expect(await textContrast(page, '.admin-status')).toBeGreaterThan(4.5)
+    // And so is what saying the box carries on an event does, and its choice.
+    expect(await textContrast(page, '.admin-help')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, '#admin-continues')).toBeGreaterThan(4.5)
 
     // Scoped to the row: the sidebar has a channel button of the same name.
     const row = page.locator('.admin-channel', { hasText: channel })
@@ -317,8 +320,10 @@ for (const scheme of ['light', 'dark'] as const) {
         name: 'Harbour Tour',
         origin: 'http://10.0.0.9',
         seenAt: lastWeek,
-        // Its box came back as this one, so its work can come here.
+        // This box's admin says it carries that event on, so its work can
+        // come here.
         replacedBy: localStorage.getItem('crewbox:db-epoch'),
+        continuedBy: localStorage.getItem('crewbox:db-epoch'),
       })
       localStorage.setItem('crewbox:boxes', JSON.stringify(events))
       localStorage.setItem('crewbox@harbour:token', 'a-sign-in')

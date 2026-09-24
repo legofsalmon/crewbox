@@ -106,10 +106,12 @@ tell crew the new one to type. A box behind a port forward can't be checked,
 and phones take its typed address at the crew member's word; one restored
 from a backup older than its key fails the check, and phones say so and send
 it nothing. One started with a fresh database is a new
-event: phones say the box has changed and send it nothing, and each one,
-once it has joined, offers to bring its documents, running order and
-unsent messages across
-([what crew see](/docs/getting-connected#more-than-one-event)). Updating
+event: phones say the box has changed and send it nothing. When it takes
+over from the event's box, say so in **Admin → This box → Carries on
+another event**, and each phone that has the event, once it has joined,
+offers to bring its documents, running order and unsent messages across
+([what crew see](/docs/getting-connected#more-than-one-event)). The chat
+history is only in a backup. Updating
 the box is: stop it, replace the binary (or app), start it. Crew phones
 notice the new version and offer a **Reload** pill; nothing they had queued
 is lost.

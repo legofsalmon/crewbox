@@ -55,6 +55,7 @@ import { capTranscript } from './lib/transcript.ts'
 import { readPref, writePref } from './lib/prefs.ts'
 import {
   acceptEvent,
+  carriedOn,
   chooseEvent,
   eventIdFrom,
   eventMoved,
@@ -227,6 +228,11 @@ export interface BoxEvent {
   id: string
   /** '' when the box has none set. */
   name: string
+  /**
+   * The event it says it carries on, when its admin has said so
+   * (`PublicConfig.continues`).
+   */
+  continues?: string
 }
 
 /**
@@ -234,9 +240,11 @@ export interface BoxEvent {
  * one. `held` is set when it is an event this device holds at another
  * address: nothing moves that event here on the box's word, and `proof`
  * says whether the box has shown it is that event's box (lib/identity.ts).
+ * `carriesOpen` when it says it carries on the open event.
  */
 export interface Elsewhere extends BoxEvent {
   held?: { origin: string; proof: 'checking' | Proof['kind'] }
+  carriesOpen?: boolean
 }
 export type ToastKind = 'info' | 'warning' | 'error'
 
@@ -640,17 +648,42 @@ export const useStore = create<AppState>()((set, get) => {
       })
       return
     }
+    const carriesOpen = !!event.continues && event.continues === openEvent()
     tookThePlace(event, origin)
-    set({ elsewhere: event, connection: 'offline', hasFailed: true })
+    set({
+      elsewhere: carriesOpen ? { ...event, carriesOpen } : event,
+      connection: 'offline',
+      hasFailed: true,
+    })
   }
 
   /** The event at this address is there in the open one's place. */
   function tookThePlace(event: BoxEvent, origin: string): void {
-    const open = openEvent()
-    if (open && knownEvent(open)?.origin === origin) {
-      rememberEvent({ id: open, replacedBy: event.id })
-    }
+    replacedAt(origin, event)
     rememberEvent({ id: event.id, name: event.name, origin })
+  }
+
+  /**
+   * The open event's record says the event now at its address took its
+   * place, which lets its work be brought there (lib/moveWork.ts). Not when
+   * the box there says it carries on another event: that is its admin's
+   * word, against a guess from the address.
+   */
+  function replacedAt(origin: string, by: BoxEvent): void {
+    const open = openEvent()
+    if (!open || knownEvent(open)?.origin !== origin) return
+    if (by.continues && by.continues !== open) return
+    rememberEvent({ id: open, replacedBy: by.id })
+  }
+
+  /**
+   * The box running the open event says it carries on another, which this
+   * device may hold: its work there is offered here (lib/eventScope.ts).
+   */
+  function carriesOn(config: PublicConfig): void {
+    const open = openEvent()
+    const from = eventIdFrom(config.continues)
+    if (open && from) carriedOn(from, open)
   }
 
   /** Whether any event this device holds could be moved here, and checked first. */
@@ -679,10 +712,11 @@ export const useStore = create<AppState>()((set, get) => {
   }
 
   /** Whether the box here runs the open event; handles it when it does not. */
-  function openEventHere(event: unknown, name: string): boolean {
+  function openEventHere(event: unknown, name: string, continues?: unknown): boolean {
     const id = eventIdFrom(event)
     if (acceptEvent(id)) return true
-    otherEventHere({ id: id!, name })
+    const carried = eventIdFrom(continues)
+    otherEventHere({ id: id!, name, ...(carried ? { continues: carried } : {}) })
     return false
   }
 
@@ -904,13 +938,15 @@ export const useStore = create<AppState>()((set, get) => {
 
   async function handleWelcome(msg: WelcomeMessage): Promise<void> {
     // Before anything else is taken from it or sent to it. See otherEventHere.
-    if (!openEventHere(msg.dbEpoch ?? msg.config.eventId, msg.config.eventName)) return
+    const { config } = msg
+    if (!openEventHere(msg.dbEpoch ?? config.eventId, config.eventName, config.continues)) return
     const open = openEvent()
     if (open) {
-      rememberEvent({ id: open, name: msg.config.eventName, origin: here(), seenAt: Date.now() })
+      rememberEvent({ id: open, name: config.eventName, origin: here(), seenAt: Date.now() })
       // From before phones kept keys: this box is the one this device syncs
       // the event with, at an address it had or was given.
-      keepEventKey(open, eventKeyFrom(msg.config.eventKey))
+      keepEventKey(open, eventKeyFrom(config.eventKey))
+      carriesOn(config)
     }
 
     const state = get()
@@ -1248,6 +1284,7 @@ export const useStore = create<AppState>()((set, get) => {
         break
       case 'config':
         rememberConfig(msg.config)
+        carriesOn(msg.config)
         set({ config: msg.config })
         break
       case 'deleted':
@@ -1440,9 +1477,12 @@ export const useStore = create<AppState>()((set, get) => {
       void api
         .getConfig()
         .then((config) => {
-          if (getToken() && !openEventHere(config.eventId, config.eventName)) return
+          if (getToken() && !openEventHere(config.eventId, config.eventName, config.continues)) {
+            return
+          }
           const event = eventIdFrom(config.eventId)
           if (!event || event === openEvent()) rememberConfig(config)
+          if (event && event === openEvent()) carriesOn(config)
           set({ config })
         })
         .catch(() => {})
@@ -1518,10 +1558,8 @@ export const useStore = create<AppState>()((set, get) => {
         // that event's, and so is everything the box is about to send. File
         // it there and open that event, leaving this one's data as it is.
         writePref(storageNameFor(eventId, TOKEN_KEY), token)
-        const open = openEvent()
-        if (open && knownEvent(open)?.origin === here()) {
-          rememberEvent({ id: open, replacedBy: eventId })
-        }
+        const continues = eventIdFrom(joined.continues)
+        replacedAt(here(), { id: eventId, name: '', ...(continues ? { continues } : {}) })
         rememberEvent({ id: eventId, origin: here() })
         keepEventKey(eventId, key)
         chooseEvent(eventId)
@@ -2123,7 +2161,7 @@ export const useStore = create<AppState>()((set, get) => {
       // it has not ended, a different box has been put where its box was. Its
       // messages and sign-in stay, for when its box is back or for reading.
       const config = await api.getConfig(AbortSignal.timeout(5000)).catch(() => null)
-      if (config && !openEventHere(config.eventId, config.eventName)) return
+      if (config && !openEventHere(config.eventId, config.eventName, config.continues)) return
 
       await voiceManager?.leave()
       void nativeAlerts()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { Channel, User } from '@crewbox/shared'
 import { sessionToken, useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
@@ -9,6 +9,8 @@ import UpdateSection from './UpdateSection.tsx'
 import LicenceSection from './LicenceSection.tsx'
 import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
+import { addressOf } from '../lib/discovery.ts'
+import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
 
 const PIN_RE = /^\d{4,8}$/
 
@@ -485,7 +487,11 @@ function ServerSection({
             d
               ? {
                   ...d,
-                  settings: { eventName: settings.eventName, wifiSsid: settings.wifiSsid },
+                  settings: {
+                    ...d.settings,
+                    eventName: settings.eventName,
+                    wifiSsid: settings.wifiSsid,
+                  },
                   serverInfo: { ...d.serverInfo, eventPin: settings.eventPin },
                   // A renamed event is announced under its new name, and the
                   // line under the setting should say so.
@@ -498,6 +504,21 @@ function ServerSection({
         .catch((err) => onNote(adminError(err, 'Save failed')))
         .finally(() => setSaving(false))
     }
+  }
+
+  /** Say which event this box carries on, then show what the box kept. */
+  function saveContinues(continues: api.Continues | null, note: string) {
+    setSaving(true)
+    void api
+      .adminUpdateSettings(auth(), { continues })
+      .then(({ settings }) => {
+        setData((d) =>
+          d ? { ...d, settings: { ...d.settings, continues: settings.continues ?? null } } : d
+        )
+        onNote(note)
+      })
+      .catch((err) => onNote(adminError(err, 'Save failed')))
+      .finally(() => setSaving(false))
   }
 
   /** Patch network settings, then show what the box now reports. */
@@ -601,6 +622,9 @@ function ServerSection({
         onChange={setSsid}
         onSave={save({ wifiSsid: ssid.trim() }, 'Wi-Fi network saved')}
       />
+      {data && (
+        <ContinuesField saved={data.settings.continues} saving={saving} onSave={saveContinues} />
+      )}
       {data?.network && (
         <NetworksSection
           network={data.network}
@@ -826,6 +850,86 @@ function NetworksSection({
       <button className="admin-btn" type="submit" disabled={disabled || saving || !dirty}>
         {saving ? 'Saving…' : 'Save networks'}
       </button>
+    </form>
+  )
+}
+
+const eventNamed = (event: { name: string }): string => event.name.trim() || 'No name yet'
+
+/**
+ * Which event this box carries on: a spare with no backup, or a bigger box,
+ * taking over from an event's box (server/src/continues.ts). Phones holding
+ * that event offer to bring their work here once they have joined.
+ *
+ * The events offered are the ones this device holds, other than this box's
+ * own. An event's ID is nothing anybody types, and a device can only name an
+ * event it has been on. The box's own answer shows whichever device reads it.
+ */
+export function ContinuesField({
+  saved,
+  saving,
+  onSave,
+}: {
+  /** What the box holds now; undefined from a box that predates it. */
+  saved: api.Continues | null | undefined
+  saving: boolean
+  onSave: (continues: api.Continues | null, note: string) => void
+}) {
+  const events = useSyncExternalStore(subscribeKnownEvents, knownEvents)
+  const open = openEvent()
+  const others: KnownEvent[] = events
+    .filter((event) => event.id !== open)
+    .sort((a, b) => b.seenAt - a.seenAt)
+  const [picked, setPicked] = useState(saved?.id ?? '')
+  useEffect(() => setPicked(saved?.id ?? ''), [saved?.id])
+  if (saved === undefined) return null
+  // The box's answer, for a device that was never on that event.
+  const notHeld = saved && !others.some((event) => event.id === saved.id) ? saved : null
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!picked) {
+      onSave(null, 'Saved: this box carries on no other event')
+      return
+    }
+    const event = others.find((known) => known.id === picked)
+    if (!event) return
+    onSave(
+      { id: event.id, name: event.name.trim() },
+      `Saved: phones that have ${eventNamed(event)} will offer to bring its work here`
+    )
+  }
+
+  return (
+    <form className="admin-setting" onSubmit={submit}>
+      <label htmlFor="admin-continues">Carries on another event</label>
+      <div className="admin-setting-row">
+        <select
+          id="admin-continues"
+          value={picked}
+          disabled={saving}
+          onChange={(e) => setPicked(e.target.value)}
+        >
+          <option value="">No, it’s a new event</option>
+          {notHeld && <option value={notHeld.id}>{eventNamed(notHeld)}</option>}
+          {others.map((event) => (
+            <option key={event.id} value={event.id}>
+              {event.origin
+                ? `${eventNamed(event)} · ${addressOf(event.origin)}`
+                : eventNamed(event)}
+            </option>
+          ))}
+        </select>
+        <button className="admin-btn" disabled={saving || picked === (saved?.id ?? '')}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      <p className="admin-help">
+        For a spare with no backup, or a bigger box, taking over from an event’s box. Phones that
+        have that event offer to bring its documents, running order and unsent messages here. Chat
+        history comes back only from a backup. The events listed are the ones this device has been
+        on.
+      </p>
     </form>
   )
 }

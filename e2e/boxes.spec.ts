@@ -249,25 +249,24 @@ test('a box that comes back with a new database is sent nothing of the old event
     await expect(page.getByLabel('Crew server')).toHaveValue('http://127.0.0.1:4311')
     await expect(page.getByRole('button', { name: 'Your other boxes' })).toBeVisible()
     await joinBox(page, box.address, crew, '4444')
-    // ...which asks, once, whether to bring the old event's work across...
-    const offer = page.getByRole('dialog', { name: 'Bring your work across?' })
-    await expect(offer).toContainText('1 shared document')
-    await expect(offer).toContainText('1 unsent message')
-    await offer.getByRole('button', { name: 'Not now' }).click()
-    // ...and without a yes starts empty, on this phone as on the box.
+    // ...which starts empty, on this phone as on the box. Nothing asks to
+    // bring the old event's work across: a new database at the old address
+    // is as likely the next event's box, and its admin hasn't said it
+    // carries this one on.
     await expect(page.locator('.msg', { hasText: 'Doors in ten' })).toHaveCount(0)
     await expect(page.locator('.msg', { hasText: queued })).toHaveCount(0)
     await openPatch(page)
     await expect(page.locator('main').getByText(sheet)).toHaveCount(0)
     expect(await relayOf(box)).toMatchObject({ kept: 0 })
-    // Not asked again, and the old event's row still offers it.
+    const offer = page.getByRole('dialog', { name: 'Bring your work across?' })
+    await expect(offer).toHaveCount(0)
+    // The old event's row offers it, for somebody who goes looking.
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Patch Sheets' })).toBeVisible()
     await openBoxes(page)
     await expect(offer).toHaveCount(0)
-    await expect(
-      boxRow(page, '127.0.0.1:4311').getByRole('button', { name: 'Bring its work here' })
-    ).toBeVisible()
+    const old = boxRow(page, '127.0.0.1:4311').filter({ hasText: 'Its box started afresh.' })
+    await expect(old.getByRole('button', { name: 'Bring its work here' })).toBeVisible()
   } finally {
     await box.stop()
     rmSync(box.dataDir, { recursive: true, force: true })
@@ -753,7 +752,28 @@ test('the old event’s work comes across to the box that took its place', async
     await page.getByRole('button', { name: /has changed.*Open it/ }).click()
     await joinBox(page, box.address, crew, '4646')
 
+    // Its admin, on this phone, says it carries on the event it took over:
+    // the one this phone has been on besides the spare's own.
+    await page.getByRole('button', { name: 'Admin panel' }).click()
+    await page.getByLabel('Admin password').fill('e2e-admin-password')
+    await page.getByRole('button', { name: 'Unlock' }).click()
+    const carries = page.getByLabel('Carries on another event')
+    await expect(carries.locator('option')).toHaveText([
+      'No, it’s a new event',
+      'No name yet · 127.0.0.1:4315',
+    ])
+    await carries.selectOption({ index: 1 })
+    await page.locator('form', { has: carries }).getByRole('button', { name: 'Save' }).click()
+    await expect(
+      page.getByText('Saved: phones that have No name yet will offer to bring its work here')
+    ).toBeVisible()
+    // Not over the panel, where it has only just been said...
     const offer = page.getByRole('dialog', { name: 'Bring your work across?' })
+    await expect(offer).toHaveCount(0)
+    await page.getByRole('button', { name: 'Close admin panel' }).click()
+
+    // ...and then, the box having said so, the phone asks.
+    await expect(offer).toContainText('This box carries on an event this phone still has work from')
     for (const item of [
       '1 shared document',
       'the running order',
@@ -803,6 +823,7 @@ test('the old event’s work comes across to the box that took its place', async
     await expect(offer).toHaveCount(0)
     const old = boxRow(page, 'Last here')
     await expect(old).toContainText('2 unsent')
+    await expect(old).toContainText('This box carries it on.')
     await expect(old.getByRole('button', { name: 'Bring its work here' })).toBeVisible()
   } finally {
     await box.stop()

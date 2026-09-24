@@ -22,9 +22,10 @@ import {
 /**
  * "Bring your work across?", and then what the move did.
  *
- * Asked of an event whose box came back with a new database, now that this
- * device has joined that box: once by itself, and whenever its row in Your
- * boxes is tapped after that.
+ * Asked of an event whose box has been taken over, now that this device has
+ * joined the box that took over: once by itself when that box's admin says
+ * it carries the event on, and whenever the event's row in Your boxes is
+ * tapped.
  */
 export function MoveWorkDialog({
   from,
@@ -115,18 +116,19 @@ export function MoveWorkDialog({
 }
 
 /**
- * Asks, once, after this device has joined a box that came back with a new
- * database, whether to bring the old event's work across.
+ * Asks, once, after this device has joined a box its admin says carries on
+ * an event this device holds, whether to bring that event's work across.
  */
 export default function MoveWorkOffer() {
   const ready = useStore((s) => s.phase === 'chat' && s.hasConnected && !s.elsewhere)
-  const boxesOpen = useStore((s) => s.boxesOpen)
+  // Not over Your boxes, where the same event's row offers it, nor over the
+  // admin panel, where the admin saying so has only just said it.
+  const boxesOpen = useStore((s) => s.boxesOpen || s.adminOpen)
   const events = useSyncExternalStore(subscribeKnownEvents, knownEvents)
   const candidate = ready ? toOffer(events, openEvent())?.id : undefined
   const [asking, setAsking] = useState<{ from: KnownEvent; held: Movable } | null>(null)
 
   useEffect(() => {
-    // Not while Your boxes is open, where the same event's row offers it.
     if (!candidate || asking || boxesOpen) return
     let live = true
     void movableOf(candidate).then((held) => {

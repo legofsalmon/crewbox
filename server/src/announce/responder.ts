@@ -92,6 +92,8 @@ export interface ServiceDetails {
   tls: boolean
   /** The name on the box's certificate: what an app must connect by. */
   tlsName?: string
+  /** The event an admin said this box carries on, by its ID (server/src/continues.ts). */
+  continues?: string
 }
 
 export interface AnnouncerOptions {
@@ -405,6 +407,7 @@ export class Announcer {
       `proto=${d.protocol}`,
       `setup=${d.setUp ? 1 : 0}`,
       ...(d.tls ? [d.tlsName ? `tls=${truncateUtf8(d.tlsName, 250)}` : 'tls'] : []),
+      ...(d.continues ? [`continues=${d.continues}`] : []),
     ]
     return pairs.map((p) => Buffer.from(p, 'utf8'))
   }

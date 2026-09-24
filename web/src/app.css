@@ -2456,9 +2456,11 @@ a.app-version:hover {
   color: var(--text-faint);
 }
 
-/* What a setting that acts at once is doing now: something to read, not a
-   footnote, so it is not faint. */
-.admin-status {
+/* What a setting that acts at once is doing now, and what one with
+   consequences for every phone does: something to read, not a footnote, so
+   it is not faint. */
+.admin-status,
+.admin-help {
   font-size: 13.5px;
   color: var(--text-muted);
 }
@@ -2582,6 +2584,11 @@ a.app-version:hover {
 .admin-setting-row {
   display: flex;
   gap: 8px;
+}
+
+.admin-setting-row select {
+  flex: 1;
+  min-width: 0;
 }
 
 .admin-setting-row input {

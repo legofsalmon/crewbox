@@ -19,7 +19,7 @@ import {
   type KnownEvent,
 } from '../lib/eventScope.ts'
 import { checkMove } from '../lib/identity.ts'
-import { hasWork, movableOf, type Movable } from '../lib/moveWork.ts'
+import { carriedHere, hasWork, movableOf, type Movable } from '../lib/moveWork.ts'
 import { isNative, normalizeOrigin } from '../lib/server.ts'
 import {
   clearJoinLink,
@@ -290,7 +290,9 @@ export default function Boxes() {
                   )}
                   {held && hasWork(held) && (
                     <div className="boxes-move">
-                      <span>Its box started afresh.</span>
+                      <span>
+                        {carriedHere(event) ? 'This box carries it on.' : 'Its box started afresh.'}
+                      </span>
                       <button
                         className="admin-btn admin-btn-primary"
                         onClick={() => {
