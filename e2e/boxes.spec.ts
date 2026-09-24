@@ -40,7 +40,11 @@ const SERVER_DIR = join(process.cwd(), 'server')
 /** A box on its own port and database, as the suite's own is started. */
 async function startBox(port: number, pin: string, dataDir?: string): Promise<Box> {
   const dir = dataDir ?? mkdtempSync(join(tmpdir(), 'crewbox-e2e-box-'))
-  const child = spawn('npx', ['tsx', 'src/index.ts'], {
+  // Node itself, with tsx as a loader, rather than `npx tsx`: stop() waits
+  // for this process to exit, and npx could exit while the box under it was
+  // still closing its database and releasing its run marker. A copy of the
+  // data taken then found files vanishing under it.
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: SERVER_DIR,
     detached: true,
     stdio: 'ignore',
@@ -72,7 +76,7 @@ async function startBox(port: number, pin: string, dataDir?: string): Promise<Bo
     address,
     dataDir: dir,
     stop: async () => {
-      // The whole group: npx, tsx and the node process under them.
+      // The whole group, so anything the box started goes with it.
       try {
         process.kill(-child.pid!, 'SIGTERM')
       } catch {
