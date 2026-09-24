@@ -3,6 +3,8 @@ import {
   connectionCauses,
   connectionScreen,
   elsewhereCopy,
+  elsewhereView,
+  refusedCopy,
   STUCK_AFTER_MS,
 } from '../src/lib/connscreen.ts'
 
@@ -131,5 +133,59 @@ describe('a box at this address running another event', () => {
     expect(elsewhereCopy({ address, open: 'Harbour Fest', here: '' })).toBe(
       'The box at 10.0.0.2 has changed, and is starting afresh.'
     )
+  })
+})
+
+describe('a box at this address saying it runs an event this phone holds elsewhere', () => {
+  // Anything that took the address can say which event it runs. Until the
+  // box has signed for this address with the event's key, nothing goes to
+  // it and there is nothing to open (lib/identity.ts).
+  const address = '10.0.0.2'
+  const here = (proof?: 'checking' | 'proven' | 'refused' | 'unchecked') => ({
+    id: 'saturday',
+    name: 'Harbour Tour',
+    ...(proof ? { held: { origin: 'http://10.0.0.3:8787', proof } } : {}),
+  })
+  const view = (proof?: 'checking' | 'proven' | 'refused' | 'unchecked') =>
+    elsewhereView({ address, open: 'Harbour Fest', here: here(proof) })
+
+  it('is opened from the screens only once it has shown it is that event’s box', () => {
+    expect(view().opens).toBe(true)
+    // The event this phone had, found here: not a new one, nor one afresh.
+    expect(view('proven')).toEqual({
+      copy: 'The box at 10.0.0.2 is running “Harbour Tour”, which this phone knew at 10.0.0.3:8787.',
+      opens: true,
+    })
+    expect(
+      elsewhereView({
+        address,
+        open: 'Harbour Fest',
+        here: { ...here('proven'), name: '' },
+      }).copy
+    ).toBe('The box at 10.0.0.2 is running the event this phone knew at 10.0.0.3:8787.')
+    for (const proof of ['checking', 'refused', 'unchecked'] as const) {
+      expect(view(proof).opens, proof).toBe(false)
+    }
+  })
+
+  it('says where this phone knows the event while it checks, and when it can’t', () => {
+    expect(view('checking').copy).toBe(
+      'The box at 10.0.0.2 says it is running “Harbour Tour”, which this phone knows at ' +
+        '10.0.0.3:8787. Checking that it is…'
+    )
+    expect(view('unchecked').copy).toBe(
+      'The box at 10.0.0.2 says it is running “Harbour Tour”, which this phone knows at ' +
+        '10.0.0.3:8787. It can’t be checked, so nothing has gone to it. If that box has moved ' +
+        'here, type this address in Your boxes.'
+    )
+  })
+
+  it('says a box that failed the check has been sent nothing', () => {
+    expect(view('refused').copy).toBe(refusedCopy({ address, name: 'Harbour Tour' }))
+    expect(refusedCopy({ address, name: 'Harbour Tour' })).toBe(
+      'The box at 10.0.0.2 says it is running “Harbour Tour”, but it can’t show that it is ' +
+        'that event’s box, so nothing has gone to it.'
+    )
+    expect(refusedCopy({ address, name: ' ' })).toMatch(/is running an event, but/)
   })
 })

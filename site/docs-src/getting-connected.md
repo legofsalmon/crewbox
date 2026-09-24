@@ -79,6 +79,16 @@ Wi-Fi_ when its box is here.
   … now"**: the box at that address is running another event than the one
   you had open, a spare box or next week's. Your device has sent it nothing.
   Tap **Open it** to join it. Everything from before stays on your device.
+- **"The box at … is running …, which this phone knew at …"**: your
+  event's own box, now at another address. Your device checked it first,
+  with the key it kept when you joined, so **Open it** carries on there.
+- **"The box at … says it is running …, but it can’t show that it is that
+  event’s box"**: something at that address says it runs an event your
+  device holds somewhere else, and failed that check. Nothing has gone to
+  it, and your device still has the event where it was. Type the address
+  from the event's join poster in **Your boxes**. If you are sure it is your
+  event's box, restored from an old backup, **Open it anyway** is beside
+  the message there.
 - **"Bring your work across?"** is asked once, after you join a box that
   started afresh where your event's box was. **Move it here** brings your
   documents and running order, sends your unsent messages to the channels

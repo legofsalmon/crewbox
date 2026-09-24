@@ -8,8 +8,16 @@ import {
   lastHere,
   type Holdings,
 } from '../lib/boxes.ts'
+import { refusedCopy } from '../lib/connscreen.ts'
 import { addressOf, nearby, useBoxSearch } from '../lib/discovery.ts'
-import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
+import {
+  knownEvent,
+  knownEvents,
+  openEvent,
+  subscribeKnownEvents,
+  type KnownEvent,
+} from '../lib/eventScope.ts'
+import { checkMove } from '../lib/identity.ts'
 import { hasWork, movableOf, type Movable } from '../lib/moveWork.ts'
 import { isNative } from '../lib/server.ts'
 import { MoveWorkDialog } from './MoveWork.tsx'
@@ -41,6 +49,13 @@ export default function Boxes() {
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A typed box that failed the check, with the key it offered instead.
+  const [refused, setRefused] = useState<{
+    id: string
+    name: string
+    origin: string
+    key: string
+  } | null>(null)
   const search = useBoxSearch()
   const found = useMemo(() => nearby(search.services, events), [search.services, events])
   const close = () => {
@@ -82,9 +97,25 @@ export default function Boxes() {
   async function onFind(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    setRefused(null)
     setBusy(true)
     const found = await findBox(address)
+    // An event this phone holds somewhere else has to be that event's box
+    // (lib/identity.ts). The address is theirs, so one that can't be
+    // checked is taken at their word; one that fails is said so first.
+    const proof = found.kind === 'event' ? await checkMove(found.id, found.origin) : null
     setBusy(false)
+    if (found.kind === 'event' && proof?.kind === 'refused') {
+      setError(
+        refusedCopy({
+          address: addressOf(found.origin),
+          name: knownEvent(found.id)?.name || found.name,
+        })
+      )
+      if (proof.key)
+        setRefused({ id: found.id, name: found.name, origin: found.origin, key: proof.key })
+      return
+    }
     switch (found.kind) {
       case 'invalid':
         setError(found.message)
@@ -275,6 +306,23 @@ export default function Boxes() {
           </form>
         )}
         {error && <div className="join-error">{error}</div>}
+        {refused && (
+          <div className="boxes-refused">
+            <p className="hint">
+              It may be that event’s box, restored from an old backup, which can’t show it. Open it
+              anyway only if you are sure.
+            </p>
+            <button
+              className="admin-btn danger"
+              onClick={() => {
+                setRefused(null)
+                openEventAt(refused)
+              }}
+            >
+              Open it anyway
+            </button>
+          </div>
+        )}
 
         <div className="boxes-actions">
           <button className="admin-btn" onClick={close}>

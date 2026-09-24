@@ -3025,6 +3025,20 @@ button.boxes-pick:hover .boxes-name {
   gap: 6px;
 }
 
+/* After a typed box fails the check: why it might, and the way past it. */
+.boxes-refused {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.boxes-refused .hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .boxes-address label {
   font-size: 13px;
   font-weight: 600;

@@ -1,5 +1,5 @@
 import { useStore } from '../store.ts'
-import { elsewhereCopy } from '../lib/connscreen.ts'
+import { elsewhereView } from '../lib/connscreen.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { effectiveSsid } from '../lib/settings.ts'
 import { serverLabel } from '../lib/server.ts'
@@ -26,17 +26,20 @@ export default function ServerUnreachable() {
 
   if (elsewhere) {
     // Reached, and running another event: not a box that is missing.
+    const view = elsewhereView({ address: serverLabel(), open: eventName, here: elsewhere })
     return (
       <div className="center-screen">
         <div className="center-card">
           <h1>The box has changed</h1>
           <p>
-            {elsewhereCopy({ address: serverLabel(), open: eventName, here: elsewhere.name })}{' '}
-            Anything you had from before stays on this device, and none of it goes to the new box.
+            {view.copy} Anything you had from before stays on this device, and none of it goes to
+            the new box.
           </p>
-          <button className="center-retry" onClick={() => switchEvent(elsewhere.id)}>
-            Open it
-          </button>
+          {view.opens && (
+            <button className="center-retry" onClick={() => switchEvent(elsewhere.id)}>
+              Open it
+            </button>
+          )}
           {boxes}
           <div className="center-version">v{APP_VERSION}</div>
         </div>

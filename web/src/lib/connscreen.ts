@@ -1,4 +1,4 @@
-import type { Connection } from '../store.ts'
+import type { Connection, Elsewhere } from '../store.ts'
 
 /** Which full-screen state the chat phase should show before content is ready. */
 export type ConnScreen = 'ok' | 'connecting' | 'unreachable'
@@ -128,4 +128,76 @@ export function elsewhereCopy(input: { address: string; open: string; here: stri
     return `The box at ${input.address} has changed, and is starting “${here}” afresh.`
   }
   return `The box at ${input.address} is running “${here}” now.`
+}
+
+const eventNamed = (name: string): string => (name.trim() ? `“${name.trim()}”` : 'an event')
+
+/**
+ * What to say when a box says it runs an event this phone holds at another
+ * address, answers the check, and fails it (lib/identity.ts): anything that
+ * took an address can say which event it runs.
+ */
+export function refusedCopy(input: { address: string; name: string }): string {
+  return (
+    `The box at ${input.address} says it is running ${eventNamed(input.name)}, but it can’t ` +
+    'show that it is that event’s box, so nothing has gone to it.'
+  )
+}
+
+/**
+ * What to say while the box at this address, running an event this phone
+ * holds at another address, has not shown it is that event's box: being
+ * checked, failing, or unable to be checked. Nothing goes to it meanwhile.
+ */
+export function unprovenCopy(input: {
+  address: string
+  name: string
+  heldAt: string
+  proof: 'checking' | 'refused' | 'unchecked'
+}): string {
+  const says = `The box at ${input.address} says it is running ${eventNamed(input.name)}`
+  switch (input.proof) {
+    case 'checking':
+      return `${says}, which this phone knows at ${input.heldAt}. Checking that it is…`
+    case 'refused':
+      return refusedCopy(input)
+    case 'unchecked':
+      return (
+        `${says}, which this phone knows at ${input.heldAt}. It can’t be checked, so nothing ` +
+        'has gone to it. If that box has moved here, type this address in Your boxes.'
+      )
+  }
+}
+
+/**
+ * What the screens say about the event at this address, and whether they
+ * offer to open it: not while it is an event this phone holds elsewhere
+ * whose box has not shown it is that event's.
+ */
+export function elsewhereView(input: { address: string; open: string; here: Elsewhere }): {
+  copy: string
+  opens: boolean
+} {
+  const { held, name } = input.here
+  if (!held) {
+    return {
+      copy: elsewhereCopy({ address: input.address, open: input.open, here: name }),
+      opens: true,
+    }
+  }
+  const heldAt = held.origin.replace(/^https?:\/\//i, '')
+  if (held.proof === 'proven') {
+    // Not a new event, and not starting afresh: the one this phone had
+    // somewhere else, whose box is here now.
+    return {
+      copy: name.trim()
+        ? `The box at ${input.address} is running “${name.trim()}”, which this phone knew at ${heldAt}.`
+        : `The box at ${input.address} is running the event this phone knew at ${heldAt}.`,
+      opens: true,
+    }
+  }
+  return {
+    copy: unprovenCopy({ address: input.address, name, heldAt, proof: held.proof }),
+    opens: false,
+  }
 }

@@ -144,8 +144,8 @@ event.
 - All of it is public and needs no sign-in, so an app checks a box before it
   sends it a token or anything of the event's.
 - An app holding an event from before its box had a key takes the key from
-  that box the next time it connects at the address it already has, never
-  from a box found somewhere else.
+  that box the next time it connects to it at the address it syncs with,
+  never from a box found somewhere else.
 
 Why the address is signed: without it, anything on the Wi-Fi could announce a
 phone's event at its own address, pass the phone's challenge on to the real
@@ -166,6 +166,50 @@ own address.
 
 A box that predates this has no `eventKey` and answers `/api/identity` with a
 404; an app treats it as any box it cannot check.
+
+## How the apps check a box
+
+What the apps do with all this (`web/src/lib/identity.ts`):
+
+- **They keep the first key.** Joining an event keeps the `eventKey` from the
+  sign-in with it. A key kept is never swapped for another a box offers:
+  that is what it is there to catch.
+- **They check before an event moves.** Where a box says it runs an event
+  this phone holds at another address, the app sends it a fresh 32-byte
+  challenge and verifies the answer against the kept key, over the address it
+  asked at. Until that is done, and unless it passes, nothing of either
+  event's goes to the box and neither event's records change.
+- **Three outcomes.** _Proven_: the kept key signed for this event, this
+  address and this challenge. _Refused_: the box answered, and said another
+  event or gave a signature the kept key did not make. _Unchecked_: there was
+  nothing to check with (no key kept, or a page without WebCrypto, as a
+  browser on a plain-HTTP box is) or nothing to check: no answer, a box too
+  old to sign (404), or one that won't sign for the address asked at (421).
+
+What each allows depends on how the app came to the box:
+
+- **At the address it already uses**, when the box there now says it runs
+  another event this phone holds, the app follows the event there only when
+  it is proven, and then says so, with **Open it**: _The box at … is running
+  “…”, which this phone knew at …_. While it checks, and if it is refused or
+  can't be checked, it says what the box claims and that nothing has gone to
+  it, and points to **Your boxes**, where an address can be typed. The event
+  stays where the phone knows it.
+- **At an address somebody typed**, in **Your boxes** or on the join screen,
+  it goes ahead unless refused: the address was theirs to give, and a box
+  behind a port forward, or one too old to sign, is taken at their word, as
+  before. The join screen checks before the PIN goes, and checks the
+  sign-in's event again after, in case the box's config could not be read
+  first or said another event.
+- **Refused** is said in so many words, and nothing goes to the box. In **Your
+  boxes**, a refused box that offered a key of its own also gets **Open it
+  anyway**, for a spare restored from a backup older than the event's key,
+  which is the event's box and can't show it. Opening it that way keeps the
+  key it offered in place of the old one; nothing else replaces a kept key.
+
+A box at the address the phone already has, saying it runs the event the
+phone has open there, is taken at its word, as before: the app does not ask
+it to prove itself each time it connects.
 
 ## How the apps look
 
@@ -242,10 +286,9 @@ address are each refused, in a line saying which, and nothing changes. On the
 join screen a picked box fills in the server field and moves on to the name;
 in **Your boxes** it opens that event, as typing its address would.
 
-**Not yet:** following an event this phone holds to a new address, by checking
-the box's signature against the key kept for it
-([above](#how-a-box-proves-which-event-it-is)). Until the apps do, a held event
-moves only when somebody types its new address.
+**Not yet:** following an event this phone holds to a new address it was
+found at. Its box's new address still has to be typed, and is then checked
+([above](#how-the-apps-check-a-box)).
 
 ## How it behaves on the network
 
@@ -317,6 +360,12 @@ join by address or QR as before.
   network, and names over plain HTTP, including its certificate's name on its
   plain loopback mirror; over TLS it signs for its certificate's name and
   refuses another (`server/test/identity.test.ts`).
+- **The apps' check:** against a stood-in box with a WebCrypto key of its
+  own, in unit tests (`web/src/lib/identity.test.ts`, `web/src/events.test.ts`),
+  and in a browser against real boxes (`e2e/boxes.spec.ts`): a copy of an
+  event's database without its key, at a typed address or at the phone's own,
+  is refused and sent nothing, and a copy with its key is followed at either.
+  Each rule was removed in turn to see a test fail.
 - **The apps' page:** what is listed and what is left out, the check when a
   box is picked, the iPhone's first tap and stopping when out of sight, in
   unit tests (`web/src/lib/discovery.test.ts`,

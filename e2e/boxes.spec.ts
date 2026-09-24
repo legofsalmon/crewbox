@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { expect, type Browser, type Page } from '@playwright/test'
 import { addAct, createSheet, openPatch, test, uniqueName } from './helpers'
 
@@ -379,6 +380,173 @@ test('the app is told where its box has gone, and carries on there', async ({ br
   } finally {
     await box.stop()
     rmSync(box.dataDir, { recursive: true, force: true })
+  }
+})
+
+/**
+ * A copy of a stopped box's data, as a backup restored onto a spare is. Or
+ * one that has the event's ID and not its key, as anything copying the
+ * event, or a spare restored from a backup older than the key, would.
+ */
+function copyOfBox(dataDir: string, { withoutKey = false } = {}): string {
+  const dir = mkdtempSync(join(tmpdir(), 'crewbox-e2e-copy-'))
+  cpSync(dataDir, dir, { recursive: true })
+  if (withoutKey) {
+    const db = new DatabaseSync(join(dir, 'crewbox.db'))
+    db.prepare("DELETE FROM settings WHERE key = 'identityKey'").run()
+    db.close()
+  }
+  return dir
+}
+
+/** Each event the app holds: where it has it, and the key it kept for it. */
+const heldEvents = (page: Page) =>
+  page.evaluate(() =>
+    (
+      JSON.parse(localStorage.getItem('crewbox:boxes') ?? '[]') as Array<{
+        id: string
+        origin?: string
+        key?: string
+      }>
+    ).map(({ id, origin, key }) => ({ id, origin, key }))
+  )
+
+/** The event a box says it runs, and its key. */
+async function eventOf(box: Box): Promise<{ id: string; key: string }> {
+  const config = (await (await fetch(`http://${box.address}/api/config`)).json()) as {
+    eventId: string
+    eventKey: string
+  }
+  return { id: config.eventId, key: config.eventKey }
+}
+
+test('a typed address claiming this phone’s event is followed only when its box proves it', async ({
+  browser,
+}) => {
+  test.setTimeout(150_000)
+  let box = await startBox(4316, '4747')
+  const dirs = [box.dataDir]
+  let copy: Box | undefined
+  try {
+    const page = await appDevice(browser)
+    await joinBox(page, box.address, uniqueName('Proven Tech'), '4747')
+    // The key the event's box gave it, kept with the event.
+    const event = await eventOf(box)
+    expect(await heldEvents(page)).toEqual([{ ...event, origin: 'http://127.0.0.1:4316' }])
+    const sheet = uniqueName('Proven Stage')
+    await openPatch(page)
+    await createSheet(page, sheet)
+
+    // The box goes, and something with the event's ID and not its key is
+    // put at another address.
+    await box.stop()
+    const keyless = copyOfBox(box.dataDir, { withoutKey: true })
+    dirs.push(keyless)
+    copy = await startBox(4317, '4747', keyless)
+    await page.reload()
+    await expect(page.locator('.conn-banner')).toBeVisible({ timeout: 15_000 })
+    await openBoxes(page)
+    await page.getByLabel('Another box').fill(copy.address)
+    await page.getByRole('button', { name: 'Connect' }).click()
+    await expect(
+      page.getByText(
+        'The box at 127.0.0.1:4317 says it is running an event, but it can’t show that it ' +
+          'is that event’s box, so nothing has gone to it.'
+      )
+    ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open it anyway' })).toBeVisible()
+    // Nothing went to it, and the phone still knows its event where it was.
+    await page.waitForTimeout(1000)
+    expect(await relayOf(copy)).toMatchObject({ rooms: 0 })
+    await expect(boxRow(page, '127.0.0.1:4316')).toBeVisible()
+    expect(await heldEvents(page)).toEqual([{ ...event, origin: 'http://127.0.0.1:4316' }])
+    await copy.stop()
+
+    // The event's own box, restored with its key at another address, proves
+    // it and is followed there, with everything this phone had.
+    const restored = copyOfBox(box.dataDir)
+    dirs.push(restored)
+    box = await startBox(4318, '4747', restored)
+    await page.getByLabel('Another box').fill(box.address)
+    await page.getByRole('button', { name: 'Connect' }).click()
+    await expect(page.locator('.conn-banner')).toBeHidden({ timeout: 15_000 })
+    await openPatch(page)
+    await expect(page.locator('main').getByText(sheet).first()).toBeVisible()
+    // Where it is now, with the key it always had.
+    expect(await heldEvents(page)).toEqual([{ ...event, origin: 'http://127.0.0.1:4318' }])
+  } finally {
+    await box.stop()
+    await copy?.stop()
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a box at this address saying it runs an event held elsewhere is opened only once it proves it', async ({
+  browser,
+}) => {
+  test.setTimeout(180_000)
+  const friday = await startBox(4319, '4848')
+  let saturday = await startBox(4320, '4949')
+  const dirs = [friday.dataDir, saturday.dataDir]
+  try {
+    const page = await appDevice(browser)
+    const crew = uniqueName('Held Tech')
+    await joinBox(page, friday.address, crew, '4848')
+    // On to Saturday's box, holding Friday's event at its address.
+    await openBoxes(page)
+    await page.getByLabel('Another box').fill(saturday.address)
+    await page.getByRole('button', { name: 'Connect' }).click()
+    await joinBox(page, saturday.address, crew, '4949')
+    await friday.stop()
+
+    // Saturday's box goes, and something with Friday's ID and not its key
+    // takes Saturday's address.
+    await saturday.stop()
+    const keyless = copyOfBox(friday.dataDir, { withoutKey: true })
+    dirs.push(keyless)
+    saturday = await startBox(4320, '4949', keyless)
+    await page.reload()
+    const refused = page.locator('.conn-banner', {
+      hasText:
+        'The box at 127.0.0.1:4320 says it is running an event, but it can’t show that it is ' +
+        'that event’s box, so nothing has gone to it.',
+    })
+    await expect(refused).toBeVisible({ timeout: 15_000 })
+    // Nothing to open: the way on is its address, typed.
+    await expect(refused).toContainText('Your boxes')
+    await expect(refused).not.toContainText('Open it')
+    await page.waitForTimeout(1000)
+    expect(await relayOf(saturday)).toMatchObject({ rooms: 0 })
+    await refused.click()
+    await expect(page.getByRole('dialog', { name: 'Your boxes' })).toBeVisible()
+    await expect(boxRow(page, '127.0.0.1:4319')).toBeVisible()
+    await saturday.stop()
+
+    // Friday's own box, restored with its key at that address, proves it,
+    // and is the event this phone had, not a new one.
+    const restored = copyOfBox(friday.dataDir)
+    dirs.push(restored)
+    saturday = await startBox(4320, '4949', restored)
+    await page.reload()
+    await page
+      .getByRole('button', {
+        name:
+          'The box at 127.0.0.1:4320 is running the event this phone knew at 127.0.0.1:4319. ' +
+          'Open it',
+      })
+      .click({ timeout: 15_000 })
+    // Friday, where its box is now, signed in as before.
+    await expect(page.locator('.conn-banner')).toBeHidden({ timeout: 15_000 })
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+    const fridayEvent = await eventOf(saturday)
+    expect(await heldEvents(page)).toContainEqual({
+      ...fridayEvent,
+      origin: 'http://127.0.0.1:4320',
+    })
+  } finally {
+    await friday.stop()
+    await saturday.stop()
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
   }
 })
 

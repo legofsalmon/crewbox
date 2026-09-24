@@ -40,7 +40,7 @@ vi.mock('./lib/ws.ts', () => ({
 
 const api = {
   getConfig: vi.fn<() => Promise<PublicConfig>>(),
-  join: vi.fn<() => Promise<{ token: string; eventId?: string }>>(),
+  join: vi.fn<() => Promise<{ token: string; eventId?: string; eventKey?: string }>>(),
 }
 vi.mock('./lib/api.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./lib/api.ts')>()),
@@ -48,18 +48,19 @@ vi.mock('./lib/api.ts', async (importOriginal) => ({
   join: () => api.join(),
 }))
 
-const config = (eventId: string, eventName = 'Harbour Fest'): PublicConfig => ({
+const config = (eventId: string, eventName = 'Harbour Fest', eventKey?: string): PublicConfig => ({
   eventName,
   wifiSsid: '',
   voiceEnabled: false,
   modules: ['chat', 'incident'],
   eventId,
+  ...(eventKey ? { eventKey } : {}),
 })
 
-const welcome = (eventId: string, eventName?: string): WelcomeMessage => ({
+const welcome = (eventId: string, eventName?: string, eventKey?: string): WelcomeMessage => ({
   type: 'welcome',
   serverVersion: 'test',
-  config: config(eventId, eventName),
+  config: config(eventId, eventName, eventKey),
   me: { id: 'u1', name: 'Sam', role: 'member' } as WelcomeMessage['me'],
   users: [],
   channels: [],
@@ -92,6 +93,59 @@ async function loadStore() {
 
 /** Let a promise chain run: the welcome handler awaits the cache. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+const base64url = (bytes: Uint8Array): string => Buffer.from(bytes).toString('base64url')
+
+/**
+ * A box with a signing key of its own, answering /api/identity for `eventId`
+ * as server/src/app.ts does: for the address it was asked at.
+ */
+async function aBox(eventId: string) {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ])
+  const key = base64url(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)))
+  const answer = async (input: RequestInfo | URL): Promise<Response> => {
+    const url = new URL(String(input))
+    const statement = `crewbox-identity-v1\n${eventId}\n${url.host}\n${url.searchParams.get('nonce')}`
+    const signature = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      pair.privateKey,
+      new TextEncoder().encode(statement)
+    )
+    return new Response(
+      JSON.stringify({ eventId, key, signature: base64url(new Uint8Array(signature)) }),
+      { headers: { 'content-type': 'application/json' } }
+    )
+  }
+  return { key, answer }
+}
+
+/** Whatever answers a phone's check, and every address it was asked at. */
+function answering(answer: (input: RequestInfo | URL) => Promise<Response> | Response) {
+  const asked: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      asked.push(String(input))
+      return answer(input)
+    })
+  )
+  return asked
+}
+
+/** An event this phone holds at another box's address, with the key kept for it or none. */
+async function holdSaturday(key?: string) {
+  const { rememberEvent } = await import('./lib/eventScope.ts')
+  rememberEvent({
+    id: 'saturday',
+    name: 'Harbour Tour',
+    origin: 'http://10.0.0.3:8787',
+    seenAt: 2,
+    ...(key ? { key } : {}),
+  })
+}
 
 beforeEach(() => {
   localStorage.clear()
@@ -192,6 +246,123 @@ describe('a welcome from a box running another event', () => {
   })
 })
 
+describe('a box at this address saying it runs an event this phone holds elsewhere', () => {
+  // Anything that took this address can say which event it runs. The event
+  // moves here only once the box has signed for this address with the key
+  // kept for it (lib/identity.ts), and until then nothing of either event's
+  // records changes.
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('moves it here once the box has signed for this address with the key kept', async () => {
+    const saturday = await aBox('saturday')
+    const asked = answering(saturday.answer)
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday(saturday.key)
+    await store.getState().boot()
+    socket!.onMessage(welcome('saturday', 'Harbour Tour'))
+    await settle()
+    expect(sent).toEqual([])
+    await vi.waitFor(() =>
+      expect(store.getState().elsewhere).toEqual({
+        id: 'saturday',
+        name: 'Harbour Tour',
+        held: { origin: 'http://10.0.0.3:8787', proof: 'proven' },
+      })
+    )
+    expect(asked).toEqual([expect.stringMatching(`^${location.origin}/api/identity\\?nonce=`)])
+    expect(knownEvent('saturday')).toMatchObject({ origin: location.origin, key: saturday.key })
+    expect(knownEvent('friday')).toMatchObject({ replacedBy: 'saturday' })
+  })
+
+  it('moves nothing when the box signs with another key', async () => {
+    const saturday = await aBox('saturday')
+    const impostor = await aBox('saturday')
+    answering(impostor.answer)
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday(saturday.key)
+    await store.getState().boot()
+    socket!.onMessage(welcome('saturday', 'Harbour Tour'))
+    await vi.waitFor(() => expect(store.getState().elsewhere?.held?.proof).toBe('refused'))
+    expect(knownEvent('saturday')).toMatchObject({
+      origin: 'http://10.0.0.3:8787',
+      key: saturday.key,
+    })
+    expect(knownEvent('friday')?.replacedBy).toBeUndefined()
+    expect(sent).toEqual([])
+  })
+
+  it('moves nothing, and asks nothing, when no key was kept for it', async () => {
+    const asked = answering(() => new Response('{}', { status: 500 }))
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday()
+    await store.getState().boot()
+    socket!.onMessage(welcome('saturday', 'Harbour Tour'))
+    await settle()
+    expect(store.getState().elsewhere).toEqual({
+      id: 'saturday',
+      name: 'Harbour Tour',
+      held: { origin: 'http://10.0.0.3:8787', proof: 'unchecked' },
+    })
+    expect(asked).toEqual([])
+    expect(knownEvent('saturday')?.origin).toBe('http://10.0.0.3:8787')
+    expect(knownEvent('friday')?.replacedBy).toBeUndefined()
+  })
+})
+
+describe('the key kept for an event', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('is taken from its box’s welcome when none was kept, and never swapped for another', async () => {
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    const first = await aBox('friday')
+    const second = await aBox('friday')
+    await store.getState().boot()
+    socket!.onMessage(welcome('friday', 'Harbour Fest', first.key))
+    await settle()
+    expect(knownEvent('friday')?.key).toBe(first.key)
+    socket!.onMessage(welcome('friday', 'Harbour Fest', second.key))
+    await settle()
+    expect(knownEvent('friday')?.key).toBe(first.key)
+  })
+
+  it('is taken from a first sign-in', async () => {
+    localStorage.clear()
+    const friday = await aBox('friday')
+    api.join.mockResolvedValue({ token: 'first', eventId: 'friday', eventKey: friday.key })
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().join('Sam', '4242', '1234')
+    expect(knownEvent('friday')?.key).toBe(friday.key)
+  })
+
+  it('is replaced only when somebody opens a box that failed the check anyway', async () => {
+    const store = await loadStore()
+    const { knownEvent, rememberEvent } = await import('./lib/eventScope.ts')
+    const kept = await aBox('saturday')
+    const offered = await aBox('saturday')
+    rememberEvent({
+      id: 'saturday',
+      name: 'Harbour Tour',
+      origin: 'http://10.0.0.3',
+      seenAt: 2,
+      key: kept.key,
+    })
+    const at = { id: 'saturday', name: 'Harbour Tour', origin: 'http://10.0.0.9' }
+    store.getState().openEventAt(at)
+    expect(knownEvent('saturday')?.key).toBe(kept.key)
+    store.getState().openEventAt({ ...at, key: offered.key })
+    expect(knownEvent('saturday')?.key).toBe(offered.key)
+  })
+})
+
 describe('a box refusing this phone’s session', () => {
   it('ends the session when it is the same event', async () => {
     api.getConfig.mockResolvedValue(config('friday'))
@@ -276,6 +447,64 @@ describe('joining', () => {
     expect(localStorage.getItem('crewbox:token')).toBe('fridays-new-sign-in')
     expect(localStorage.getItem('crewbox:event')).toBeNull()
     expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('sends no PIN to a box that says it runs an event held elsewhere and fails the check', async () => {
+    localStorage.removeItem('crewbox:token')
+    const saturday = await aBox('saturday')
+    const impostor = await aBox('saturday')
+    answering(impostor.answer)
+    api.getConfig.mockResolvedValue(config('saturday', 'Harbour Tour'))
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday(saturday.key)
+    await expect(store.getState().join('Sam', '4242', '1234')).rejects.toThrow(
+      /says it is running “Harbour Tour”, but it can’t show that it is that event’s box/
+    )
+    expect(api.join).not.toHaveBeenCalled()
+    expect(knownEvent('saturday')?.origin).toBe('http://10.0.0.3:8787')
+    expect(localStorage.getItem('crewbox@saturday:token')).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+  it('refuses a sign-in naming an event held elsewhere that its box can’t show it runs', async () => {
+    // The box's config could not be read before the PIN went, or said
+    // something else: what the sign-in says is checked all the same.
+    localStorage.removeItem('crewbox:token')
+    const saturday = await aBox('saturday')
+    const impostor = await aBox('saturday')
+    answering(impostor.answer)
+    api.getConfig.mockRejectedValue(new TypeError('Failed to fetch'))
+    api.join.mockResolvedValue({ token: 'not-saturdays', eventId: 'saturday' })
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday(saturday.key)
+    await expect(store.getState().join('Sam', '4242', '1234')).rejects.toThrow(
+      /can’t show that it is that event’s box/
+    )
+    expect(knownEvent('saturday')).toMatchObject({
+      origin: 'http://10.0.0.3:8787',
+      key: saturday.key,
+    })
+    expect(localStorage.getItem('crewbox@saturday:token')).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+  it('joins a box that can’t be checked, since its address was typed', async () => {
+    localStorage.removeItem('crewbox:token')
+    const saturday = await aBox('saturday')
+    // A box behind a port forward: it won't sign for the address asked at.
+    answering(() => new Response('{}', { status: 421 }))
+    api.getConfig.mockResolvedValue(config('saturday', 'Harbour Tour'))
+    api.join.mockResolvedValue({ token: 'saturdays-sign-in', eventId: 'saturday' })
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday(saturday.key)
+    await store.getState().join('Sam', '4242', '1234')
+    expect(api.join).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('crewbox@saturday:token')).toBe('saturdays-sign-in')
+    expect(knownEvent('saturday')).toMatchObject({ origin: location.origin, key: saturday.key })
+    vi.unstubAllGlobals()
   })
 
   it('gives a new phone’s first event today’s names', async () => {

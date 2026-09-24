@@ -236,6 +236,12 @@ export interface KnownEvent {
   replacedBy?: string
   /** The offer to move this event's work across has been answered. */
   moveAnswered?: boolean
+  /**
+   * The event's public key, kept from the first box that let this device
+   * in for it and never replaced by a box's say-so: what a box at another
+   * address has to sign with to be followed there (lib/identity.ts).
+   */
+  key?: string
 }
 
 const isKnownEvent = (value: unknown): value is KnownEvent => {
@@ -246,7 +252,8 @@ const isKnownEvent = (value: unknown): value is KnownEvent => {
     event.id !== '' &&
     typeof event.name === 'string' &&
     typeof event.origin === 'string' &&
-    typeof event.seenAt === 'number'
+    typeof event.seenAt === 'number' &&
+    (event.key === undefined || typeof event.key === 'string')
   )
 }
 
@@ -282,6 +289,18 @@ export function rememberEvent(update: Partial<KnownEvent> & { id: string }): voi
   const next: KnownEvent = { name: '', origin: '', seenAt: 0, ...before, ...update }
   if (before && JSON.stringify(before) === JSON.stringify(next)) return
   writeKnown([...events.filter((event) => event.id !== update.id), next])
+}
+
+/**
+ * Keep an event's public key, if this device has none for it yet.
+ *
+ * Only ever the first: a box offering another key for an event this device
+ * holds is the thing the key is there to catch. The one way to replace it is
+ * somebody opening a box that failed the check anyway (`rememberEvent`).
+ */
+export function keepEventKey(id: string, key: string | undefined): void {
+  const event = knownEvent(id)
+  if (key && event && !event.key) rememberEvent({ id, key })
 }
 
 /**

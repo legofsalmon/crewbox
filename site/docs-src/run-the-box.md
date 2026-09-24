@@ -97,7 +97,12 @@ the other way, onto the spare: it picks the newest backup that actually
 finished and whose database reads, and passes over — out loud — any that
 does not. A spare restored from a backup is the same event to every phone,
 and they carry straight on: the backup carries the event's ID and the box's
-signing key with everything else. One started with a fresh database is a new
+signing key with everything else. At another address, phones check that key
+before they follow the event there: put the spare on the old address, or
+tell crew the new one to type. A box behind a port forward can't be checked,
+and phones take its typed address at the crew member's word; one restored
+from a backup older than its key fails the check, and phones say so and send
+it nothing. One started with a fresh database is a new
 event: phones say the box has changed and send it nothing, and each one,
 once it has joined, offers to bring its documents, running order and
 unsent messages across

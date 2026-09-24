@@ -198,6 +198,10 @@ describe('the browser storage names', () => {
         // timetable's own database and edit origin. Same rule applies — they
         // are on the device too.
         'crewbox-msg',
+        // Nor this: what every statement a box signs starts with
+        // (lib/identity.ts). Stored nowhere, and boxes in the field sign it,
+        // so it can't change either.
+        'crewbox-identity-v1',
         'crewbox-timetable-event',
         'crewbox-timetable-local',
         'crewbox:incident-outbox',

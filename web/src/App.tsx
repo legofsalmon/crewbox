@@ -19,7 +19,7 @@ import ServerUnreachable, { Connecting } from './components/ServerUnreachable.ts
 import ConnectionHelp from './components/ConnectionHelp.tsx'
 import Boxes from './components/Boxes.tsx'
 import MoveWorkOffer from './components/MoveWork.tsx'
-import { connectionScreen, elsewhereCopy, STUCK_AFTER_MS } from './lib/connscreen.ts'
+import { connectionScreen, elsewhereView, STUCK_AFTER_MS } from './lib/connscreen.ts'
 import { serverLabel } from './lib/server.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
 import { registerShortcut } from './shell/keys.ts'
@@ -133,6 +133,11 @@ function Shell() {
   const elsewhere = useStore((s) => s.elsewhere)
   const eventName = useStore((s) => s.config.eventName)
   const switchEvent = useStore((s) => s.switchEvent)
+  const setBoxesOpen = useStore((s) => s.setBoxesOpen)
+  const elsewhereShown = elsewhere && {
+    id: elsewhere.id,
+    ...elsewhereView({ address: serverLabel(), open: eventName, here: elsewhere }),
+  }
 
   // A returning user gets the app from cache and a thin banner, which is
   // right for a roam or a box restart and useless when the box has genuinely
@@ -172,15 +177,19 @@ function Shell() {
 
   return (
     <div className="app">
-      {elsewhere ? (
+      {elsewhereShown ? (
         // Not "offline": nothing typed here is going to that box. It is the
-        // way to it, and everything here stays on this device as it is.
+        // way to it, and everything here stays on this device as it is. A
+        // box that has not shown it is the event's is not a way anywhere:
+        // Your boxes is, where its address can be typed.
         <button
           className="conn-banner conn-offline conn-banner-stuck"
-          onClick={() => switchEvent(elsewhere.id)}
+          onClick={() =>
+            elsewhereShown.opens ? switchEvent(elsewhereShown.id) : setBoxesOpen(true)
+          }
         >
-          {elsewhereCopy({ address: serverLabel(), open: eventName, here: elsewhere.name })}{' '}
-          <span className="conn-banner-why">Open it</span>
+          {elsewhereShown.copy}{' '}
+          <span className="conn-banner-why">{elsewhereShown.opens ? 'Open it' : 'Your boxes'}</span>
         </button>
       ) : (
         connection !== 'online' &&

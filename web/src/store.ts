@@ -43,6 +43,7 @@ import {
   isNative,
   nativeAlerts,
   nativeSystemBars,
+  serverLabel,
   serverOrigin,
   setServerOrigin,
 } from './lib/server.ts'
@@ -55,13 +56,17 @@ import {
   chooseEvent,
   eventIdFrom,
   forgetEventPref,
+  keepEventKey,
   knownEvent,
+  knownEvents,
   openEvent,
   readEventPref,
   rememberEvent,
   storageNameFor,
   writeEventPref,
 } from './lib/eventScope.ts'
+import { checkMove, eventKeyFrom, proveBox, type Proof } from './lib/identity.ts'
+import { refusedCopy } from './lib/connscreen.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
 /** The open event's; see lib/eventScope.ts. */
@@ -220,6 +225,16 @@ export interface BoxEvent {
   /** '' when the box has none set. */
   name: string
 }
+
+/**
+ * The event the box at this address says it runs, when it is not the open
+ * one. `held` is set when it is an event this device holds at another
+ * address: nothing moves that event here on the box's word, and `proof`
+ * says whether the box has shown it is that event's box (lib/identity.ts).
+ */
+export interface Elsewhere extends BoxEvent {
+  held?: { origin: string; proof: 'checking' | Proof['kind'] }
+}
 export type ToastKind = 'info' | 'warning' | 'error'
 
 /** A message that needs this crew member, shown over the app while it is open. */
@@ -249,9 +264,10 @@ export interface AppState {
    * The event the box at this address is running, when it is not the one
    * this device has open: a spare box with a fresh database, or the next
    * event's box on the same address. Nothing of the open event's is sent to
-   * it, and the crew member is offered to open it (see `switchEvent`).
+   * it, and the crew member is offered to open it (see `switchEvent`), once
+   * it is known to be that event's box.
    */
-  elsewhere: BoxEvent | null
+  elsewhere: Elsewhere | null
   /** Live public settings (Wi-Fi SSID, voice availability). */
   config: PublicConfig
   me: User | null
@@ -457,9 +473,11 @@ export interface AppState {
   switchEvent: (id: string) => void
   /**
    * Go to the event a box at a typed address is running: the open one, moved
-   * there; another this device holds; or a new one, to join.
+   * there; another this device holds; or a new one, to join. `key` replaces
+   * the one kept for the event, when somebody opens a box that failed the
+   * check anyway.
    */
-  openEventAt: (event: { id: string; name: string; origin: string }) => void
+  openEventAt: (event: { id: string; name: string; origin: string; key?: string }) => void
   /** The Boxes screen: the events this device holds, and a way to another box. */
   boxesOpen: boolean
   setBoxesOpen: (open: boolean) => void
@@ -556,16 +574,71 @@ export const useStore = create<AppState>()((set, get) => {
    *
    * The open event's record says it was here, and that the event now here
    * took its place, which is what later offers to move its work across.
+   *
+   * Unless the event now here is one this device holds at another address.
+   * Then it moves here only once the box has signed for this address with
+   * the key kept for that event (lib/identity.ts): a box saying so is not
+   * enough, and anything that took this address could say it. Until then,
+   * and if it never does, neither record changes and there is nothing to
+   * open.
    */
   function otherEventHere(event: BoxEvent): void {
     ws?.stop()
     ws = null
+    const origin = here()
+    const held = knownEvent(event.id)
+    if (held?.origin && held.origin !== origin) {
+      const proof = held.key ? 'checking' : 'unchecked'
+      set({
+        elsewhere: { ...event, held: { origin: held.origin, proof } },
+        connection: 'offline',
+        hasFailed: true,
+      })
+      if (!held.key) return
+      void proveBox(origin, held).then((result) => {
+        const current = get().elsewhere
+        if (current?.id !== event.id || !current.held || here() !== origin) return
+        if (result.kind === 'proven') tookThePlace(event, origin)
+        set({ elsewhere: { ...current, held: { ...current.held, proof: result.kind } } })
+      })
+      return
+    }
+    tookThePlace(event, origin)
+    set({ elsewhere: event, connection: 'offline', hasFailed: true })
+  }
+
+  /** The event at this address is there in the open one's place. */
+  function tookThePlace(event: BoxEvent, origin: string): void {
     const open = openEvent()
-    if (open && knownEvent(open)?.origin === here()) {
+    if (open && knownEvent(open)?.origin === origin) {
       rememberEvent({ id: open, replacedBy: event.id })
     }
-    rememberEvent({ id: event.id, name: event.name, origin: here() })
-    set({ elsewhere: event, connection: 'offline', hasFailed: true })
+    rememberEvent({ id: event.id, name: event.name, origin })
+  }
+
+  /** Whether any event this device holds could be moved here, and checked first. */
+  function checkableMoveHere(): boolean {
+    const origin = here()
+    return knownEvents().some((event) => event.key && event.origin && event.origin !== origin)
+  }
+
+  /**
+   * Refuse to go on with a box that says it runs an event this device holds
+   * at another address, answers the check, and fails it (lib/identity.ts).
+   *
+   * For an address somebody typed, as the join form's is: one that can't be
+   * checked is taken at their word, as it always was.
+   */
+  async function refuseUnproven(value: unknown): Promise<void> {
+    const id = eventIdFrom(value)
+    if (!id) return
+    const proof = await checkMove(id, here())
+    if (proof?.kind !== 'refused') return
+    throw new api.ApiError(
+      `${refusedCopy({ address: serverLabel(), name: knownEvent(id)?.name ?? '' })} ` +
+        'If you are sure it is, open it from Your boxes.',
+      409
+    )
   }
 
   /** Whether the box here runs the open event; handles it when it does not. */
@@ -798,6 +871,9 @@ export const useStore = create<AppState>()((set, get) => {
     const open = openEvent()
     if (open) {
       rememberEvent({ id: open, name: msg.config.eventName, origin: here(), seenAt: Date.now() })
+      // From before phones kept keys: this box is the one this device syncs
+      // the event with, at an address it had or was given.
+      keepEventKey(open, eventKeyFrom(msg.config.eventKey))
     }
 
     const state = get()
@@ -1379,9 +1455,21 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     async join(name, eventPin, personalPin) {
+      // Before a PIN goes to it: a box that says it runs an event this
+      // device holds at another address has to pass the check, which would
+      // otherwise move the event here, the open one included.
+      let checked: string | undefined
+      if (checkableMoveHere()) {
+        const config = await api.getConfig(AbortSignal.timeout(6000)).catch(() => null)
+        checked = eventIdFrom(config?.eventId)
+        await refuseUnproven(checked)
+      }
       const joined = await api.join({ name, eventPin, personalPin })
       const { token } = joined
       const eventId = eventIdFrom(joined.eventId)
+      // A box that told the join another event than it said a moment ago.
+      if (eventId !== checked) await refuseUnproven(eventId)
+      const key = eventKeyFrom(joined.eventKey)
       if (eventId && !acceptEvent(eventId)) {
         // A box running another event than the one open: the sign-in is
         // that event's, and so is everything the box is about to send. File
@@ -1392,6 +1480,7 @@ export const useStore = create<AppState>()((set, get) => {
           rememberEvent({ id: open, replacedBy: eventId })
         }
         rememberEvent({ id: eventId, origin: here() })
+        keepEventKey(eventId, key)
         chooseEvent(eventId)
         reopenOnAnotherEvent()
         return
@@ -1399,6 +1488,8 @@ export const useStore = create<AppState>()((set, get) => {
       writeEventPref(TOKEN_KEY, token)
       requestNotificationPermission()
       await get().boot()
+      // After boot, which lists an event a new phone has only just been told of.
+      if (eventId) keepEventKey(eventId, key)
     },
 
     sendMessage(channelId, body) {
@@ -1875,11 +1966,12 @@ export const useStore = create<AppState>()((set, get) => {
       reopenOnAnotherEvent()
     },
 
-    openEventAt({ id, name, origin }) {
-      // An address somebody typed is trusted the way the join form trusts
-      // one. Nothing here follows a box to a new address by itself: that
-      // would take a box proving it is the same one, not only saying so.
-      rememberEvent({ id, name, origin })
+    openEventAt({ id, name, origin, key }) {
+      // An address somebody typed, and checked first where this device holds
+      // the event somewhere else (lib/identity.ts). A box that failed the
+      // check comes here only when they opened it anyway, and the key it
+      // offered is then the one kept.
+      rememberEvent({ id, name, origin, ...(key ? { key } : {}) })
       // On a phone not told an event yet, the first it is told of has
       // today's names, whether by joining or from here.
       if (!acceptEvent(id)) {
