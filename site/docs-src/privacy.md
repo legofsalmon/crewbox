@@ -106,9 +106,11 @@ network the box listens to, and it never leaves the venue. An admin can
 turn it off under **Admin → This box**.
 
 The phone apps listen for it only while their join screen or **Your boxes**
-is open. The question they put to the network, which boxes are here, says
-nothing about you beyond the phone's own address on the Wi-Fi, as anything
-it sends does.
+is open, and while they can't reach their box. The question they put to the
+network, which boxes are here, says nothing about you beyond the phone's own
+address on the Wi-Fi, as anything it sends does. A box found claiming an
+event you hold at a new address is asked to prove it is that event's box,
+with a random challenge, before anything else goes to it.
 
 ## What the network module listens to
 

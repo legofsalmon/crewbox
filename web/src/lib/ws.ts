@@ -87,6 +87,16 @@ export class WsClient {
     return true
   }
 
+  /**
+   * Connect afresh, to wherever wsUrl() points now: the box has moved. The
+   * socket to the old address goes, open or not, and so does its backoff.
+   */
+  restart(): void {
+    this.stop()
+    this.attempts = 0
+    this.start()
+  }
+
   /** User tapped "Retry": drop any backoff and attempt to connect right now. */
   reconnectNow(): void {
     this.wake()

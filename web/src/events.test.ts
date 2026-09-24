@@ -18,18 +18,24 @@ import type { QueuedIncident } from './modules/incident/model/outbox.ts'
  */
 
 const sent: ClientMessage[] = []
-let socket: { onMessage: (msg: unknown) => void; stopped: boolean } | null = null
+let socket: { onMessage: (msg: unknown) => void; stopped: boolean; restarts: number } | null = null
 
 vi.mock('./lib/ws.ts', () => ({
   WsClient: class {
     handlers: { onMessage: (msg: unknown) => void }
     constructor(handlers: { onMessage: (msg: unknown) => void }) {
       this.handlers = handlers
-      socket = { onMessage: handlers.onMessage, stopped: false }
+      socket = { onMessage: handlers.onMessage, stopped: false, restarts: 0 }
     }
     start() {}
     stop() {
       if (socket) socket.stopped = true
+    }
+    /** To wherever the page reaches its box now, as the real one does. */
+    restart() {
+      if (!socket) return
+      socket.stopped = false
+      socket.restarts++
     }
     send(msg: ClientMessage) {
       sent.push(msg)
@@ -536,15 +542,54 @@ describe('a box at an address typed into the Boxes screen', () => {
     delete (window as { Capacitor?: unknown }).Capacitor
   })
 
-  it('follows the open event’s own box to where it is now, keeping everything', async () => {
+  it('follows the open event’s own box to where it is now, in place, keeping everything', async () => {
     inTheApp('http://10.0.0.2')
     const store = await loadStore()
+    const { knownEvent, rememberEvent } = await import('./lib/eventScope.ts')
+    await store.getState().boot()
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    // Something at the old address had seemed to take its place.
+    rememberEvent({ id: 'friday', replacedBy: 'spare' })
+    store.getState().setBoxesOpen(true)
+
+    store.getState().openEventAt({ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.9' })
+    expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.9')
+    expect(knownEvent('friday')).toMatchObject({ origin: 'http://10.0.0.9' })
+    // It did not: the event is where its box is.
+    expect(knownEvent('friday')?.replacedBy).toBeUndefined()
+    expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
+    expect(localStorage.getItem('crewbox:event')).toBeNull()
+    // Not a reload, which would lose whatever was in hand: the socket goes
+    // to the new address, and the documents wait for its welcome.
+    expect(reload).not.toHaveBeenCalled()
+    expect(socket!.restarts).toBe(1)
+    expect(store.getState()).toMatchObject({
+      connection: 'connecting',
+      boxesOpen: false,
+      welcomedAt: 'http://10.0.0.2',
+    })
+    // Asked for, so nothing is said about it.
+    expect(store.getState().toasts).toEqual([])
+
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    expect(store.getState()).toMatchObject({
+      connection: 'online',
+      welcomedAt: 'http://10.0.0.9',
+    })
+  })
+
+  it('at the join form, starts again at the address its box is at now', async () => {
+    inTheApp('http://10.0.0.2')
+    localStorage.removeItem('crewbox:token')
+    const store = await loadStore()
     const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().boot()
+    expect(store.getState().phase).toBe('join')
     store.getState().openEventAt({ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.9' })
     expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.9')
     expect(knownEvent('friday')?.origin).toBe('http://10.0.0.9')
-    expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
-    expect(localStorage.getItem('crewbox:event')).toBeNull()
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
@@ -599,5 +644,63 @@ describe('a box at an address typed into the Boxes screen', () => {
     expect(reload).not.toHaveBeenCalled()
     expect(store.getState().boxesOpen).toBe(false)
     expect(store.getState().connection).toBe('connecting')
+  })
+})
+
+describe('the open event’s box, found on the Wi-Fi at a new address and proven there', () => {
+  const FOUND = 'Your box is at a new address, 10.0.0.9. This phone found it and carried on there.'
+
+  beforeEach(() => {
+    localStorage.setItem('crewbox:server-url', 'http://10.0.0.2')
+    localStorage.setItem(
+      'crewbox:boxes',
+      JSON.stringify([{ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.2', seenAt: 1 }])
+    )
+  })
+
+  it('is gone on with in place while nothing answers at the old address, and says so', async () => {
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().boot()
+    store.setState({ connection: 'offline' })
+
+    store.getState().followBox('http://10.0.0.9', { found: true })
+    expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.9')
+    expect(knownEvent('friday')?.origin).toBe('http://10.0.0.9')
+    expect(socket!.restarts).toBe(1)
+    expect(reload).not.toHaveBeenCalled()
+    expect(store.getState().toasts).toMatchObject([{ message: FOUND, kind: 'info' }])
+  })
+
+  it('is left alone while this phone is reaching its box where it was', async () => {
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().boot()
+    socket!.onMessage(welcome('friday'))
+    await settle()
+
+    store.getState().followBox('http://10.0.0.9', { found: true })
+    expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.2')
+    expect(knownEvent('friday')?.origin).toBe('http://10.0.0.2')
+    expect(socket!.restarts).toBe(0)
+    expect(store.getState().toasts).toEqual([])
+  })
+
+  it('is where the queue goes, and not the other event now at the old address', async () => {
+    const store = await loadStore()
+    await store.getState().boot()
+    socket!.onMessage(welcome('spare'))
+    await settle()
+    expect(socket!.stopped).toBe(true)
+    expect(sent).toEqual([])
+
+    store.getState().followBox('http://10.0.0.9', { found: true })
+    // A socket of its own, to the new address.
+    expect(socket!.stopped).toBe(false)
+    expect(store.getState().elsewhere).toBeNull()
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    expect(sent.map((m) => m.type)).toContain('logIncident')
+    expect(store.getState()).toMatchObject({ connection: 'online', welcomedAt: 'http://10.0.0.9' })
   })
 })

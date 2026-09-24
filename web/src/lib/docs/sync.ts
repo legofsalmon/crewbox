@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { openEvent } from '../eventScope.ts'
-import { docsWsUrl } from '../server.ts'
+import { boxOrigin, docsWsUrl } from '../server.ts'
 import { sessionToken, useStore } from '../../store.ts'
 
 export type SyncStatus = 'off' | 'connecting' | 'connected'
@@ -57,6 +57,11 @@ const colorFor = (id: string): string => {
  * database at the same address — or the next event's box — must never be
  * given them. The relay is told the event too, and refuses another's, which
  * covers the providers' own reconnects after that.
+ *
+ * That welcome is the one from the address the page reaches its box at now.
+ * A provider keeps the address it was made with, so when the app follows its
+ * event to a new one (store `followBox`) every provider goes, and they come
+ * back at the new address once the box there has welcomed this device too.
  */
 class SyncManager {
   private docs = new Map<string, Y.Doc>()
@@ -285,28 +290,34 @@ class SyncManager {
 
 const EMPTY_PEERS: RemotePeer[] = []
 
-/** The box has let this device in, and is running the event it has open. */
+/**
+ * The box has let this device in, at the address the page reaches it at now,
+ * and is running the event it has open.
+ */
 const boxConfirmed = (): boolean => {
-  const { hasConnected, elsewhere } = useStore.getState()
-  return hasConnected && !elsewhere
+  const { welcomedAt, elsewhere } = useStore.getState()
+  return !elsewhere && welcomedAt === boxOrigin()
 }
 
 export const syncManager = new SyncManager()
 
 // Docs opened pre-login connect once a session exists and the box has let it
 // in, and presence follows name changes — all of which flow from shell
-// identity state, not module settings.
+// identity state, not module settings. A box that has moved takes the
+// documents with the page: off the old address, and on at the new one once
+// it has let this device in.
 let lastIdentity = ''
 useStore.subscribe((state) => {
   const identity = [
     sessionToken() ?? '',
     state.me?.id ?? '',
     state.me?.name ?? '',
-    state.hasConnected,
+    state.welcomedAt ?? '',
+    boxOrigin(),
     state.elsewhere?.id ?? '',
   ].join(':')
   if (identity === lastIdentity) return
   lastIdentity = identity
-  if (state.elsewhere) syncManager.disconnectAll()
-  else syncManager.refresh()
+  if (boxConfirmed()) syncManager.refresh()
+  else syncManager.disconnectAll()
 })

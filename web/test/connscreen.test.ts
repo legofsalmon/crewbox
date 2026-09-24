@@ -96,7 +96,11 @@ describe('what to tell someone whose box has gone quiet', () => {
     // browser is at its box's own address, where that advice is no use.
     const app = connectionCauses({ isIos: false, canMoveBox: true })
     expect(app.at(-1)?.heading).toBe('The box may have a new address')
-    expect(app.at(-1)?.body).toMatch(/tap Your boxes/)
+    expect(app.at(-1)?.body).toMatch(/tap Your boxes to look for it/)
+    // While the app is looking for it, it says so, and what it does on finding it.
+    const looking = connectionCauses({ isIos: false, canMoveBox: true, looksForBox: true })
+    expect(looking.at(-1)?.body).toMatch(/^This phone is looking for it on this Wi-Fi/)
+    expect(looking.at(-1)?.body).toMatch(/once the box shows it is the same one/)
     const browser = connectionCauses({ isIos: false })
     expect(browser.some((c) => /new address|boxes/i.test(c.heading + c.body))).toBe(false)
   })

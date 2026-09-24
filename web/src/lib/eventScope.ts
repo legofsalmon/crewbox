@@ -295,6 +295,22 @@ export function rememberEvent(update: Partial<KnownEvent> & { id: string }): voi
 }
 
 /**
+ * An event's box has proven itself at another address (lib/identity.ts): the
+ * event is there now.
+ *
+ * Whatever took its old address did not take its place, so nothing of its
+ * work is offered to that one any more; it goes to its own box, where it is.
+ */
+export function eventMoved(id: string, origin: string): void {
+  const event = knownEvent(id)
+  if (!event) return
+  const { replacedBy: _, moveAnswered: __, ...rest } = event
+  const next: KnownEvent = { ...rest, origin }
+  if (JSON.stringify(next) === JSON.stringify(event)) return
+  writeKnown([...knownEvents().filter((known) => known.id !== id), next])
+}
+
+/**
  * Keep an event's public key, if this device has none for it yet.
  *
  * Only ever the first: a box offering another key for an event this device

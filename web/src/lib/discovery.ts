@@ -17,7 +17,7 @@ import { isIosApp, nativeDiscovery, type FoundService, type SearchState } from '
  * for a crew member to pick, and picking it asks the box itself which event
  * it runs (findBox) before anything of this device's goes there. An event
  * this device already holds is never followed to a new address on an
- * announcement's say-so.
+ * announcement's say-so, only on the box's own proof (lib/follow.ts).
  */
 
 /** How long a search runs before the screen says nothing has answered. */
@@ -278,7 +278,8 @@ const sameName = (name: string): string => name.trim().toLocaleLowerCase()
  * An event this device holds, announced at any other address, is left out
  * altogether. Following an event to a new address has to take the box proving
  * it with the key the device kept when it joined; an announcement, or even the
- * box's own /api/config, only says so.
+ * box's own /api/config, only says so. lib/follow.ts asks the box that, and
+ * once it has proven it, the event is here as the address it is known by.
  */
 export function nearby(
   services: readonly FoundService[],

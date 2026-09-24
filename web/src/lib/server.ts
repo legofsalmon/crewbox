@@ -218,6 +218,11 @@ export function serverOrigin(): string {
   }
 }
 
+/** Where this page reaches its box: the configured origin, or the page's own. */
+export function boxOrigin(): string {
+  return serverOrigin() || location.origin
+}
+
 export function setServerOrigin(input: string): void {
   const origin = normalizeOrigin(input)
   if (origin) localStorage.setItem(SERVER_KEY, origin)

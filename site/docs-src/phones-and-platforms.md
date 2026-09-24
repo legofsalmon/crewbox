@@ -149,7 +149,8 @@ iPhone, a name there needs `https://` in front; an IP address doesn't
 Above the field, the apps list the boxes on this Wi-Fi, which announce
 themselves ([Admin → This box](/docs/admin)), and picking one fills the field
 in after asking that box which event it runs. The apps look only while that
-screen or **Your boxes** is open. An iPhone asks once whether Crewbox may find
+screen or **Your boxes** is open, and while they can't reach their box, to
+find it if it has moved. An iPhone asks once whether Crewbox may find
 devices on your local network: the list needs a yes, and the field works
 either way. A browser can't look for boxes, so the join page there is
 unchanged.

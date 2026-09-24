@@ -39,6 +39,7 @@ import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
 import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
 import {
+  boxOrigin,
   isIosApp,
   isNative,
   nativeAlerts,
@@ -55,6 +56,7 @@ import {
   acceptEvent,
   chooseEvent,
   eventIdFrom,
+  eventMoved,
   forgetEventPref,
   keepEventKey,
   knownEvent,
@@ -268,6 +270,16 @@ export interface AppState {
    * it is known to be that event's box.
    */
   elsewhere: Elsewhere | null
+  /**
+   * The address whose box last let this page in, as an origin; null until
+   * one has.
+   *
+   * What documents wait for before they sync (lib/docs/sync.ts): after the
+   * page follows its event to a new address (`followBox`), a document still
+   * bound to the old one goes, and comes back once the box at the new one
+   * has welcomed this device too.
+   */
+  welcomedAt: string | null
   /** Live public settings (Wi-Fi SSID, voice availability). */
   config: PublicConfig
   me: User | null
@@ -481,6 +493,16 @@ export interface AppState {
    * check anyway.
    */
   openEventAt: (event: { id: string; name: string; origin: string; key?: string }) => void
+  /**
+   * The open event's box is at another address now: go on there, in place.
+   *
+   * Not a reload, as opening another event is. It is the same event, so
+   * whatever is in hand stays in hand: a message half typed, the sheet being
+   * read. `found` when the app found the box there by itself, which it does
+   * only once the box has proven it (lib/follow.ts): then it says so, and a
+   * page still reaching the box where it was stays there.
+   */
+  followBox: (origin: string, how?: { found?: boolean }) => void
   /** The Boxes screen: the events this device holds, and a way to another box. */
   boxesOpen: boolean
   setBoxesOpen: (open: boolean) => void
@@ -528,7 +550,7 @@ function getToken(): string | null {
 }
 
 /** Where this page reaches its box, as the list of known events records it. */
-const here = (): string => serverOrigin() || location.origin
+const here = boxOrigin
 
 /**
  * Load the app again with another event open, at its start.
@@ -934,6 +956,7 @@ export const useStore = create<AppState>()((set, get) => {
       hasConnected: true,
       hasFailed: false,
       elsewhere: null,
+      welcomedAt: here(),
       config: msg.config,
       me: msg.me,
       users: Object.fromEntries(msg.users.map((u) => [u.id, u])),
@@ -1265,6 +1288,7 @@ export const useStore = create<AppState>()((set, get) => {
     hasConnected: false,
     hasFailed: false,
     elsewhere: null,
+    welcomedAt: null,
     config: initialConfig(),
     fileDetail: null,
     me: null,
@@ -1986,13 +2010,41 @@ export const useStore = create<AppState>()((set, get) => {
         return
       }
       if (origin !== here()) {
-        // The open event's own box, at an address of its own now.
+        // The open event's own box, at an address of its own now. Signed in,
+        // the app goes on there as it is; at the join form, it starts again
+        // at the new address.
+        if (get().phase === 'chat') {
+          get().followBox(origin)
+          return
+        }
         setServerOrigin(origin)
         location.reload()
         return
       }
       set({ boxesOpen: false })
       get().retryConnection()
+    },
+
+    followBox(origin, { found = false } = {}) {
+      const open = openEvent()
+      if (!open || origin === here()) return
+      if (found && get().connection === 'online') return
+      // Its record first: the old address is not where it is, and whatever
+      // took that address did not take its place.
+      eventMoved(open, origin)
+      setServerOrigin(origin)
+      set({ elsewhere: null, connection: 'connecting', boxesOpen: false })
+      // A socket to the new address, and the welcome that brings the rest:
+      // anything missed, the outboxes, and the documents (see welcomedAt).
+      // Not a reload, which would lose what is in hand and bring nothing.
+      if (ws) ws.restart()
+      else startWs()
+      if (found) {
+        get().toast(
+          `Your box is at a new address, ${serverLabel()}. This phone found it and carried on there.`,
+          'info'
+        )
+      }
     },
 
     boxesOpen: false,

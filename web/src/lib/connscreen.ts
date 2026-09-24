@@ -74,6 +74,11 @@ export function connectionCauses(input: {
   isIos: boolean
   /** The app, which can be told another address from its Boxes screen. */
   canMoveBox?: boolean
+  /**
+   * The app is looking for the box on the Wi-Fi as this is read, to follow it
+   * to wherever it proves itself (lib/follow.ts).
+   */
+  looksForBox?: boolean
 }): ConnCause[] {
   const network = input.ssid ? `“${input.ssid}”` : 'the crew Wi-Fi'
   const causes: ConnCause[] = []
@@ -102,11 +107,17 @@ export function connectionCauses(input: {
     body: 'An update or a restart takes under a minute, and this clears by itself when it comes back.',
   })
   if (input.canMoveBox) {
-    // Last: rarer than any of the above, and the only one that never clears
-    // by itself. The app keeps trying the address it has.
+    // Last: rarer than any of the above, and the only one that may not clear
+    // by itself. The app keeps trying the address it has, and where it can
+    // look for the box on the Wi-Fi, it is looking.
     causes.push({
       heading: 'The box may have a new address',
-      body: 'If it has been moved or set up somewhere else, tap Your boxes and type the address on its join poster.',
+      body: input.looksForBox
+        ? 'This phone is looking for it on this Wi-Fi, and goes on there by itself once the ' +
+          'box shows it is the same one. If it isn’t found, tap Your boxes and type the ' +
+          'address on its join poster.'
+        : 'If it has been moved or set up somewhere else, tap Your boxes to look for it on ' +
+          'this Wi-Fi, or type the address on its join poster.',
     })
   }
 

@@ -73,7 +73,8 @@ the next event's box, sign out and join it. Your device keeps the old event
 too: **Your boxes**, at the top of the menu, lists every event it holds, and
 one tap opens another. In the phone apps it also lists the other boxes on
 this Wi-Fi, with **Join** beside each, and marks an event of yours _On this
-Wi-Fi_ when its box is here.
+Wi-Fi_ when its box is here, at a new address too once the box has shown it
+is the same one.
 
 - **"The box at … has changed, and is starting afresh"**, or **"… is running
   … now"**: the box at that address is running another event than the one
@@ -109,10 +110,12 @@ The app tells you what it's doing rather than spinning forever:
 - **"Can't reach the crew server"** — your phone can't see the box. Check
   you're on the event Wi-Fi (the screen names it), then tap **Retry now**.
   It also keeps retrying by itself. In the phone apps, a box that has moved
-  to a new address never answers the old one: tap **Your boxes** and type
-  the address from its join poster. It won't be offered under **On this
-  Wi-Fi**, because your device moves an event it holds only to an address
-  somebody typed.
+  to a new address never answers the old one, so after a little while the
+  app looks for it on the Wi-Fi. If it finds your event's box somewhere
+  else, and the box shows it is the same one with the key your device kept
+  when you joined, the app carries on there by itself and says so: nothing
+  goes to a box that can't show it. If it isn't found, tap **Your boxes** and
+  type the address from its join poster.
 - **"No boxes found on this Wi-Fi"** — in the phone apps, nothing on this
   network said it was a box. Check you're on the crew Wi-Fi. The box may not
   be announcing itself (an admin can see why under **Admin → This box**), or

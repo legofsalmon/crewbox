@@ -195,6 +195,10 @@ What each allows depends on how the app came to the box:
   can't be checked, it says what the box claims and that nothing has gone to
   it, and points to **Your boxes**, where an address can be typed. The event
   stays where the phone knows it.
+- **Found on the Wi-Fi**, announcing an event this phone holds at another
+  address, the app follows the event there only when it is proven, on a
+  proof from the last minute, and only to one box
+  ([below](#following-an-event-to-its-box)).
 - **At an address somebody typed**, in **Your boxes** or on the join screen,
   it goes ahead unless refused: the address was theirs to give, and a box
   behind a port forward, or one too old to sign, is taken at their word, as
@@ -214,20 +218,26 @@ it to prove itself each time it connects.
 ## How the apps look
 
 The iPhone and Android apps browse for `_crewbox._tcp` while a screen that
-lists boxes is open: the join screen and **Your boxes**. A web page has no way
-to browse, so in a browser those screens are as they were. The page
+lists boxes is open: the join screen and **Your boxes**. They also browse while
+the app can't reach its box: once nothing has answered at its address for 25
+seconds, or something else has (a box running another event), until the box
+is back ([below](#following-an-event-to-its-box)). A web page has no way to
+browse, so in a browser none of this happens. The page
 (`web/src/lib/discovery.ts`) asks the app's `CrewboxDiscovery` plugin to look
 (`native/ios/App/App/DiscoveryPlugin.swift`, and `DiscoveryPlugin.java` in the
 Android app), and the plugin passes on each service's name, IPv4 addresses and
 port, and the TXT keys above. Nothing else.
 
-**Only while somebody is looking.** The search stops when the screen closes
-and when the app goes to the background, and starts again when the app is back
-in front with the screen open. Nothing looks on a phone in a pocket.
+**Only while somebody is looking.** The search stops when the screen closes,
+when the box answers again, and when the app goes to the background, and starts
+again when the app is back in front with a reason to look. Nothing looks on a
+phone in a pocket.
 
 **On an iPhone**, the first search is what brings up iOS's Local Network
 alert, so the app doesn't start one until the crew member taps **Find boxes**,
-under a line saying what the alert will ask. After that it looks by itself.
+under a line saying what the alert will ask. After that it looks by itself, for
+a box it has lost too; until then it doesn't look for one, rather than bring up
+the alert unasked.
 The rest is what Apple's
 [TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)
 asks:
@@ -276,7 +286,9 @@ knows from one it doesn't.
 - **An event this phone holds is never listed.** Where its box answers at the
   address the phone knows, **Your boxes** marks that row _On this Wi-Fi_.
   Anything announcing it at another address is left out: listing it would put
-  the phone's work one tap from going somewhere else.
+  the phone's work one tap from going somewhere else. Instead the box there
+  is asked to prove it, and the event follows it only if it does
+  ([below](#following-an-event-to-its-box)).
 
 **Picking one asks the box.** Before using an address it found, the app asks
 for `/api/config` there, and takes the event's ID and name from the box's
@@ -286,9 +298,37 @@ address are each refused, in a line saying which, and nothing changes. On the
 join screen a picked box fills in the server field and moves on to the name;
 in **Your boxes** it opens that event, as typing its address would.
 
-**Not yet:** following an event this phone holds to a new address it was
-found at. Its box's new address still has to be typed, and is then checked
-([above](#how-the-apps-check-a-box)).
+### Following an event to its box
+
+A box announcing an event this phone holds, at an address other than the one
+the phone knows it by, is sent a fresh challenge and nothing else
+([above](#how-the-apps-check-a-box)). If it proves itself, the event goes there
+(`web/src/lib/follow.ts`):
+
+- **The open event, while the app can't reach its box.** The app goes on with
+  it at the new address without reloading, so a message half typed or a
+  sheet being read stays as it is, and says so: _Your box is at a new
+  address, …. This phone found it and carried on there._ The socket goes to
+  the new address, which gets the sign-in and whatever was queued as it
+  would after any reconnect. The shared documents let go of the old address
+  at once and join at the new one only once that box has let the phone in.
+- **Any other event, while Your boxes is open.** Only its record changes: its
+  row shows the new address, marked _On this Wi-Fi_, and opening it goes
+  there.
+- **Only on a proof from the last minute.** A box that didn't prove itself is
+  asked again a minute later, and one that did is followed within the minute
+  or asked again: what had an address a while ago says nothing about what
+  has it now.
+- **Only to one box.** Two boxes that both prove one event are a box and a
+  spare restored from its backup, and which one the crew are on is not for a
+  phone to guess: it stays where it is until one of them goes, or somebody
+  types an address in **Your boxes**.
+- **Only an event whose key the phone kept.** One joined before its box had a
+  key is never followed from an announcement, and neither is a box too old
+  to sign, or one that won't sign for the address it was found at, as behind
+  a port forward. Its address can still be typed.
+- **Never while the app reaches its box**, even where the same box announces
+  itself at a second address too.
 
 ## How it behaves on the network
 
@@ -366,6 +406,14 @@ join by address or QR as before.
   event's database without its key, at a typed address or at the phone's own,
   is refused and sent nothing, and a copy with its key is followed at either.
   Each rule was removed in turn to see a test fail.
+- **Following a box found:** which boxes are asked, how often, and when an
+  event follows, in unit tests (`web/src/lib/follow.test.tsx`); the app going
+  on in place and the documents waiting for the new box's welcome
+  (`web/src/events.test.ts`, `web/src/lib/docs/sync.test.ts`); and in a
+  browser against real boxes with the phone's search stood in
+  (`e2e/boxes.spec.ts`): a copy without the key, announced at a new address,
+  is asked, refused and sent nothing, and a copy with it is followed, with
+  a message still half typed in the composer.
 - **The apps' page:** what is listed and what is left out, the check when a
   box is picked, the iPhone's first tap and stopping when out of sight, in
   unit tests (`web/src/lib/discovery.test.ts`,

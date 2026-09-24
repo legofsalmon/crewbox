@@ -20,7 +20,9 @@ import ConnectionHelp from './components/ConnectionHelp.tsx'
 import Boxes from './components/Boxes.tsx'
 import MoveWorkOffer from './components/MoveWork.tsx'
 import { connectionScreen, elsewhereView, STUCK_AFTER_MS } from './lib/connscreen.ts'
-import { serverLabel } from './lib/server.ts'
+import { useBoxSearch } from './lib/discovery.ts'
+import { useFollowBoxes } from './lib/follow.ts'
+import { isNative, serverLabel } from './lib/server.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import FeedbackDialog from './components/FeedbackDialog.tsx'
@@ -167,6 +169,13 @@ function Shell() {
     const timer = setTimeout(() => setStuck(true), STUCK_AFTER_MS)
     return () => clearTimeout(timer)
   }, [online])
+
+  // The app, having lost its box: nothing has answered at its address for a
+  // while, or something else has. It looks for the box on the Wi-Fi until it
+  // is back, and goes on with it wherever it proves itself (lib/follow.ts).
+  const lost = isNative() && (elsewhere !== null || (!online && stuck))
+  const search = useBoxSearch(lost)
+  useFollowBoxes(search.services, lost ? 'open' : 'off')
 
   // Feedback or a crash report this device kept because the box was out of
   // reach: handed over each time the connection comes back. Background work,

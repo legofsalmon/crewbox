@@ -10,6 +10,7 @@ import {
 } from '../lib/boxes.ts'
 import { refusedCopy } from '../lib/connscreen.ts'
 import { addressOf, nearby, useBoxSearch } from '../lib/discovery.ts'
+import { useFollowBoxes } from '../lib/follow.ts'
 import {
   knownEvent,
   knownEvents,
@@ -57,6 +58,9 @@ export default function Boxes() {
     key: string
   } | null>(null)
   const search = useBoxSearch()
+  // This device's other events, found at new addresses and proven there,
+  // are listed there: on this Wi-Fi, and opened where they are.
+  useFollowBoxes(search.services, 'others')
   const found = useMemo(() => nearby(search.services, events), [search.services, events])
   const close = () => {
     if (!busy) setBoxesOpen(false)

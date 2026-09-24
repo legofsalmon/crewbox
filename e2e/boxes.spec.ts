@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, type Browser, type Page } from '@playwright/test'
 import {
   addAct,
+  announce,
+  appWithDiscovery,
   cell,
   commitCell,
   createSheet,
@@ -13,6 +15,7 @@ import {
   openSheetByName,
   test,
   uniqueName,
+  type FoundService,
 } from './helpers'
 
 /**
@@ -529,6 +532,80 @@ test('a typed address claiming this phone’s event is followed only when its bo
     await expect(page.locator('main').getByText(sheet).first()).toBeVisible()
     // Where it is now, with the key it always had.
     expect(await heldEvents(page)).toEqual([{ ...event, origin: 'http://127.0.0.1:4318' }])
+  } finally {
+    await box.stop()
+    await copy?.stop()
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+/** A box as the phone's search would find it: announcing `event` at its own port. */
+const announced = (box: Box, event: string, name: string): FoundService => ({
+  name,
+  addresses: ['127.0.0.1'],
+  port: Number(box.address.split(':')[1]),
+  txt: { txtvers: '1', id: event, name, setup: '1' },
+})
+
+test('the app finds its box at a new address on the Wi-Fi, and goes on there once it proves it', async ({
+  browser,
+}) => {
+  test.setTimeout(180_000)
+  let box = await startBox(4322, '5353')
+  const dirs = [box.dataDir]
+  let copy: Box | undefined
+  try {
+    const page = await appWithDiscovery(browser, 'android', [])
+    await page.goto('/')
+    await joinBox(page, box.address, uniqueName('Found Tech'), '5353')
+    const event = await eventOf(box)
+    expect(await heldEvents(page)).toEqual([{ ...event, origin: 'http://127.0.0.1:4322' }])
+    // Something in hand that a reload would lose.
+    const draft = 'Half a note about the stage left barrier'
+    await page.getByPlaceholder(/Message/).fill(draft)
+
+    // The box goes, and something with the event's ID and not its key
+    // announces it at another address.
+    await box.stop()
+    const keyless = copyOfBox(box.dataDir, { withoutKey: true })
+    dirs.push(keyless)
+    copy = await startBox(4323, '5353', keyless)
+    await announce(page, [announced(copy, event.id, 'Harbour Fest')])
+    await expect(page.locator('.conn-banner')).toBeVisible({ timeout: 15_000 })
+
+    // Once the box has been gone a while, the app looks for it, and asks
+    // what it finds to prove it.
+    const asked = await page.waitForResponse(
+      (res) => res.url().startsWith(`http://${copy!.address}/api/identity?nonce=`),
+      { timeout: 60_000 }
+    )
+    expect(asked.status()).toBe(200)
+    // It can't: nothing else went to it, and the phone stays where it was.
+    await page.waitForTimeout(1500)
+    expect(await relayOf(copy)).toMatchObject({ rooms: 0 })
+    expect(await heldEvents(page)).toEqual([{ ...event, origin: 'http://127.0.0.1:4322' }])
+    await expect(page.locator('.conn-banner')).toBeVisible()
+    await copy.stop()
+
+    // The event's own box, restored with its key, announces it at a third
+    // address: proven, and gone on with, in place.
+    const restored = copyOfBox(box.dataDir)
+    dirs.push(restored)
+    box = await startBox(4324, '5353', restored)
+    await announce(page, [announced(box, event.id, 'Harbour Fest')])
+    await expect(
+      page.getByText(
+        'Your box is at a new address, 127.0.0.1:4324. This phone found it and carried on there.'
+      )
+    ).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.conn-banner')).toBeHidden({ timeout: 15_000 })
+    expect(await heldEvents(page)).toEqual([{ ...event, origin: 'http://127.0.0.1:4324' }])
+    // No reload: what was being typed is still there.
+    await expect(page.getByPlaceholder(/Message/)).toHaveValue(draft)
+    // And the documents are with the box there, once it has let the phone in.
+    await expect
+      .poll(async () => (await relayOf(box)).rooms, { timeout: 15_000 })
+      .toBeGreaterThan(0)
   } finally {
     await box.stop()
     await copy?.stop()
