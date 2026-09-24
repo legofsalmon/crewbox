@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { mixConflictsWithOutputPicker } from '../src/lib/voice-playback.ts'
 import {
   canSelectOutput,
+  isAndroidFrom,
   isIOSFrom,
   resolveDevice,
   saveDeviceId,
@@ -91,6 +92,24 @@ describe('isIOSFrom', () => {
 
   it('is false for a real desktop Mac (no touch points)', () => {
     expect(isIOSFrom(MAC, 'MacIntel', 0)).toBe(false)
+  })
+})
+
+describe('isAndroidFrom', () => {
+  it('detects Android in each browser’s user-agent, reduced ones included', () => {
+    for (const ua of [
+      // Chrome's reduced user-agent.
+      'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
+      'Mozilla/5.0 (Android 15; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0',
+      'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36',
+    ]) {
+      expect(isAndroidFrom(ua)).toBe(true)
+    }
+  })
+
+  it('is false for an iPhone, a computer, and a browser asked for the desktop site', () => {
+    expect(isAndroidFrom('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)')).toBe(false)
+    expect(isAndroidFrom('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36')).toBe(false)
   })
 })
 

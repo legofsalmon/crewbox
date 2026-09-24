@@ -58,12 +58,16 @@ export interface ConnCause {
  * for a while.
  *
  * Ordered by how often each one is actually the answer, not by how
- * interesting it is. The iOS entry leads on that platform because it is the
- * only cause that is completely invisible from inside the app — the phone
- * reports a healthy Wi-Fi connection while routing everything past it — and
- * because it cost a real event an hour before anyone thought to look at the
- * status bar. It is omitted elsewhere: Android does not do this, and a cause
- * that cannot apply is a cause that wastes the reader's time.
+ * interesting it is. The status-bar entry leads on an iPhone, and on Android
+ * in a browser, because it is the only cause that is completely invisible
+ * from inside the app — the phone reports a healthy Wi-Fi connection while
+ * routing everything past it — and because it cost a real event an hour
+ * before anyone thought to look at the status bar. iOS moves a Wi-Fi with no
+ * internet off to mobile data; Android keeps it joined and sends apps'
+ * traffic over mobile data, when that is on. The Android app keeps its own
+ * traffic for the box on the Wi-Fi (native SiteWifi), so the entry is
+ * omitted there, and on a computer: a cause that cannot apply is a cause
+ * that wastes the reader's time.
  *
  * Pure so the copy is guarded by tests: this text is read by someone under
  * pressure, and a reordering that buries the invisible cause would quietly
@@ -72,8 +76,13 @@ export interface ConnCause {
 export function connectionCauses(input: {
   ssid?: string
   isIos: boolean
-  /** The app, which can be told another address from its Boxes screen. */
-  canMoveBox?: boolean
+  /** Android, in a browser or the app. */
+  isAndroid?: boolean
+  /**
+   * The phone app, not a browser: it can be told another address from its
+   * Boxes screen, and on Android keeps its own traffic on the crew Wi-Fi.
+   */
+  inApp?: boolean
   /**
    * The app is looking for the box on the Wi-Fi as this is read, to follow it
    * to wherever it proves itself (lib/follow.ts).
@@ -92,6 +101,15 @@ export function connectionCauses(input: {
         'Turn mobile data off for a minute and it comes straight back. Tell whoever runs the ' +
         'box: there is a proper fix for this at their end.',
     })
+  } else if (input.isAndroid && !input.inApp) {
+    causes.push({
+      heading: 'Check the Wi-Fi symbol in your status bar',
+      body:
+        `If it has an exclamation mark, Android decided ${network} has no internet and is ` +
+        'sending this browser’s traffic over mobile data, which cannot reach the crew box, ' +
+        'even though the Wi-Fi still shows as joined. Turn mobile data off and it comes ' +
+        'straight back. The Crewbox app for Android stays on the crew Wi-Fi by itself.',
+    })
   }
 
   causes.push({
@@ -106,7 +124,7 @@ export function connectionCauses(input: {
     heading: 'The box may be restarting',
     body: 'An update or a restart takes under a minute, and this clears by itself when it comes back.',
   })
-  if (input.canMoveBox) {
+  if (input.inApp) {
     // Last: rarer than any of the above, and the only one that may not clear
     // by itself. The app keeps trying the address it has, and where it can
     // look for the box on the Wi-Fi, it is looking.

@@ -55,6 +55,13 @@ box's data directory and `/connect` offers it
 notification permission and to be excused from battery optimisation — say
 yes to both, that's the superpower asking.
 
+A crew Wi-Fi usually has no internet, and with mobile data on, Android
+sends apps' traffic over mobile data instead, where the box can't be
+reached. The app keeps its own traffic for the box on the crew Wi-Fi, so
+leave mobile data on, and leave Android's notices about the Wi-Fi alone
+([what they do](#on-android)). A VPN on the phone may still keep the app
+from the box: turn it off at the venue.
+
 Scanning the join poster asks to use the camera the first time, and **Take
 a photo** in the attach menu needs the same yes. Say no and both stop, and
 each says so with an **Open Settings** button, which goes to Crewbox's page
@@ -93,8 +100,11 @@ Every phone tests a Wi-Fi network the moment it joins: it fetches one fixed
 web address and checks the answer. An event network with no uplink fails
 that test, and each platform reacts differently.
 
-- **Android** shows an exclamation mark on the Wi-Fi icon and carries on.
-  Annoying, harmless.
+- **Android** keeps the Wi-Fi joined, with an exclamation mark on its icon,
+  but with mobile data on it **sends apps' traffic over mobile data**, where
+  the box can't be reached. The Android app keeps its own traffic for the
+  box on the crew Wi-Fi, so it carries on. In a browser on Android, crewbox
+  sits on **Connecting** until mobile data is off ([more](#on-android)).
 - **iOS** does not carry on. It drops the Wi-Fi symbol from the status bar
   and **moves traffic to mobile data**. The box is on a private address
   reachable only over the Wi-Fi the phone has just walked away from, so
@@ -131,10 +141,11 @@ this Wi-Fi_) tells you which half is missing:
    clearly-marked optional block onto the router alongside the first.
 
 > [!NOTE]
-> Once both halves are in, phones stop warning that this network has no
+> Once both halves are in, iPhones stop warning that this network has no
 > internet — because as far as they can tell, it now has one. That's the
 > intent: crew on this network are talking to the box, not browsing. Nobody
-> should be relying on the crew Wi-Fi for internet anyway.
+> should be relying on the crew Wi-Fi for internet anyway. Android is
+> another matter, below.
 
 One gotcha worth knowing if you go the `pf` route on macOS: it doesn't
 redirect traffic the Mac sends to itself, so testing with `curl` on the box
@@ -144,6 +155,29 @@ Set `CREWBOX_CAPTIVE=0` to turn the responder off entirely. Without the DNS
 half it does nothing regardless, except one small courtesy: typing the box's
 name into Safari without `https://` lands on the app instead of a
 connection error.
+
+### On Android
+
+The box answering the tests doesn't settle it for Android. Android also
+checks a secure address the box can't answer, so it decides the crew
+network has **limited connectivity** rather than none, and with mobile data
+on, it still sends apps' traffic over mobile data. The Android app stays on
+the crew Wi-Fi regardless. What else a crew member may see, and what each
+answer does:
+
+- **A notice about the Wi-Fi**: "limited connectivity" when the box answers
+  the tests, or, for a network somebody picked in Settings, "no internet
+  access" and a question whether to stay connected. Ignoring it is fine:
+  the phone stays on the Wi-Fi.
+- **Yes**, or **connect anyway**, makes the crew Wi-Fi the phone's way to
+  everything, so a browser reaches the box and other apps get no internet
+  while the phone is on it. **Don't ask again** makes Android remember that
+  for this network.
+- **No**, or backing out of that question, **disconnects** the phone from
+  the crew Wi-Fi, and it won't go back by itself.
+- Android may **stop joining a network by itself** once it has found no
+  internet there. On a later day, join it again from Settings → Wi-Fi, or
+  scan the Wi-Fi code on the join poster.
 
 ## Native join: the server field
 
@@ -162,13 +196,14 @@ join that network. The phone asks you first: an iPhone asks whether Crewbox
 may join it, and Android 11 and later show their own screen asking whether
 to save it, naming the app. Once saved it is one of the phone's own
 networks, as if typed into its Wi-Fi settings, and the phone goes back to it
-by itself, though an iPhone forgets it if the app is deleted. The iPhone app
-then checks that the phone got on it, which iOS lets an app see only for a
-network that app added. WEP networks, ones where each person signs in with
-their own username, and codes that give the password as a 64-digit key are
-left to the phone's Wi-Fi settings, and so is Android 10 and older, which
-can't add a network for an app without a permission Crewbox doesn't ask
-for.
+by itself, though an iPhone forgets it if the app is deleted, and Android
+may stop once it has found no internet there ([more](#on-android)). The
+iPhone app then checks that the phone got on it, which iOS lets an app see
+only for a network that app added. WEP networks, ones where each person
+signs in with their own username, and codes that give the password as a
+64-digit key are left to the phone's Wi-Fi settings, and so is Android 10
+and older, which can't add a network for an app without a permission
+Crewbox doesn't ask for.
 
 Set the crew Wi-Fi to WPA2/WPA3 rather than WPA3 alone. A phone without
 WPA3 can't join a WPA3-only network at all, and Apple doesn't say whether an

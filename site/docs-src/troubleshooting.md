@@ -33,6 +33,12 @@ Symptom-first. Crew problems first, box problems at the end.
   runs the box, because
   [there's a proper fix](/docs/phones-and-platforms#the-no-internet-problem).
 
+  On Android in a browser, or with crewbox added to the home screen from
+  one, the sign is an **exclamation mark** on the Wi-Fi symbol: Android
+  decided this network has no internet and is sending the browser's traffic
+  over mobile data. Turn mobile data off and it comes straight back. The
+  Android app doesn't need that: it stays on the crew Wi-Fi by itself.
+
   Nothing is lost while this lasts. Everything you can see is on your device,
   and anything you send is queued and delivers the moment the box is back.
 
@@ -148,12 +154,28 @@ app.
   rule. **Admin → This box → Download port 80 config** has it, filled in for
   this machine. Don't test the rule with `curl` from the box itself — macOS
   won't redirect a machine's traffic to itself, so it fails while working.
-- **iPhones show the app but never connect; Androids are fine** — iOS has
-  judged the crew network internet-less and fallen back to mobile data. This
-  is the single most confusing failure in the product because the phone
-  still shows as joined. **Admin → This box** has a _Phones stay on this
-  Wi-Fi_ row; see
+- **iPhones show the app but never connect** — iOS has judged the crew
+  network internet-less and fallen back to mobile data. This is the single
+  most confusing failure in the product because the phone still shows as
+  joined. **Admin → This box** has a _Phones stay on this Wi-Fi_ row; see
   [the full explanation and fix](/docs/phones-and-platforms#the-no-internet-problem).
+- **Androids in a browser never connect, and the Android app does** — the
+  same judgement: with mobile data on, Android keeps the crew Wi-Fi joined
+  but sends a browser's traffic over mobile data, and the box answering the
+  phones' tests doesn't change that for Android. Mobile data off fixes it,
+  and so does the Android app, which keeps its traffic for the box on the
+  crew Wi-Fi ([on Android](/docs/phones-and-platforms#on-android)).
+- **An Android phone doesn't rejoin the crew Wi-Fi by itself** — Android may
+  stop joining a network by itself once it has found no internet there, or
+  once somebody has answered No to its question about it. Join it again from
+  Settings → Wi-Fi, or scan the Wi-Fi code on the join poster. On a Samsung,
+  **Switch to mobile data** (Settings → Connections → Wi-Fi → ⋮ → Intelligent
+  Wi-Fi) takes a phone off a Wi-Fi it judges unstable; turn it off on crew
+  phones that keep leaving.
+- **An Android phone reaches the box by its address, but not by its name** —
+  Private DNS set to a provider's name, in the phone's network settings,
+  sends every lookup to that provider, over an internet the crew Wi-Fi
+  hasn't got. Set it to **Automatic** at the venue, or use the box's address.
 - **Setup page gone** — `/setup` closes forever once the first person
   joins. Everything on it lives on in the admin panel; the admin password,
   if lost, can be overridden with the `ADMIN_PASSWORD` environment variable

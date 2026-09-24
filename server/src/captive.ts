@@ -27,11 +27,19 @@
  *    running this listener on its own changes nothing: with no DNS record,
  *    no probe ever arrives here.
  *
- * The honest trade: once both halves are in place, phones stop warning that
+ * The honest trade: once both halves are in place, iPhones stop warning that
  * the crew network has no internet — because as far as they can tell, it
  * has. That is the point. Crew on this network are not browsing; they are
  * talking to the box, and a phone that thinks it should go to cellular for
  * that is a phone with no comms.
+ *
+ * Android is not settled by this. Its NetworkMonitor also fetches an HTTPS
+ * address, which no box can answer, and an HTTP success with every HTTPS
+ * probe failed is "partial connectivity": not validated, so with mobile data
+ * on, apps' traffic still goes over mobile data, and Android shows a
+ * "limited connectivity" notice (read in Android's source, 10 to 17). The
+ * Android app works round it by holding the Wi-Fi itself (native
+ * SiteWifi); a browser on Android needs mobile data off.
  */
 
 import { createServer, type Server } from 'node:http'

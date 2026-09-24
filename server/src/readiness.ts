@@ -266,7 +266,9 @@ function networkCheck(input: ReadinessInput): ReadinessCheck {
  * network has internet, and iOS answers "no" by dropping to cellular — which
  * puts the box, on a private address, out of reach while the phone still
  * shows as connected. The box can answer those probes (captive.ts), but only
- * if it holds port 80 and only if the router's DNS sends them here.
+ * if it holds port 80 and only if the router's DNS sends them here. Android
+ * probes an HTTPS address as well, which no box can answer, so this settles
+ * iPhones and not Android (captive.ts says what Android does instead).
  *
  * It can prove the first half and not the second, so the line says exactly
  * that rather than claiming a fix it cannot see.
@@ -306,7 +308,7 @@ function captiveCheck(captive: NonNullable<ReadinessInput['captive']>): Readines
     ...base,
     state: 'ok',
     detail:
-      `Answering connectivity checks on port ${captive.port ?? 80}, so phones treat this ` +
+      `Answering connectivity checks on port ${captive.port ?? 80}, so iPhones treat this ` +
       'network as usable instead of falling back to mobile data.',
     fix:
       'Only reaches the box if the event router points the probe hostnames here. Download ' +

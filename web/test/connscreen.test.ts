@@ -65,11 +65,29 @@ describe('what to tell someone whose box has gone quiet', () => {
     expect(causes[0]?.body).toMatch(/mobile data/)
   })
 
-  it('never mentions it on a platform that does not do it', () => {
-    // Android keeps using the network it is joined to. A cause that cannot
-    // apply is a cause that wastes the reader's time under pressure.
-    const causes = connectionCauses({ ssid: 'CREW-5G', isIos: false })
-    expect(causes.some((c) => /status bar|mobile data/.test(c.heading + c.body))).toBe(false)
+  it('leads with it on Android in a browser, which sends its traffic past the Wi-Fi too', () => {
+    // With mobile data on, Android keeps a Wi-Fi with no internet joined and
+    // sends apps' traffic over mobile data: the same invisible cause, with
+    // the Wi-Fi symbol showing an exclamation mark rather than gone.
+    const causes = connectionCauses({ ssid: 'CREW-5G', isIos: false, isAndroid: true })
+    expect(causes[0]?.heading).toMatch(/status bar/)
+    expect(causes[0]?.body).toMatch(/exclamation mark/)
+    expect(causes[0]?.body).toMatch(/Turn mobile data off/)
+    // The box can't fix this one for Android; the app can.
+    expect(causes[0]?.body).not.toMatch(/whoever runs the box/)
+    expect(causes[0]?.body).toMatch(/Crewbox app for Android stays on the crew Wi-Fi/)
+  })
+
+  it('never mentions it where it cannot happen: the Android app, or a computer', () => {
+    // The Android app keeps its own traffic for the box on the crew Wi-Fi
+    // (native SiteWifi). A cause that cannot apply is a cause that wastes
+    // the reader's time under pressure.
+    for (const causes of [
+      connectionCauses({ ssid: 'CREW-5G', isIos: false, isAndroid: true, inApp: true }),
+      connectionCauses({ ssid: 'CREW-5G', isIos: false }),
+    ]) {
+      expect(causes.some((c) => /status bar|mobile data/.test(c.heading + c.body))).toBe(false)
+    }
   })
 
   it('names the actual network when the box has told it one', () => {
@@ -94,11 +112,11 @@ describe('what to tell someone whose box has gone quiet', () => {
     // The app keeps trying the address it was given, and a box that has
     // moved never answers it: the Boxes screen is where it can be told. A
     // browser is at its box's own address, where that advice is no use.
-    const app = connectionCauses({ isIos: false, canMoveBox: true })
+    const app = connectionCauses({ isIos: false, inApp: true })
     expect(app.at(-1)?.heading).toBe('The box may have a new address')
     expect(app.at(-1)?.body).toMatch(/tap Your boxes to look for it/)
     // While the app is looking for it, it says so, and what it does on finding it.
-    const looking = connectionCauses({ isIos: false, canMoveBox: true, looksForBox: true })
+    const looking = connectionCauses({ isIos: false, inApp: true, looksForBox: true })
     expect(looking.at(-1)?.body).toMatch(/^This phone is looking for it on this Wi-Fi/)
     expect(looking.at(-1)?.body).toMatch(/once the box shows it is the same one/)
     const browser = connectionCauses({ isIos: false })

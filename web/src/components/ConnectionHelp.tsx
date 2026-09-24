@@ -1,6 +1,6 @@
 import { useStore } from '../store.ts'
 import { connectionCauses } from '../lib/connscreen.ts'
-import { isIOS } from '../lib/devices.ts'
+import { isAndroid, isIOS } from '../lib/devices.ts'
 import { useBoxSearch } from '../lib/discovery.ts'
 import { effectiveSsid } from '../lib/settings.ts'
 import { isNative, serverLabel } from '../lib/server.ts'
@@ -21,13 +21,14 @@ export default function ConnectionHelp({ onClose }: { onClose: () => void }) {
   const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
   const setBoxesOpen = useStore((s) => s.setBoxesOpen)
   const retrying = connection === 'connecting'
-  const canMoveBox = isNative()
+  const inApp = isNative()
   // The shell's own search, while its box is lost (lib/follow.ts); read, not started.
   const search = useBoxSearch(false)
   const causes = connectionCauses({
     ...(wifiSsid ? { ssid: wifiSsid } : {}),
     isIos: isIOS(),
-    canMoveBox,
+    isAndroid: isAndroid(),
+    inApp,
     looksForBox: search.state === 'searching',
   })
 
@@ -59,7 +60,7 @@ export default function ConnectionHelp({ onClose }: { onClose: () => void }) {
           <button className="center-retry" onClick={retryConnection} disabled={retrying}>
             {retrying ? 'Retrying…' : 'Retry now'}
           </button>
-          {canMoveBox && (
+          {inApp && (
             <button
               className="admin-btn"
               onClick={() => {
