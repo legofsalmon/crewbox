@@ -126,6 +126,11 @@ rmSync(iconset, { recursive: true, force: true })
 // stop the box. That was wrong — a console binary never gets a persistent Dock
 // icon — and the box shipped with no way to stop it at all. The menu-bar
 // wrapper is the fix; this flag is what keeps it out of the Dock.
+//
+// NSLocalNetworkUsageDescription is the reason macOS 15 shows when it asks
+// whether the box may reach devices on the local network (the network audit,
+// DMX, mDNS). Without it the prompt carries no reason, and an admin who says
+// no to an unexplained prompt has a box that cannot see the rig.
 writeFileSync(
   join(app, 'Contents', 'Info.plist'),
   `<?xml version="1.0" encoding="UTF-8"?>
@@ -143,6 +148,7 @@ writeFileSync(
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>LSUIElement</key><true/>
+  <key>NSLocalNetworkUsageDescription</key><string>Crewbox is the crew comms server for this event. It talks to phones, lighting and audio devices on the local network.</string>
 </dict>
 </plist>
 `
