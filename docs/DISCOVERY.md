@@ -138,6 +138,86 @@ used by something else, or anything announcing an ID it copied.
 A box that predates this has no `eventKey` and answers `/api/identity` with a
 404; an app treats it as any box it cannot check.
 
+## How the apps look
+
+The iPhone and Android apps browse for `_crewbox._tcp` while a screen that
+lists boxes is open: the join screen and **Your boxes**. A web page has no way
+to browse, so in a browser those screens are as they were. The page
+(`web/src/lib/discovery.ts`) asks the app's `CrewboxDiscovery` plugin to look
+(`native/ios/App/App/DiscoveryPlugin.swift`, and `DiscoveryPlugin.java` in the
+Android app), and the plugin passes on each service's name, IPv4 addresses and
+port, and the TXT keys above. Nothing else.
+
+**Only while somebody is looking.** The search stops when the screen closes
+and when the app goes to the background, and starts again when the app is back
+in front with the screen open. Nothing looks on a phone in a pocket.
+
+**On an iPhone**, the first search is what brings up iOS's Local Network
+alert, so the app doesn't start one until the crew member taps **Find boxes**,
+under a line saying what the alert will ask. After that it looks by itself.
+The rest is what Apple's
+[TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)
+asks:
+
+- `Info.plist` lists `_crewbox._tcp` in `NSBonjourServices`, without which iOS
+  refuses the browse, and `NSLocalNetworkUsageDescription` is the alert's
+  text.
+- NWBrowser finds the services and their TXT records. Network framework cannot
+  turn a service into an address (Apple's advice on the developer forums,
+  [thread 673771](https://developer.apple.com/forums/thread/673771)), so each
+  one found is looked up with NetService.
+- A search refused because Local Network is off for the app waits with
+  PolicyDenied. The screen says so, with an **Open Settings** button, and the
+  search starts afresh when the app comes back to the front.
+- A search is never started while the app is in the background: iOS refuses
+  one there without asking, and doesn't remember that it did.
+
+**On Android**, NsdManager browses. Nothing is asked of the user: at the app's
+target (API 36) local network access comes with the internet permission.
+
+- On Android 14 and later each service found is followed with
+  `registerServiceInfoCallback`, which keeps its address current. Before
+  that, `resolveService` handles one service at a time, with no time limit
+  that its source shows, so the app resolves them in turn, allows each ten
+  seconds, and tries one that failed again a second later, three times at
+  most.
+- Android 12 and earlier, and Android 13 without the T extensions 7 update,
+  hear mDNS only while an app holds a multicast lock. The app takes one there,
+  only while it is looking; that is what `CHANGE_WIFI_MULTICAST_STATE` is for,
+  a permission granted at install that nobody is asked about.
+- Android 17 blocks the local network for an app that targets it until the
+  user allows it (`ACCESS_LOCAL_NETWORK`). The app passes that refusal on as
+  it does the iPhone's; raising the target will need the permission in the
+  manifest and a way to ask for it.
+
+**What they list.** Each box found is a row: the event's name from `name`, and
+the address the app would connect to, the certificate's name from `tls` where
+there is one and the IPv4 address otherwise. Every box is looked up as soon as
+it is found, which Apple's engineers call a faux pas on a busy network; a crew
+Wi-Fi has a box or two, and without the address the app can't tell a box it
+knows from one it doesn't.
+
+- A box nobody has set up says so, with its setup address, and has no button.
+- Two boxes with one event ID, or one name, each say another box here has the
+  same name, and to check the address on the join poster.
+- **An event this phone holds is never listed.** Where its box answers at the
+  address the phone knows, **Your boxes** marks that row _On this Wi-Fi_.
+  Anything announcing it at another address is left out: listing it would put
+  the phone's work one tap from going somewhere else.
+
+**Picking one asks the box.** Before using an address it found, the app asks
+for `/api/config` there, and takes the event's ID and name from the box's
+answer, not the announcement's. A box that doesn't answer, one too old to say
+which event it is, and one saying it runs an event this phone holds at another
+address are each refused, in a line saying which, and nothing changes. On the
+join screen a picked box fills in the server field and moves on to the name;
+in **Your boxes** it opens that event, as typing its address would.
+
+**Not yet:** following an event this phone holds to a new address, by checking
+the box's signature against the key kept for it
+([above](#how-a-box-proves-which-event-it-is)). Until the apps do, a held event
+moves only when somebody types its new address.
+
 ## How it behaves on the network
 
 What RFC 6762 asks of a responder, and where the code does it
@@ -203,6 +283,18 @@ join by address or QR as before.
   (`server/test/identity.test.ts`). The same event ID and key come back from a
   real `deploy/backup.sh` and `deploy/restore.sh`
   (`server/test/backupRestore.test.ts`).
-- **Not yet:** an iPhone's or an Android phone's browser listing a real box, or
-  checking one's signature. The apps' side of discovery comes next, and this
-  line changes when it has been seen on hardware.
+- **The apps' page:** what is listed and what is left out, the check when a
+  box is picked, the iPhone's first tap and stopping when out of sight, in
+  unit tests (`web/src/lib/discovery.test.ts`,
+  `web/src/components/NearbyBoxes.test.tsx`), and in a browser against a real
+  box with the phone's search stood in (`e2e/discovery.spec.ts`).
+- **The apps' search:** the iPhone's compiles in CI and the Android APK is
+  built there. Tests check the pieces a build would not miss:
+  `NSBonjourServices` names the type the plugin browses for, the storyboard
+  loads the view controller that registers the plugin, and every Android
+  plugin is registered before the bridge starts
+  (`server/test/iosInfoPlist.test.mjs`,
+  `server/test/androidPlugins.test.mjs`).
+- **Not yet:** an iPhone or an Android phone listing a real box, or checking
+  one's signature. Neither search has been run on hardware, and this line
+  changes when it has.

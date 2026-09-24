@@ -2,13 +2,16 @@ import { getConfigAt } from './api.ts'
 import { chatDatabase, chatDatabaseName } from './db.ts'
 import { deleteLocalDatabase } from './docs/persistence.ts'
 import { allDocStores } from './docs/store.ts'
+import { addressOf, type NearbyBox } from './discovery.ts'
 import {
   eventIdFrom,
   eventPrefKeys,
   forgetEventRecord,
   isEventDatabase,
+  knownEvent,
   openEvent,
   releaseEvent,
+  type KnownEvent,
 } from './eventScope.ts'
 import { forgetPref } from './prefs.ts'
 import { iphoneRefusesPlainHttp, isIosApp, normalizeOrigin } from './server.ts'
@@ -148,6 +151,61 @@ export async function findBox(
   const id = eventIdFrom(config.eventId)
   if (!id) return { kind: 'too-old', origin }
   return { kind: 'event', origin, id, name: config.eventName ?? '' }
+}
+
+/** A found box, once it has said for itself which event it runs. */
+export interface PickedBox {
+  id: string
+  name: string
+  origin: string
+}
+
+/**
+ * Ask a found box which event it runs, before this device does anything there.
+ *
+ * Its announcement said so too, but anything on the Wi-Fi can announce
+ * anything; the box's own answer is what the join form and the Boxes screen
+ * act on, as they do for a typed address. An event this device already holds
+ * is never followed to another address from the list: a box saying it is
+ * that event is not proof, and the event's own row, or its address typed from
+ * the poster, is the way there.
+ */
+export async function checkFound(
+  box: NearbyBox,
+  find: (origin: string) => Promise<FoundBox> = findBox,
+  held: (id: string) => KnownEvent | undefined = knownEvent
+): Promise<{ ok: true; box: PickedBox } | { ok: false; message: string }> {
+  const found = await find(box.origin)
+  switch (found.kind) {
+    case 'invalid':
+      return { ok: false, message: found.message }
+    case 'unreachable':
+      return {
+        ok: false,
+        message:
+          `Nothing answered at ${box.address}. The box may have just left the Wi-Fi: ` +
+          'try again, or type the address from the join poster.',
+      }
+    case 'too-old':
+      return {
+        ok: false,
+        message:
+          `The box at ${box.address} runs an older crewbox, which does not say which event ` +
+          'it is. Update it from its admin panel, then try again.',
+      }
+  }
+  const known = held(found.id)
+  if (known && known.origin !== found.origin) {
+    const name = known.name.trim() || 'an event'
+    const where = known.origin ? ` at ${addressOf(known.origin)}` : ''
+    return {
+      ok: false,
+      message:
+        `The box at ${box.address} says it runs ${name}, which this phone knows${where}. ` +
+        'If that box has moved, type its new address from the join poster.',
+    }
+  }
+  return { ok: true, box: { id: found.id, name: found.name, origin: found.origin } }
 }
 
 /** When an event's box last let this device in, for its row. */

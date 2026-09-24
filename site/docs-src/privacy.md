@@ -52,6 +52,11 @@ PIN, a password or the Wi-Fi's. It is not announced on a lighting or media
 network the box listens to, and it never leaves the venue. An admin can
 turn it off under **Admin → This box**.
 
+The phone apps listen for it only while their join screen or **Your boxes**
+is open. The question they put to the network, which boxes are here, says
+nothing about you beyond the phone's own address on the Wi-Fi, as anything
+it sends does.
+
 ## What the network module listens to
 
 The [Network audit](/docs/network) grades networks by **passive

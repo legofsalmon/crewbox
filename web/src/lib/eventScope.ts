@@ -81,6 +81,7 @@ export const DEVICE_PREF_KEYS: readonly string[] = [
   KNOWN_EVENTS_KEY,
   FIRST_EVENT_KEY,
   OPEN_EVENT_KEY,
+  'crewbox:find-boxes-asked',
   'crewbox:ios-tip-dismissed',
   'crewbox:server-url',
   'crewbox:sounds',

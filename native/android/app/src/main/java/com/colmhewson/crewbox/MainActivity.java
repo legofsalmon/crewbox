@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
     registerPlugin(AlertsPlugin.class);
     registerPlugin(VoicePlugin.class);
     registerPlugin(FilesPlugin.class);
+    registerPlugin(DiscoveryPlugin.class);
     super.onCreate(savedInstanceState);
     forgetTakenPhotos();
   }

@@ -1,5 +1,6 @@
-import { useState, useSyncExternalStore, type FormEvent } from 'react'
+import { useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { useStore } from '../store.ts'
+import { addressOf, nearby, useBoxSearch } from '../lib/discovery.ts'
 import { knownEvents, openEvent, subscribeKnownEvents } from '../lib/eventScope.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
@@ -12,6 +13,8 @@ import {
   serverOrigin,
   setServerOrigin,
 } from '../lib/server.ts'
+import type { PickedBox } from '../lib/boxes.ts'
+import { NearbyBoxes } from './NearbyBoxes.tsx'
 
 /** Native builds aren't served by the crew server, so they must be told
  * where it is. A `?server=` param (QR-poster deep link) also enables it. */
@@ -40,10 +43,22 @@ export default function Join() {
   const [busy, setBusy] = useState(false)
   const showServer = needsServerField()
   const setBoxesOpen = useStore((s) => s.setBoxesOpen)
+  const events = useSyncExternalStore(subscribeKnownEvents, knownEvents)
   // A phone that opened another event to join it, and would rather go back.
-  const otherEvents = useSyncExternalStore(subscribeKnownEvents, knownEvents).some(
-    (event) => event.id !== openEvent()
-  )
+  const otherEvents = events.some((event) => event.id !== openEvent())
+  // In the apps, the boxes on this Wi-Fi, one tap to fill in the address.
+  const search = useBoxSearch(showServer)
+  const found = useMemo(() => nearby(search.services, events), [search.services, events])
+  const [picked, setPicked] = useState<string>()
+  const nameField = useRef<HTMLInputElement>(null)
+
+  function onPick(box: PickedBox) {
+    // As a poster prints it where that is enough; a name only works over HTTPS.
+    setServer(box.origin.startsWith('https:') ? box.origin : addressOf(box.origin))
+    setPicked(box.origin)
+    setError(null)
+    if (!name) nameField.current?.focus()
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -105,6 +120,16 @@ export default function Join() {
         </div>
 
         {showServer && (
+          <NearbyBoxes
+            search={search}
+            boxes={found.boxes}
+            action="Pick"
+            picked={picked && normalizeOrigin(server) === picked ? picked : undefined}
+            disabled={busy}
+            onPick={onPick}
+          />
+        )}
+        {showServer && (
           <label>
             Crew server
             <input
@@ -124,6 +149,7 @@ export default function Join() {
         <label>
           Your name
           <input
+            ref={nameField}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Alex (Stage 2)"

@@ -35,7 +35,7 @@ describe('iPhone purpose strings', () => {
     'NSPhotoLibraryAddUsageDescription',
     // Talkback, and the sound on a video taken from the picker.
     'NSMicrophoneUsageDescription',
-    // Reaching the box on the event Wi-Fi.
+    // Finding the box on the event Wi-Fi, and reaching it.
     'NSLocalNetworkUsageDescription',
   ])('declares %s in a sentence a crew member can read', (key) => {
     const text = stringFor(key)
@@ -44,6 +44,48 @@ describe('iPhone purpose strings', () => {
     // strings that don't say what the access is for. A stub is as bad as
     // no string: the prompt reads as a demand with no reason attached.
     expect(text).toMatch(/^Crewbox .{20,}\.$/)
+  })
+})
+
+describe('finding boxes on the Wi-Fi', () => {
+  it('lists the one Bonjour type the app looks for', () => {
+    // Without it iOS fails the browser with NoAuth before the Local Network
+    // alert is shown, so the join screen would say this phone could not look
+    // for boxes, on every iPhone, with nothing in the build to say why. The
+    // type is the one the box announces and DiscoveryPlugin.swift browses.
+    const list = /<key>NSBonjourServices<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(plist)?.[1]
+    const types = [...(list ?? '').matchAll(/<string>([^<]*)<\/string>/g)].map((m) => m[1])
+    expect(types).toEqual(['_crewbox._tcp'])
+    const plugin = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App/DiscoveryPlugin.swift'),
+      'utf8'
+    )
+    expect(plugin).toContain('private static let serviceType = "_crewbox._tcp"')
+  })
+
+  it('registers the plugin on the bridge the storyboard starts', () => {
+    // A plugin in the App target is not in Capacitor's own list of plugins,
+    // which `cap sync` rewrites: the view controller registers it, and only
+    // if the storyboard uses that view controller rather than Capacitor's.
+    const storyboard = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App/Base.lproj/Main.storyboard'),
+      'utf8'
+    )
+    expect(storyboard).toContain('customClass="CrewboxViewController" customModule="App"')
+    const controller = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App/CrewboxViewController.swift'),
+      'utf8'
+    )
+    expect(controller).toContain('bridge?.registerPluginInstance(DiscoveryPlugin())')
+    // And both files are in the build, which a new file is not until the
+    // project lists it.
+    const project = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App.xcodeproj/project.pbxproj'),
+      'utf8'
+    )
+    for (const file of ['DiscoveryPlugin.swift', 'CrewboxViewController.swift']) {
+      expect(project).toContain(`/* ${file} in Sources */,`)
+    }
   })
 })
 

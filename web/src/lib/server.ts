@@ -43,6 +43,46 @@ interface SystemBarsPlugin {
   setStyle(options: { style: 'DARK' | 'LIGHT' | 'DEFAULT' }): Promise<void>
 }
 
+/**
+ * A crew box the app's own code found on the Wi-Fi: one `_crewbox._tcp`
+ * service, resolved (docs/DISCOVERY.md). What it says is the box's word, and
+ * anything on the Wi-Fi can say it.
+ */
+export interface FoundService {
+  /** The service's instance name: the event's name, perhaps cut or numbered. */
+  name: string
+  /** Its IPv4 addresses. */
+  addresses: string[]
+  port: number
+  /** Its TXT record, keys lower case, '' for a key given with no value. */
+  txt: Record<string, string>
+}
+
+/** How the app's search for boxes is going, as the native side sees it. */
+export type SearchState = 'searching' | 'waiting' | 'denied' | 'failed'
+
+/** A listener handle from the raw bridge, which returns one rather than a promise. */
+interface ListenerHandle {
+  remove(): unknown
+}
+
+/**
+ * Both apps' search for boxes on the Wi-Fi (native DiscoveryPlugin): the
+ * iPhone's NWBrowser, Android's NsdManager. Each `boxes` event is the whole
+ * list as it stands.
+ */
+export interface DiscoveryPlugin {
+  start(): Promise<void>
+  stop(): Promise<void>
+  /** iPhone only: the app's page in Settings, where Local Network is switched on. */
+  openSettings?(): Promise<void>
+  addListener(event: 'boxes', listener: (event: { boxes: FoundService[] }) => void): ListenerHandle
+  addListener(
+    event: 'state',
+    listener: (event: { state: SearchState; reason?: string }) => void
+  ): ListenerHandle
+}
+
 /** A file for the Android app to save or share: built here (base64), or on the box. */
 export type FilePayload = { filename: string; mime: string } & (
   { data: string; url?: never } | { url: string; data?: never }
@@ -72,6 +112,7 @@ declare global {
         Haptics?: HapticsPlugin
         SystemBars?: SystemBarsPlugin
         CrewboxFiles?: FilesPlugin
+        CrewboxDiscovery?: DiscoveryPlugin
       }
     }
   }
@@ -120,6 +161,11 @@ export function nativeSystemBars(): SystemBarsPlugin | undefined {
 /** The Android app's save and share, when present (Android builds only). */
 export function nativeFiles(): FilesPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxFiles
+}
+
+/** The apps' search for boxes on the Wi-Fi, when present (native builds only). */
+export function nativeDiscovery(): DiscoveryPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxDiscovery
 }
 
 /**

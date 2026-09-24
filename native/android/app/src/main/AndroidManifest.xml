@@ -108,6 +108,17 @@
     -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!--
+        Finding the box on the Wi-Fi (DiscoveryPlugin). Android 12 and older,
+        and Android 13 before its T extensions 7 update, filter out the mDNS
+        a box answers with unless an app holds a multicast lock, and taking
+        one needs this. The plugin takes it only on those phones and only
+        while the join or Boxes screen is looking. A normal permission:
+        granted at install, no prompt. Newer phones hold the lock themselves
+        for an app in the foreground that is searching.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

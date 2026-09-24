@@ -19,7 +19,11 @@ the spot — there are no accounts to create in advance and no email involved.
 1. Join the event Wi-Fi named on the poster (if your phone isn't on it
    already).
 2. Scan the QR code — it's on the join poster, on the box's screen, or on
-   the `/connect` page someone may have sent you.
+   the `/connect` page someone may have sent you. In the phone app you can
+   skip the scan: the join screen lists the boxes on this Wi-Fi under **On
+   this Wi-Fi**, and tapping **Pick** beside your event fills in its
+   address. On an iPhone, tap **Find boxes** the first time, and allow
+   Crewbox to find devices on your local network when the iPhone asks.
 
 3. You'll land on the join screen. Fill in:
 
@@ -67,7 +71,9 @@ Each event keeps its own messages, documents and unsent work on your
 device, so last week's sheets never turn up at this week's box. To go on to
 the next event's box, sign out and join it. Your device keeps the old event
 too: **Your boxes**, at the top of the menu, lists every event it holds, and
-one tap opens another.
+one tap opens another. In the phone apps it also lists the other boxes on
+this Wi-Fi, with **Join** beside each, and marks an event of yours _On this
+Wi-Fi_ when its box is here.
 
 - **"The box at … has changed, and is starting afresh"**, or **"… is running
   … now"**: the box at that address is running another event than the one
@@ -94,7 +100,17 @@ The app tells you what it's doing rather than spinning forever:
   you're on the event Wi-Fi (the screen names it), then tap **Retry now**.
   It also keeps retrying by itself. In the phone apps, a box that has moved
   to a new address never answers the old one: tap **Your boxes** and type
-  the address from its join poster.
+  the address from its join poster. It won't be offered under **On this
+  Wi-Fi**, because your device moves an event it holds only to an address
+  somebody typed.
+- **"No boxes found on this Wi-Fi"** — in the phone apps, nothing on this
+  network said it was a box. Check you're on the crew Wi-Fi. The box may not
+  be announcing itself (an admin can see why under **Admin → This box**), or
+  the Wi-Fi may not pass announcements on; typing the address from the join
+  poster works either way.
+- **"This iPhone doesn't let Crewbox look on the local network"** — Local
+  Network is off for Crewbox. Tap **Open Settings** and switch it on, or
+  type the address from the join poster, which works without it.
 - **"An iPhone only connects to a name like … over HTTPS"** — in the iPhone
   app, you typed the box's name without `https://`. Type `https://` before
   it if the box has a certificate, or use the box's IP address from the join

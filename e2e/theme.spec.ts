@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { addAct, test } from './helpers'
+import { addAct, appWithDiscovery, test } from './helpers'
 
 /**
  * Contrast guards for both themes.
@@ -483,5 +483,54 @@ for (const scheme of ['light', 'dark'] as const) {
 
     await phone.context.close()
     await desk.context.close()
+  })
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`the boxes on this Wi-Fi stay readable in ${scheme} theme`, async ({ browser }) => {
+    // The iPhone app's join screen: the line asking before the first search,
+    // then a box, one claiming the same event, and one nobody has set up.
+    const config = (await (await fetch('http://localhost:4299/api/config')).json()) as {
+      eventId: string
+    }
+    const box = (name: string, port: number, txt: Record<string, string>) => ({
+      name,
+      addresses: ['127.0.0.1'],
+      port,
+      txt: { txtvers: '1', ...txt },
+    })
+    const page = await appWithDiscovery(
+      browser,
+      'ios',
+      [
+        box('Main Stage Crew', 4299, { id: config.eventId, name: 'Main Stage Crew', setup: '1' }),
+        box('Main Stage Crew (2)', 4398, {
+          id: config.eventId,
+          name: 'Main Stage Crew',
+          setup: '1',
+        }),
+        box('crewbox', 4396, { id: 'freshbox', setup: '0' }),
+      ],
+      { colorScheme: scheme }
+    )
+    await page.goto('/')
+    const nearby = '.nearby'
+    await expect(page.locator(`${nearby} .nearby-note`)).toContainText('Your iPhone will ask')
+    for (const part of ['.nearby-title', '.nearby-note', '> .admin-btn']) {
+      expect(await textContrast(page, `${nearby} ${part}`), part).toBeGreaterThan(4.5)
+    }
+
+    await page.getByRole('button', { name: 'Find boxes' }).click()
+    const row = `${nearby} .nearby-row:has-text("127.0.0.1:4299")`
+    await expect(page.locator(row)).toContainText('Another box here has the same name')
+    for (const part of ['.boxes-name', '.boxes-detail', '.nearby-warn', '.admin-btn']) {
+      expect(await textContrast(page, `${row} ${part}`), part).toBeGreaterThan(4.5)
+    }
+    const fresh = `${nearby} .nearby-row:has-text("127.0.0.1:4396")`
+    expect(await textContrast(page, `${fresh} .nearby-warn`)).toBeGreaterThan(4.5)
+
+    await page.locator(row).getByRole('button', { name: 'Pick Main Stage Crew' }).click()
+    await expect(page.locator(`${row} .boxes-badge`)).toHaveText('Picked')
+    expect(await textContrast(page, `${row} .boxes-badge`)).toBeGreaterThan(4.5)
   })
 }

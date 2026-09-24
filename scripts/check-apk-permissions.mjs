@@ -35,7 +35,9 @@ import { pathToFileURL } from 'node:url'
  * BLUETOOTH_CONNECT for a headset on it (the first on Android 11 and older,
  * the second on 12 and later), VIBRATE for the buzz that goes with an alert,
  * the two FOREGROUND_SERVICE permissions for the alerts service to survive a
- * 14-hour show day.
+ * 14-hour show day, CHANGE_WIFI_MULTICAST_STATE for finding the box on the
+ * Wi-Fi on phones that hear mDNS only while an app holds a multicast lock
+ * (Android 12 and older, and 13 before its T extensions 7 update).
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
@@ -47,6 +49,7 @@ export const REQUIRED = [
   'android.permission.VIBRATE',
   'android.permission.FOREGROUND_SERVICE',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
+  'android.permission.CHANGE_WIFI_MULTICAST_STATE',
 ]
 
 /**

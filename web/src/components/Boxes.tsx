@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { signedInTo, useStore } from '../store.ts'
 import {
   findBox,
@@ -8,19 +8,18 @@ import {
   lastHere,
   type Holdings,
 } from '../lib/boxes.ts'
+import { addressOf, nearby, useBoxSearch } from '../lib/discovery.ts'
 import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
 import { hasWork, movableOf, type Movable } from '../lib/moveWork.ts'
 import { isNative } from '../lib/server.ts'
 import { MoveWorkDialog } from './MoveWork.tsx'
-
-/** An address as a row shows it: without the scheme, as the join poster prints it. */
-const addressOf = (origin: string): string => origin.replace(/^https?:\/\//i, '')
+import { NearbyBoxes } from './NearbyBoxes.tsx'
 
 const nameOf = (event: KnownEvent): string => event.name.trim() || 'No name yet'
 
 /**
  * The events this device holds, one tap to open each, Forget, and in the app
- * a way to a box at another address.
+ * the boxes on this Wi-Fi and a way to a box at another address.
  *
  * Reached from the menu, from the join screen, and from the screens that say
  * the box cannot be reached, which offered only Retry to a phone whose box
@@ -42,6 +41,8 @@ export default function Boxes() {
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const search = useBoxSearch()
+  const found = useMemo(() => nearby(search.services, events), [search.services, events])
   const close = () => {
     if (!busy) setBoxesOpen(false)
   }
@@ -184,7 +185,11 @@ export default function Boxes() {
                   : event.seenAt
                     ? 'Signed out'
                     : 'Not joined yet'
-              const detail = [event.origin ? addressOf(event.origin) : '', status]
+              const detail = [
+                event.origin ? addressOf(event.origin) : '',
+                status,
+                found.here.has(event.id) ? 'On this Wi-Fi' : '',
+              ]
                 .filter(Boolean)
                 .join(' · ')
               const body = (
@@ -238,6 +243,14 @@ export default function Boxes() {
             })}
           </ul>
         )}
+
+        <NearbyBoxes
+          search={search}
+          boxes={found.boxes}
+          action="Join"
+          disabled={busy}
+          onPick={openEventAt}
+        />
 
         {isNative() && (
           <form className="boxes-address" onSubmit={(e) => void onFind(e)}>

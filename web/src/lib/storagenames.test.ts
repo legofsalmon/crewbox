@@ -178,6 +178,9 @@ describe('the browser storage names', () => {
         'crewbox:db-epoch',
         'crewbox:event',
         'crewbox:event-name',
+        // The iPhone app has asked iOS about the local network once, so its
+        // search for boxes starts by itself from then on (lib/discovery.ts).
+        'crewbox:find-boxes-asked',
         'crewbox:ios-tip-dismissed',
         'crewbox:lighting-seen',
         'crewbox:modules',

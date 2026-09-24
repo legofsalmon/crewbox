@@ -3085,6 +3085,42 @@ button.boxes-pick:hover .boxes-name {
   height: 36px;
 }
 
+/* Boxes on this Wi-Fi, in the apps (components/NearbyBoxes.tsx): on the join
+   screen above the address field, and on the Boxes screen above its own. */
+.nearby {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nearby-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.nearby-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.nearby > .admin-btn {
+  align-self: flex-start;
+}
+
+.nearby-row .admin-btn-primary {
+  height: 36px;
+}
+
+.nearby-warn {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .confirm-go {
   height: 40px;
   padding: 0 18px;

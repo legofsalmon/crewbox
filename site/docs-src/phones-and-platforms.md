@@ -146,6 +146,14 @@ It's on the join poster, or baked into the QR so scanning fills it in. On an
 iPhone, a name there needs `https://` in front; an IP address doesn't
 ([why](#the-ios-app)).
 
+Above the field, the apps list the boxes on this Wi-Fi, which announce
+themselves ([Admin → This box](/docs/admin)), and picking one fills the field
+in after asking that box which event it runs. The apps look only while that
+screen or **Your boxes** is open. An iPhone asks once whether Crewbox may find
+devices on your local network: the list needs a yes, and the field works
+either way. A browser can't look for boxes, so the join page there is
+unchanged.
+
 ## Desktop helpers
 
 - **macOS**: the box runs as a menu-bar item — event name, join link, copy

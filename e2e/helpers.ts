@@ -65,6 +65,91 @@ export const newDevice = async (browser: Browser, crewName?: string): Promise<Pa
   return page
 }
 
+/** A box as the apps' search reports one: `FoundService` in web/src/lib/server.ts. */
+export interface FoundService {
+  name: string
+  addresses: string[]
+  port: number
+  txt: Record<string, string>
+}
+
+/**
+ * One of the phone apps, with its search for boxes (DiscoveryPlugin) stood in
+ * for: each start "finds" `boxes`, what it was asked is kept for
+ * `discoveryCalls`, and `announce` changes what it has found.
+ */
+export const appWithDiscovery = async (
+  browser: Browser,
+  platform: 'android' | 'ios',
+  boxes: FoundService[],
+  options: Parameters<Browser['newContext']>[0] = {}
+): Promise<Page> => {
+  const context = await browser.newContext(options)
+  openContexts.push(context)
+  await context.addInitScript(
+    ({ platform, boxes }) => {
+      const calls: string[] = []
+      const listeners: Record<string, ((event: unknown) => void)[]> = {}
+      const emit = (event: string, data: unknown) => {
+        for (const listener of listeners[event] ?? []) listener(data)
+      }
+      let found = boxes
+      const w = window as unknown as Record<string, unknown>
+      w.__discovery = calls
+      w.__announce = (next: typeof boxes) => {
+        found = next
+        emit('boxes', { boxes: found })
+      }
+      w.Capacitor = {
+        isNativePlatform: () => true,
+        getPlatform: () => platform,
+        Plugins: {
+          CrewboxDiscovery: {
+            start: async () => {
+              calls.push('start')
+              setTimeout(() => {
+                emit('state', { state: 'searching' })
+                emit('boxes', { boxes: found })
+              }, 0)
+            },
+            stop: async () => {
+              calls.push('stop')
+            },
+            openSettings: async () => {
+              calls.push('openSettings')
+            },
+            addListener: (event: string, listener: (event: unknown) => void) => {
+              ;(listeners[event] ??= []).push(listener)
+              return {
+                remove: async () => {
+                  listeners[event] = (listeners[event] ?? []).filter((l) => l !== listener)
+                },
+              }
+            },
+          },
+        },
+      }
+    },
+    { platform, boxes }
+  )
+  const page = await context.newPage()
+  page.on('pageerror', (error) => {
+    throw new Error(`Page error: ${error.message}`)
+  })
+  return page
+}
+
+/** What the stood-in search has found from now on. */
+export const announce = (page: Page, boxes: FoundService[]) =>
+  page.evaluate(
+    (boxes) => (window as unknown as { __announce: (b: unknown[]) => void }).__announce(boxes),
+    boxes
+  )
+
+/** What the stood-in search has been asked to do, in order. */
+export const discoveryCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __discovery: string[] }).__discovery)
+
 /** Open the patch module's sheet selector from the sidebar. */
 export const openPatch = async (page: Page) => {
   await page.getByRole('button', { name: 'All sheets…' }).click()
