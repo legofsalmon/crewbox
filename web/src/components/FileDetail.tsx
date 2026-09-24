@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { fileUrl } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
+import { deliverBoxFile, NO_DOWNLOADS } from '../lib/download.ts'
 import { describeFile, fileCategory, formatBytes } from '../lib/files.ts'
-import { absoluteFileUrl, apiUrl } from '../lib/server.ts'
+import { absoluteFileUrl, apiUrl, isNative } from '../lib/server.ts'
 import { panBy, zoomAt, zoomIdentity, ZOOM_TAP, type ZoomState } from '../lib/zoom.ts'
 
 const DOUBLE_TAP_MS = 300
@@ -18,6 +19,7 @@ export default function FileDetail() {
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [fetching, setFetching] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const file = message?.file
@@ -63,6 +65,23 @@ export default function FileDetail() {
   function share() {
     // Cancelled share sheets reject — that's fine, not an error.
     void navigator.share({ title: file!.name, url: absoluteUrl }).catch(() => {})
+  }
+
+  /**
+   * Download, in the apps. Neither web view acts on a `download` link, so
+   * the Android app saves the file to Downloads natively and the iPhone app
+   * hands it to the share sheet (lib/download.ts).
+   */
+  async function download() {
+    setFetching(true)
+    setError(null)
+    try {
+      const result = await deliverBoxFile({ url: absoluteUrl, name: file!.name, mime: file!.mime })
+      if (result === 'unavailable') setError(NO_DOWNLOADS)
+      if (result === 'failed') setError('Could not get the file from the box — try again')
+    } finally {
+      setFetching(false)
+    }
   }
 
   async function deleteFile() {
@@ -140,9 +159,15 @@ export default function FileDetail() {
           <a className="file-act" href={url} target="_blank" rel="noreferrer">
             Open
           </a>
-          <a className="file-act" href={url} download={file.name}>
-            Download
-          </a>
+          {isNative() ? (
+            <button className="file-act" disabled={fetching} onClick={() => void download()}>
+              {fetching ? 'Preparing…' : 'Download'}
+            </button>
+          ) : (
+            <a className="file-act" href={url} download={file.name}>
+              Download
+            </a>
+          )}
           <button className="file-act" onClick={() => void copyLink()}>
             {copied ? 'Copied ✓' : 'Copy link'}
           </button>

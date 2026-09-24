@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(AlertsPlugin.class);
     registerPlugin(VoicePlugin.class);
+    registerPlugin(FilesPlugin.class);
     super.onCreate(savedInstanceState);
     forgetTakenPhotos();
   }

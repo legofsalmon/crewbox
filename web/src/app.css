@@ -372,14 +372,85 @@ ul {
   bottom: calc(84px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 60;
+  /* Over the admin panel and the file view too: exports start from both,
+     and what became of the file has to be seen where it was asked for. */
+  z-index: 80;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   /* Still transient: never let one eat a tap on the controls underneath. */
   pointer-events: none;
+  /* As wide as the widest toast. Left to itself a box that starts halfway
+     across the screen is only offered the half to its right, and a long
+     toast wrapped into a column. */
+  width: max-content;
   max-width: min(92vw, 420px);
+}
+
+/*
+ * A file with one more step (components/FileOfferBar.tsx). In the stack, so
+ * a toast and an offer never overlap, but it takes taps where the toasts
+ * don't: its button is the point of it.
+ */
+.file-offer {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* The full width of the stack, so it does not jump about with the name. */
+  width: min(92vw, 420px);
+  padding: 6px 6px 6px 16px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.file-offer-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.file-offer-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  /* Names are long and have no spaces to break at. */
+  overflow-wrap: anywhere;
+}
+
+.file-offer-act {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+.file-offer-act:hover {
+  background: var(--accent-strong);
+}
+
+.file-offer-close {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.file-offer-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .updated-dot {

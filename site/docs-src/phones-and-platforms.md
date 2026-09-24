@@ -13,23 +13,32 @@ it to a stage manager.
 
 ## The capability table
 
-|                                   | Browser / installed web app | Android app     | iOS app             |
-| --------------------------------- | --------------------------- | --------------- | ------------------- |
-| Chat, patch, lighting, network    | yes                         | yes             | yes                 |
-| Works offline                     | yes                         | yes             | yes                 |
-| Voice: listen                     | yes                         | yes             | yes                 |
-| Voice: talk on plain HTTP         | no — needs HTTPS            | **yes**         | **yes**             |
-| Alerts, app open                  | yes                         | yes             | yes                 |
-| Alerts, phone locked, no internet | no                          | **yes**         | **no — impossible** |
-| Exports (CSV, reports, archives)  | downloads to the device     | the share sheet | the share sheet     |
+|                                   | Browser / installed web app | Android app           | iOS app             |
+| --------------------------------- | --------------------------- | --------------------- | ------------------- |
+| Chat, patch, lighting, network    | yes                         | yes                   | yes                 |
+| Works offline                     | yes                         | yes                   | yes                 |
+| Voice: listen                     | yes                         | yes                   | yes                 |
+| Voice: talk on plain HTTP         | no — needs HTTPS            | **yes**               | **yes**             |
+| Alerts, app open                  | yes                         | yes                   | yes                 |
+| Alerts, phone locked, no internet | no                          | **yes**               | **no — impossible** |
+| Exports and file downloads        | downloads to the device     | Downloads, then Share | the share sheet     |
 
-The exports row is worth a sentence. A WebView has no download handler, so
+The last row is worth a paragraph. A WebView has no download handler, so
 the ordinary "save this file" path does nothing at all inside either app —
-it used to do nothing _and say it had worked_. Both apps hand the file to
-the system share sheet instead, which is the better answer anyway: what
-somebody does with a network audit at a venue is send it to the venue's IT,
-and that is one tap from the share sheet and several from a downloads
-folder. If a device refuses to share the file, the app says so rather than
+it used to do nothing _and say it had worked_. Now each app does what its
+phone expects:
+
+- **Android** saves the file to the phone's Downloads folder, then offers
+  **Share** at the foot of the screen for a few seconds, for sending it on.
+  Android 9 and older have no shared Downloads an app may write to without a
+  permission, so there the phone asks where to save it.
+- **iPhone** opens the share sheet. **Save to Files** keeps it on the phone,
+  and the rest send it on: what somebody does with a network audit at a
+  venue is send it to the venue's IT. An iPhone only shares within a few
+  seconds of the tap, so if a report took longer than that to build, it
+  waits at the foot of the screen with a **Share** button for a fresh tap.
+
+If a device cannot take the file at all, the app says so rather than
 claiming a save.
 
 ## The Android app

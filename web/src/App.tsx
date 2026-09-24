@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useStore } from './store.ts'
 import { guardStrayFileDrops } from './lib/useFileDrop.ts'
+import { currentFileOffer, subscribeFileOffer } from './lib/download.ts'
 import Join from './components/Join.tsx'
 import Sidebar from './components/Sidebar.tsx'
 import ChannelView from './components/ChannelView.tsx'
@@ -11,6 +12,7 @@ import OnAirBar from './components/OnAirBar.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
 import FileDetail from './components/FileDetail.tsx'
+import FileOfferBar from './components/FileOfferBar.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import ConnectionHelp from './components/ConnectionHelp.tsx'
@@ -113,6 +115,7 @@ function Shell() {
   const hasFailed = useStore((s) => s.hasFailed)
   const hasCache = useStore((s) => Object.keys(s.channels).length > 0)
   const toasts = useStore((s) => s.toasts)
+  const fileOffer = useSyncExternalStore(subscribeFileOffer, currentFileOffer)
   const updateReady = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
 
@@ -175,13 +178,14 @@ function Shell() {
           </div>
         ))}
       {helpOpen && <ConnectionHelp onClose={() => setHelpOpen(false)} />}
-      {toasts.length > 0 && (
+      {(toasts.length > 0 || fileOffer) && (
         <div className="toast-stack">
           {toasts.map((toast) => (
             <div key={toast.id} className={`flash flash-${toast.kind}`}>
               {toast.message}
             </div>
           ))}
+          {fileOffer && <FileOfferBar key={fileOffer.id} offer={fileOffer} />}
         </div>
       )}
       {updateReady && (

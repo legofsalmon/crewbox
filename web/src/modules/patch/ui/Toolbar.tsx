@@ -76,8 +76,9 @@ export default function Toolbar({
 
   const handleExport = async () => {
     const result = await downloadSheetCsv(snapshot, acts)
+    const note = deliveredNote(result, 'Sheet CSV')
     if (result === 'unavailable') addToast('Cannot save here', NO_DOWNLOADS, 'warning')
-    else addToast('Export complete', deliveredNote(result, 'Sheet CSV'), 'success')
+    else if (note) addToast('Export complete', note, 'success')
   }
 
   return (

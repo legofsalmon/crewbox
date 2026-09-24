@@ -249,11 +249,12 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
     try {
       const blob = await api.adminDnsConfig(auth())
       const result = await deliverFile('crewbox-dns.conf', blob)
-      onNote(
-        result === 'unavailable'
-          ? NO_DOWNLOADS
-          : `${deliveredNote(result, 'DNS config')} — put it on the venue router`
-      )
+      if (result === 'unavailable') onNote(NO_DOWNLOADS)
+      else if (result !== 'cancelled') {
+        onNote(
+          `${deliveredNote(result, 'DNS config') ?? 'DNS config ready'} — put it on the venue router`
+        )
+      }
     } catch (err) {
       onNote(adminError(err, 'Could not build the DNS config'))
     }
@@ -386,17 +387,21 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
     }
   }
 
-  /** The rule that gets port 80 to this box's probe responder. */
+  /**
+   * The rule that gets port 80 to this box's probe responder.
+   *
+   * Through the same path as every other export: this one was a bare anchor
+   * click, which in the apps saved nothing and still said "downloaded".
+   */
   async function downloadPort80() {
     try {
       const blob = await api.adminPort80Config(auth())
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'crewbox-port80.conf'
-      a.click()
-      URL.revokeObjectURL(url)
-      onNote('Port 80 config downloaded — one rule, run it on this machine')
+      const result = await deliverFile('crewbox-port80.conf', blob)
+      if (result === 'unavailable') onNote(NO_DOWNLOADS)
+      else if (result !== 'cancelled') {
+        const done = deliveredNote(result, 'Port 80 config') ?? 'Port 80 config ready'
+        onNote(`${done} — one rule, run it on this machine`)
+      }
     } catch (err) {
       onNote(adminError(err, 'Could not build the port 80 config'))
     }

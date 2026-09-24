@@ -42,7 +42,7 @@ export default function ExportBar({
     setNote(
       result === 'unavailable'
         ? `${NO_DOWNLOADS} Or share it to a channel.`
-        : deliveredNote(result, 'Report')
+        : (deliveredNote(result, 'Report') ?? '')
     )
   }
 

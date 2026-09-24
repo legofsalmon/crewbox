@@ -390,7 +390,7 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
       return
     }
     const file = `${safeName(snapshot.meta.title)} - ${kind === 'input' ? 'input map' : safeName(sc!.screen.name)}.png`
-    setNote(deliveredNote(await deliverFile(file, blob), 'PNG'))
+    setNote(deliveredNote(await deliverFile(file, blob), 'PNG') ?? '')
   }
 
   const remove = () => {

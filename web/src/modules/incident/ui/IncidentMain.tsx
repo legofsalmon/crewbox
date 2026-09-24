@@ -135,7 +135,10 @@ export default function IncidentMain() {
       const entries = useStore.getState().incidents
       const html = showReportHtml({ eventName, entries, generatedAt: Date.now() })
       const result = await deliverText(reportFilename(eventName, Date.now()), 'text/html', html)
-      toast(deliveredNote(result, 'Show report'))
+      // `toast` defaults to the error style, which a report that downloaded
+      // is not.
+      const note = deliveredNote(result, 'Show report')
+      if (note) toast(note, result === 'saved' ? 'info' : 'warning')
     } finally {
       setBuilding(false)
     }

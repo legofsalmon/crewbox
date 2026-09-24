@@ -43,6 +43,23 @@ interface SystemBarsPlugin {
   setStyle(options: { style: 'DARK' | 'LIGHT' | 'DEFAULT' }): Promise<void>
 }
 
+/** A file for the Android app to save or share: built here (base64), or on the box. */
+export type FilePayload = { filename: string; mime: string } & (
+  { data: string; url?: never } | { url: string; data?: never }
+)
+
+/** Android's save and share (native/android FilesPlugin). */
+export interface FilesPlugin {
+  /**
+   * Into Downloads on Android 10 and later; where the phone's "save as"
+   * screen says on older ones, where `saved` is false if it was backed out
+   * of. `name` is what the file ended up called, which a clash can change.
+   */
+  save(file: FilePayload): Promise<{ saved: boolean; name?: string; folder?: string }>
+  /** The share sheet, with the file attached. Resolves once the sheet is up. */
+  share(file: FilePayload): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -54,6 +71,7 @@ declare global {
         CrewboxVoice?: VoicePlugin
         Haptics?: HapticsPlugin
         SystemBars?: SystemBarsPlugin
+        CrewboxFiles?: FilesPlugin
       }
     }
   }
@@ -97,6 +115,11 @@ export function nativeHaptics(): HapticsPlugin | undefined {
 /** Capacitor's SystemBars plugin: the colour of the status bar's text (native only). */
 export function nativeSystemBars(): SystemBarsPlugin | undefined {
   return window.Capacitor?.Plugins?.SystemBars
+}
+
+/** The Android app's save and share, when present (Android builds only). */
+export function nativeFiles(): FilesPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxFiles
 }
 
 /**
