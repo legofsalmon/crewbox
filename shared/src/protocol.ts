@@ -211,6 +211,13 @@ export interface PublicConfig {
   voiceEnabled: boolean
   /** Module ids this box enables; clients hide modules not listed here. */
   modules: string[]
+  /**
+   * The box has no usable licence and its policy marks that. The drawer shows
+   * a small "Unlicensed" line and nothing else changes — crew comms are never
+   * blocked or degraded over a licence. Absent means licensed, or a policy
+   * that marks nothing, or an older server; all three look the same.
+   */
+  unlicensed?: boolean
 }
 
 export interface WelcomeMessage {

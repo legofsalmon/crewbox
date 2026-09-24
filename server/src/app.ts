@@ -88,6 +88,7 @@ import type { UpdateChecker } from './update/check.ts'
 import type { UpdateService } from './update/service.ts'
 import { describeInterruption } from './update/guard.ts'
 import { InstallConfirmations } from './update/confirm.ts'
+import { LicenceProblem, type LicenceService } from './licence/service.ts'
 import type { Store } from './store.ts'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -241,6 +242,15 @@ const controlMessageSchema = z.object({
 const unlockBodySchema = z.object({
   password: z.string().min(1).max(128),
 })
+
+/** A licence key as typed. Opaque: the service folds and checks it. */
+const licenceKeySchema = z.object({ key: z.string().trim().min(1).max(64) })
+const licenceTrialSchema = z.object({
+  email: z.string().trim().min(3).max(254),
+  name: z.string().trim().max(120).optional(),
+})
+/** A signed token pasted from the account page. A few hundred bytes in practice. */
+const licenceTokenSchema = z.object({ token: z.string().trim().min(1).max(8192) })
 
 /**
  * Parse a single-range `Range: bytes=…` header. Returns the inclusive byte
@@ -448,6 +458,12 @@ export interface AppDeps {
    * e2e fixture, none of which have one.
    */
   onSettingsChanged?: () => void
+  /**
+   * The box's licence (server/src/licence/). Omit and the box behaves as if
+   * licensing did not exist: no Licence section, no marks, nothing locked —
+   * which is what every test that is not about licensing wants.
+   */
+  licence?: LicenceService
   logger?: boolean
 }
 
@@ -499,6 +515,7 @@ export function buildApp({
   clock = () => new Date(),
   timeZone,
   onSettingsChanged = () => {},
+  licence,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -597,7 +614,19 @@ export function buildApp({
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
     voiceEnabled: voiceAvailable,
     modules,
+    // Only ever a mark. Nothing the crew use reads this to decide anything.
+    ...(licence?.effects().watermark ? { unlicensed: true } : {}),
   })
+
+  /**
+   * Whether event setup and configuration are refused for want of a licence.
+   * Only under the `lock` policy, and only ever for configuring an event —
+   * never for anything a crew already set up is using.
+   */
+  const configLocked = (): boolean => licence?.effects().locked ?? false
+  const LOCKED_MESSAGE =
+    'This box needs a licence before an event can be set up or configured. ' +
+    'Open Admin → Licence to enter a key or start a free trial — crew already on the box are unaffected.'
 
   // Warmed at startup so the admin panel reads a result rather than waiting
   // on one; see the route below.
@@ -606,6 +635,10 @@ export function buildApp({
   void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
+  // A licence entered, released or lapsed changes the drawer line on every
+  // phone, so the config goes out again — the same message an event rename
+  // sends, and nothing more.
+  licence?.onChange(() => hub.announceConfig())
   const tally = new Tally()
   hub.setTally(tally)
   const docs = new DocsRelay(relayLimits)
@@ -1032,7 +1065,12 @@ export function buildApp({
     if (!setupOpen()) return reply.redirect('/connect')
     return sendHtml(
       reply,
-      setupPage({ values: setupValues(), base: crewUrl(req), warnings: setupWarnings() })
+      setupPage({
+        values: setupValues(),
+        base: crewUrl(req),
+        warnings: setupWarnings(),
+        ...(configLocked() ? { locked: LOCKED_MESSAGE } : {}),
+      })
     )
   })
 
@@ -1066,6 +1104,14 @@ export function buildApp({
 
   fastify.post('/setup', (req, reply) => {
     if (!setupOpen()) return reply.redirect('/connect')
+    // Setting up an event is the "new session" the lock policy withholds.
+    // Nothing is saved; the page says where the licence goes.
+    if (configLocked()) {
+      return sendHtml(
+        reply.code(423),
+        setupPage({ values: setupValues(), base: crewUrl(req), locked: LOCKED_MESSAGE })
+      )
+    }
     const body = (req.body ?? {}) as Record<string, unknown>
     // Blank means "leave the admin password alone", so it is dropped before
     // validation rather than failing the 8-character floor.
@@ -2202,6 +2248,72 @@ export function buildApp({
     return reply.send({ ok: true })
   })
 
+  // -- licence ----------------------------------------------------------------
+  //
+  // The box's licence, admin-only throughout. The key and token never leave
+  // these routes: phones get one boolean in the public config, for the drawer
+  // line, and nothing else. See server/src/licence/.
+  if (licence) {
+    /** Run a licence action and answer with the panel's view of the result. */
+    const licenceAction = async (
+      reply: FastifyReply,
+      action: () => Promise<unknown> | unknown
+    ): Promise<unknown> => {
+      try {
+        return await action()
+      } catch (err) {
+        if (err instanceof LicenceProblem) {
+          return reply
+            .code(err.status)
+            .send({ error: err.message, ...(err.reason ? { reason: err.reason } : {}) })
+        }
+        throw err
+      }
+    }
+
+    fastify.get('/api/admin/licence', (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      return { licence: licence.status() }
+    })
+
+    fastify.post('/api/admin/licence/activate', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = licenceKeySchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'Enter a licence key.' })
+      return licenceAction(reply, async () => ({
+        licence: await licence.activate(parsed.data.key),
+      }))
+    })
+
+    fastify.post('/api/admin/licence/trial', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = licenceTrialSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'Enter an email address.' })
+      return licenceAction(reply, async () => ({
+        licence: await licence.startTrial(parsed.data.email, parsed.data.name),
+      }))
+    })
+
+    /** Offline activation: a token fetched with this box's request code. */
+    fastify.post('/api/admin/licence/token', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = licenceTokenSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'Paste the licence token.' })
+      return licenceAction(reply, () => ({ licence: licence.acceptToken(parsed.data.token) }))
+    })
+
+    fastify.post('/api/admin/licence/check-in', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      return licenceAction(reply, async () => ({ licence: await licence.checkIn() }))
+    })
+
+    fastify.post('/api/admin/licence/release', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const { status, released } = await licence.release()
+      return { licence: status, released }
+    })
+  }
+
   // Reset a crew member's forgotten personal PIN. Their sessions stay valid —
   // this is recovery, not a ban.
   fastify.post('/api/admin/users/:id/pin', (req, reply) => {
@@ -2468,6 +2580,16 @@ export function buildApp({
     const parsed = settingsPatchSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    // Configuring the event is what the lock policy withholds. The event PIN
+    // and the admin password are not in this list and never will be: they are
+    // how an admin shuts somebody out, and a licence must never be the reason
+    // that cannot happen mid-show.
+    if (configLocked()) {
+      const touched = (
+        ['eventName', 'wifiSsid', 'crewIface', 'dmxMode', 'dmxIface', 'dmxUniverses'] as const
+      ).filter((key) => parsed.data[key] !== undefined)
+      if (touched.length > 0) return reply.code(423).send({ error: LOCKED_MESSAGE })
     }
     if (parsed.data.eventName !== undefined) {
       store.setSetting('eventName', parsed.data.eventName)
