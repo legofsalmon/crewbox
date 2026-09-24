@@ -460,3 +460,113 @@ describe('asking Android about a Bluetooth headset', () => {
     expect(connect).toHaveBeenCalledOnce()
   })
 })
+
+describe('the Silent switch on an iPhone', () => {
+  // WebKit mutes audio that is only Web Audio when the switch is on silent,
+  // and on iOS all remote voice is Web Audio. Crew with a microphone got away
+  // with it because their live capture made the phone a call; crew without
+  // one heard nothing. The join names the call itself (voice-playback.ts).
+
+  const IPHONE =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+  const MAC_SAFARI =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+
+  let session: { type: string }
+
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    FakeRoom.playbackBehaviour = 'allowed'
+    session = { type: 'auto' }
+    Object.defineProperty(navigator, 'audioSession', { value: session, configurable: true })
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    Reflect.deleteProperty(navigator, 'audioSession')
+  })
+
+  it('is a call before the room opens any audio', async () => {
+    // WebKit applies the type when audio next starts, so it has to be in
+    // place before the room connects.
+    const seen: string[] = []
+    const connect = FakeRoom.prototype.connect
+    vi.spyOn(FakeRoom.prototype, 'connect').mockImplementation(function (this: FakeRoom) {
+      seen.push(session.type)
+      return connect.call(this)
+    })
+    const manager = new VoiceManager(() => {})
+
+    await manager.join('chan-1', 'token', 'ws://box')
+
+    expect(seen).toEqual(['play-and-record'])
+  })
+
+  it('stays a call for crew listening without a microphone', async () => {
+    // The crew this is for: with no capture, nothing else keeps the phone
+    // out of the session the switch mutes.
+    const connect = FakeRoom.prototype.connect
+    vi.spyOn(FakeRoom.prototype, 'connect').mockImplementation(function (this: FakeRoom) {
+      this.localParticipant.setMicrophoneEnabled = vi.fn(() =>
+        Promise.reject(new Error('NotAllowedError'))
+      )
+      return connect.call(this)
+    })
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+
+    await manager.join('chan-1', 'token', 'ws://box')
+    await vi.waitFor(() =>
+      expect(states).toContainEqual({ micReady: false, error: expect.any(String) })
+    )
+
+    expect(session.type).toBe('play-and-record')
+  })
+
+  it('stays a call across a change of channel', async () => {
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    await manager.join('chan-2', 'token', 'ws://box')
+    expect(session.type).toBe('play-and-record')
+  })
+
+  it('goes back to WebKit on leaving', async () => {
+    // Out of voice, an alert chirp is only an alert again, and the switch
+    // silences it like any other.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    await manager.leave()
+    expect(session.type).toBe('auto')
+  })
+
+  it('goes back when the room drops', async () => {
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    ;(manager as unknown as { room: FakeRoom }).room.emit('disconnected')
+    expect(session.type).toBe('auto')
+  })
+
+  it('goes back when the join fails', async () => {
+    FakeRoom.connectBehaviour = 'fail'
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://nowhere').catch(() => {})
+    expect(session.type).toBe('auto')
+  })
+
+  it('is left to WebKit off iOS', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(MAC_SAFARI)
+    const connect = FakeRoom.prototype.connect
+    const seen: string[] = []
+    vi.spyOn(FakeRoom.prototype, 'connect').mockImplementation(function (this: FakeRoom) {
+      seen.push(session.type)
+      return connect.call(this)
+    })
+    const manager = new VoiceManager(() => {})
+
+    await manager.join('chan-1', 'token', 'ws://box')
+
+    expect(seen).toEqual(['auto'])
+    expect(session.type).toBe('auto')
+  })
+})

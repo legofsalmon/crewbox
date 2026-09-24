@@ -18,7 +18,12 @@ import {
   type DeviceInfo,
 } from './devices.ts'
 import { nativeVoice } from './server.ts'
-import { isSafari, shouldMixThroughWebAudio } from './voice-playback.ts'
+import {
+  holdCallAudio,
+  isSafari,
+  releaseCallAudio,
+  shouldMixThroughWebAudio,
+} from './voice-playback.ts'
 import { qosBetween, worstQos, type ReceiverSample, type VoiceQos } from './voice-qos.ts'
 
 import {
@@ -156,6 +161,9 @@ export class VoiceManager {
       .catch(() => {})
     // Left, or joined somewhere else, while Android was asking.
     if (this.channelId !== channelId) return
+    // The iPhone's side, and also before any audio: WebKit applies the
+    // session type when audio next starts. `reset` hands it back.
+    holdCallAudio({ ios: isIOS() })
 
     const savedIn = savedDeviceId('audioinput')
     const savedOut = savedDeviceId('audiooutput')
@@ -636,6 +644,7 @@ export class VoiceManager {
     this.room = null
     this.channelId = null
     if (room) void room.disconnect().catch(() => {})
+    releaseCallAudio()
     this.publish({ ...initialVoiceState, devices: initialVoiceState.devices, error })
   }
 }

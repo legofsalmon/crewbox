@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  holdCallAudio,
   isSafariFrom,
   mixConflictsWithOutputPicker,
+  releaseCallAudio,
   shouldMixThroughWebAudio,
 } from './voice-playback.ts'
 
@@ -90,5 +92,66 @@ describe('the invariant that makes it safe', () => {
     expect(mixConflictsWithOutputPicker({ ios: true, safari: true, canSelectOutput: true })).toBe(
       true
     )
+  })
+})
+
+describe('the Silent switch and the intercom', () => {
+  /**
+   * WebKit mutes audio that is only Web Audio when the switch is on silent,
+   * and on iOS that is all remote voice is. Naming the session a call is what
+   * keeps it audible for crew with no microphone of their own.
+   */
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const withSession = (type = 'auto') => {
+    const session = { type }
+    vi.stubGlobal('navigator', { audioSession: session })
+    return session
+  }
+
+  it('declares a call on iOS', () => {
+    const session = withSession()
+    holdCallAudio({ ios: true })
+    expect(session.type).toBe('play-and-record')
+  })
+
+  it('leaves every other platform to WebKit', () => {
+    // Safari on a Mac has the same API and no switch to get past.
+    const session = withSession()
+    holdCallAudio({ ios: false })
+    expect(session.type).toBe('auto')
+  })
+
+  it('is nothing at all where there is no API', () => {
+    vi.stubGlobal('navigator', {})
+    expect(() => holdCallAudio({ ios: true })).not.toThrow()
+    expect(() => releaseCallAudio()).not.toThrow()
+  })
+
+  it('never stands between a crew member and the call', () => {
+    const refusing = {
+      get type() {
+        return 'auto'
+      },
+      set type(_type: string) {
+        throw new Error('InvalidStateError')
+      },
+    }
+    vi.stubGlobal('navigator', { audioSession: refusing })
+    expect(() => holdCallAudio({ ios: true })).not.toThrow()
+  })
+
+  it('hands the session back once the call is over', () => {
+    const session = withSession('play-and-record')
+    releaseCallAudio()
+    expect(session.type).toBe('auto')
+  })
+
+  it('does not undo a session something else chose', () => {
+    const session = withSession('playback')
+    releaseCallAudio()
+    expect(session.type).toBe('playback')
   })
 })
