@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url))
 const SERVER = fileURLToPath(new URL('..', import.meta.url))
+const SIGNAL_ORDER = fileURLToPath(new URL('./fixtures/tsx-signal-order.mjs', import.meta.url))
 
 const children: ChildProcess[] = []
 const exits: string[] = []
@@ -60,6 +61,7 @@ async function startBox(dataDir: string): Promise<number> {
     detached: true,
     env: {
       ...process.env,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${SIGNAL_ORDER}`.trim(),
       DATA_DIR: dataDir,
       CREWBOX_PORT: '0',
       EVENT_PIN: '4321',

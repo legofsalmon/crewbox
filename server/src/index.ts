@@ -932,8 +932,20 @@ async function main(): Promise<void> {
     openBrowser(`${origin}${firstRun ? '/setup' : '/'}`)
   }
 
+  // `on`, not `once`, with the second signal handled by hand. Under tsx
+  // (development, CI) there is a second SIGINT/SIGTERM listener, tsx's own,
+  // which exits the process with 128+signal if it finds no other listener
+  // when it runs. When it happened to be registered after this one, a `once`
+  // listener had already removed itself by then, so tsx ended the process a
+  // few milliseconds into this shutdown: database not closed, run marker left
+  // behind, and the next start reporting a crash that never happened.
+  let stopping = false
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, async () => {
+    process.on(signal, async () => {
+      // A second Ctrl-C still means "now", as it did with `once`; the marker
+      // stays, because a shutdown cut short is not a clean one.
+      if (stopping) process.exit(1)
+      stopping = true
       app.log.info(`${signal} received, shutting down`)
       // Belt and braces: if anything hangs, exit anyway so the supervisor
       // (systemd/tsx watch) can start a fresh process.
