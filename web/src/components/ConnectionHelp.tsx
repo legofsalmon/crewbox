@@ -2,7 +2,7 @@ import { useStore } from '../store.ts'
 import { connectionCauses } from '../lib/connscreen.ts'
 import { isIOS } from '../lib/devices.ts'
 import { effectiveSsid } from '../lib/settings.ts'
-import { serverLabel } from '../lib/server.ts'
+import { isNative, serverLabel } from '../lib/server.ts'
 
 /**
  * Why the box has been unreachable for a while — opened from the connection
@@ -18,8 +18,14 @@ export default function ConnectionHelp({ onClose }: { onClose: () => void }) {
   const retryConnection = useStore((s) => s.retryConnection)
   const connection = useStore((s) => s.connection)
   const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
+  const setBoxesOpen = useStore((s) => s.setBoxesOpen)
   const retrying = connection === 'connecting'
-  const causes = connectionCauses({ ...(wifiSsid ? { ssid: wifiSsid } : {}), isIos: isIOS() })
+  const canMoveBox = isNative()
+  const causes = connectionCauses({
+    ...(wifiSsid ? { ssid: wifiSsid } : {}),
+    isIos: isIOS(),
+    canMoveBox,
+  })
 
   return (
     <div
@@ -49,6 +55,17 @@ export default function ConnectionHelp({ onClose }: { onClose: () => void }) {
           <button className="center-retry" onClick={retryConnection} disabled={retrying}>
             {retrying ? 'Retrying…' : 'Retry now'}
           </button>
+          {canMoveBox && (
+            <button
+              className="admin-btn"
+              onClick={() => {
+                onClose()
+                setBoxesOpen(true)
+              }}
+            >
+              Your boxes
+            </button>
+          )}
           <button className="admin-btn" onClick={onClose}>
             Close
           </button>

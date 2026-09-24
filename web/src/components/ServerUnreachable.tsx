@@ -3,6 +3,7 @@ import { elsewhereCopy } from '../lib/connscreen.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { effectiveSsid } from '../lib/settings.ts'
 import { serverLabel } from '../lib/server.ts'
+import { useBoxesOffered } from '../lib/useBoxesOffered.ts'
 
 /** Shown when the app can't reach the server on a cold load with no cache. */
 export default function ServerUnreachable() {
@@ -12,7 +13,16 @@ export default function ServerUnreachable() {
   const elsewhere = useStore((s) => s.elsewhere)
   const eventName = useStore((s) => s.config.eventName)
   const switchEvent = useStore((s) => s.switchEvent)
+  const setBoxesOpen = useStore((s) => s.setBoxesOpen)
+  const boxesOffered = useBoxesOffered()
   const retrying = connection === 'connecting'
+  // Retry was the whole of this screen, and a box with a new address never
+  // answers it: the Boxes screen is where the app can be told where it went.
+  const boxes = boxesOffered && (
+    <button className="center-other" onClick={() => setBoxesOpen(true)}>
+      Your boxes
+    </button>
+  )
 
   if (elsewhere) {
     // Reached, and running another event: not a box that is missing.
@@ -27,6 +37,7 @@ export default function ServerUnreachable() {
           <button className="center-retry" onClick={() => switchEvent(elsewhere.id)}>
             Open it
           </button>
+          {boxes}
           <div className="center-version">v{APP_VERSION}</div>
         </div>
       </div>
@@ -70,6 +81,7 @@ export default function ServerUnreachable() {
         <button className="center-retry" onClick={retryConnection} disabled={retrying}>
           {retrying ? 'Retrying…' : 'Retry now'}
         </button>
+        {boxes}
         <div className="center-meta">Trying {serverLabel()} · retrying automatically</div>
         <div className="center-version">v{APP_VERSION}</div>
       </div>

@@ -88,6 +88,17 @@ describe('what to tell someone whose box has gone quiet', () => {
     }
   })
 
+  it('says last, and only in the app, that the box may have moved', () => {
+    // The app keeps trying the address it was given, and a box that has
+    // moved never answers it: the Boxes screen is where it can be told. A
+    // browser is at its box's own address, where that advice is no use.
+    const app = connectionCauses({ isIos: false, canMoveBox: true })
+    expect(app.at(-1)?.heading).toBe('The box may have a new address')
+    expect(app.at(-1)?.body).toMatch(/tap Your boxes/)
+    const browser = connectionCauses({ isIos: false })
+    expect(browser.some((c) => /new address|boxes/i.test(c.heading + c.body))).toBe(false)
+  })
+
   it('waits long enough that a roam or a restart never triggers it', () => {
     // Access-point roams and box restarts resolve in seconds. Explaining
     // those would be noise, and noise is what makes people ignore the real

@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useSyncExternalStore, type FormEvent } from 'react'
 import { useStore } from '../store.ts'
+import { knownEvents, openEvent, subscribeKnownEvents } from '../lib/eventScope.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { displayName, effectiveSsid } from '../lib/settings.ts'
@@ -38,6 +39,11 @@ export default function Join() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const showServer = needsServerField()
+  const setBoxesOpen = useStore((s) => s.setBoxesOpen)
+  // A phone that opened another event to join it, and would rather go back.
+  const otherEvents = useSyncExternalStore(subscribeKnownEvents, knownEvents).some(
+    (event) => event.id !== openEvent()
+  )
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -156,6 +162,11 @@ export default function Join() {
         <button type="submit" disabled={busy}>
           {busy ? 'Joining…' : 'Join'}
         </button>
+        {otherEvents && (
+          <button type="button" className="join-boxes" onClick={() => setBoxesOpen(true)}>
+            Your other boxes
+          </button>
+        )}
         <div className="join-version">v{APP_VERSION}</div>
       </form>
     </div>

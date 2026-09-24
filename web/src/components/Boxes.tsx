@@ -1,0 +1,235 @@
+import { useEffect, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { signedInTo, useStore } from '../store.ts'
+import {
+  findBox,
+  forgetCopy,
+  forgetEvent,
+  holdingsOf,
+  lastHere,
+  type Holdings,
+} from '../lib/boxes.ts'
+import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
+import { isNative } from '../lib/server.ts'
+
+/** An address as a row shows it: without the scheme, as the join poster prints it. */
+const addressOf = (origin: string): string => origin.replace(/^https?:\/\//i, '')
+
+const nameOf = (event: KnownEvent): string => event.name.trim() || 'No name yet'
+
+/**
+ * The events this device holds, one tap to open each, Forget, and in the app
+ * a way to a box at another address.
+ *
+ * Reached from the menu, from the join screen, and from the screens that say
+ * the box cannot be reached, which offered only Retry to a phone whose box
+ * had moved: now it can be told where the box went.
+ */
+export default function Boxes() {
+  const setBoxesOpen = useStore((s) => s.setBoxesOpen)
+  const switchEvent = useStore((s) => s.switchEvent)
+  const openEventAt = useStore((s) => s.openEventAt)
+  const events = useSyncExternalStore(subscribeKnownEvents, knownEvents)
+  const open = openEvent()
+  const [holdings, setHoldings] = useState<Record<string, Holdings>>({})
+  const [forgetting, setForgetting] = useState<KnownEvent | null>(null)
+  const [address, setAddress] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const close = () => {
+    if (!busy) setBoxesOpen(false)
+  }
+
+  useEffect(() => {
+    let live = true
+    void Promise.all(events.map(async (event) => [event.id, await holdingsOf(event.id)] as const))
+      .then((entries) => {
+        if (live) setHoldings(Object.fromEntries(entries))
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [events])
+
+  const now = Date.now()
+  const rows = [...events].sort((a, b) => {
+    if (a.id === open) return -1
+    if (b.id === open) return 1
+    return b.seenAt - a.seenAt
+  })
+
+  async function onFind(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setBusy(true)
+    const found = await findBox(address)
+    setBusy(false)
+    switch (found.kind) {
+      case 'invalid':
+        setError(found.message)
+        return
+      case 'unreachable':
+        setError(
+          `Nothing answered at ${addressOf(found.origin)}. Check this phone is on the crew ` +
+            'Wi-Fi, and that the address is the one on the join poster.'
+        )
+        return
+      case 'too-old':
+        setError(
+          `The box at ${addressOf(found.origin)} runs an older crewbox, which does not say ` +
+            'which event it is. Update it from its admin panel, then try again.'
+        )
+        return
+      case 'event':
+        openEventAt({ id: found.id, name: found.name, origin: found.origin })
+    }
+  }
+
+  async function onForget(event: KnownEvent) {
+    setBusy(true)
+    setError(null)
+    try {
+      await forgetEvent(event.id)
+      setForgetting(null)
+    } catch {
+      setError('This phone could not forget it. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (forgetting) {
+    const copy = forgetCopy(
+      holdings[forgetting.id] ?? { documents: 0, unsentMessages: 0, unsentEntries: 0 }
+    )
+    return (
+      <div
+        className="search-overlay"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && !busy) setForgetting(null)
+        }}
+        onKeyDown={(e) => e.key === 'Escape' && !busy && setForgetting(null)}
+      >
+        <div className="confirm-panel" role="dialog" aria-label={`Forget ${nameOf(forgetting)}`}>
+          <h3>Forget {nameOf(forgetting)}?</h3>
+          <p>{copy.gone}</p>
+          {copy.lost && <p className="boxes-lost">{copy.lost}</p>}
+          {error && <div className="join-error">{error}</div>}
+          <div className="confirm-actions">
+            <button className="confirm-cancel" onClick={() => setForgetting(null)} disabled={busy}>
+              Cancel
+            </button>
+            <button
+              className="confirm-delete"
+              onClick={() => void onForget(forgetting)}
+              disabled={busy}
+            >
+              {busy ? 'Forgetting…' : 'Forget'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="search-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close()
+      }}
+      onKeyDown={(e) => e.key === 'Escape' && close()}
+    >
+      <div className="boxes-panel" role="dialog" aria-label="Your boxes">
+        <h3>Your boxes</h3>
+        <p className="boxes-lede">
+          Each event keeps its own messages, documents and unsent work on this device.
+        </p>
+
+        {rows.length > 0 && (
+          <ul className="boxes-list" aria-label="Events on this device">
+            {rows.map((event) => {
+              const isOpen = event.id === open
+              const held = holdings[event.id]
+              const unsent = held ? held.unsentMessages + held.unsentEntries : 0
+              const status = isOpen
+                ? ''
+                : signedInTo(event.id)
+                  ? lastHere(event.seenAt, now)
+                  : event.seenAt
+                    ? 'Signed out'
+                    : 'Not joined yet'
+              const detail = [event.origin ? addressOf(event.origin) : '', status]
+                .filter(Boolean)
+                .join(' · ')
+              const body = (
+                <>
+                  <span className="boxes-name">{nameOf(event)}</span>
+                  {detail && <span className="boxes-detail">{detail}</span>}
+                  {unsent > 0 && <span className="boxes-unsent">{unsent} unsent</span>}
+                </>
+              )
+              return (
+                <li key={event.id} className="boxes-row">
+                  {isOpen ? (
+                    <div className="boxes-pick" aria-current="true">
+                      {body}
+                    </div>
+                  ) : (
+                    <button className="boxes-pick" onClick={() => switchEvent(event.id)}>
+                      {body}
+                    </button>
+                  )}
+                  {isOpen ? (
+                    <span className="boxes-badge">Open</span>
+                  ) : (
+                    <button
+                      className="admin-btn"
+                      aria-label={`Forget ${nameOf(event)}`}
+                      onClick={() => {
+                        setError(null)
+                        setForgetting(event)
+                      }}
+                    >
+                      Forget
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        {isNative() && (
+          <form className="boxes-address" onSubmit={(e) => void onFind(e)}>
+            <label htmlFor="boxes-address">Another box</label>
+            <div className="boxes-address-row">
+              <input
+                id="boxes-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="e.g. 192.168.8.1"
+                autoComplete="off"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <button type="submit" className="admin-btn admin-btn-primary" disabled={busy}>
+                {busy ? 'Looking…' : 'Connect'}
+              </button>
+            </div>
+            <span className="hint">Its address, from the join poster</span>
+          </form>
+        )}
+        {error && <div className="join-error">{error}</div>}
+
+        <div className="boxes-actions">
+          <button className="admin-btn" onClick={close}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

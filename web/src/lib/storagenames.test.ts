@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { plotStore } from '../modules/lighting/store/docManager.ts'
 import { sheetStore } from '../modules/patch/store/docManager.ts'
 import { screensStore } from '../modules/video/store/screensStore.ts'
+import { DEVICE_PREF_KEYS, EVENT_PREF_KEYS } from './eventScope.ts'
 
 /**
  * The names that reach phones in the field.
@@ -95,7 +96,8 @@ describe('the browser storage names', () => {
     // pins what that name is for any other.
     const db = readFileSync(join(SRC, 'lib/db.ts'), 'utf8')
     expect(db).toContain("const DB_NAME = 'crewbox'")
-    expect(db).toContain('new Dexie(storageNameFor(event, DB_NAME))')
+    expect(db).toContain('storageNameFor(event, DB_NAME)')
+    expect(db).toContain('new Dexie(chatDatabaseName(event))')
     expect(db).toContain("messages: 'id, [channelId+seq]'")
     expect(db).toContain("outbox: 'clientMsgId, createdAt'")
     expect(db).toContain("kv: 'key'")
@@ -126,6 +128,27 @@ describe('the browser storage names', () => {
     expect(second.indexDatabase).toBe('crewbox@saturday-patch-index')
     expect(second.registryKey).toBe('crewbox@saturday:patch-sheets')
     localStorage.clear()
+  })
+
+  it('knows which keys are an event’s and which are the device’s', () => {
+    // Forgetting the first event deletes its settings by name, because they
+    // share today's names with the device's own. A key in neither list is
+    // left behind when its event is forgotten; one in the wrong list takes a
+    // device setting with it — the list of events, or where the box is.
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const registries = [sheetStore, plotStore, screensStore].map(
+      (store) => store.storageOf('friday').registryKey
+    )
+    localStorage.clear()
+    const found = new Set<string>()
+    for (const text of sources(SRC)) {
+      for (const m of text.matchAll(/'(crewbox:[A-Za-z0-9:_-]+)'/g)) found.add(m[1])
+    }
+    expect(found.size).toBeGreaterThan(10)
+    for (const key of found) {
+      const events = EVENT_PREF_KEYS.includes(key) || registries.includes(key)
+      expect(events !== DEVICE_PREF_KEYS.includes(key), key).toBe(true)
+    }
   })
 
   it('keeps the patch registry under the key it shipped with', () => {

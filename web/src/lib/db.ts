@@ -38,9 +38,12 @@ type CrewboxDb = Dexie & {
  */
 const DB_NAME = 'crewbox'
 
+/** What an event's chat cache is called on this device. */
+export const chatDatabaseName = (event: string | null): string => storageNameFor(event, DB_NAME)
+
 /** An event's chat cache. Dexie opens it on the first thing asked of it. */
 export function chatDatabase(event: string | null): CrewboxDb {
-  const db = new Dexie(storageNameFor(event, DB_NAME)) as CrewboxDb
+  const db = new Dexie(chatDatabaseName(event)) as CrewboxDb
   db.version(1).stores({
     messages: 'id, [channelId+seq]',
     outbox: 'clientMsgId, createdAt',

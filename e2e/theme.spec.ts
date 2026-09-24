@@ -355,3 +355,75 @@ test('a dark-theme device gets the dark chrome', async ({ browser }) => {
   ).toBe('#0d1117')
   await context.close()
 })
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`the phone's own boxes stay readable in ${scheme} theme`, async ({ browser }) => {
+    // In the app, where "Your boxes" is always offered, with a second event
+    // on the phone holding a show-log entry it never sent: the row that says
+    // so, and the warning that forgetting it loses the entry for good.
+    const context = await browser.newContext({ colorScheme: scheme })
+    await context.addInitScript(() => {
+      ;(window as unknown as { Capacitor: unknown }).Capacitor = {
+        isNativePlatform: () => true,
+        getPlatform: () => 'android',
+        Plugins: {},
+      }
+    })
+    const page = await context.newPage()
+    page.on('pageerror', (e) => {
+      throw new Error(`Page error: ${e.message}`)
+    })
+    await page.goto('/?server=http://localhost:4299&pin=4242')
+    await page.getByLabel('Your name').fill(`Boxes ${scheme}`)
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join' }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+    await page.evaluate(() => {
+      const events = JSON.parse(localStorage.getItem('crewbox:boxes') ?? '[]') as unknown[]
+      const lastWeek = Date.now() - 3 * 24 * 60 * 60_000
+      events.push({
+        id: 'harbour',
+        name: 'Harbour Tour',
+        origin: 'http://10.0.0.9',
+        seenAt: lastWeek,
+      })
+      localStorage.setItem('crewbox:boxes', JSON.stringify(events))
+      localStorage.setItem('crewbox@harbour:token', 'a-sign-in')
+      localStorage.setItem(
+        'crewbox@harbour:incident-outbox',
+        JSON.stringify([
+          {
+            clientMsgId: 'q1',
+            kind: 'note',
+            severity: 'info',
+            body: 'Barrier moved',
+            at: 1,
+            stage: 'Main',
+            actId: '',
+            actName: '',
+          },
+        ])
+      )
+    })
+    await page.reload()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+    expect(await textContrast(page, '.sidebar-boxes')).toBeGreaterThan(4.5)
+    await page.getByRole('button', { name: 'Your boxes', exact: true }).click()
+    const row = '.boxes-row:has-text("Harbour Tour")'
+    await expect(page.locator(row)).toContainText('1 unsent')
+    for (const part of ['.boxes-name', '.boxes-detail', '.boxes-unsent', '.admin-btn']) {
+      expect(await textContrast(page, `${row} ${part}`), part).toBeGreaterThan(4.5)
+    }
+    expect(await textContrast(page, '.boxes-badge')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, '.boxes-address label')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, '.boxes-address .hint')).toBeGreaterThan(4.5)
+
+    await page.locator(row).getByRole('button', { name: 'Forget Harbour Tour' }).click()
+    await expect(page.locator('.boxes-lost')).toBeVisible()
+    expect(await textContrast(page, '.boxes-lost')).toBeGreaterThan(4.5)
+
+    await context.close()
+  })
+}

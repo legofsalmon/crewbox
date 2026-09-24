@@ -247,6 +247,13 @@ export function getConfig(signal?: AbortSignal): Promise<PublicConfig> {
   return request('/api/config', signal ? { signal } : undefined)
 }
 
+/** The same, from a box at an address this app is not using yet. */
+export async function getConfigAt(origin: string, signal?: AbortSignal): Promise<PublicConfig> {
+  const res = await fetch(`${origin}/api/config`, signal ? { signal } : undefined)
+  if (!res.ok) throw new ApiError(`request failed (${res.status})`, res.status)
+  return (await res.json()) as PublicConfig
+}
+
 /**
  * Delete a shared file. The author needs no admin token; anyone else does,
  * which is why it's optional here rather than an AdminAuth.

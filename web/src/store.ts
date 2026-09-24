@@ -53,6 +53,7 @@ import { readPref, writePref } from './lib/prefs.ts'
 import {
   acceptEvent,
   chooseEvent,
+  eventIdFrom,
   forgetEventPref,
   knownEvent,
   openEvent,
@@ -433,6 +434,14 @@ export interface AppState {
    * The page reloads to open it (see lib/eventScope.ts).
    */
   switchEvent: (id: string) => void
+  /**
+   * Go to the event a box at a typed address is running: the open one, moved
+   * there; another this device holds; or a new one, to join.
+   */
+  openEventAt: (event: { id: string; name: string; origin: string }) => void
+  /** The Boxes screen: the events this device holds, and a way to another box. */
+  boxesOpen: boolean
+  setBoxesOpen: (open: boolean) => void
   toggleTheme: () => void
   toggleSounds: () => void
   logout: () => Promise<void>
@@ -495,6 +504,11 @@ export function sessionToken(): string | null {
   return getToken()
 }
 
+/** Whether this device is signed in to an event, open or not. */
+export function signedInTo(event: string): boolean {
+  return readPref(storageNameFor(event, TOKEN_KEY)) !== null
+}
+
 function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Message[] {
   const sorted = [...incoming].sort((a, b) => a.seq - b.seq)
   if (!existing?.length) return sorted
@@ -533,9 +547,10 @@ export const useStore = create<AppState>()((set, get) => {
   }
 
   /** Whether the box here runs the open event; handles it when it does not. */
-  function openEventHere(event: string | undefined, name: string): boolean {
-    if (acceptEvent(event)) return true
-    otherEventHere({ id: event!, name })
+  function openEventHere(event: unknown, name: string): boolean {
+    const id = eventIdFrom(event)
+    if (acceptEvent(id)) return true
+    otherEventHere({ id: id!, name })
     return false
   }
 
@@ -1267,7 +1282,8 @@ export const useStore = create<AppState>()((set, get) => {
         .getConfig()
         .then((config) => {
           if (getToken() && !openEventHere(config.eventId, config.eventName)) return
-          if (!config.eventId || config.eventId === openEvent()) rememberConfig(config)
+          const event = eventIdFrom(config.eventId)
+          if (!event || event === openEvent()) rememberConfig(config)
           set({ config })
         })
         .catch(() => {})
@@ -1320,7 +1336,9 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     async join(name, eventPin, personalPin) {
-      const { token, eventId } = await api.join({ name, eventPin, personalPin })
+      const joined = await api.join({ name, eventPin, personalPin })
+      const { token } = joined
+      const eventId = eventIdFrom(joined.eventId)
       if (eventId && !acceptEvent(eventId)) {
         // A box running another event than the one open: the sign-in is
         // that event's, and so is everything the box is about to send. File
@@ -1763,6 +1781,32 @@ export const useStore = create<AppState>()((set, get) => {
       if (isNative() && origin) setServerOrigin(origin)
       chooseEvent(id)
       reopenOnAnotherEvent()
+    },
+
+    openEventAt({ id, name, origin }) {
+      // An address somebody typed is trusted the way the join form trusts
+      // one. Nothing here follows a box to a new address by itself: that
+      // would take a box proving it is the same one, not only saying so.
+      rememberEvent({ id, name, origin })
+      // On a phone not told an event yet, the first it is told of has
+      // today's names, whether by joining or from here.
+      if (!acceptEvent(id)) {
+        get().switchEvent(id)
+        return
+      }
+      if (origin !== here()) {
+        // The open event's own box, at an address of its own now.
+        setServerOrigin(origin)
+        location.reload()
+        return
+      }
+      set({ boxesOpen: false })
+      get().retryConnection()
+    },
+
+    boxesOpen: false,
+    setBoxesOpen(open) {
+      set({ boxesOpen: open })
     },
 
     toggleTheme() {

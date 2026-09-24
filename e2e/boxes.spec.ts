@@ -146,6 +146,8 @@ test('the app keeps each event’s sheets and running order to its own box', asy
     // Saturday's own crew has what the phone made there, so the phone has
     // synced with that box, and has none of Friday's: no sheet, no act.
     const local = await browserAt(browser, saturday, '4343')
+    // A browser at its one box has no other to go to.
+    await expect(local.getByRole('button', { name: 'Your boxes', exact: true })).toHaveCount(0)
     await openPatch(local)
     await expect(local.locator('main').getByText(saturdaySheet).first()).toBeVisible()
     await expect(local.locator('main').getByText(fridaySheet)).toHaveCount(0)
@@ -213,9 +215,11 @@ test('a box that comes back with a new database is sent nothing of the old event
     await openPatch(page)
     await expect(page.locator('main').getByText(sheet).first()).toBeVisible()
 
-    // Opening the event that is there now asks to join it, as a new event...
+    // Opening the event that is there now asks to join it, as a new event,
+    // with the way back to the old one beside it...
     await page.getByRole('button', { name: /has changed.*Open it/ }).click()
     await expect(page.getByLabel('Crew server')).toHaveValue('http://127.0.0.1:4311')
+    await expect(page.getByRole('button', { name: 'Your other boxes' })).toBeVisible()
     await joinBox(page, box.address, crew, '4444')
     // ...which starts empty, on this phone as on the box.
     await expect(page.locator('.msg', { hasText: 'Doors in ten' })).toHaveCount(0)
@@ -226,5 +230,140 @@ test('a box that comes back with a new database is sent nothing of the old event
     await box.stop()
     rmSync(box.dataDir, { recursive: true, force: true })
     rmSync(firstDir, { recursive: true, force: true })
+  }
+})
+
+/** The Boxes screen, from the menu. */
+async function openBoxes(page: Page) {
+  await page.getByRole('button', { name: 'Your boxes', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Your boxes' })).toBeVisible()
+}
+
+/** A row of the Boxes screen, by the address it shows. */
+const boxRow = (page: Page, address: string) =>
+  page.getByRole('dialog', { name: 'Your boxes' }).locator('.boxes-row', { hasText: address })
+
+test('the Boxes screen opens each event this phone holds, and forgets one', async ({ browser }) => {
+  test.setTimeout(150_000)
+  const saturday = await startBox(4312, '4545')
+  try {
+    const page = await appDevice(browser)
+    const crew = uniqueName('Rota Tech')
+    await joinBox(page, '127.0.0.1:4299', crew, '4242')
+    const fridaySheet = uniqueName('Friday Stage')
+    await openPatch(page)
+    await createSheet(page, fridaySheet)
+
+    // To the next box by its address, staying signed in to this one.
+    await openBoxes(page)
+    await page.getByLabel('Another box').fill(saturday.address)
+    await page.getByRole('button', { name: 'Connect' }).click()
+    await expect(page.getByLabel('Crew server')).toHaveValue(`http://${saturday.address}`)
+    await page.getByLabel('Your name').fill(crew)
+    await page.getByLabel('Event PIN').fill('4545')
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join' }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+    const saturdaySheet = uniqueName('Saturday Stage')
+    await openPatch(page)
+    await createSheet(page, saturdaySheet)
+
+    // Both events, the open one first.
+    await openBoxes(page)
+    const rows = page.getByRole('dialog', { name: 'Your boxes' }).locator('.boxes-row')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.first()).toContainText('127.0.0.1:4312')
+    await expect(rows.first()).toContainText('Open')
+    await expect(rows.nth(1)).toContainText(/127\.0\.0\.1:4299 · Last here today/)
+
+    // One tap back to Friday, with everything as it was, and none of Saturday's.
+    await boxRow(page, '127.0.0.1:4299').getByRole('button').first().click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+    await openPatch(page)
+    await expect(page.locator('main').getByText(fridaySheet).first()).toBeVisible()
+    await expect(page.locator('main').getByText(saturdaySheet)).toHaveCount(0)
+
+    // And back to Saturday.
+    await openBoxes(page)
+    await boxRow(page, '127.0.0.1:4312').getByRole('button').first().click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+    await openPatch(page)
+    await expect(page.locator('main').getByText(saturdaySheet).first()).toBeVisible()
+
+    // Forgetting Friday says what goes first, and then it has gone: every
+    // database and setting of Friday's, and none of the device's own.
+    await openBoxes(page)
+    await boxRow(page, '127.0.0.1:4299')
+      .getByRole('button', { name: /^Forget/ })
+      .click()
+    const confirm = page.getByRole('dialog', { name: /^Forget/ })
+    await expect(confirm).toContainText(
+      'This device deletes what it keeps for it: 1 document, its running order, its chat and your sign-in.'
+    )
+    // As tall as what it asks: it once reached down to the foot of the screen.
+    expect((await confirm.boundingBox())?.height).toBeLessThan(400)
+    await confirm.getByRole('button', { name: 'Forget', exact: true }).click()
+    await expect(
+      page.getByRole('dialog', { name: 'Your boxes' }).locator('.boxes-row')
+    ).toHaveCount(1)
+    const left = await page.evaluate(async () => ({
+      databases: (await indexedDB.databases()).map((db) => db.name ?? ''),
+      keys: Object.keys(localStorage),
+    }))
+    expect(
+      left.databases.filter((name) => name === 'crewbox' || name.startsWith('crewbox-'))
+    ).toEqual([])
+    expect(left.databases.some((name) => name.startsWith('crewbox@'))).toBe(true)
+    expect(left.keys.filter((key) => key.startsWith('crewbox:')).sort()).toEqual(
+      ['crewbox:boxes', 'crewbox:event', 'crewbox:server-url'].sort()
+    )
+
+    // Saturday carries on as it was.
+    await page
+      .getByRole('dialog', { name: 'Your boxes' })
+      .getByRole('button', { name: 'Close' })
+      .click()
+    await expect(page.locator('main').getByText(saturdaySheet).first()).toBeVisible()
+  } finally {
+    await saturday.stop()
+    rmSync(saturday.dataDir, { recursive: true, force: true })
+  }
+})
+
+test('the app is told where its box has gone, and carries on there', async ({ browser }) => {
+  test.setTimeout(120_000)
+  let box = await startBox(4313, '4646')
+  try {
+    const page = await appDevice(browser)
+    await joinBox(page, box.address, uniqueName('Moved Tech'), '4646')
+    const sheet = uniqueName('Moved Stage')
+    await openPatch(page)
+    await createSheet(page, sheet)
+
+    // The same box, database and all, comes back at another address.
+    await box.stop()
+    box = await startBox(4314, '4646', box.dataDir)
+    await page.reload()
+    await expect(page.locator('.conn-banner')).toBeVisible({ timeout: 15_000 })
+
+    await openBoxes(page)
+    const field = page.getByLabel('Another box')
+    await field.fill('127.0.0.1:4313')
+    await page.getByRole('button', { name: 'Connect' }).click()
+    await expect(page.getByText('Nothing answered at 127.0.0.1:4313.')).toBeVisible()
+    await field.fill('127.0.0.1:4314')
+    await page.getByRole('button', { name: 'Connect' }).click()
+
+    // Found, as the same event: everything this phone had, now online there.
+    await expect(page.locator('.conn-banner')).toBeHidden({ timeout: 15_000 })
+    await openPatch(page)
+    await expect(page.locator('main').getByText(sheet).first()).toBeVisible()
+    await openBoxes(page)
+    const rows = page.getByRole('dialog', { name: 'Your boxes' }).locator('.boxes-row')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('127.0.0.1:4314')
+  } finally {
+    await box.stop()
+    rmSync(box.dataDir, { recursive: true, force: true })
   }
 })

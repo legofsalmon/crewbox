@@ -69,7 +69,12 @@ export interface ConnCause {
  * pressure, and a reordering that buries the invisible cause would quietly
  * undo the point of the screen.
  */
-export function connectionCauses(input: { ssid?: string; isIos: boolean }): ConnCause[] {
+export function connectionCauses(input: {
+  ssid?: string
+  isIos: boolean
+  /** The app, which can be told another address from its Boxes screen. */
+  canMoveBox?: boolean
+}): ConnCause[] {
   const network = input.ssid ? `“${input.ssid}”` : 'the crew Wi-Fi'
   const causes: ConnCause[] = []
 
@@ -96,6 +101,14 @@ export function connectionCauses(input: { ssid?: string; isIos: boolean }): Conn
     heading: 'The box may be restarting',
     body: 'An update or a restart takes under a minute, and this clears by itself when it comes back.',
   })
+  if (input.canMoveBox) {
+    // Last: rarer than any of the above, and the only one that never clears
+    // by itself. The app keeps trying the address it has.
+    causes.push({
+      heading: 'The box may have a new address',
+      body: 'If it has been moved or set up somewhere else, tap Your boxes and type the address on its join poster.',
+    })
+  }
 
   return causes
 }

@@ -16,6 +16,7 @@ import FileOfferBar from './components/FileOfferBar.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import ConnectionHelp from './components/ConnectionHelp.tsx'
+import Boxes from './components/Boxes.tsx'
 import { connectionScreen, elsewhereCopy, STUCK_AFTER_MS } from './lib/connscreen.ts'
 import { serverLabel } from './lib/server.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
@@ -26,6 +27,7 @@ import { enabledModules } from './shell/modules.ts'
 export default function App() {
   const phase = useStore((s) => s.phase)
   const boot = useStore((s) => s.boot)
+  const boxesOpen = useStore((s) => s.boxesOpen)
 
   useEffect(() => {
     void boot()
@@ -58,8 +60,14 @@ export default function App() {
   }, [phase])
 
   if (phase === 'boot') return <div className="boot-screen" />
-  if (phase === 'join') return <Join />
-  return <Shell />
+  // Over whichever screen it was opened from: the join form, the one saying
+  // the box cannot be reached, or the app.
+  return (
+    <>
+      {phase === 'join' ? <Join /> : <Shell />}
+      {boxesOpen && <Boxes />}
+    </>
+  )
 }
 
 /**

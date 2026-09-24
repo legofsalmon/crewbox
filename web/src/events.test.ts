@@ -131,18 +131,18 @@ describe('a welcome from a box running another event', () => {
   it('is refused before anything queued is sent to it', async () => {
     const store = await loadStore()
     await store.getState().boot()
-    socket!.onMessage(welcome('the-spare', 'Harbour Fest'))
+    socket!.onMessage(welcome('spare', 'Harbour Fest'))
     await settle()
     expect(sent).toEqual([])
     expect(socket!.stopped).toBe(true)
     expect(store.getState().hasConnected).toBe(false)
-    expect(store.getState().elsewhere).toEqual({ id: 'the-spare', name: 'Harbour Fest' })
+    expect(store.getState().elsewhere).toEqual({ id: 'spare', name: 'Harbour Fest' })
   })
 
   it('leaves everything of the open event where it was', async () => {
     const store = await loadStore()
     await store.getState().boot()
-    socket!.onMessage(welcome('the-spare'))
+    socket!.onMessage(welcome('spare'))
     await settle()
     expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
     expect(localStorage.getItem('crewbox:db-epoch')).toBe('friday')
@@ -154,20 +154,20 @@ describe('a welcome from a box running another event', () => {
     const store = await loadStore()
     const { knownEvent } = await import('./lib/eventScope.ts')
     await store.getState().boot()
-    socket!.onMessage(welcome('the-spare', 'Harbour Fest'))
+    socket!.onMessage(welcome('spare', 'Harbour Fest'))
     await settle()
-    expect(knownEvent('friday')).toMatchObject({ replacedBy: 'the-spare', origin: location.origin })
-    expect(knownEvent('the-spare')).toMatchObject({ name: 'Harbour Fest', origin: location.origin })
+    expect(knownEvent('friday')).toMatchObject({ replacedBy: 'spare', origin: location.origin })
+    expect(knownEvent('spare')).toMatchObject({ name: 'Harbour Fest', origin: location.origin })
   })
 
   it('opens the event that is there when asked, and only then', async () => {
     const store = await loadStore()
     await store.getState().boot()
-    socket!.onMessage(welcome('the-spare'))
+    socket!.onMessage(welcome('spare'))
     await settle()
     history.replaceState(null, '', '/m/patch/fridays-sheet')
-    store.getState().switchEvent('the-spare')
-    expect(localStorage.getItem('crewbox:event')).toBe('the-spare')
+    store.getState().switchEvent('spare')
+    expect(localStorage.getItem('crewbox:event')).toBe('spare')
     expect(reload).toHaveBeenCalledTimes(1)
     // At its start, not on a sheet of the event it left.
     expect(location.pathname).toBe('/')
@@ -178,11 +178,11 @@ describe('a welcome from a box running another event', () => {
   })
 
   it('is found out from the box’s config before the socket has said anything', async () => {
-    api.getConfig.mockResolvedValue(config('the-spare', 'Harbour Tour'))
+    api.getConfig.mockResolvedValue(config('spare', 'Harbour Tour'))
     const store = await loadStore()
     await store.getState().boot()
     await settle()
-    expect(store.getState().elsewhere).toEqual({ id: 'the-spare', name: 'Harbour Tour' })
+    expect(store.getState().elsewhere).toEqual({ id: 'spare', name: 'Harbour Tour' })
     // No socket left running: stopped, or here, never started.
     expect(socket?.stopped ?? true).toBe(true)
     expect(sent).toEqual([])
@@ -203,12 +203,12 @@ describe('a box refusing this phone’s session', () => {
   it('keeps the sign-in when the box is another event, which never issued it', async () => {
     // A spare with a fresh database refuses every session: this one is the
     // old event's, and is still good for the old event's box.
-    api.getConfig.mockResolvedValue(config('the-spare'))
+    api.getConfig.mockResolvedValue(config('spare'))
     const store = await loadStore()
     await store.getState().sessionEnded()
     expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
     expect(reload).not.toHaveBeenCalled()
-    expect(store.getState().elsewhere?.id).toBe('the-spare')
+    expect(store.getState().elsewhere?.id).toBe('spare')
   })
 })
 
@@ -245,5 +245,89 @@ describe('joining', () => {
     expect(localStorage.getItem('crewbox:token')).toBe('first-sign-in')
     expect(localStorage.getItem('crewbox:db-epoch')).toBe('friday')
     expect(reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('a box at an address typed into the Boxes screen', () => {
+  /** The app, which reaches its box at an address of its own. */
+  function inTheApp(at: string) {
+    ;(window as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'android',
+    }
+    localStorage.setItem('crewbox:server-url', at)
+    localStorage.setItem(
+      'crewbox:boxes',
+      JSON.stringify([{ id: 'friday', name: 'Harbour Fest', origin: at, seenAt: 1 }])
+    )
+  }
+
+  afterEach(() => {
+    delete (window as { Capacitor?: unknown }).Capacitor
+  })
+
+  it('follows the open event’s own box to where it is now, keeping everything', async () => {
+    inTheApp('http://10.0.0.2')
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    store.getState().openEventAt({ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.9' })
+    expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.9')
+    expect(knownEvent('friday')?.origin).toBe('http://10.0.0.9')
+    expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
+    expect(localStorage.getItem('crewbox:event')).toBeNull()
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens another event this device holds, at the address typed', async () => {
+    inTheApp('http://10.0.0.2')
+    const store = await loadStore()
+    const { rememberEvent } = await import('./lib/eventScope.ts')
+    rememberEvent({ id: 'saturday', name: 'Harbour Tour', origin: 'http://10.0.0.3', seenAt: 2 })
+    history.replaceState(null, '', '/m/patch/fridays-sheet')
+    store
+      .getState()
+      .openEventAt({ id: 'saturday', name: 'Harbour Tour', origin: 'http://10.0.0.9' })
+    expect(localStorage.getItem('crewbox:event')).toBe('saturday')
+    expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.9')
+    expect(location.pathname).toBe('/')
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('files a new event under its own ID and asks to join it', async () => {
+    inTheApp('http://10.0.0.2')
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    store.getState().openEventAt({ id: 'sunday', name: 'Quay Sessions', origin: 'http://10.0.0.9' })
+    expect(knownEvent('sunday')).toMatchObject({ name: 'Quay Sessions', origin: 'http://10.0.0.9' })
+    expect(localStorage.getItem('crewbox:event')).toBe('sunday')
+    const next = await loadStore()
+    await next.getState().boot()
+    expect(next.getState().phase).toBe('join')
+    // Friday's sign-in is still Friday's.
+    expect(localStorage.getItem('crewbox:token')).toBe('fridays-sign-in')
+  })
+
+  it('gives a new phone’s first event today’s names, as joining does', async () => {
+    localStorage.clear()
+    inTheApp('http://10.0.0.2')
+    localStorage.removeItem('crewbox:boxes')
+    const store = await loadStore()
+    store.getState().openEventAt({ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.9' })
+    expect(localStorage.getItem('crewbox:db-epoch')).toBe('friday')
+    expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.9')
+    expect(reload).toHaveBeenCalledTimes(1)
+    const { storageName } = await import('./lib/eventScope.ts')
+    expect(storageName('crewbox:token')).toBe('crewbox:token')
+  })
+
+  it('tries again, and goes nowhere, when it is the box this app already uses', async () => {
+    inTheApp('http://10.0.0.2')
+    const store = await loadStore()
+    await store.getState().boot()
+    store.getState().setBoxesOpen(true)
+    store.getState().openEventAt({ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.2' })
+    expect(reload).not.toHaveBeenCalled()
+    expect(store.getState().boxesOpen).toBe(false)
+    expect(store.getState().connection).toBe('connecting')
   })
 })

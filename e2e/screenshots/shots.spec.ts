@@ -167,7 +167,7 @@ test('shots: patch sheets', async () => {
   // Dialogs close via their own × — not every one binds Escape.
   const closeDialog = () => maya.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
 
-  await maya.getByRole('button', { name: 'Boxes' }).click()
+  await maya.getByRole('button', { name: 'Boxes', exact: true }).click()
   await shoot(maya, 'patch-subbox')
   await closeDialog()
 

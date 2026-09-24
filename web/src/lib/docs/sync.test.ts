@@ -88,7 +88,7 @@ describe('a document on a signed-in phone', () => {
     syncManager.attach('timetable/event', new Y.Doc(), { present: false })
     expect(made).toHaveLength(2)
 
-    useStore.setState({ elsewhere: { id: 'the-spare', name: '' } })
+    useStore.setState({ elsewhere: { id: 'spare', name: '' } })
     expect(made.every((p) => p.destroyed)).toBe(true)
     // And does not start again by itself, whatever else changes.
     useStore.setState({ me: { id: 'u1', name: 'Sam' } as never })

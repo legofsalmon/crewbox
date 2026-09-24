@@ -279,7 +279,7 @@ test('a festival master patch imports with its acts, inputs and sub-snakes', asy
   await expect(page.getByLabel('MARGOT DUNN, channel 1, Mic/DI')).toHaveValue('BEYER')
 
   // And the colour legend became real sub-boxes, not text in cells.
-  await page.getByRole('button', { name: 'Boxes' }).click()
+  await page.getByRole('button', { name: 'Boxes', exact: true }).click()
   const names = page.getByRole('dialog').getByLabel('Sub-box name')
   await expect(names).toHaveCount(5)
   await expect(names.first()).toHaveValue('PINK')

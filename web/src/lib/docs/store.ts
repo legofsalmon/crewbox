@@ -145,6 +145,15 @@ const INDEX_DOC_NAME = 'index'
 
 const hasIndexedDb = typeof indexedDB !== 'undefined'
 
+const made: DocStore[] = []
+
+/**
+ * Every document store the app has, for the Boxes screen to count, move and
+ * forget an event's documents by. A module's store is made when the module is
+ * loaded, and the shell loads every module at start.
+ */
+export const allDocStores = (): readonly DocStore[] => made
+
 export function createDocStore(config: DocStoreConfig): DocStore {
   const dbPrefix = `crewbox-${config.moduleId}-`
   const registryKey = config.registryKey ?? `crewbox:${config.moduleId}-docs`
@@ -358,7 +367,7 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     }
   }
 
-  return {
+  const store: DocStore = {
     indexDocName: INDEX_DOC_NAME,
     defaultTitle: config.defaultTitle,
     docName: config.docName,
@@ -417,4 +426,6 @@ export function createDocStore(config: DocStoreConfig): DocStore {
       }
     },
   }
+  made.push(store)
+  return store
 }

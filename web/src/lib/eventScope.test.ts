@@ -94,7 +94,7 @@ describe('a box saying which event it is', () => {
     // A spare box with a fresh database, at the address this phone knows.
     localStorage.setItem('crewbox:db-epoch', 'friday')
     const scope = await load()
-    expect(scope.acceptEvent('the-spare')).toBe(false)
+    expect(scope.acceptEvent('spare')).toBe(false)
     expect(scope.openEvent()).toBe('friday')
     expect(localStorage.getItem('crewbox:db-epoch')).toBe('friday')
     expect(scope.storageName('crewbox:token')).toBe('crewbox:token')
@@ -196,9 +196,9 @@ describe('the events a device knows', () => {
   it('forgets one, and what pointed at it', async () => {
     const scope = await load()
     scope.rememberEvent({ id: 'friday', name: '', origin: 'http://10.0.0.2' })
-    scope.rememberEvent({ id: 'friday', replacedBy: 'the-spare', moveAnswered: true })
-    scope.rememberEvent({ id: 'the-spare', name: '', origin: 'http://10.0.0.2' })
-    scope.forgetEventRecord('the-spare')
+    scope.rememberEvent({ id: 'friday', replacedBy: 'spare', moveAnswered: true })
+    scope.rememberEvent({ id: 'spare', name: '', origin: 'http://10.0.0.2' })
+    scope.forgetEventRecord('spare')
     expect(scope.knownEvents()).toEqual([
       { id: 'friday', name: '', origin: 'http://10.0.0.2', seenAt: 0 },
     ])
@@ -221,5 +221,75 @@ describe('the events a device knows', () => {
     stop()
     scope.rememberEvent({ id: 'friday', name: 'Renamed' })
     expect(heard).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('an event ID from a box', () => {
+  it('is taken as the box mints it', async () => {
+    const { eventIdFrom } = await load()
+    expect(eventIdFrom('mfxk2a1b0c3d4e5f6g7h8')).toBe('mfxk2a1b0c3d4e5f6g7h8')
+    expect(eventIdFrom('Friday_2026')).toBe('Friday_2026')
+  })
+
+  it('is no ID at all when it could not be one', async () => {
+    // It goes into storage names, where a "-" or ":" would make one event's
+    // names read as the start of another's.
+    const { eventIdFrom } = await load()
+    for (const junk of ['', 'a-b', 'a:b', 'a/b', 'a b', 'x'.repeat(65), 5, null, undefined, {}]) {
+      expect(eventIdFrom(junk)).toBeUndefined()
+    }
+  })
+})
+
+describe('finding all of one event’s storage', () => {
+  it('counts every database of today’s as the first event’s, and no other event’s', async () => {
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const { isEventDatabase } = await load()
+    for (const name of ['crewbox', 'crewbox-timetable-event', 'crewbox-patch-sheet-abc123']) {
+      expect(isEventDatabase(name, 'friday')).toBe(true)
+      expect(isEventDatabase(name, 'saturday')).toBe(false)
+    }
+    expect(isEventDatabase('crewbox@saturday', 'friday')).toBe(false)
+    expect(isEventDatabase('workbox-expiration', 'friday')).toBe(false)
+  })
+
+  it('never takes one event’s databases for another whose ID starts the same', async () => {
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const { isEventDatabase } = await load()
+    expect(isEventDatabase('crewbox@sat', 'sat')).toBe(true)
+    expect(isEventDatabase('crewbox@sat-patch-sheet-abc123', 'sat')).toBe(true)
+    expect(isEventDatabase('crewbox@saturday', 'sat')).toBe(false)
+    expect(isEventDatabase('crewbox@saturday-patch-sheet-abc123', 'sat')).toBe(false)
+  })
+
+  it('finds the first event’s settings by name, leaving the device’s alone', async () => {
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const { eventPrefKeys, DEVICE_PREF_KEYS } = await load()
+    const keys = [
+      'crewbox:token',
+      'crewbox:incident-outbox',
+      ...DEVICE_PREF_KEYS,
+      'crewbox@sat:token',
+    ]
+    expect(eventPrefKeys('friday', keys).sort()).toEqual(
+      ['crewbox:incident-outbox', 'crewbox:token'].sort()
+    )
+  })
+
+  it('finds any other event’s by its own prefix', async () => {
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const { eventPrefKeys } = await load()
+    const keys = [
+      'crewbox:token',
+      'crewbox@sat:token',
+      'crewbox@sat:modules',
+      'crewbox@saturday:token',
+    ]
+    expect(eventPrefKeys('sat', keys)).toEqual(['crewbox@sat:token', 'crewbox@sat:modules'])
+  })
+
+  it('has no setting that is both an event’s and the device’s', async () => {
+    const { EVENT_PREF_KEYS, DEVICE_PREF_KEYS } = await load()
+    for (const key of EVENT_PREF_KEYS) expect(DEVICE_PREF_KEYS).not.toContain(key)
   })
 })

@@ -56,6 +56,49 @@ const KNOWN_EVENTS_KEY = 'crewbox:boxes'
 /** The prefix every storage name in the app starts with. */
 const PREFIX = 'crewbox'
 
+/**
+ * The first event's small settings, by today's names, apart from its lists
+ * of documents (each module's store knows its own). Forgetting the first
+ * event deletes these; every other `crewbox:` key is the device's.
+ * storagenames.test.ts fails on a key that is neither.
+ */
+export const EVENT_PREF_KEYS: readonly string[] = [
+  'crewbox:token',
+  'crewbox:event-name',
+  'crewbox:wifi-ssid',
+  'crewbox:modules',
+  'crewbox:patch-seen',
+  'crewbox:lighting-seen',
+  'crewbox:video-screens-seen',
+  'crewbox:incident-outbox',
+  'crewbox:incident-stage',
+]
+
+/** The device's own settings, whichever event is open. Never an event's to delete. */
+export const DEVICE_PREF_KEYS: readonly string[] = [
+  'crewbox:audio-in',
+  'crewbox:audio-out',
+  KNOWN_EVENTS_KEY,
+  FIRST_EVENT_KEY,
+  OPEN_EVENT_KEY,
+  'crewbox:ios-tip-dismissed',
+  'crewbox:server-url',
+  'crewbox:sounds',
+  'crewbox:theme',
+]
+
+/**
+ * An event ID as a box sends it, if it is one this device can file data under.
+ *
+ * A box mints it with newId: letters and digits. Anything else is taken as no
+ * ID at all, which is how the app has always taken a box. The characters
+ * matter, because the ID goes into storage names: a `-` or `:` in it would
+ * make one event's names look like the start of another's.
+ */
+export function eventIdFrom(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[0-9A-Za-z_]{1,64}$/.test(value) ? value : undefined
+}
+
 let opened: string | null | undefined
 
 /**
@@ -94,6 +137,37 @@ export function storageName(name: string): string {
 /** The start every storage name of this event's has, for finding them all. */
 export function storagePrefixFor(event: string): string | null {
   return hasTodaysNames(event) ? null : `${PREFIX}@${event}`
+}
+
+/**
+ * Whether an IndexedDB database is one of this event's.
+ *
+ * Every database the app makes belongs to an event: the chat cache and each
+ * document, the running order among them. So the first event's are all of
+ * today's, `crewbox` and `crewbox-…`, and any other's are the same under its
+ * own prefix. An event ID has no `-` in it, so one event's never match
+ * another's.
+ */
+export function isEventDatabase(name: string, event: string): boolean {
+  const prefix = storagePrefixFor(event) ?? PREFIX
+  return name === prefix || name.startsWith(`${prefix}-`)
+}
+
+/**
+ * This event's small settings among the localStorage keys given, apart from
+ * the first event's lists of documents, which each module's store names.
+ *
+ * Any event but the first has every key under its own prefix. The first
+ * event's share today's names with the device's own settings, so they are
+ * the ones listed as an event's, and never a key of the device's.
+ */
+export function eventPrefKeys(event: string, keys: Iterable<string>): string[] {
+  const prefix = storagePrefixFor(event)
+  const all = [...keys]
+  if (prefix === null) return all.filter((key) => EVENT_PREF_KEYS.includes(key))
+  return all.filter(
+    (key) => key === prefix || key.startsWith(`${prefix}:`) || key.startsWith(`${prefix}-`)
+  )
 }
 
 /** A small setting of the open event's. */
