@@ -459,3 +459,24 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(await textContrast(page, `${row} .boxes-badge`)).toBeGreaterThan(4.5)
   })
 }
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`what the join screen says went wrong stays readable in ${scheme} theme`, async ({
+    browser,
+  }) => {
+    // Somebody reading this is stuck outside the event, often in daylight.
+    // The same box says what went wrong on the Boxes screen, in the feedback
+    // and delete-account dialogs, and when moving work across.
+    const page = await appWithDiscovery(browser, 'ios', [], { colorScheme: scheme })
+    await page.goto('/')
+    // A name without https://, which the iPhone app refuses before sending
+    // anything anywhere: an error with no box involved.
+    await page.getByLabel('Crew server').fill('crew.example.org')
+    await page.getByLabel('Your name').fill(`Contrast ${scheme}`)
+    await page.getByLabel('Event PIN').fill('4242')
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join', exact: true }).click()
+    await expect(page.locator('.join-error')).toContainText('over HTTPS')
+    expect(await textContrast(page, '.join-error')).toBeGreaterThan(4.5)
+  })
+}

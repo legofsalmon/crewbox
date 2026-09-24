@@ -244,7 +244,10 @@ ul {
 .join-error {
   background: rgba(239, 106, 90, 0.12);
   border: 1px solid rgba(239, 106, 90, 0.4);
-  color: var(--danger);
+  /* --danger-strong, not --danger: on this red tint over a raised card,
+     --danger reached 4.48 in the light theme, under AA, for the line that
+     tells somebody stuck outside the event why. */
+  color: var(--danger-strong);
   padding: 10px 14px;
   border-radius: var(--radius);
   font-size: 14px;
