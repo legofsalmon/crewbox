@@ -92,4 +92,38 @@ describe('the app’s hold on the crew Wi-Fi', () => {
     // Asked to stop, and a new page, which wants no search until it says so.
     expect(discovery.match(/SiteWifi\.get\(getContext\(\)\)\.searching\(false\)/g)).toHaveLength(2)
   })
+
+  it('tells whoever hears it each time the app’s traffic moves, and only then', () => {
+    const siteWifi = read('SiteWifi.java')
+    expect(siteWifi).toMatch(
+      /if \(connectivity\.bindProcessToNetwork\(network\)\) \{\s*bound = network;\s*for \(Runnable moved : hearing\) moved\.run\(\);/
+    )
+    expect(siteWifi.match(/moved\.run\(\)/g)).toHaveLength(1)
+  })
+
+  it('has the page try again at once when the traffic moves, as a browser does when its network comes back', () => {
+    const plugin = read('NetworkPlugin.java')
+    expect(plugin).toMatch(/moved = \(\) -> getBridge\(\)\.triggerWindowJSEvent\("online"\)/)
+    expect(plugin).toMatch(
+      /public void load\(\) \{\s*SiteWifi\.get\(getContext\(\)\)\.hear\(moved\);/
+    )
+    expect(plugin).toMatch(
+      /void handleOnDestroy\(\) \{\s*SiteWifi\.get\(getContext\(\)\)\.stopHearing\(moved\);/
+    )
+  })
+
+  it('has the alerts service try again at once when the traffic moves, unless its socket works', () => {
+    const service = read('AlertsService.java')
+    expect(service).toMatch(
+      /moved = \(\) -> handler\.post\(\(\) -> \{\s*if \(stopped \|\| welcomed\) return;\s*retryMs = RETRY_MS;\s*connect\(\);/
+    )
+    expect(service).toMatch(/createChannels\(\);\s*SiteWifi\.get\(this\)\.hear\(moved\);/)
+    expect(service).toMatch(
+      /public void onDestroy\(\) \{\s*SiteWifi\.get\(this\)\.stopHearing\(moved\);/
+    )
+    // Working means welcomed, and only on this socket: every new attempt,
+    // and every failure, starts it over.
+    expect(service.match(/^\s+welcomed = false;$/gm)).toHaveLength(2)
+    expect(service).toMatch(/retryMs = RETRY_MS;\s*welcomed = true;/)
+  })
 })

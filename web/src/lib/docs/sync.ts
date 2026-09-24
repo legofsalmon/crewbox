@@ -204,6 +204,20 @@ class SyncManager {
     this.emit()
   }
 
+  /**
+   * Start every room that isn't connected again, now. A socket still
+   * connecting the way the network was goes on trying until the web view
+   * gives up on it, which on a network that drops what it can't deliver is
+   * minutes, and the room's own backoff waits on it.
+   */
+  wake() {
+    for (const provider of this.providers.values()) {
+      if (provider.wsconnected) continue
+      provider.disconnect()
+      provider.connect()
+    }
+  }
+
   private disconnectDoc(room: string) {
     const provider = this.providers.get(room)
     if (provider) {
@@ -300,6 +314,11 @@ const boxConfirmed = (): boolean => {
 }
 
 export const syncManager = new SyncManager()
+
+// When the network comes back, and when the Android app's traffic moves onto
+// the crew Wi-Fi or off it, which the app says the same way (native
+// NetworkPlugin).
+if (typeof window !== 'undefined') window.addEventListener('online', () => syncManager.wake())
 
 // Docs opened pre-login connect once a session exists and the box has let it
 // in, and presence follows name changes — all of which flow from shell

@@ -165,6 +165,23 @@ describe('WsClient connect timeout', () => {
     client.stop()
   })
 
+  it('starts again at once on an online event, as the Android app sends when its traffic moves', () => {
+    const client = new WsClient(makeHandlers())
+    client.start()
+    const first = FakeWs.instances[0]!
+
+    // The web view sends none of its own there (native NetworkPlugin): the
+    // app's traffic has just moved onto the crew Wi-Fi, and this socket
+    // went out the old way and is hanging.
+    window.dispatchEvent(new Event('online'))
+
+    expect(first.closeCalls).toBe(1)
+    expect(FakeWs.instances).toHaveLength(2)
+    expect(FakeWs.instances[1]!.readyState).toBe(FakeWs.CONNECTING)
+
+    client.stop()
+  })
+
   it('schedules a reconnect after a timed-out socket closes', () => {
     const client = new WsClient(makeHandlers())
     client.start()

@@ -21,6 +21,8 @@ const made: {
   room: string
   params: Record<string, string>
   destroyed: boolean
+  connected: boolean
+  calls: string[]
 }[] = []
 
 vi.mock('y-websocket', () => ({
@@ -35,10 +37,19 @@ vi.mock('y-websocket', () => ({
     }
     entry: (typeof made)[number]
     constructor(url: string, room: string, _doc: Y.Doc, opts: { params: Record<string, string> }) {
-      this.entry = { url, room, params: opts.params, destroyed: false }
+      this.entry = { url, room, params: opts.params, destroyed: false, connected: false, calls: [] }
       made.push(this.entry)
     }
+    get wsconnected() {
+      return this.entry.connected
+    }
     on() {}
+    connect() {
+      this.entry.calls.push('connect')
+    }
+    disconnect() {
+      this.entry.calls.push('disconnect')
+    }
     destroy() {
       this.entry.destroyed = true
     }
@@ -135,5 +146,21 @@ describe('a document on a signed-in phone', () => {
       room: 'patch/sheet-a',
       destroyed: false,
     })
+  })
+})
+
+describe('a room still trying to reach the box', () => {
+  it('starts again at once when the network comes back, or the Android app’s traffic moves', async () => {
+    const { useStore, syncManager } = await load()
+    useStore.setState({ hasConnected: true, welcomedAt: location.origin })
+    syncManager.attach('patch/sheet-a', new Y.Doc())
+    syncManager.attach('timetable/event', new Y.Doc(), { present: false })
+    made[1]!.connected = true
+
+    // The sheet's socket went out the old way and is hanging there; the
+    // running order's works, and keeps the network it opened on.
+    window.dispatchEvent(new Event('online'))
+    expect(made[0]!.calls).toEqual(['disconnect', 'connect'])
+    expect(made[1]!.calls).toEqual([])
   })
 })

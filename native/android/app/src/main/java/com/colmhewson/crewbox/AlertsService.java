@@ -104,6 +104,21 @@ public class AlertsService extends Service {
   /** Current gap before the next reconnect attempt; doubles on each failure. */
   private long retryMs = RETRY_MS;
 
+  /** Whether the live socket has had its welcome, the one proof it works. */
+  private boolean welcomed = false;
+
+  /**
+   * The app's traffic has moved onto the crew Wi-Fi or off it (SiteWifi).
+   * An attempt made the old way would wait out a connect timeout or its
+   * backoff, up to a minute, so try again now. A socket that works is left
+   * alone: it keeps the network it opened on.
+   */
+  private final Runnable moved = () -> handler.post(() -> {
+    if (stopped || welcomed) return;
+    retryMs = RETRY_MS;
+    connect();
+  });
+
   private String serverUrl = "";
   private String token = "";
   private String myName = "";
@@ -125,6 +140,7 @@ public class AlertsService extends Service {
     super.onCreate();
     http = new OkHttpClient.Builder().pingInterval(15, TimeUnit.SECONDS).build();
     createChannels();
+    SiteWifi.get(this).hear(moved);
   }
 
   @Override
@@ -183,6 +199,7 @@ public class AlertsService extends Service {
 
   @Override
   public void onDestroy() {
+    SiteWifi.get(this).stopHearing(moved);
     stopped = true;
     generation++;
     closeCurrent("service stopped");
@@ -241,6 +258,7 @@ public class AlertsService extends Service {
     generation++;
     final int mine = generation;
     closeCurrent("replaced");
+    welcomed = false;
 
     String wsBase = serverUrl.replaceFirst("^http", "ws");
     Request request = new Request.Builder().url(wsBase + "/ws").build();
@@ -310,6 +328,7 @@ public class AlertsService extends Service {
     // older one closing is the expected end of its life, not a fault.
     if (stopped || from != generation) return;
     ws = null;
+    welcomed = false;
     updateServiceNotification("Reconnecting to crew server…");
     handler.removeCallbacks(reconnect);
     handler.postDelayed(reconnect, retryMs);
@@ -345,6 +364,7 @@ public class AlertsService extends Service {
         // A welcome is the only proof the socket works, so it is the only
         // thing that gets to say the backoff has done its job.
         retryMs = RETRY_MS;
+        welcomed = true;
       } else if ("error".equals(type) && "auth".equals(msg.optString("code"))) {
         // The box refusing the token, said as a frame rather than a close.
         authRejected();

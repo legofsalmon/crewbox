@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -55,6 +56,11 @@ import java.util.regex.Pattern;
  * too, so the app is bound before the page has loaded, and the alerts service
  * is when Android restarts it on its own. Everything runs on one thread of its
  * own, and a name is looked up on another.
+ *
+ * <p>A connection keeps the network it was opened on, and one still trying
+ * the old way goes on trying until it times out, so whoever holds one hears
+ * each time the app's traffic moves ({@link #hear}): the page, told as a
+ * browser is when its network comes back, and the alerts service.
  */
 final class SiteWifi {
 
@@ -122,6 +128,8 @@ final class SiteWifi {
   private final Runnable retry = this::decide;
   /** Pages waiting to hear where their traffic goes. */
   private final List<Consumer<Boolean>> waiting = new ArrayList<>();
+  /** Told whenever the app's traffic moves; added to and taken from on any thread. */
+  private final List<Runnable> hearing = new CopyOnWriteArrayList<>();
 
   private SiteWifi(Context context) {
     connectivity = context.getSystemService(ConnectivityManager.class);
@@ -176,6 +184,18 @@ final class SiteWifi {
       searching = now;
       decide();
     });
+  }
+
+  /**
+   * {@code moved} runs each time the app's traffic moves onto a Wi-Fi or off
+   * it, on this class's thread, until {@link #stopHearing}.
+   */
+  void hear(Runnable moved) {
+    hearing.add(moved);
+  }
+
+  void stopHearing(Runnable moved) {
+    hearing.remove(moved);
   }
 
   /**
@@ -256,22 +276,16 @@ final class SiteWifi {
       if (settled()) settle();
       return;
     }
-    if (origin.isEmpty() || (searching && !validated)) {
-      bind(on);
-      settle();
-      return;
-    }
-    final String host = hostOf(origin);
-    final InetAddress literal = literal(host);
-    if (literal != null || host.isEmpty()) {
-      boolean site = literal != null && onSite(Collections.singletonList(literal), subnets);
-      bind(site ? on : null);
+    Route route = route(origin, searching, validated, subnets);
+    if (route != Route.LOOK_UP) {
+      bind(route == Route.WIFI ? on : null);
       settle();
       return;
     }
     // A name, looked up on the Wi-Fi itself, as the crew network's DNS
     // answers it. The binding stays as it is meanwhile.
     looking = true;
+    final String host = hostOf(origin);
     final List<Subnet> theirs = subnets;
     lookups.execute(() -> {
       List<InetAddress> found;
@@ -301,11 +315,34 @@ final class SiteWifi {
     if (network == null ? bound == null : network.equals(bound)) return;
     if (connectivity.bindProcessToNetwork(network)) {
       bound = network;
+      for (Runnable moved : hearing) moved.run();
     } else {
       // A network gone since, or one this app may not use, as under a VPN
       // that allows no way round it. Traffic stays where it was going.
       Log.w(TAG, "couldn't bind to " + network);
     }
+  }
+
+  /** Where the app's traffic goes, before any name is looked up. */
+  enum Route { WIFI, DEFAULT, LOOK_UP }
+
+  /**
+   * Where the app's traffic goes while a Wi-Fi is up, from the box's origin
+   * ('' for none), whether the app is searching the Wi-Fi for boxes, whether
+   * Android found internet on the Wi-Fi, and its subnets (null until heard).
+   * A name has to be looked up on the Wi-Fi first.
+   */
+  static Route route(String origin, boolean searching, boolean validated, List<Subnet> subnets) {
+    if (origin.isEmpty()) return Route.WIFI;
+    // What the search finds is reached over the Wi-Fi only, when it has no
+    // internet; one with internet is Android's default anyway.
+    if (searching && !validated) return Route.WIFI;
+    String host = hostOf(origin);
+    InetAddress literal = literal(host);
+    if (literal != null) {
+      return onSite(Collections.singletonList(literal), subnets) ? Route.WIFI : Route.DEFAULT;
+    }
+    return host.isEmpty() ? Route.DEFAULT : Route.LOOK_UP;
   }
 
   /** Tell the pages waiting where their traffic goes. */

@@ -37,6 +37,60 @@ public class SiteWifiTest {
         new SiteWifi.Subnet(ip("fe80::1c2:3ff:fe44:5566"), 64));
   }
 
+  private static SiteWifi.Route route(String origin, boolean searching, boolean validated,
+      List<SiteWifi.Subnet> subnets) {
+    return SiteWifi.route(origin, searching, validated, subnets);
+  }
+
+  @Test
+  public void withNoBoxYetTrafficGoesOverTheWifi() throws Exception {
+    // The box a crew member is about to join is on the Wi-Fi they are on.
+    assertEquals(SiteWifi.Route.WIFI, route("", false, false, crewWifi()));
+    assertEquals(SiteWifi.Route.WIFI, route("", false, true, null));
+  }
+
+  @Test
+  public void aBoxOnTheWifiHasTheAppsTrafficThere() throws Exception {
+    assertEquals(SiteWifi.Route.WIFI, route("http://10.20.0.1:3000", false, false, crewWifi()));
+    assertEquals(SiteWifi.Route.WIFI, route("http://[fe80::99]:3000", false, true, crewWifi()));
+  }
+
+  @Test
+  public void aBoxAnywhereElseIsLeftToAndroid() throws Exception {
+    assertEquals(SiteWifi.Route.DEFAULT, route("http://10.21.0.1:3000", false, false, crewWifi()));
+    assertEquals(SiteWifi.Route.DEFAULT, route("https://203.0.113.9", false, false, crewWifi()));
+    assertEquals(SiteWifi.Route.DEFAULT, route("crew.example", false, false, crewWifi()));
+  }
+
+  @Test
+  public void aNameIsLookedUpOnTheWifiFirst() throws Exception {
+    assertEquals(SiteWifi.Route.LOOK_UP, route("https://crew.example", false, false, crewWifi()));
+    assertEquals(SiteWifi.Route.LOOK_UP, route("http://crewbox:3000", false, true, null));
+  }
+
+  @Test
+  public void aSearchOfAWifiWithNoInternetGoesOverIt() throws Exception {
+    // What the search finds is reached over the Wi-Fi only, whatever the
+    // app's own box.
+    assertEquals(SiteWifi.Route.WIFI, route("https://203.0.113.9", true, false, crewWifi()));
+    assertEquals(SiteWifi.Route.WIFI, route("https://crew.example", true, false, crewWifi()));
+  }
+
+  @Test
+  public void aSearchOfAWifiWithInternetLeavesTheBoxsWayAlone() throws Exception {
+    // Android's default network already: a box over the internet or a VPN
+    // keeps its way there.
+    assertEquals(SiteWifi.Route.DEFAULT, route("https://203.0.113.9", true, true, crewWifi()));
+    assertEquals(SiteWifi.Route.WIFI, route("http://10.20.0.1:3000", true, true, crewWifi()));
+    assertEquals(SiteWifi.Route.LOOK_UP, route("https://crew.example", true, true, crewWifi()));
+  }
+
+  @Test
+  public void untilTheSubnetsAreKnownAPrivateBoxIsOnTheWifi() throws Exception {
+    assertEquals(SiteWifi.Route.WIFI, route("http://192.168.8.1", false, false, null));
+    assertEquals(SiteWifi.Route.DEFAULT, route("http://100.64.0.1", false, false, null));
+  }
+
   @Test
   public void aBoxOnTheWifisSubnetIsOnIt() throws Exception {
     assertTrue(SiteWifi.onSite(ips("10.20.0.1"), crewWifi()));
