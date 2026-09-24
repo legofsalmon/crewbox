@@ -5,7 +5,7 @@ their licences. Each entry gives the package, its version, its licence and
 the licence text and notices it ships with. Generated from package-lock.json
 by scripts/third-party-notices.mjs; do not edit by hand.
 
-117 npm packages, then the Node.js runtime, the LiveKit server and AndroidX.
+117 npm packages, then the Node.js runtime, the LiveKit server, AndroidX and OkHttp.
 
 ------------------------------------------------------------------------------
 @bufbuild/protobuf 1.10.1
@@ -4609,3 +4609,13 @@ Licence: Apache-2.0
 ------------------------------------------------------------------------------
 Copyright The Android Open Source Project. Licensed under the Apache License,
 Version 2.0; you may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0.
+
+------------------------------------------------------------------------------
+OkHttp, Okio and the Kotlin standard library (in the Android app)
+Licence: Apache-2.0
+------------------------------------------------------------------------------
+OkHttp and Okio: Copyright Square, Inc. The Kotlin standard library:
+Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
+Licensed under the Apache License, Version 2.0; you may obtain a copy at
+https://www.apache.org/licenses/LICENSE-2.0. The Android app uses OkHttp for
+the background alerts connection to the box.

@@ -18,9 +18,10 @@
 // in. It is committed, and a server test fails when it no longer matches the
 // lockfile.
 //
-// Three things are not npm packages and are described by hand at the end: the
+// Four things are not npm packages and are described by hand at the end: the
 // Node.js runtime inside the box binary, the LiveKit server inside it, and the
-// AndroidX libraries in the APK.
+// AndroidX libraries and OkHttp (with Okio and the Kotlin standard library) in
+// the APK.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -145,6 +146,16 @@ Licence: Apache-2.0
 ${RULE}
 Copyright The Android Open Source Project. Licensed under the Apache License,
 Version 2.0; you may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0.
+
+${RULE}
+OkHttp, Okio and the Kotlin standard library (in the Android app)
+Licence: Apache-2.0
+${RULE}
+OkHttp and Okio: Copyright Square, Inc. The Kotlin standard library:
+Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
+Licensed under the Apache License, Version 2.0; you may obtain a copy at
+https://www.apache.org/licenses/LICENSE-2.0. The Android app uses OkHttp for
+the background alerts connection to the box.
 `
 
 export function renderNotices(
@@ -158,7 +169,7 @@ their licences. Each entry gives the package, its version, its licence and
 the licence text and notices it ships with. Generated from package-lock.json
 by scripts/third-party-notices.mjs; do not edit by hand.
 
-${shipped.length} npm packages, then the Node.js runtime, the LiveKit server and AndroidX.
+${shipped.length} npm packages, then the Node.js runtime, the LiveKit server, AndroidX and OkHttp.
 `
   const blocks = shipped.map(({ at, name, info }) => {
     const dir = join(ROOT, at)
