@@ -22,7 +22,7 @@ import { replaceSetup, setFeed, setScreensTitle } from '../model/screensDoc.ts'
 import { deleteScreens, markScreensSeen, useScreensDoc } from '../store/screensStore.ts'
 import ScreenMap, { type MapItem } from './ScreenMap.tsx'
 import SliceDetails from './SliceDetails.tsx'
-import { renderTestCard, type CardItem } from './testCard.ts'
+import { percentOf, testCardPng, type CardItem } from './testCard.ts'
 import styles from './ScreensView.module.scss'
 
 /**
@@ -383,14 +383,21 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
     }))
     const title =
       kind === 'input' ? snapshot.meta.title : `${snapshot.meta.title} · ${sc!.screen.name}`
-    const canvas = renderTestCard({ bounds, items: cards, title })
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-    if (!blob) {
+    const card = await testCardPng({ bounds, items: cards, title })
+    if (!card) {
       setNote('Could not render the PNG')
       return
     }
     const file = `${safeName(snapshot.meta.title)} - ${kind === 'input' ? 'input map' : safeName(sc!.screen.name)}.png`
-    setNote(deliveredNote(await deliverFile(file, blob), 'PNG') ?? '')
+    const result = await deliverFile(file, card.blob)
+    // Said whichever way the file left: in the apps the save or share is
+    // its own answer, and says nothing about how big the card is.
+    const went = result === 'saved' || result === 'shared' || result === 'waiting'
+    const scaled =
+      went &&
+      card.scale < 1 &&
+      `The card is drawn at ${percentOf(card.scale)}%: ${fmt(bounds.w)} × ${fmt(bounds.h)} is too big to draw at full size here.${card.deviceLimited ? ' A computer can draw it larger.' : ''}`
+    setNote([deliveredNote(result, 'PNG'), scaled].filter(Boolean).join('. '))
   }
 
   const remove = () => {

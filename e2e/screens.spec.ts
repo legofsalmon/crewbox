@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, type Page } from '@playwright/test'
 import { newDevice, test, uniqueName } from './helpers'
 
@@ -28,8 +29,12 @@ const openScreenMaps = async (page: Page) => {
  * whatever actually broke. `uniqueName` is the convention the chat, drag-drop
  * and lighting specs already follow; renaming is how a map gets one here.
  */
-const importFixtureAs = async (page: Page, title: string) => {
-  await page.getByLabel('Import Advanced Output XML').setInputFiles(FIXTURE)
+const importFixtureAs = async (
+  page: Page,
+  title: string,
+  file: string | { name: string; mimeType: string; buffer: Buffer } = FIXTURE
+) => {
+  await page.getByLabel('Import Advanced Output XML').setInputFiles(file)
   // `exact`, because the sidebar row for the same map is labelled
   // "Open screen map <title>" and would match a substring locator too.
   const heading = page.getByRole('button', { name: 'Fixture Stage', exact: true })
@@ -98,4 +103,65 @@ test('the LED walls pane is still where it was', async ({ browser }) => {
     .click()
   await expect(page.getByRole('heading', { name: 'LED walls' })).toBeVisible()
   await expect(page.getByText('crewbox reads LED processors and cannot control them')).toBeVisible()
+})
+
+/** A PNG's own width and height, from its header. */
+const pngSize = (png: Buffer) => [png.readUInt32BE(16), png.readUInt32BE(20)] as const
+
+const exportInputMap = async (page: Page) => {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export PNG' }).click(),
+  ])
+  return readFileSync((await download.path())!)
+}
+
+test('the input map exports as a test card at its own size', async ({ browser }) => {
+  const laptop = await newDevice(browser, 'Video Card')
+  await openScreenMaps(laptop)
+  await importFixtureAs(laptop, uniqueName('Fixture Stage'))
+
+  expect(pngSize(await exportInputMap(laptop))).toEqual([1920, 1080])
+  await expect(laptop.getByRole('status').filter({ hasText: 'PNG' })).toHaveText('PNG downloaded')
+})
+
+test('a device that cannot draw the whole card gets the most it can, and is told', async ({
+  browser,
+}) => {
+  const phone = await newDevice(browser, 'Video Card Phone')
+  await openScreenMaps(phone)
+  // An 8K composition: 33 megapixels, twice what an iPhone before iOS 18
+  // will put on one canvas.
+  const xml = readFileSync(FIXTURE, 'utf8').replace(
+    '<CurrentCompositionTextureSize width="1920" height="1080"/>',
+    '<CurrentCompositionTextureSize width="7680" height="4320"/>'
+  )
+  await importFixtureAs(phone, uniqueName('Fixture Stage'), {
+    name: 'screen-setup.xml',
+    mimeType: 'text/xml',
+    buffer: Buffer.from(xml),
+  })
+  await expect(phone.getByText(/^Composition 7680 × 4320/)).toBeVisible()
+
+  // That phone's limit, the way WebKit applies it: a canvas past 4096 x 4096
+  // of area has no pixels behind it, so what is painted reads back clear.
+  // The drawing and the PNG are this browser's own.
+  await phone.evaluate(() => {
+    const real = CanvasRenderingContext2D.prototype.getImageData
+    CanvasRenderingContext2D.prototype.getImageData = function (
+      this: CanvasRenderingContext2D,
+      ...args: Parameters<typeof real>
+    ) {
+      const { width, height } = this.canvas
+      return width * height > 4096 * 4096 ? new ImageData(args[2], args[3]) : real.apply(this, args)
+    }
+  })
+
+  const [width, height] = pngSize(await exportInputMap(phone))
+  expect(width * height).toBeLessThanOrEqual(4096 * 4096)
+  expect(width).toBeGreaterThanOrEqual(5460)
+  await expect(phone.getByRole('status').filter({ hasText: 'PNG' })).toHaveText(
+    'PNG downloaded. The card is drawn at 71%: 7680 × 4320 is too big to draw at full size ' +
+      'here. A computer can draw it larger.'
+  )
 })

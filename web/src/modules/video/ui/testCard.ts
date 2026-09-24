@@ -18,7 +18,20 @@ export interface CardItem {
 }
 
 const MAX_SIDE = 16384
-const MAX_PIXELS = 64e6
+/**
+ * How many pixels a card may have, largest first. The first is ours: past
+ * it a card is drawn smaller rather than ask for more than a quarter of a
+ * gigabyte. The second is the most an iPhone or iPad before iOS 18 will
+ * draw, 4096 x 4096 of area (iOS 18 raised it to 8192 x 8192: WebKit
+ * 276145@main).
+ *
+ * Past its limit a browser does not refuse the canvas. It hands one over
+ * with no pixels behind it, everything drawn on it vanishes, and the PNG
+ * comes back empty — which is how a map over 16.7 megapixels, an 8K
+ * canvas say, failed to export on those phones. So each size is tried in
+ * turn, and the first canvas that keeps what is painted on it is used.
+ */
+const PIXEL_BUDGETS = [64e6, 4096 * 4096]
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 
 const textWidth = (ctx: CanvasRenderingContext2D, text: string, size: number, weight: number) => {
@@ -60,27 +73,92 @@ const labelBox = (
   ctx.fillText(text, left + pad, y)
 }
 
-export function renderTestCard({
-  bounds,
-  items,
-  title,
-}: {
+export interface TestCard {
+  canvas: HTMLCanvasElement
+  /** Below 1 when the card is smaller than the map. */
+  scale: number
+  /** This device could not draw the size the card should have been. */
+  deviceLimited: boolean
+}
+
+export interface CardSpec {
   bounds: Box
   items: CardItem[]
   title: string
-}): HTMLCanvasElement {
-  const { w, h, x: ox, y: oy } = bounds
-  let scale = 1
-  if (w > MAX_SIDE || h > MAX_SIDE) scale = Math.min(MAX_SIDE / w, MAX_SIDE / h)
-  if (w * h * scale * scale > MAX_PIXELS) scale = Math.min(scale, Math.sqrt(MAX_PIXELS / (w * h)))
+}
 
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(w * scale))
-  canvas.height = Math.max(1, Math.round(h * scale))
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return canvas
-  ctx.fillStyle = '#fff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+/** Drop a canvas's pixels now, rather than whenever it is collected. */
+const release = (canvas: HTMLCanvasElement) => {
+  canvas.width = 0
+  canvas.height = 0
+}
+
+/** Whether the canvas kept the white just painted on it. */
+const holdsPixels = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+  try {
+    return ctx.getImageData(canvas.width - 1, canvas.height - 1, 1, 1).data[3] !== 0
+  } catch {
+    return false
+  }
+}
+
+/** The card as large as this device will draw it, or null if it will not. */
+export function renderTestCard(spec: CardSpec): TestCard | null {
+  const { w, h } = spec.bounds
+  let deviceLimited = false
+  let failedAt = Infinity
+  for (const budget of PIXEL_BUDGETS) {
+    let scale = 1
+    if (w > MAX_SIDE || h > MAX_SIDE) scale = Math.min(MAX_SIDE / w, MAX_SIDE / h)
+    if (w * h * scale * scale > budget) scale = Math.min(scale, Math.sqrt(budget / (w * h)))
+    // Down, when scaled: rounding both sides up can land a few pixels over
+    // the budget, and one pixel over is a canvas with nothing on it.
+    const side = (n: number) => Math.max(1, scale < 1 ? Math.floor(n * scale) : Math.round(n))
+    const [width, height] = [side(w), side(h)]
+    // Only ever smaller: the same size again would fail the same way.
+    if (width * height >= failedAt) continue
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      if (holdsPixels(ctx, canvas)) {
+        drawCard(ctx, spec, scale)
+        return { canvas, scale, deviceLimited }
+      }
+    }
+    release(canvas)
+    deviceLimited = true
+    failedAt = width * height
+  }
+  return null
+}
+
+/** The card as a PNG, and the canvas it was drawn on let go of. */
+export async function testCardPng(
+  spec: CardSpec
+): Promise<{ blob: Blob; scale: number; deviceLimited: boolean } | null> {
+  const card = renderTestCard(spec)
+  if (!card) return null
+  try {
+    const blob = await new Promise<Blob | null>((resolve) =>
+      card.canvas.toBlob(resolve, 'image/png')
+    )
+    return blob && { blob, scale: card.scale, deviceLimited: card.deviceLimited }
+  } finally {
+    release(card.canvas)
+  }
+}
+
+function drawCard(
+  ctx: CanvasRenderingContext2D,
+  { bounds, items, title }: CardSpec,
+  scale: number
+) {
+  const { w, h, x: ox, y: oy } = bounds
   ctx.save()
   ctx.scale(scale, scale)
   ctx.translate(-ox, -oy)
@@ -172,9 +250,12 @@ export function renderTestCard({
 
   const fs = Math.min(120, Math.max(10, minDim / 30))
   labelBox(ctx, title, ox + w - fs * 0.6, oy + h - fs * 2.55, fs, 400, '#fff', '#000', 'right')
+  // The file goes on to a designer who never sees the app: a card drawn
+  // smaller than the map says so on itself.
+  const size = `${fmt(w)} x ${fmt(h)}`
   labelBox(
     ctx,
-    `${fmt(w)} x ${fmt(h)}`,
+    scale < 1 ? `${size} · drawn at ${percentOf(scale)}%` : size,
     ox + w - fs * 0.6,
     oy + h - fs * 1.05,
     fs,
@@ -184,5 +265,7 @@ export function renderTestCard({
     'right'
   )
   ctx.restore()
-  return canvas
 }
+
+/** Down, so a card at 99.6% never claims to be 100%. */
+export const percentOf = (scale: number) => Math.max(1, Math.floor(scale * 100))
