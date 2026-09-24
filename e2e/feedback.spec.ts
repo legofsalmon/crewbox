@@ -94,3 +94,13 @@ for (const scheme of ['light', 'dark'] as const) {
     await context.close()
   })
 }
+
+test('the version opens the third-party licence notices', async ({ browser }) => {
+  const crew = await newDevice(browser, 'Notices Crew')
+  const version = crew.locator('a.app-version')
+  await expect(version).toHaveAttribute('href', '/third-party-notices.txt')
+  const [notices] = await Promise.all([crew.context().waitForEvent('page'), version.click()])
+  await notices.waitForLoadState()
+  await expect(notices.locator('body')).toContainText('THIRD-PARTY NOTICES — Crewbox')
+  await expect(notices.locator('body')).toContainText('livekit-client')
+})

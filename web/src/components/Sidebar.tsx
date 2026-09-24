@@ -154,9 +154,17 @@ export default function Sidebar() {
             a crew member does is blocked or slowed by it. Sized with the
             version beside it so it is there without being in the way. */}
         {unlicensed && <span className="unlicensed-mark">Unlicensed</span>}
-        <span className="app-version" title={`Crewbox ${APP_VERSION}`}>
+        {/* The version opens the licences of everything Crewbox ships that
+            it did not write (scripts/third-party-notices.mjs). */}
+        <a
+          className="app-version"
+          href="/third-party-notices.txt"
+          target="_blank"
+          rel="noreferrer"
+          title={`Crewbox ${APP_VERSION} — open-source licences`}
+        >
           v{APP_VERSION}
-        </span>
+        </a>
       </div>
       {deleteOpen && <DeleteAccountDialog onClose={() => setDeleteOpen(false)} />}
     </aside>

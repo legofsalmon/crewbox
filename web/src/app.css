@@ -530,6 +530,15 @@ ul {
   white-space: nowrap;
 }
 
+a.app-version {
+  text-decoration: none;
+}
+
+a.app-version:hover {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
 /* -------------------------------------------------- confirm dialog */
 .confirm-panel {
   width: min(420px, 100%);
