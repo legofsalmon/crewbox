@@ -413,8 +413,31 @@ export class LicenceService {
     } catch (err) {
       const problem = this.problem(err)
       this.recordCheckIn(false, problem.message)
+      if (problem.reason === 'revoked') this.revoked()
       throw problem
     }
+  }
+
+  /**
+   * The service says this licence was revoked — a full refund ends it.
+   *
+   * The token goes; the key stays. Without this a refunded box kept its last
+   * token, which simply aged into `check_in_required` — a state that never
+   * restricts anything — so a refund was never honoured at all. With the
+   * token gone the box decides `invalid`, and the policy applies as it does to
+   * any unlicensed box: configuration locks, crew comms are untouched.
+   *
+   * Keeping the key is what lets the licence come back by itself: a later
+   * check-in with it succeeds if the owner is reinstated, and stores a fresh
+   * token like any other.
+   *
+   * Only `revoked` does this. Every other refusal, and every network failure,
+   * leaves the cached token as the answer.
+   */
+  private revoked(): void {
+    this.options.settings.setSetting(TOKEN_SETTING, '')
+    this.options.log?.warn('licence: the service reports this licence revoked; token removed')
+    this.notify()
   }
 
   /**

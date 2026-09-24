@@ -354,6 +354,11 @@ In **Admin → Licence**:
 "Check-in due" and "update window ended" are notes, not problems: neither
 restricts anything.
 
+A **refunded licence ends**: the next time the box checks in and the service
+says the licence was revoked, the box drops its token (keeping the key) and
+is unlicensed from then on — configuration locks, comms carry on. If the
+licence is reinstated, the next check-in with the kept key restores it.
+
 ## Health checks
 
 - App: `curl -k https://chat.<yourdomain>:8787/api/health` → `{"ok":true,...}`

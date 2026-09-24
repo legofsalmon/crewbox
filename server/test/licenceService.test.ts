@@ -317,18 +317,88 @@ describe('offline is the normal state of a festival box', () => {
     expect(licence.status().lastCheckIn).toMatchObject({ ok: false })
   })
 
-  it('keeps the cached licence when the service refuses a check-in', async () => {
-    let refusing = false
-    const { licence, store } = service((path, body) =>
-      refusing ? refuse(403, 'revoked', 'Revoked.')(path, body) : honest(path, body)
+  it('keeps the cached licence when the service refuses a check-in for any other reason', async () => {
+    for (const [status, reason] of [
+      [404, 'not_activated'],
+      [404, 'unknown_key'],
+      [403, 'expired'],
+      [409, 'wrong_product'],
+      [500, 'server_error'],
+    ] as const) {
+      let refusing = false
+      const { licence, store } = service((path, body) =>
+        refusing ? refuse(status, reason, 'No.')(path, body) : honest(path, body)
+      )
+      await licence.activate(KEY)
+      const token = store.rows.get(TOKEN_SETTING)
+      refusing = true
+      await problem(licence.checkIn())
+      expect(store.rows.get(TOKEN_SETTING), reason).toBe(token)
+      expect(licence.verdict().status, reason).toBe('active')
+    }
+  })
+})
+
+describe('a refund ends the licence', () => {
+  /** A box licensed and then refunded: the service now answers `revoked`. */
+  async function refunded(clock: { now: number } = { now: NOW * 1000 }) {
+    let revoked = false
+    const s = service(
+      (path, body) =>
+        revoked
+          ? refuse(403, 'revoked', 'This licence was revoked after a refund.')(path, body)
+          : honest(path, body),
+      { policy: 'lock', at: () => clock.now }
     )
-    await licence.activate(KEY)
-    const token = store.rows.get(TOKEN_SETTING)
-    refusing = true
-    await problem(licence.checkIn())
-    expect(store.rows.get(TOKEN_SETTING)).toBe(token)
+    await s.licence.activate(KEY)
+    expect(s.licence.effects().locked).toBe(false)
+    revoked = true
+    return s
+  }
+
+  it('drops the token, keeps the key, and restricts — from the admin button', async () => {
+    const { licence, store } = await refunded()
+    const seen: boolean[] = []
+    licence.onChange((effects) => seen.push(effects.locked))
+    const p = await problem(licence.checkIn())
+    expect(p.status).toBe(422)
+    expect(p.reason).toBe('revoked')
+    expect(p.message).toBe('This licence was revoked after a refund.')
+    expect(store.rows.get(TOKEN_SETTING) || undefined).toBeUndefined()
+    expect(store.rows.get(KEY_SETTING)).toBe(KEY)
+    expect(licence.verdict().status).toBe('invalid')
+    expect(licence.effects()).toEqual({ restricted: true, watermark: true, locked: true })
+    // the hub is told at once, so phones get the drawer line
+    expect(seen).toEqual([true])
   })
 
+  it('does the same from the background check-in, without throwing', async () => {
+    const clock = { now: NOW * 1000 }
+    const { licence, store } = await refunded(clock)
+    // a day on, so the background loop is due to try again
+    clock.now = (NOW + 2 * DAY) * 1000
+    await expect(licence.backgroundCheckIn()).resolves.toBeUndefined()
+    expect(store.rows.get(TOKEN_SETTING) || undefined).toBeUndefined()
+    expect(store.rows.get(KEY_SETTING)).toBe(KEY)
+    expect(licence.effects().locked).toBe(true)
+  })
+
+  it('comes back by itself with the kept key if the licence is reinstated', async () => {
+    let revoked = true
+    const { licence, store } = service((path, body) =>
+      revoked ? refuse(403, 'revoked', 'Revoked.')(path, body) : honest(path, body)
+    )
+    store.setSetting(KEY_SETTING, KEY)
+    store.setSetting(TOKEN_SETTING, mint())
+    await problem(licence.checkIn())
+    expect(licence.verdict().status).toBe('invalid')
+    revoked = false
+    await licence.checkIn()
+    expect(licence.verdict().status).toBe('active')
+  })
+})
+
+describe('offline is the normal state of a festival box, continued', () => {
   it('never throws from the background check-in', async () => {
     const { licence, store } = service(() => 'offline')
     store.setSetting(KEY_SETTING, KEY)
