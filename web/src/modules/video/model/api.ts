@@ -1,4 +1,5 @@
 import type { ProcessorStatus, VideoAction, VideoIntent, VideoProcessor } from '@crewbox/shared'
+import { readEventPref } from '../../../lib/eventScope.ts'
 import { apiUrl } from '../../../lib/server.ts'
 
 /**
@@ -30,7 +31,7 @@ export interface VideoState {
   interfaceIp: string
 }
 
-const sessionToken = (): string => localStorage.getItem('crewbox:token') ?? ''
+const sessionToken = (): string => readEventPref('crewbox:token') ?? ''
 
 async function call<T>(
   path: string,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { readEventPref } from '../../lib/eventScope.ts'
 import DrawerButton from '../../shell/DrawerButton.tsx'
 import { fetchAudit, fetchSeries } from './model/api.ts'
 import { reportAge } from './model/age.ts'
@@ -51,7 +52,7 @@ export default function NetworkMain(_props: { subpath: string }) {
   const generation = useRef(0)
 
   const load = useCallback(async () => {
-    const token = localStorage.getItem('crewbox:token') ?? ''
+    const token = readEventPref('crewbox:token') ?? ''
     const mine = ++generation.current
     const current = () => mine === generation.current
     try {

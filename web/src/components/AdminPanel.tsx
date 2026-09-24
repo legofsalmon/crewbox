@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Channel, User } from '@crewbox/shared'
-import { useStore } from '../store.ts'
+import { sessionToken, useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 import { deliveredNote, deliverFile, NO_DOWNLOADS } from '../lib/download.ts'
 import { adminError } from '../lib/adminerror.ts'
@@ -17,7 +17,7 @@ const PIN_RE = /^\d{4,8}$/
  */
 function auth(): api.AdminAuth {
   return {
-    token: localStorage.getItem('crewbox:token') ?? '',
+    token: sessionToken() ?? '',
     adminToken: useStore.getState().adminToken ?? '',
   }
 }

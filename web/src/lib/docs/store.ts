@@ -1,6 +1,7 @@
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { newId } from '@crewbox/shared'
+import { storageName, storageNameFor } from '../eventScope.ts'
 import { deletedIds, removeIndexEntry, upsertIndexEntry } from './indexDoc.ts'
 import { whenPersisted } from './persistence.ts'
 import { syncManager } from './sync.ts'
@@ -19,6 +20,10 @@ import { syncManager } from './sync.ts'
  *   IndexedDB db   `crewbox-<moduleId>-<docName>`
  *   relay room     `<moduleId>/<docName>`   (the server's namespace check)
  *   registry key   `crewbox:<moduleId>-docs`
+ *
+ * The two on the device are the first event's. Any other event a device
+ * holds has its own, from eventScope.ts; the relay room is the box's and is
+ * the same for every event.
  */
 
 export interface DocHandle {
@@ -95,6 +100,24 @@ export interface DocStore {
   reconcileDeletions: () => string[]
   /** Ids the index records as deleted, so a listing can skip them. */
   deleted: () => Set<string>
+  /**
+   * Where an event's copies of this module's documents are on this device,
+   * for moving them to another event or forgetting them. Any event, open or
+   * not: nothing here opens a database.
+   */
+  storageOf: (event: string | null) => ModuleStorage
+}
+
+/** One event's copies of one module's documents, by name. */
+export interface ModuleStorage {
+  /** The localStorage key listing the documents held. */
+  registryKey: string
+  /** The documents held, from that list. */
+  ids: () => string[]
+  /** The IndexedDB database holding one of them. */
+  database: (id: string) => string
+  /** The IndexedDB database holding the module's index. */
+  indexDatabase: string
 }
 
 /**
@@ -127,9 +150,9 @@ export function createDocStore(config: DocStoreConfig): DocStore {
   const registryKey = config.registryKey ?? `crewbox:${config.moduleId}-docs`
   const room = (docName: string) => `${config.moduleId}/${docName}`
 
-  function readRegistry(): string[] {
+  function readRegistry(key = storageName(registryKey)): string[] {
     try {
-      const raw = localStorage.getItem(registryKey)
+      const raw = localStorage.getItem(key)
       const parsed: unknown = raw ? JSON.parse(raw) : []
       return Array.isArray(parsed)
         ? parsed.filter((id): id is string => typeof id === 'string')
@@ -141,7 +164,7 @@ export function createDocStore(config: DocStoreConfig): DocStore {
 
   function writeRegistry(ids: string[]): void {
     try {
-      localStorage.setItem(registryKey, JSON.stringify(ids))
+      localStorage.setItem(storageName(registryKey), JSON.stringify(ids))
     } catch {
       // Registry is best-effort; the synced index is the primary listing.
     }
@@ -157,7 +180,9 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     // nobody else's reached them, silently, with the sheet looking exactly
     // as it should. Persistence is an accelerator; the relay is where the
     // document actually lives, and that is true in both directions.
-    const persistence = hasIndexedDb ? new IndexeddbPersistence(dbPrefix + docName, doc) : null
+    const persistence = hasIndexedDb
+      ? new IndexeddbPersistence(storageName(dbPrefix + docName), doc)
+      : null
     // `typeof indexedDB !== 'undefined'` covers a browser with no IndexedDB
     // at all; it does not cover one that has it and refuses to open it. See
     // `whenPersisted`, which is where that is answered.
@@ -186,7 +211,7 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     writeRegistry(readRegistry().filter((known) => known !== id))
     if (!hasIndexedDb) return
     await new Promise<void>((resolve) => {
-      const req = indexedDB.deleteDatabase(dbPrefix + config.docName(id))
+      const req = indexedDB.deleteDatabase(storageName(dbPrefix + config.docName(id)))
       req.onsuccess = req.onerror = req.onblocked = () => resolve()
     })
   }
@@ -380,6 +405,16 @@ export function createDocStore(config: DocStoreConfig): DocStore {
      * enumerates the whole origin (every module's databases) and doesn't
      * exist in Firefox.
      */
-    listLocalIds: readRegistry,
+    listLocalIds: () => readRegistry(),
+
+    storageOf: (event) => {
+      const key = storageNameFor(event, registryKey)
+      return {
+        registryKey: key,
+        ids: () => readRegistry(key),
+        database: (id) => storageNameFor(event, dbPrefix + config.docName(id)),
+        indexDatabase: storageNameFor(event, dbPrefix + INDEX_DOC_NAME),
+      }
+    },
   }
 }

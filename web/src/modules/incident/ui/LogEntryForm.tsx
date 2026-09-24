@@ -8,6 +8,7 @@ import {
   type IncidentKind,
   type IncidentSeverity,
 } from '@crewbox/shared'
+import { storageName } from '../../../lib/eventScope.ts'
 import { useAgenda } from '../../../shell/timetable/hooks.ts'
 import { useStore } from '../../../store.ts'
 import styles from './Incident.module.css'
@@ -41,13 +42,14 @@ const QUICK_OFFSETS = [0, 5, 15, 30] as const
  * behaviour.
  *
  * Per device rather than per account: a phone belongs to a person, and the
- * box is not asked about something this small.
+ * box is not asked about something this small. Per event, because the next
+ * event's stages have other names.
  */
 const LAST_STAGE_KEY = 'crewbox:incident-stage'
 
 const rememberedStage = (): string => {
   try {
-    return localStorage.getItem(LAST_STAGE_KEY) ?? ''
+    return localStorage.getItem(storageName(LAST_STAGE_KEY)) ?? ''
   } catch {
     return ''
   }
@@ -55,7 +57,7 @@ const rememberedStage = (): string => {
 
 const rememberStage = (stage: string): void => {
   try {
-    if (stage.trim()) localStorage.setItem(LAST_STAGE_KEY, stage.trim())
+    if (stage.trim()) localStorage.setItem(storageName(LAST_STAGE_KEY), stage.trim())
   } catch {
     // A browser with site data blocked. The form still works; it just does
     // not remember, which is where it started.

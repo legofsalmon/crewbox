@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { fileUrl } from '@crewbox/shared'
-import { useStore } from '../store.ts'
+import { sessionToken, useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 import { deliverBoxFile, NO_DOWNLOADS } from '../lib/download.ts'
 import { describeFile, fileCategory, formatBytes } from '../lib/files.ts'
@@ -92,11 +92,7 @@ export default function FileDetail() {
     setDeleting(true)
     setError(null)
     try {
-      await api.deleteMessage(
-        localStorage.getItem('crewbox:token') ?? '',
-        message!.id,
-        adminToken ?? undefined
-      )
+      await api.deleteMessage(sessionToken() ?? '', message!.id, adminToken ?? undefined)
       // The 'deleted' broadcast also closes us, but don't wait on it.
       closeFileDetail()
     } catch (err) {

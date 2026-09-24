@@ -1,4 +1,5 @@
 import { useStore } from '../store.ts'
+import { elsewhereCopy } from '../lib/connscreen.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { effectiveSsid } from '../lib/settings.ts'
 import { serverLabel } from '../lib/server.ts'
@@ -8,7 +9,29 @@ export default function ServerUnreachable() {
   const connection = useStore((s) => s.connection)
   const retryConnection = useStore((s) => s.retryConnection)
   const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
+  const elsewhere = useStore((s) => s.elsewhere)
+  const eventName = useStore((s) => s.config.eventName)
+  const switchEvent = useStore((s) => s.switchEvent)
   const retrying = connection === 'connecting'
+
+  if (elsewhere) {
+    // Reached, and running another event: not a box that is missing.
+    return (
+      <div className="center-screen">
+        <div className="center-card">
+          <h1>The box has changed</h1>
+          <p>
+            {elsewhereCopy({ address: serverLabel(), open: eventName, here: elsewhere.name })}{' '}
+            Anything you had from before stays on this device, and none of it goes to the new box.
+          </p>
+          <button className="center-retry" onClick={() => switchEvent(elsewhere.id)}>
+            Open it
+          </button>
+          <div className="center-version">v{APP_VERSION}</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="center-screen">

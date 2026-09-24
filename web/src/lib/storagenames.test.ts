@@ -64,6 +64,17 @@ describe('the relay rooms and document names', () => {
     expect(screensStore.docName('abc123')).toBe('screens-abc123')
   })
 
+  it('is the same for every event, because it is the box’s name and not the device’s', () => {
+    // Each box is one event. A second event's sheets live under names of
+    // their own on the phone, and in the same rooms on their own box.
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    expect(sheetStore.storageOf('saturday').database('abc123')).not.toBe(
+      sheetStore.storageOf('friday').database('abc123')
+    )
+    expect(sheetStore.room('abc123')).toBe('patch/sheet-abc123')
+    localStorage.clear()
+  })
+
   it('gives each module one index, in its own namespace', () => {
     // The index is what makes a sheet appear in somebody else's selector.
     // Rename it and every device lists only what it made itself. `room()`
@@ -79,9 +90,12 @@ describe('the relay rooms and document names', () => {
 describe('the browser storage names', () => {
   it('holds chat in a Dexie database called crewbox, with three tables', () => {
     // Read from the source rather than the instance: importing lib/db.ts
-    // opens the database, and the name is what matters, not the handle.
+    // opens the database, and the name is what matters, not the handle. It
+    // is `crewbox` for the first event a device held; eventScope.test.ts
+    // pins what that name is for any other.
     const db = readFileSync(join(SRC, 'lib/db.ts'), 'utf8')
-    expect(db).toContain("new Dexie('crewbox')")
+    expect(db).toContain("const DB_NAME = 'crewbox'")
+    expect(db).toContain('new Dexie(storageNameFor(event, DB_NAME))')
     expect(db).toContain("messages: 'id, [channelId+seq]'")
     expect(db).toContain("outbox: 'clientMsgId, createdAt'")
     expect(db).toContain("kv: 'key'")
@@ -93,6 +107,25 @@ describe('the browser storage names', () => {
     expect(store).toContain('const dbPrefix = `crewbox-${config.moduleId}-`')
     expect(store).toContain('config.registryKey ?? `crewbox:${config.moduleId}-docs`')
     expect(store).toContain('`${config.moduleId}/${docName}`')
+  })
+
+  it('keeps the first event’s documents where they always were, and a second event’s apart', () => {
+    // The first event a device held is the one every phone in the field is
+    // carrying: its names cannot move. Any other event's are its own.
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const first = sheetStore.storageOf('friday')
+    expect(first.database('abc123')).toBe('crewbox-patch-sheet-abc123')
+    expect(first.indexDatabase).toBe('crewbox-patch-index')
+    expect(first.registryKey).toBe('crewbox:patch-sheets')
+    expect(plotStore.storageOf('friday').database('abc123')).toBe('crewbox-lighting-plot-abc123')
+    expect(plotStore.storageOf('friday').registryKey).toBe('crewbox:lighting-docs')
+    expect(screensStore.storageOf('friday').registryKey).toBe('crewbox:video-docs')
+
+    const second = sheetStore.storageOf('saturday')
+    expect(second.database('abc123')).toBe('crewbox@saturday-patch-sheet-abc123')
+    expect(second.indexDatabase).toBe('crewbox@saturday-patch-index')
+    expect(second.registryKey).toBe('crewbox@saturday:patch-sheets')
+    localStorage.clear()
   })
 
   it('keeps the patch registry under the key it shipped with', () => {
@@ -114,7 +147,13 @@ describe('the browser storage names', () => {
         // Chat, identity and the shell.
         'crewbox:audio-in',
         'crewbox:audio-out',
+        // Every event this device holds (the Boxes screen), and which one it
+        // opens once there is more than one. Device-wide, like the theme.
+        'crewbox:boxes',
+        // Which event has the names in this list: the first one the device
+        // held. See lib/eventScope.ts; every other event's are its own.
         'crewbox:db-epoch',
+        'crewbox:event',
         'crewbox:event-name',
         'crewbox:ios-tip-dismissed',
         'crewbox:lighting-seen',

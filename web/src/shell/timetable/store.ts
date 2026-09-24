@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
+import { storageName, storageNameFor } from '../../lib/eventScope.ts'
 import { whenPersisted } from '../../lib/docs/persistence.ts'
 import { syncManager } from '../../lib/docs/sync.ts'
 import { useDocSnapshot } from '../../lib/docs/hooks.ts'
@@ -18,11 +19,17 @@ import { createTimetableUndoManager, snapshotTimetable, type TimetableSnapshot }
  * Naming is load-bearing and reaches storage on real devices:
  *   IndexedDB db   `crewbox-timetable-event`
  *   relay room     `timetable/event`   (the server's namespace check)
+ *
+ * The database is the first event's; any other event a device holds has its
+ * own (see lib/eventScope.ts). The room is the box's.
  */
 
 const DOC_NAME = 'event'
 const DB_NAME = 'crewbox-timetable-event'
 export const TIMETABLE_ROOM = `timetable/${DOC_NAME}`
+
+/** Where an event's copy of the running order is on this device. */
+export const timetableDatabase = (event: string | null): string => storageNameFor(event, DB_NAME)
 
 let handle: { doc: Y.Doc; undoManager: Y.UndoManager; whenLoaded: Promise<void> } | null = null
 
@@ -39,7 +46,9 @@ export function timetable(): { doc: Y.Doc; undoManager: Y.UndoManager; whenLoade
   // one without it, and a timetable that waited on the wrong promise never
   // drew — the running order sat on "Loading…" for the whole shift. See
   // lib/docs/persistence.ts.
-  const whenLoaded = whenPersisted(hasIndexedDb ? new IndexeddbPersistence(DB_NAME, doc) : null)
+  const whenLoaded = whenPersisted(
+    hasIndexedDb ? new IndexeddbPersistence(storageName(DB_NAME), doc) : null
+  )
 
   // Synced, but not present. Every device on the box opens this document —
   // the sidebar countdown needs it whether or not anyone has looked at the

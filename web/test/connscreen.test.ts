@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { connectionCauses, connectionScreen, STUCK_AFTER_MS } from '../src/lib/connscreen.ts'
+import {
+  connectionCauses,
+  connectionScreen,
+  elsewhereCopy,
+  STUCK_AFTER_MS,
+} from '../src/lib/connscreen.ts'
 
 describe('connectionScreen', () => {
   it('shows chat (ok) once connected this session, regardless of connection state', () => {
@@ -89,5 +94,31 @@ describe('what to tell someone whose box has gone quiet', () => {
     // one later.
     expect(STUCK_AFTER_MS).toBeGreaterThanOrEqual(15_000)
     expect(STUCK_AFTER_MS).toBeLessThanOrEqual(60_000)
+  })
+})
+
+describe('a box at this address running another event', () => {
+  // A spare box with a fresh database, or the next event's box. The phone
+  // has sent it nothing, and says what is there now in the box's own words.
+  const address = '10.0.0.2'
+
+  it('names the event it is running', () => {
+    expect(elsewhereCopy({ address, open: 'Harbour Fest', here: 'Harbour Tour' })).toBe(
+      'The box at 10.0.0.2 is running “Harbour Tour” now.'
+    )
+  })
+
+  it('says a spare under the same name is starting it afresh, not that it is the same', () => {
+    // Same name, new database: its chat starts empty, and saying "is
+    // running Harbour Fest" would read as "nothing has changed".
+    expect(elsewhereCopy({ address, open: 'Harbour Fest', here: 'Harbour Fest ' })).toBe(
+      'The box at 10.0.0.2 has changed, and is starting “Harbour Fest” afresh.'
+    )
+  })
+
+  it('says a box nobody has set up yet is starting afresh', () => {
+    expect(elsewhereCopy({ address, open: 'Harbour Fest', here: '' })).toBe(
+      'The box at 10.0.0.2 has changed, and is starting afresh.'
+    )
   })
 })

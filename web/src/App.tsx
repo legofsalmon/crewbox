@@ -16,7 +16,8 @@ import FileOfferBar from './components/FileOfferBar.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import ConnectionHelp from './components/ConnectionHelp.tsx'
-import { connectionScreen, STUCK_AFTER_MS } from './lib/connscreen.ts'
+import { connectionScreen, elsewhereCopy, STUCK_AFTER_MS } from './lib/connscreen.ts'
+import { serverLabel } from './lib/server.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
 import { registerShortcut } from './shell/keys.ts'
 import { allModules } from './shell/registry.ts'
@@ -118,6 +119,9 @@ function Shell() {
   const fileOffer = useSyncExternalStore(subscribeFileOffer, currentFileOffer)
   const updateReady = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
+  const elsewhere = useStore((s) => s.elsewhere)
+  const eventName = useStore((s) => s.config.eventName)
+  const switchEvent = useStore((s) => s.switchEvent)
 
   // A returning user gets the app from cache and a thin banner, which is
   // right for a roam or a box restart and useless when the box has genuinely
@@ -157,7 +161,18 @@ function Shell() {
 
   return (
     <div className="app">
-      {connection !== 'online' &&
+      {elsewhere ? (
+        // Not "offline": nothing typed here is going to that box. It is the
+        // way to it, and everything here stays on this device as it is.
+        <button
+          className="conn-banner conn-offline conn-banner-stuck"
+          onClick={() => switchEvent(elsewhere.id)}
+        >
+          {elsewhereCopy({ address: serverLabel(), open: eventName, here: elsewhere.name })}{' '}
+          <span className="conn-banner-why">Open it</span>
+        </button>
+      ) : (
+        connection !== 'online' &&
         (stuck ? (
           // Once it stops being a blip the banner becomes the way in to an
           // explanation, rather than repeating itself indefinitely. Still a
@@ -176,7 +191,8 @@ function Shell() {
               ? 'Connecting…'
               : 'Offline — messages you send will deliver when the connection returns'}
           </div>
-        ))}
+        ))
+      )}
       {helpOpen && <ConnectionHelp onClose={() => setHelpOpen(false)} />}
       {(toasts.length > 0 || fileOffer) && (
         <div className="toast-stack">

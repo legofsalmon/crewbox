@@ -99,3 +99,20 @@ export function connectionCauses(input: { ssid?: string; isIos: boolean }): Conn
 
   return causes
 }
+
+/**
+ * What to say when the box at this address is running another event than
+ * the one this device has open — a spare with a fresh database, or the next
+ * event's box — and so has been given nothing of this one's.
+ *
+ * Its name is all there is to go on. A spare set up under the event's own
+ * name is the same name starting over, and one not set up has none.
+ */
+export function elsewhereCopy(input: { address: string; open: string; here: string }): string {
+  const here = input.here.trim()
+  if (!here) return `The box at ${input.address} has changed, and is starting afresh.`
+  if (here === input.open.trim()) {
+    return `The box at ${input.address} has changed, and is starting “${here}” afresh.`
+  }
+  return `The box at ${input.address} is running “${here}” now.`
+}

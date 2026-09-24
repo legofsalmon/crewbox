@@ -1,5 +1,6 @@
 import type * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
+import { openEvent } from '../eventScope.ts'
 import { docsWsUrl } from '../server.ts'
 import { sessionToken, useStore } from '../../store.ts'
 
@@ -49,6 +50,13 @@ const colorFor = (id: string): string => {
  *
  * Without a session (not joined yet) docs simply stay local — the same
  * fully-supported local-only mode Live Patch had without a relay.
+ *
+ * Nor until the box has shown it is running the event this device has open,
+ * by letting the chat socket in with a welcome that says so. The documents
+ * are that event's alone (lib/eventScope.ts), and a spare box with a fresh
+ * database at the same address — or the next event's box — must never be
+ * given them. The relay is told the event too, and refuses another's, which
+ * covers the providers' own reconnects after that.
  */
 class SyncManager {
   private docs = new Map<string, Y.Doc>()
@@ -161,8 +169,11 @@ class SyncManager {
 
   private connectDoc(room: string, doc: Y.Doc) {
     const token = sessionToken()
-    if (!token || typeof WebSocket === 'undefined') return
-    const provider = new WebsocketProvider(docsWsUrl(), room, doc, { params: { token } })
+    if (!token || !boxConfirmed() || typeof WebSocket === 'undefined') return
+    const event = openEvent()
+    const provider = new WebsocketProvider(docsWsUrl(), room, doc, {
+      params: event ? { token, event } : { token },
+    })
     provider.on('status', ({ status }: { status: string }) => {
       this.connected.set(room, status === 'connected')
       this.emit()
@@ -174,6 +185,18 @@ class SyncManager {
     if (this.present.has(room)) this.setUser(provider)
     provider.awareness.on('change', () => this.emit())
     this.providers.set(room, provider)
+  }
+
+  /**
+   * Stop syncing everything, keeping every document open locally.
+   *
+   * For a box found to be running another event: the providers would
+   * otherwise go on reconnecting to it by themselves. `refresh` reconnects
+   * them if the event's own box is back.
+   */
+  disconnectAll() {
+    for (const room of [...this.providers.keys()]) this.disconnectDoc(room)
+    this.emit()
   }
 
   private disconnectDoc(room: string) {
@@ -240,15 +263,28 @@ class SyncManager {
 
 const EMPTY_PEERS: RemotePeer[] = []
 
+/** The box has let this device in, and is running the event it has open. */
+const boxConfirmed = (): boolean => {
+  const { hasConnected, elsewhere } = useStore.getState()
+  return hasConnected && !elsewhere
+}
+
 export const syncManager = new SyncManager()
 
-// Docs opened pre-login connect once a session exists, and presence follows
-// name changes — both flow from shell identity state, not module settings.
+// Docs opened pre-login connect once a session exists and the box has let it
+// in, and presence follows name changes — all of which flow from shell
+// identity state, not module settings.
 let lastIdentity = ''
 useStore.subscribe((state) => {
-  const identity = `${sessionToken() ?? ''}:${state.me?.id ?? ''}:${state.me?.name ?? ''}`
-  if (identity !== lastIdentity) {
-    lastIdentity = identity
-    syncManager.refresh()
-  }
+  const identity = [
+    sessionToken() ?? '',
+    state.me?.id ?? '',
+    state.me?.name ?? '',
+    state.hasConnected,
+    state.elsewhere?.id ?? '',
+  ].join(':')
+  if (identity === lastIdentity) return
+  lastIdentity = identity
+  if (state.elsewhere) syncManager.disconnectAll()
+  else syncManager.refresh()
 })

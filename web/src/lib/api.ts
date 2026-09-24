@@ -135,11 +135,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data
 }
 
-export function join(input: {
-  name: string
-  eventPin: string
-  personalPin: string
-}): Promise<{ token: string; user: User; created: boolean }> {
+export function join(input: { name: string; eventPin: string; personalPin: string }): Promise<{
+  token: string
+  user: User
+  created: boolean
+  /** Which event the sign-in is for; absent from a box that predates it. */
+  eventId?: string
+}> {
   return request('/api/join', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -241,8 +243,8 @@ export function adminUpdateChannel(
   })
 }
 
-export function getConfig(): Promise<PublicConfig> {
-  return request('/api/config')
+export function getConfig(signal?: AbortSignal): Promise<PublicConfig> {
+  return request('/api/config', signal ? { signal } : undefined)
 }
 
 /**

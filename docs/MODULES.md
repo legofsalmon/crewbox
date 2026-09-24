@@ -142,6 +142,16 @@ Changing any of them after a module has shipped strands data. Pick
 `moduleId` once and leave it alone. `registryKey` exists as an override only
 because the patch module shipped before this store did.
 
+A phone that has been at more than one event keeps each event's apart
+(`web/src/lib/eventScope.ts`). The event it held first keeps exactly the
+names above, so a phone from before there was more than one keeps all it
+had. Any other event's are the same names with `crewbox` swapped for
+`crewbox@<event>`: `crewbox@<event>-<moduleId>-<docName>` and
+`crewbox@<event>:<moduleId>-docs`. The relay room is unchanged, because a
+box is one event. The store does this for you; anything else a module keeps
+in `localStorage` or IndexedDB goes through `storageName()` from the same
+file, or one event's data turns up in the next event's box.
+
 ## The five steps
 
 ### 1. Model

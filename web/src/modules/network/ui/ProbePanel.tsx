@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../../../store.ts'
+import { sessionToken, useStore } from '../../../store.ts'
 import { apiUrl } from '../../../lib/server.ts'
 import type { ProbeRun } from '../model/types.ts'
 import styles from './ProbePanel.module.scss'
@@ -53,7 +53,7 @@ export default function ProbePanel({
       const res = await fetch(apiUrl('/api/audit/probe'), {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${localStorage.getItem('crewbox:token') ?? ''}`,
+          authorization: `Bearer ${sessionToken() ?? ''}`,
           'x-admin-token': adminToken ?? '',
         },
       })
