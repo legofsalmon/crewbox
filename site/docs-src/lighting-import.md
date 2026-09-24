@@ -69,8 +69,11 @@ difference is never a setting, it's whether the fixtures carry profiles.
 
 > [!NOTE]
 > You can have both: import the MVR for geometry and profiles, then paste
-> or type the day-to-day changes. Re-importing a file always makes new
-> fixtures — it doesn't merge.
+> or type the day-to-day changes. When the designer sends the MVR again,
+> import it again: the fixtures it brought last time are updated in place,
+> keeping the crew's status and notes, and any the new file no longer has
+> are left where they are and counted in the summary. A CSV imported again
+> adds its fixtures a second time.
 
 ## Out again
 
