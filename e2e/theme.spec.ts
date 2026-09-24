@@ -248,6 +248,8 @@ for (const scheme of ['light', 'dark'] as const) {
 
     await page.getByRole('button', { name: 'Admin panel' }).click()
     await page.getByLabel('Admin password').fill('e2e-admin-password')
+    // The way in, which the rule for every panel button used to paint over.
+    expect(await textContrast(page, '.admin-btn.admin-btn-primary')).toBeGreaterThan(4.5)
     await page.getByRole('button', { name: 'Unlock' }).click()
     await expect(page.getByRole('heading', { name: 'Crew' })).toBeVisible()
 

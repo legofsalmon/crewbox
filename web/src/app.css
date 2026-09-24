@@ -2236,7 +2236,10 @@ ul {
   color: var(--danger);
 }
 
-.admin-btn-primary {
+/* With .admin-btn, which comes later in this file and would otherwise paint
+   its own --bg-hover under this --accent-contrast label: the Unlock button
+   read at under 1.2:1 in both themes. */
+.admin-btn.admin-btn-primary {
   height: 42px;
   background: var(--accent);
   color: var(--accent-contrast);
@@ -2244,7 +2247,7 @@ ul {
   font-weight: 600;
 }
 
-.admin-btn-primary:hover:not(:disabled) {
+.admin-btn.admin-btn-primary:hover:not(:disabled) {
   background: var(--accent-strong);
 }
 
