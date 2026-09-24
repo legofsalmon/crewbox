@@ -66,15 +66,16 @@ import {
   openEvent,
   readEventPref,
   rememberEvent,
+  storageName,
   storageNameFor,
   writeEventPref,
 } from './lib/eventScope.ts'
 import { checkMove, eventKeyFrom, proveBox, type Proof } from './lib/identity.ts'
+import { forgetSession, openSession, readSession, saveSession, TOKEN_KEY } from './lib/sessions.ts'
 import { refusedCopy } from './lib/connscreen.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
-/** The open event's; see lib/eventScope.ts. */
-const TOKEN_KEY = 'crewbox:token'
+/** The open event's; see lib/eventScope.ts. Its sign-in's is lib/sessions.ts's. */
 const SSID_KEY = 'crewbox:wifi-ssid'
 const EVENT_NAME_KEY = 'crewbox:event-name'
 const MODULES_KEY = 'crewbox:modules'
@@ -562,7 +563,7 @@ let toastSeq = 0
 let bannerSeq = 0
 
 function getToken(): string | null {
-  return readEventPref(TOKEN_KEY)
+  return openSession()
 }
 
 /** Where this page reaches its box, as the list of known events records it. */
@@ -591,7 +592,7 @@ export function sessionToken(): string | null {
 
 /** Whether this device is signed in to an event, open or not. */
 export function signedInTo(event: string): boolean {
-  return readPref(storageNameFor(event, TOKEN_KEY)) !== null
+  return readSession(storageNameFor(event, TOKEN_KEY)) !== null
 }
 
 function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Message[] {
@@ -1059,7 +1060,12 @@ export const useStore = create<AppState>()((set, get) => {
     const alerts = nativeAlerts()
     if (alerts && serverOrigin()) {
       void alerts
-        .start({ serverUrl: serverOrigin(), token: getToken() ?? '', myName: msg.me.name })
+        .start({
+          serverUrl: serverOrigin(),
+          token: getToken() ?? '',
+          session: storageName(TOKEN_KEY),
+          myName: msg.me.name,
+        })
         .catch(() => {})
     }
 
@@ -1557,7 +1563,7 @@ export const useStore = create<AppState>()((set, get) => {
         // A box running another event than the one open: the sign-in is
         // that event's, and so is everything the box is about to send. File
         // it there and open that event, leaving this one's data as it is.
-        writePref(storageNameFor(eventId, TOKEN_KEY), token)
+        await saveSession(storageNameFor(eventId, TOKEN_KEY), token)
         const continues = eventIdFrom(joined.continues)
         replacedAt(here(), { id: eventId, name: '', ...(continues ? { continues } : {}) })
         rememberEvent({ id: eventId, origin: here() })
@@ -1566,7 +1572,7 @@ export const useStore = create<AppState>()((set, get) => {
         reopenOnAnotherEvent()
         return
       }
-      writeEventPref(TOKEN_KEY, token)
+      await saveSession(storageName(TOKEN_KEY), token)
       requestNotificationPermission()
       await get().boot()
       // After boot, which lists an event a new phone has only just been told of.
@@ -2136,7 +2142,7 @@ export const useStore = create<AppState>()((set, get) => {
         .catch(() => {})
       ws?.stop()
       ws = null
-      forgetEventPref(TOKEN_KEY)
+      await forgetSession(storageName(TOKEN_KEY))
       clearQueuedIncidents()
       await cache.wipe()
       location.reload()
@@ -2169,7 +2175,7 @@ export const useStore = create<AppState>()((set, get) => {
         .catch(() => {})
       ws?.stop()
       ws = null
-      forgetEventPref(TOKEN_KEY)
+      await forgetSession(storageName(TOKEN_KEY))
       // The cached messages are somebody's session and go; the outbox is
       // theirs to finish sending once they are back in.
       await cache.wipeExceptOutbox()

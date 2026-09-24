@@ -154,6 +154,14 @@ box is one event. The store does this for you; anything else a module keeps
 in `localStorage` or IndexedDB goes through `storageName()` from the same
 file, or one event's data turns up in the next event's box.
 
+A sign-in's token is the one thing in those names a page doesn't read back
+from storage. In the apps the page's storage keeps `(kept by the app)` under
+`crewbox:token` or `crewbox@<event>:token`, and the token is the app's
+(`web/src/lib/sessions.ts`), under names that reach phones just the same:
+the Keychain service `com.colmhewson.crewbox.sessions` on an iPhone, and on
+Android a preferences file and a Keystore key, both `crewbox-sessions`. Each
+keeps its tokens by the storage name.
+
 ## The five steps
 
 ### 1. Model
@@ -232,6 +240,10 @@ always on.
 - **Shortcuts** — `shell/keys.ts`. Register with a `when` guard so your
   binding doesn't fire while someone is typing in a composer.
 - **Unread** — `unreadCount` on the module contributes to the tab title.
+- **Calling the box as the crew member** — `openSession()` from
+  `web/src/lib/sessions.ts` is the open event's session token. Don't read it
+  from storage by name: in the apps that holds a placeholder, and a module
+  that sends it is refused by the box.
 
 ## Offline is the default, not a mode
 

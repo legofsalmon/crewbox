@@ -65,6 +65,60 @@ export const newDevice = async (browser: Browser, crewName?: string): Promise<Pa
   return page
 }
 
+/**
+ * The apps' keeping of sign-ins (SessionsPlugin), for an init script added
+ * after the one that stands the app in: the iPhone's Keychain or Android's
+ * Keystore, stood in for by the tab's sessionStorage, which a reload keeps
+ * and the page itself never touches, so the page's storage and the app's are
+ * apart as on a phone. Each call is kept for `keychainCalls`.
+ */
+export function keepSignInsInTheApp(): void {
+  const w = window as unknown as {
+    Capacitor?: { Plugins?: Record<string, unknown> }
+    __keychainCalls?: string[]
+  }
+  const plugins = w.Capacitor?.Plugins
+  if (!plugins) return
+  const calls: string[] = []
+  w.__keychainCalls = calls
+  const kept = (): Record<string, string> =>
+    JSON.parse(sessionStorage.getItem('__keychain') ?? '{}') as Record<string, string>
+  const keep = (sessions: Record<string, string>) =>
+    sessionStorage.setItem('__keychain', JSON.stringify(sessions))
+  // Each answers a little later, as a call across the bridge to the
+  // Keychain does, so a page that doesn't wait for one goes on without it.
+  const answered = () => new Promise((resolve) => setTimeout(resolve, 150))
+  plugins.CrewboxSessions = {
+    load: async () => {
+      calls.push('load')
+      await answered()
+      return { sessions: kept() }
+    },
+    save: async ({ name, token }: { name: string; token: string }) => {
+      calls.push(`save ${name}`)
+      await answered()
+      keep({ ...kept(), [name]: token })
+    },
+    forget: async ({ name }: { name: string }) => {
+      calls.push(`forget ${name}`)
+      await answered()
+      const sessions = kept()
+      delete sessions[name]
+      keep(sessions)
+    },
+  }
+}
+
+/** The sign-ins the stood-in app keeps, by name. */
+export const keychainOf = (page: Page) =>
+  page.evaluate(
+    () => JSON.parse(sessionStorage.getItem('__keychain') ?? '{}') as Record<string, string>
+  )
+
+/** What the stood-in app's keeping of sign-ins has been asked, on the page as loaded. */
+export const keychainCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __keychainCalls: string[] }).__keychainCalls)
+
 /** A box as the apps' search reports one: `FoundService` in web/src/lib/server.ts. */
 export interface FoundService {
   name: string
@@ -198,6 +252,7 @@ export const appWithDiscovery = async (
     },
     { platform, boxes }
   )
+  await context.addInitScript(keepSignInsInTheApp)
   const page = await context.newPage()
   page.on('pageerror', (error) => {
     throw new Error(`Page error: ${error.message}`)

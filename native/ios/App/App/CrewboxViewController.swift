@@ -11,5 +11,6 @@ class CrewboxViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(DiscoveryPlugin())
         bridge?.registerPluginInstance(ScannerPlugin())
         bridge?.registerPluginInstance(WifiPlugin())
+        bridge?.registerPluginInstance(SessionsPlugin())
     }
 }

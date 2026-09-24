@@ -11,6 +11,8 @@ import {
   cell,
   commitCell,
   createSheet,
+  keepSignInsInTheApp,
+  keychainOf,
   openPatch,
   openSheetByName,
   test,
@@ -108,6 +110,7 @@ async function appDevice(browser: Browser): Promise<Page> {
       Plugins: {},
     }
   })
+  await context.addInitScript(keepSignInsInTheApp)
   const page = await context.newPage()
   page.on('pageerror', (error) => {
     throw new Error(`Page error: ${error.message}`)
@@ -390,6 +393,10 @@ test('the Boxes screen opens each event this phone holds, and forgets one', asyn
     expect(left.keys.filter((key) => key.startsWith('crewbox:')).sort()).toEqual(
       ['crewbox:boxes', 'crewbox:event', 'crewbox:server-url'].sort()
     )
+    // And Friday's sign-in, which the app kept, not the page: only Saturday's is left.
+    expect(Object.keys(await keychainOf(page))).toEqual([
+      left.keys.find((key) => /^crewbox@\w+:token$/.test(key)),
+    ])
 
     // Saturday carries on as it was.
     await page

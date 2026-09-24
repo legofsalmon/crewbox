@@ -66,6 +66,10 @@ state. You don't need the event PIN again.
 This also means you can move between devices freely: same name, same PIN, on
 a phone at the barricade and a laptop at front of house.
 
+It is also how you get back in on a new phone. The apps keep your sign-ins
+on the phone they were made on, so a new phone set up from your old one's
+backup opens signed out.
+
 If you type a name that's already taken and the PIN doesn't match, crewbox
 says so — either you've misremembered your PIN, or someone else got to that
 name first. Pick another name, or ask an admin to reset your PIN.

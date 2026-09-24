@@ -10,7 +10,16 @@ import { fileUrl } from '@crewbox/shared'
 const SERVER_KEY = 'crewbox:server-url'
 
 interface AlertsPlugin {
-  start(options: { serverUrl: string; token: string; myName: string }): Promise<void>
+  /**
+   * `session` is the sign-in's storage name, under which the service finds
+   * the token again when Android restarts it (lib/sessions.ts).
+   */
+  start(options: {
+    serverUrl: string
+    token: string
+    session: string
+    myName: string
+  }): Promise<void>
   stop(): Promise<void>
 }
 
@@ -197,6 +206,18 @@ export interface NetworkPlugin {
   useBox(options: { origin: string }): Promise<{ onWifi: boolean }>
 }
 
+/**
+ * Both apps' keeping of sign-ins, one per event by its storage name (native
+ * SessionsPlugin): the iPhone's Keychain, and on Android a file of tokens
+ * sealed with a key the phone's Keystore holds. See lib/sessions.ts.
+ */
+export interface SessionsPlugin {
+  /** Every sign-in the app keeps, by name. */
+  load(): Promise<{ sessions: Record<string, string> }>
+  save(options: { name: string; token: string }): Promise<void>
+  forget(options: { name: string }): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -213,6 +234,7 @@ declare global {
         CrewboxScanner?: ScannerPlugin
         CrewboxWifi?: WifiPlugin
         CrewboxNetwork?: NetworkPlugin
+        CrewboxSessions?: SessionsPlugin
       }
     }
   }
@@ -281,6 +303,11 @@ export function nativeWifi(): WifiPlugin | undefined {
 /** The Android app's hold on the crew Wi-Fi, when present (Android builds only). */
 export function nativeNetwork(): NetworkPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxNetwork
+}
+
+/** The apps' keeping of sign-ins, when present (native builds only). */
+export function nativeSessions(): SessionsPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxSessions
 }
 
 /**

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { readEventPref } from '../../lib/eventScope.ts'
+import { openSession } from '../../lib/sessions.ts'
 import DrawerButton from '../../shell/DrawerButton.tsx'
 import { fetchAudit, fetchSeries } from './model/api.ts'
 import { reportAge } from './model/age.ts'
@@ -52,7 +52,7 @@ export default function NetworkMain(_props: { subpath: string }) {
   const generation = useRef(0)
 
   const load = useCallback(async () => {
-    const token = readEventPref('crewbox:token') ?? ''
+    const token = openSession() ?? ''
     const mine = ++generation.current
     const current = () => mine === generation.current
     try {

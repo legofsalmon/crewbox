@@ -11,9 +11,11 @@ import {
   knownEvent,
   openEvent,
   releaseEvent,
+  storageNameFor,
   type KnownEvent,
 } from './eventScope.ts'
 import { forgetPref } from './prefs.ts'
+import { forgetSession, TOKEN_KEY } from './sessions.ts'
 import { iphoneRefusesPlainHttp, isIosApp, normalizeOrigin } from './server.ts'
 import { queuedIncidentsOf } from '../modules/incident/model/outbox.ts'
 import { timetableDatabase } from '../shell/timetable/store.ts'
@@ -97,6 +99,8 @@ export async function forgetEvent(event: string): Promise<void> {
   const stores = allDocStores()
   const databases = new Set([chatDatabaseName(event), timetableDatabase(event)])
   const keys = new Set(eventPrefKeys(event, localStorageKeys()))
+  // Its sign-in, which in the apps the app keeps (sessions.ts).
+  const session = storageNameFor(event, TOKEN_KEY)
   for (const store of stores) {
     const storage = store.storageOf(event)
     databases.add(storage.indexDatabase)
@@ -109,6 +113,7 @@ export async function forgetEvent(event: string): Promise<void> {
   }
   await Promise.all([...databases].map(deleteLocalDatabase))
   for (const key of keys) forgetPref(key)
+  await forgetSession(session)
   releaseEvent(event)
   forgetEventRecord(event)
 }

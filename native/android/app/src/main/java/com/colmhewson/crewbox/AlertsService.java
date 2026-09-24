@@ -38,6 +38,7 @@ import okhttp3.WebSocketListener;
 public class AlertsService extends Service {
   public static final String EXTRA_SERVER = "serverUrl";
   public static final String EXTRA_TOKEN = "token";
+  public static final String EXTRA_SESSION = "session";
   public static final String EXTRA_MY_NAME = "myName";
 
   private static final String CH_SERVICE = "service";
@@ -62,11 +63,16 @@ public class AlertsService extends Service {
    * notification, found no server address, and sat on "Connecting to crew
    * server…" for the rest of the shift — connected to nothing, alerting
    * nobody, and looking exactly like a service that is working.
+   *
+   * Not the token itself: the name of the sign-in, which Sessions keeps
+   * sealed, so the phone holds one copy of it at rest and not two.
    */
   private static final String PREFS = "crewbox-alerts";
   private static final String PREF_SERVER = "serverUrl";
-  private static final String PREF_TOKEN = "token";
+  private static final String PREF_SESSION = "session";
   private static final String PREF_NAME = "myName";
+  /** Where the token itself was, before Sessions kept it. Only ever removed now. */
+  private static final String PREF_OLD_TOKEN = "token";
 
   /** Set by AlertsPlugin from activity lifecycle — no alerts while visible. */
   public static volatile boolean appVisible = false;
@@ -152,22 +158,24 @@ public class AlertsService extends Service {
       myName = stringExtra(intent, EXTRA_MY_NAME);
       prefs.edit()
           .putString(PREF_SERVER, serverUrl)
-          .putString(PREF_TOKEN, token)
+          .putString(PREF_SESSION, stringExtra(intent, EXTRA_SESSION))
           .putString(PREF_NAME, myName)
           .apply();
     } else {
       // A restart the OS asked for. Everything this service needs came in on
-      // an intent it no longer has.
+      // an intent it no longer has, and the token is where the app keeps it.
       serverUrl = prefs.getString(PREF_SERVER, "");
-      token = prefs.getString(PREF_TOKEN, "");
+      String session = Sessions.get(this, prefs.getString(PREF_SESSION, ""));
+      token = session == null ? "" : session;
       myName = prefs.getString(PREF_NAME, "");
     }
     if (serverUrl.isEmpty() || token.isEmpty()) {
       // Nothing to connect to: a restart before anybody has ever signed in,
-      // or after a sign-out cleared the credentials. Stop, rather than
-      // holding a foreground notification that says "Connecting" for ever.
-      // The app starts the service again with a fresh token when somebody
-      // signs in.
+      // after a sign-out cleared the credentials, or after the page forgot
+      // the event. Stop, rather than holding a foreground notification that
+      // says "Connecting" for ever. The app starts the service again with a
+      // fresh token when somebody signs in.
+      forgetCredentials(this);
       stopSelf();
       return START_NOT_STICKY;
     }
@@ -192,9 +200,20 @@ public class AlertsService extends Service {
   private static void forgetCredentials(Context ctx) {
     ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         .remove(PREF_SERVER)
-        .remove(PREF_TOKEN)
+        .remove(PREF_SESSION)
         .remove(PREF_NAME)
+        .remove(PREF_OLD_TOKEN)
         .apply();
+  }
+
+  /**
+   * The token as this service kept it before Sessions did, from a version of
+   * the app before this. MainActivity drops it at every start: the page's
+   * first start in this version moves its sign-ins across, and starts this
+   * service again with the name.
+   */
+  static void forgetOldToken(Context ctx) {
+    ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(PREF_OLD_TOKEN).apply();
   }
 
   @Override
@@ -473,10 +492,11 @@ public class AlertsService extends Service {
     return v == null ? "" : v;
   }
 
-  static void start(Context ctx, String serverUrl, String token, String myName) {
+  static void start(Context ctx, String serverUrl, String token, String session, String myName) {
     Intent intent = new Intent(ctx, AlertsService.class);
     intent.putExtra(EXTRA_SERVER, serverUrl);
     intent.putExtra(EXTRA_TOKEN, token);
+    intent.putExtra(EXTRA_SESSION, session);
     intent.putExtra(EXTRA_MY_NAME, myName);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent);
     else ctx.startService(intent);

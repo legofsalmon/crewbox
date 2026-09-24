@@ -19,6 +19,14 @@ patch sheets, plots and screen maps that pass through it, so that somebody
 who opens one later gets it from the box. Your own device keeps a working
 copy so the app opens offline.
 
+Your device also keeps your sign-in to each event, the key the box gave it
+when you joined, so that it opens signed in. In a browser that is the page's
+own storage. The apps keep it in the phone's: the iPhone's Keychain, and on
+Android a file sealed with a key held by the phone's Keystore. Either way
+it stays on that phone. A new phone set up from the old one's backup, or
+moved across from it, doesn't bring your sign-ins, whatever else comes
+across, and you sign in to each event again with your name and PIN.
+
 Deleting a sheet, plot or screen map deletes it from the box too. The box
 overwrites what it held rather than only marking the space free, and never
 saves it again, though the SD card or disk underneath can keep an old copy

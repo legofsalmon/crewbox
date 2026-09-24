@@ -1,6 +1,6 @@
 import type { ProcessorStatus, VideoAction, VideoIntent, VideoProcessor } from '@crewbox/shared'
-import { readEventPref } from '../../../lib/eventScope.ts'
 import { apiUrl } from '../../../lib/server.ts'
+import { openSession } from '../../../lib/sessions.ts'
 
 /**
  * Talking to the box about the video network.
@@ -31,7 +31,7 @@ export interface VideoState {
   interfaceIp: string
 }
 
-const sessionToken = (): string => readEventPref('crewbox:token') ?? ''
+const sessionToken = (): string => openSession() ?? ''
 
 async function call<T>(
   path: string,

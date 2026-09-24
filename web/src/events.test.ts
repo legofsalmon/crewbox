@@ -18,14 +18,19 @@ import type { QueuedIncident } from './modules/incident/model/outbox.ts'
  */
 
 const sent: ClientMessage[] = []
-let socket: { onMessage: (msg: unknown) => void; stopped: boolean; restarts: number } | null = null
+let socket: {
+  onMessage: (msg: unknown) => void
+  hello: () => { token: string }
+  stopped: boolean
+  restarts: number
+} | null = null
 
 vi.mock('./lib/ws.ts', () => ({
   WsClient: class {
     handlers: { onMessage: (msg: unknown) => void }
-    constructor(handlers: { onMessage: (msg: unknown) => void }) {
+    constructor(handlers: { onMessage: (msg: unknown) => void; hello: () => { token: string } }) {
       this.handlers = handlers
-      socket = { onMessage: handlers.onMessage, stopped: false, restarts: 0 }
+      socket = { onMessage: handlers.onMessage, hello: handlers.hello, stopped: false, restarts: 0 }
     }
     start() {}
     stop() {
@@ -652,6 +657,124 @@ describe('joining', () => {
     expect(localStorage.getItem('crewbox:token')).toBe('first-sign-in')
     expect(localStorage.getItem('crewbox:db-epoch')).toBe('friday')
     expect(reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('in the apps, a sign-in the app keeps', () => {
+  /** The app, its Keychain stood in for by a map, holding what a test gives it. */
+  function inTheApp(kept: Record<string, string> = {}) {
+    const keychain = new Map(Object.entries(kept))
+    const alerts = {
+      start: vi.fn(async (_options: Record<string, string>) => {}),
+      stop: vi.fn(async () => {}),
+    }
+    ;(window as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'android',
+      Plugins: {
+        // Each answers a turn later, as a call across the bridge does, so a
+        // reload that doesn't wait for one happens before it has kept anything.
+        CrewboxSessions: {
+          load: async () => ({ sessions: Object.fromEntries(keychain) }),
+          save: async ({ name, token }: { name: string; token: string }) => {
+            await settle()
+            keychain.set(name, token)
+          },
+          forget: async ({ name }: { name: string }) => {
+            await settle()
+            keychain.delete(name)
+          },
+        },
+        CrewboxAlerts: alerts,
+      },
+    }
+    localStorage.setItem('crewbox:server-url', 'http://10.0.0.2')
+    return { keychain, alerts }
+  }
+
+  /** A page load in the app: the store, then its sign-ins, as main.tsx has it. */
+  async function start() {
+    const store = await loadStore()
+    const sessions = await import('./lib/sessions.ts')
+    await sessions.loadSessions()
+    return { store, HELD: sessions.HELD }
+  }
+
+  afterEach(() => {
+    delete (window as { Capacitor?: unknown }).Capacitor
+  })
+
+  it('moves the sign-in kept before into the app, and signs in with it', async () => {
+    const { keychain } = inTheApp()
+    const { store, HELD } = await start()
+    expect(keychain.get('crewbox:token')).toBe('fridays-sign-in')
+    expect(localStorage.getItem('crewbox:token')).toBe(HELD)
+    await store.getState().boot()
+    expect(store.getState().phase).toBe('chat')
+    expect(socket!.hello().token).toBe('fridays-sign-in')
+  })
+
+  it('keeps a join’s sign-in in the app, and hands the alerts service its name', async () => {
+    localStorage.removeItem('crewbox:token')
+    const { keychain, alerts } = inTheApp()
+    api.join.mockResolvedValue({ token: 'fridays-new-sign-in', eventId: 'friday' })
+    const { store, HELD } = await start()
+    await store.getState().join('Sam', '4242', '1234')
+    expect(keychain.get('crewbox:token')).toBe('fridays-new-sign-in')
+    expect(localStorage.getItem('crewbox:token')).toBe(HELD)
+    expect(socket!.hello().token).toBe('fridays-new-sign-in')
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    // Under which Android finds it again when it restarts the service.
+    expect(alerts.start).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'fridays-new-sign-in', session: 'crewbox:token' })
+    )
+  })
+
+  it('files another event’s sign-in with the app before it reloads into that event', async () => {
+    localStorage.removeItem('crewbox:token')
+    const { keychain } = inTheApp()
+    api.join.mockResolvedValue({ token: 'saturdays-sign-in', eventId: 'saturday' })
+    const { store, HELD } = await start()
+    let keptAtReload: string | undefined
+    reload.mockImplementation(() => (keptAtReload = keychain.get('crewbox@saturday:token')))
+    await store.getState().join('Sam', '4242', '1234')
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(keptAtReload).toBe('saturdays-sign-in')
+    expect(localStorage.getItem('crewbox@saturday:token')).toBe(HELD)
+  })
+
+  it('forgets it in the app on signing out, before the reload', async () => {
+    const { keychain } = inTheApp()
+    const { store } = await start()
+    let keptAtReload: string | undefined = 'not reloaded'
+    reload.mockImplementation(() => (keptAtReload = keychain.get('crewbox:token')))
+    await store.getState().logout()
+    expect(keptAtReload).toBeUndefined()
+    expect(localStorage.getItem('crewbox:token')).toBeNull()
+  })
+
+  it('forgets it in the app when the box ends the session', async () => {
+    const { keychain } = inTheApp()
+    api.getConfig.mockResolvedValue(config('friday'))
+    const { store } = await start()
+    await store.getState().sessionEnded()
+    expect(keychain.has('crewbox:token')).toBe(false)
+    expect(localStorage.getItem('crewbox:token')).toBeNull()
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts signed out when a backup brought the page’s storage but not the app’s', async () => {
+    // Another phone's backup: the page names a sign-in the app has never had.
+    inTheApp()
+    const sessions = await import('./lib/sessions.ts')
+    localStorage.setItem('crewbox:token', sessions.HELD)
+    const { store } = await start()
+    await store.getState().boot()
+    expect(store.getState().phase).toBe('join')
+    expect(localStorage.getItem('crewbox:token')).toBeNull()
+    // Everything else it brought is still there, for when this crew member signs in.
+    expect(JSON.parse(localStorage.getItem('crewbox:incident-outbox')!)).toEqual([QUEUED])
   })
 })
 
