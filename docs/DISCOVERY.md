@@ -348,10 +348,17 @@ What RFC 6762 asks of a responder, and where the code does it
   probe every five.
 - **Defends its names**, answering another device's probe for them at once.
 - **Answers phones.** Shared records (the PTR) after 20 to 120 ms so answers
-  from several boxes spread out, unique ones at once, and 400 to 500 ms when
-  the question says more known answers follow (§6, §7.2). What a phone will
-  ask next rides along in the additional section: a PTR brings SRV, TXT, A
-  and the NSEC saying there is no AAAA (RFC 6763 §12).
+  from several boxes spread out, and unique ones at once (§6). What a phone
+  will ask next rides along in the additional section: a PTR brings SRV, TXT,
+  A and the NSEC saying there is no AAAA, and an SRV brings A and that NSEC
+  (RFC 6763 §12), which saves Android a round of questions, since it asks for
+  an address only once it knows the host's name.
+- **Waits for the rest of a long question.** A phone holding more answers
+  than fit in one packet sends the rest after it, and says so with the TC
+  bit. The box answers 400 to 500 ms after the last packet that says more
+  are coming, and leaves out whatever those packets list, matching them to
+  the phone by its address (§7.2). A phone's answer is its own: another
+  phone waiting for the same record still gets it.
 - **Leaves out what the phone already knows**, when its copy has at least half
   its life left (§7.1), and sends a record at most once a second, or four
   times a second while defending (§6).

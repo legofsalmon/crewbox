@@ -591,6 +591,126 @@ describe('answering phones', () => {
     expect(socket.take()).toHaveLength(1)
   })
 
+  /** A query with the TC bit: more of the asker's known answers follow (RFC 6762 §7.2). */
+  const moreToCome = (over: Partial<Message> = {}): Buffer => {
+    const buf = encodeMessage({
+      id: 0,
+      response: false,
+      questions: [],
+      answers: [],
+      authorities: [],
+      additionals: [],
+      ...over,
+    })
+    buf.writeUInt16BE(buf.readUInt16BE(2) | 0x0200, 2)
+    return buf
+  }
+  const browsing = { questions: [{ name: SERVICE, type: TYPE_PTR, unicast: false }] }
+  /** This box, as a phone that has heard of it holds it. */
+  const ourPtr = (ttl = 4500): ResourceRecord => ({
+    name: SERVICE,
+    type: TYPE_PTR,
+    cacheFlush: false,
+    ttl,
+    data: { kind: 'ptr', target: instance() },
+  })
+  /** Another box, as the same phone holds it. */
+  const theirPtr: ResourceRecord = {
+    name: SERVICE,
+    type: TYPE_PTR,
+    cacheFlush: false,
+    ttl: 4500,
+    data: { kind: 'ptr', target: ['Another Event', ...SERVICE] },
+  }
+
+  it('leaves out what the rest of a truncated question says the phone holds', async () => {
+    await announced()
+    socket.deliver(moreToCome(browsing))
+    await vi.advanceTimersByTimeAsync(100)
+    // The rest of its known answers: no question, just what it holds.
+    socket.deliver({ answers: [theirPtr, ourPtr()] })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(socket.take()).toHaveLength(0)
+  })
+
+  it('still answers when the rest lists it past half its life, or comes from another device', async () => {
+    await announced()
+    socket.deliver(moreToCome(browsing))
+    socket.deliver({ answers: [ourPtr(2000)] })
+    await vi.advanceTimersByTimeAsync(400)
+    expect(socket.take()[0]?.message.answers).toMatchObject([{ type: TYPE_PTR }])
+
+    await vi.advanceTimersByTimeAsync(2000)
+    socket.deliver(moreToCome(browsing))
+    socket.deliver({ answers: [ourPtr()] }, { address: '10.0.0.51' })
+    await vi.advanceTimersByTimeAsync(400)
+    expect(socket.take()).toHaveLength(1)
+  })
+
+  it('still answers another device waiting for the same answer', async () => {
+    await announced()
+    socket.deliver(moreToCome(browsing))
+    socket.deliver(moreToCome(browsing), { address: '10.0.0.51' })
+    // The first phone holds it; the second said nothing of the kind.
+    socket.deliver({ answers: [ourPtr()] })
+    await vi.advanceTimersByTimeAsync(400)
+    expect(socket.take()).toHaveLength(1)
+  })
+
+  it('answers 400 ms after the last packet saying more is coming', async () => {
+    await announced()
+    socket.deliver(moreToCome(browsing))
+    await vi.advanceTimersByTimeAsync(300)
+    // More known answers, and still more after these.
+    socket.deliver(moreToCome({ answers: [theirPtr] }))
+    await vi.advanceTimersByTimeAsync(399)
+    expect(socket.take()).toHaveLength(0)
+    // The last of them says no more are coming, and moves nothing.
+    socket.deliver({ answers: [] })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(socket.take()[0]?.message.answers).toMatchObject([{ type: TYPE_PTR }])
+  })
+
+  it('drops a held answer when it has to claim its name again, and answers the next', async () => {
+    await announced()
+    socket.deliver(moreToCome(browsing))
+    // Another device turns out to hold the host name, so the box claims another.
+    socket.deliver(
+      {
+        response: true,
+        answers: [
+          {
+            name: host(),
+            type: TYPE_A,
+            cacheFlush: true,
+            ttl: 120,
+            data: { kind: 'a', address: OTHER_BOX },
+          },
+        ],
+      },
+      { address: OTHER_BOX }
+    )
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(announcer.state).toBe('announced')
+    socket.take()
+    socket.deliver(moreToCome(browsing))
+    await vi.advanceTimersByTimeAsync(400)
+    expect(socket.take()).toHaveLength(1)
+  })
+
+  it('brings the address when a phone resolves the service, and says there is no other', async () => {
+    await announced()
+    // Android asks for the address only once it knows the host's name, so
+    // without it here that is another round of questions.
+    socket.deliver({ questions: [{ name: instance(), type: TYPE_SRV, unicast: false }] })
+    const [reply] = socket.take()
+    expect(reply?.message.answers).toMatchObject([{ type: TYPE_SRV }])
+    expect(reply?.message.additionals).toMatchObject([
+      { type: TYPE_A, name: host(), data: { address: CREW } },
+      { type: TYPE_NSEC, name: host(), data: { next: host(), types: [TYPE_A] } },
+    ])
+  })
+
   it('answers its own address at once, and says it has no IPv6 one', async () => {
     await announced()
     socket.deliver({ questions: [{ name: host(), type: TYPE_A, unicast: false }] })

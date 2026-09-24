@@ -66,6 +66,12 @@ const ANNOUNCE_GAP_MS = 1000
 /** RFC 6762 §6: a record goes out at most once a second, or four times while defending. */
 const MULTICAST_GAP_MS = 1000
 const DEFEND_GAP_MS = 250
+/**
+ * RFC 6762 §7.2: a question that says more known answers follow is answered
+ * 400 to 500 ms after the last packet saying so.
+ */
+const TRUNCATED_WAIT_MS = 400
+const TRUNCATED_JITTER_MS = 100
 /** RFC 6762 §8.1: after fifteen conflicts in ten seconds, probe at most every five. */
 const CONFLICT_BURST = 15
 const CONFLICT_WINDOW_MS = 10_000
@@ -119,6 +125,14 @@ function sameRecord(a: ResourceRecord, b: ResourceRecord): boolean {
   )
 }
 
+/**
+ * Whether a query lists `record` among the answers its asker already holds,
+ * with at least half its life left (RFC 6762 §7.1). Below half, the answer is
+ * worth sending again, to refresh the asker's copy before it runs out.
+ */
+const holds = (query: Message, record: ResourceRecord): boolean =>
+  query.answers.some((known) => sameRecord(known, record) && known.ttl >= record.ttl / 2)
+
 const recordKey = (r: ResourceRecord): string =>
   `${r.name.join('.').toLowerCase()}|${r.type}|${encodeData(r.data).toString('hex')}`
 
@@ -151,6 +165,23 @@ interface Records {
   instanceTypes: ResourceRecord
 }
 
+/**
+ * An answer waiting for the rest of a truncated question's known answers
+ * (RFC 6762 §7.2), for one asker.
+ */
+interface Waiting {
+  /** Who asked. What follows is matched by address, as §15.2 says. */
+  from: dgram.RemoteInfo
+  /** What it will be sent, less whatever the packets since say it holds. */
+  answers: ResourceRecord[]
+  /** Every question it asked wanted a unicast reply. */
+  unicast: boolean
+  /** It was probing for one of our names. */
+  defending: boolean
+  /** When to answer: 400 to 500 ms after the last packet saying more follow. */
+  due: number
+}
+
 export class Announcer {
   private readonly options: AnnouncerOptions
   private readonly mdnsPort: number
@@ -174,6 +205,8 @@ export class Announcer {
   private round = 0
   /** Every record sent in the last few seconds, to recognise our own packets coming back. */
   private readonly sent = new Map<string, number>()
+  /** Answers held back for the rest of a truncated question, by the asker's address. */
+  private readonly waiting = new Map<string, Waiting>()
 
   constructor(options: AnnouncerOptions) {
     this.options = options
@@ -346,6 +379,8 @@ export class Announcer {
   private clearTimers(): void {
     for (const timer of this.timers) clearTimeout(timer)
     this.timers.clear()
+    // Their timers are gone, so they would never be sent.
+    this.waiting.clear()
   }
 
   // -------------------------------------------------------------------------
@@ -616,6 +651,16 @@ export class Announcer {
     }
     if (this.current !== 'announced') return
 
+    // The rest of a truncated question's known answers (RFC 6762 §7.2): what
+    // they list comes off the answer held for that asker, and one that says
+    // still more follow puts the answer back until 400 to 500 ms after it.
+    // They come with no questions of their own, so this is all they get.
+    const held = this.waiting.get(rinfo.address)
+    if (held) {
+      held.answers = held.answers.filter((record) => !holds(message, record))
+      if (message.truncated) held.due = Math.max(held.due, Date.now() + this.truncatedWait())
+    }
+
     const answers: ResourceRecord[] = []
     for (const question of message.questions) {
       for (const record of this.answersFor(question)) {
@@ -624,12 +669,8 @@ export class Announcer {
     }
     // Known-answer suppression (RFC 6762 §7.1): nothing the asker already
     // holds with at least half its life left.
-    const fresh = answers.filter(
-      (record) =>
-        !message.answers.some((known) => sameRecord(known, record) && known.ttl >= record.ttl / 2)
-    )
+    const fresh = answers.filter((record) => !holds(message, record))
     if (fresh.length === 0) return
-    const additionals = this.additionalsFor(fresh)
 
     // A one-shot question from a port other than 5353 (RFC 6762 §6.7): a
     // unicast reply to that port, the question repeated, short TTLs, and no
@@ -647,7 +688,7 @@ export class Announcer {
           questions: message.questions,
           answers: fresh.map(legacy),
           authorities: [],
-          additionals: additionals.map(legacy),
+          additionals: this.additionalsFor(fresh).map(legacy),
         },
         rinfo
       )
@@ -656,44 +697,89 @@ export class Announcer {
 
     // A probe for one of our names: defend it at once (RFC 6762 §8.1).
     const defending = message.authorities.some((r) => this.isOurs(r.name))
-    // A unicast reply only to a question that asked for one, about records
-    // multicast within the last quarter of their life (RFC 6762 §5.4).
-    const now = Date.now()
-    const unicast =
-      message.questions.length > 0 &&
-      message.questions.every((q) => q.unicast) &&
-      fresh.every((r) => now - (this.lastMulticast.get(recordKey(r)) ?? -Infinity) < r.ttl * 250)
+    const unicast = message.questions.length > 0 && message.questions.every((q) => q.unicast)
+
+    // A truncated question waits for the rest of the asker's known answers
+    // (RFC 6762 §7.2). A second one from the same asker joins the first.
+    if (message.truncated) {
+      if (held) {
+        for (const record of fresh) {
+          if (!held.answers.some((x) => sameRecord(x, record))) held.answers.push(record)
+        }
+        held.unicast &&= unicast
+        held.defending ||= defending
+        return
+      }
+      const waiting: Waiting = {
+        from: rinfo,
+        answers: fresh,
+        unicast,
+        defending,
+        due: Date.now() + this.truncatedWait(),
+      }
+      this.waiting.set(rinfo.address, waiting)
+      this.awaitRest(waiting, this.round)
+      return
+    }
+
     // RFC 6762 §6: a shared record waits 20-120 ms, so answers from several
     // devices spread out; a unique one goes at once, which is also how a
-    // name is defended, since only unique records are probed for; a
-    // truncated question waits for the rest of the asker's known answers.
+    // name is defended, since only unique records are probed for.
     const shared = fresh.some((r) => !r.cacheFlush)
-    const delay = message.truncated
-      ? 400 + Math.floor(this.random() * 100)
-      : shared
-        ? 20 + Math.floor(this.random() * 100)
-        : 0
     const round = this.round
     const reply = () => {
       if (round !== this.round || this.current !== 'announced') return
-      if (unicast) {
-        this.send(
-          {
-            id: 0,
-            response: true,
-            questions: [],
-            answers: fresh,
-            authorities: [],
-            additionals,
-          },
-          rinfo
-        )
-      } else {
-        this.multicast(fresh, additionals, false, defending ? DEFEND_GAP_MS : MULTICAST_GAP_MS)
-      }
+      this.reply(fresh, unicast, defending, rinfo)
     }
-    if (delay === 0) reply()
-    else this.later(delay, reply)
+    if (shared) this.later(20 + Math.floor(this.random() * 100), reply)
+    else reply()
+  }
+
+  private truncatedWait(): number {
+    return TRUNCATED_WAIT_MS + Math.floor(this.random() * TRUNCATED_JITTER_MS)
+  }
+
+  /** Answer a truncated question once its asker has gone quiet. */
+  private awaitRest(waiting: Waiting, round: number): void {
+    this.later(Math.max(0, waiting.due - Date.now()), () => {
+      if (round !== this.round || this.current !== 'announced') return
+      // Put back by a packet that said still more follow.
+      if (Date.now() < waiting.due) {
+        this.awaitRest(waiting, round)
+        return
+      }
+      if (this.waiting.get(waiting.from.address) === waiting) {
+        this.waiting.delete(waiting.from.address)
+      }
+      if (waiting.answers.length > 0) {
+        this.reply(waiting.answers, waiting.unicast, waiting.defending, waiting.from)
+      }
+    })
+  }
+
+  /**
+   * Send the answers to a question, with what the asker will want next. By
+   * unicast only to a question that asked for it, about records multicast
+   * within the last quarter of their life (RFC 6762 §5.4); otherwise by
+   * multicast, each record at most once a second, or four times a second
+   * while defending a name (§6).
+   */
+  private reply(
+    answers: ResourceRecord[],
+    askedUnicast: boolean,
+    defending: boolean,
+    to: dgram.RemoteInfo
+  ): void {
+    const additionals = this.additionalsFor(answers)
+    const now = Date.now()
+    const unicast =
+      askedUnicast &&
+      answers.every((r) => now - (this.lastMulticast.get(recordKey(r)) ?? -Infinity) < r.ttl * 250)
+    if (unicast) {
+      this.send({ id: 0, response: true, questions: [], answers, authorities: [], additionals }, to)
+    } else {
+      this.multicast(answers, additionals, false, defending ? DEFEND_GAP_MS : MULTICAST_GAP_MS)
+    }
   }
 
   /**
