@@ -9,8 +9,10 @@ Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
   Sidebar → *Delete account*, typed-name confirmation, server wipes the account.
 - [x] **Export compliance** — `ITSAppUsesNonExemptEncryption = false` in
   `Info.plist` (only standard TLS is used), so no per-build encryption prompt.
-- [x] **Permission strings** — microphone and local-network usage descriptions
-  are set in `Info.plist`.
+- [x] **Permission strings** — microphone, local-network, camera and
+  save-to-Photos usage descriptions are set in `Info.plist`, and
+  `server/test/iosInfoPlist.test.mjs` fails if one goes missing. iOS
+  terminates an app that uses one of these without its string.
 - [x] **iPhone-only target** — `TARGETED_DEVICE_FAMILY = 1`, so you only need
   iPhone screenshots, not iPad.
 - [x] **Privacy policy** — `site/docs/privacy-policy.html` (deployed at https://crewbox.letissier.ie/docs/privacy-policy).

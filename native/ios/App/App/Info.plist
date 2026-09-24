@@ -34,6 +34,19 @@
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Crewbox uses the microphone for push-to-talk crew voice.</string>
+	<!-- The web view's file picker offers Take Photo or Video wherever a file
+	     input takes images: the composer's attach button, lineup attachments.
+	     iOS terminates an app that opens the camera without this string, so
+	     without it a menu item crew use every day closed the app. Video from
+	     that picker records sound too, which the microphone string covers. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Crewbox uses the camera when you take a photo or video to share with your crew.</string>
+	<!-- Long-pressing an image in the web view offers to save it to Photos,
+	     which needs add-only access, and is the same terminate-on-use if this
+	     is missing. Choosing a photo to send needs no string: the photo
+	     picker runs outside the app and hands back only what was picked. -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Crewbox saves pictures you choose to your photo library.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<!-- The crew server speaks plain HTTP on the local network only, and
