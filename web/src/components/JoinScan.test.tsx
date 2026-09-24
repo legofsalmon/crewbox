@@ -141,7 +141,7 @@ describe('scanning the join poster', () => {
 
     expect(server().value).toBe('https://chat.crew.example')
     expect(eventPin().value).toBe('')
-    expect(note()).toBe('Filled in chat.crew.example. The event PIN is on the poster.')
+    expect(note()).toBe('Filled in chat.crew.example. The event PIN is on the join poster.')
   })
 
   it('joins at the scanned box with the scanned PIN', async () => {

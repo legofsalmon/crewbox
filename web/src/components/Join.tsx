@@ -1,11 +1,13 @@
-import { useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { useStore } from '../store.ts'
 import { addressOf, nearby, useBoxSearch } from '../lib/discovery.ts'
 import { knownEvents, openEvent, subscribeKnownEvents } from '../lib/eventScope.ts'
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { displayName, effectiveSsid } from '../lib/settings.ts'
-import { readJoinCode } from '../lib/joinCode.ts'
+import { androidJoinLink, joinLink, readJoinCode } from '../lib/joinCode.ts'
+import { isIOS } from '../lib/devices.ts'
+import { clearJoinLink, currentJoinLink, subscribeJoinLink } from '../lib/appLinks.ts'
 import {
   iphoneRefusesPlainHttp,
   isIosApp,
@@ -44,6 +46,23 @@ function iphoneRefusal(origin: string): string | null {
     `An iPhone only connects to a name like ${new URL(origin).hostname} over HTTPS. ` +
     'Type https:// before it if the box has a certificate, or use the box’s IP address, like 192.168.8.1.'
   )
+}
+
+/**
+ * The app's own link to this form, for a phone that reached it in a browser:
+ * the poster scanned with the phone's camera, or the address under it sent in
+ * a message. On a phone with the app it opens there, filled in
+ * (lib/appLinks.ts). Null in the apps, and away from phones.
+ */
+function appLink(origin: string, pin: string): string | null {
+  if (!origin || isNative()) return null
+  if (isIOS()) return joinLink(origin, pin)
+  // Chrome sends a phone without the app to the box's /connect page, which
+  // offers the app when the box carries it.
+  if (/Android/i.test(navigator.userAgent)) {
+    return androidJoinLink(origin, pin, `${origin}/connect`)
+  }
+  return null
 }
 
 /** Why a scan filled nothing in, or null when there is nothing to say. */
@@ -88,15 +107,52 @@ export default function Join() {
   // In the apps, the join poster's QR fills in the address and the event PIN.
   const scanner = showServer ? nativeScanner() : undefined
   const [scanning, setScanning] = useState(false)
-  const [scanned, setScanned] = useState<string | null>(null)
+  // What a scan or a link filled in, said under the scan button.
+  const [filled, setFilled] = useState<string | null>(null)
   const [cameraDenied, setCameraDenied] = useState(false)
+  // A crewbox://join link (lib/appLinks.ts): the same as scanning the poster.
+  const link = useSyncExternalStore(subscribeJoinLink, currentJoinLink)
+  // In a phone's browser, the same form in the app, with what is typed here.
+  const openInApp = appLink(showServer ? normalizeOrigin(server) : location.origin, eventPin)
+
+  /** A box's address and event PIN, from the poster's QR or a link. */
+  function fillIn(origin: string, pin: string, from: 'poster' | 'link') {
+    // As a poster prints it where that is enough; a name only works over HTTPS.
+    setServer(origin.startsWith('https:') ? origin : addressOf(origin))
+    setPicked(origin)
+    if (pin) setEventPin(pin)
+    const refusal = iphoneRefusal(origin)
+    if (refusal) {
+      setError(refusal)
+      return
+    }
+    setFilled(
+      pin
+        ? `Filled in ${addressOf(origin)} and the event PIN from the ${from}.`
+        : `Filled in ${addressOf(origin)}. The event PIN is on the join poster.`
+    )
+    if (!name) nameField.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!link) return
+    clearJoinLink()
+    // Over the form if Your boxes was open: the form is what the link filled.
+    useStore.getState().setBoxesOpen(false)
+    setError(null)
+    setFilled(null)
+    setCameraDenied(false)
+    fillIn(link.origin, link.pin, 'link')
+    // Once per link; fillIn reads the name as it is then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link])
 
   function onPick(box: PickedBox) {
     // As a poster prints it where that is enough; a name only works over HTTPS.
     setServer(box.origin.startsWith('https:') ? box.origin : addressOf(box.origin))
     setPicked(box.origin)
     setError(null)
-    setScanned(null)
+    setFilled(null)
     setCameraDenied(false)
     if (!name) nameField.current?.focus()
   }
@@ -104,7 +160,7 @@ export default function Join() {
   async function onScan() {
     if (!scanner) return
     setError(null)
-    setScanned(null)
+    setFilled(null)
     setCameraDenied(false)
     setScanning(true)
     let outcome: ScanOutcome | { result: 'failed' }
@@ -134,21 +190,7 @@ export default function Join() {
       )
       return
     }
-    // As a poster prints it where that is enough; a name only works over HTTPS.
-    setServer(code.origin.startsWith('https:') ? code.origin : addressOf(code.origin))
-    setPicked(code.origin)
-    if (code.pin) setEventPin(code.pin)
-    const refusal = iphoneRefusal(code.origin)
-    if (refusal) {
-      setError(refusal)
-      return
-    }
-    setScanned(
-      code.pin
-        ? `Filled in ${addressOf(code.origin)} and the event PIN from the poster.`
-        : `Filled in ${addressOf(code.origin)}. The event PIN is on the poster.`
-    )
-    if (!name) nameField.current?.focus()
+    fillIn(code.origin, code.pin, 'poster')
   }
 
   async function onSubmit(e: FormEvent) {
@@ -217,19 +259,21 @@ export default function Join() {
             onPick={onPick}
           />
         )}
-        {scanner && (
+        {(scanner || filled) && (
           <div className="join-scan">
-            <button
-              type="button"
-              className="admin-btn"
-              disabled={busy || scanning}
-              onClick={() => void onScan()}
-            >
-              {scanning ? 'Scanning…' : 'Scan the join poster'}
-            </button>
-            {scanned && (
+            {scanner && (
+              <button
+                type="button"
+                className="admin-btn"
+                disabled={busy || scanning}
+                onClick={() => void onScan()}
+              >
+                {scanning ? 'Scanning…' : 'Scan the join poster'}
+              </button>
+            )}
+            {filled && (
               <p className="join-scan-note" role="status">
-                {scanned}
+                {filled}
               </p>
             )}
           </div>
@@ -302,6 +346,11 @@ export default function Join() {
         <button type="submit" disabled={busy}>
           {busy ? 'Joining…' : 'Join'}
         </button>
+        {openInApp && (
+          <a className="join-boxes join-app" href={openInApp}>
+            Open in the Crewbox app
+          </a>
+        )}
         {otherEvents && (
           <button type="button" className="join-boxes" onClick={() => setBoxesOpen(true)}>
             Your other boxes

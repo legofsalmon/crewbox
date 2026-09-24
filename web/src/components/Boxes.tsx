@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { signedInTo, useStore } from '../store.ts'
 import {
   findBox,
@@ -20,7 +20,13 @@ import {
 } from '../lib/eventScope.ts'
 import { checkMove } from '../lib/identity.ts'
 import { hasWork, movableOf, type Movable } from '../lib/moveWork.ts'
-import { isNative } from '../lib/server.ts'
+import { isNative, normalizeOrigin } from '../lib/server.ts'
+import {
+  clearJoinLink,
+  currentJoinLink,
+  subscribeJoinLink,
+  type JoinLink,
+} from '../lib/appLinks.ts'
 import { MoveWorkDialog } from './MoveWork.tsx'
 import { NearbyBoxes } from './NearbyBoxes.tsx'
 
@@ -65,6 +71,23 @@ export default function Boxes() {
   const close = () => {
     if (!busy) setBoxesOpen(false)
   }
+
+  // A crewbox://join link for another box, tapped while this phone is signed
+  // in (App.tsx opens this for it): its address, ready to Connect, and the
+  // event PIN it carried, for that box's join form. The join form takes a
+  // link itself when that is what is showing.
+  const link = useSyncExternalStore(subscribeJoinLink, currentJoinLink)
+  const [linked, setLinked] = useState<JoinLink | null>(null)
+  const addressForm = useRef<HTMLFormElement>(null)
+  useEffect(() => {
+    if (!link || !signedIn) return
+    clearJoinLink()
+    setLinked(link)
+    setAddress(link.origin.startsWith('https:') ? link.origin : addressOf(link.origin))
+    setError(null)
+    setRefused(null)
+    addressForm.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [link, signedIn])
 
   useEffect(() => {
     let live = true
@@ -137,7 +160,13 @@ export default function Boxes() {
         )
         return
       case 'event':
-        openEventAt({ id: found.id, name: found.name, origin: found.origin })
+        openEventAt({
+          id: found.id,
+          name: found.name,
+          origin: found.origin,
+          // The link's PIN, while the address is still the link's.
+          ...(linked && linked.origin === found.origin ? { pin: linked.pin } : {}),
+        })
     }
   }
 
@@ -288,7 +317,7 @@ export default function Boxes() {
         />
 
         {isNative() && (
-          <form className="boxes-address" onSubmit={(e) => void onFind(e)}>
+          <form ref={addressForm} className="boxes-address" onSubmit={(e) => void onFind(e)}>
             <label htmlFor="boxes-address">Another box</label>
             <div className="boxes-address-row">
               <input
@@ -306,7 +335,11 @@ export default function Boxes() {
                 {busy ? 'Looking…' : 'Connect'}
               </button>
             </div>
-            <span className="hint">Its address, from the join poster</span>
+            <span className="hint">
+              {linked && normalizeOrigin(address) === linked.origin
+                ? 'From the link. Connect to open it.'
+                : 'Its address, from the join poster'}
+            </span>
           </form>
         )}
         {error && <div className="join-error">{error}</div>}

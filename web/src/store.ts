@@ -483,16 +483,23 @@ export interface AppState {
   retryConnection: () => void
   /**
    * Open another event this device holds, or the one found at this address.
-   * The page reloads to open it (see lib/eventScope.ts).
+   * The page reloads to open it (see lib/eventScope.ts). `pin` is an event
+   * PIN for its join form, from a crewbox://join link (lib/appLinks.ts).
    */
-  switchEvent: (id: string) => void
+  switchEvent: (id: string, pin?: string) => void
   /**
    * Go to the event a box at a typed address is running: the open one, moved
    * there; another this device holds; or a new one, to join. `key` replaces
    * the one kept for the event, when somebody opens a box that failed the
-   * check anyway.
+   * check anyway. `pin` goes to the join form, if that is where this lands.
    */
-  openEventAt: (event: { id: string; name: string; origin: string; key?: string }) => void
+  openEventAt: (event: {
+    id: string
+    name: string
+    origin: string
+    key?: string
+    pin?: string
+  }) => void
   /**
    * The open event's box is at another address now: go on there, in place.
    *
@@ -558,9 +565,13 @@ const here = boxOrigin
  * Not at the address the page is on: that is a channel or a document of the
  * event being left, which the next one does not have, so a sheet opened as
  * "Sheet not found" on a crew member who had done nothing but change boxes.
+ *
+ * An event PIN from a crewbox://join link rides along as the poster's QR
+ * carries it, `?pin=`, for the join form to fill in.
  */
-function reopenOnAnotherEvent(): void {
-  history.replaceState(null, '', routePath({ kind: 'home' }))
+function reopenOnAnotherEvent(pin?: string): void {
+  const search = pin ? `?pin=${encodeURIComponent(pin)}` : ''
+  history.replaceState(null, '', routePath({ kind: 'home' }) + search)
   location.reload()
 }
 
@@ -1988,16 +1999,16 @@ export const useStore = create<AppState>()((set, get) => {
       else startWs()
     },
 
-    switchEvent(id) {
+    switchEvent(id, pin) {
       // In the app the event's box is wherever it was last reached. A
       // browser is at its box's address and stays there.
       const origin = knownEvent(id)?.origin
       if (isNative() && origin) setServerOrigin(origin)
       chooseEvent(id)
-      reopenOnAnotherEvent()
+      reopenOnAnotherEvent(pin)
     },
 
-    openEventAt({ id, name, origin, key }) {
+    openEventAt({ id, name, origin, key, pin }) {
       // An address somebody typed, and checked first where this device holds
       // the event somewhere else (lib/identity.ts). A box that failed the
       // check comes here only when they opened it anyway, and the key it
@@ -2006,7 +2017,7 @@ export const useStore = create<AppState>()((set, get) => {
       // On a phone not told an event yet, the first it is told of has
       // today's names, whether by joining or from here.
       if (!acceptEvent(id)) {
-        get().switchEvent(id)
+        get().switchEvent(id, pin)
         return
       }
       if (origin !== here()) {
@@ -2018,6 +2029,9 @@ export const useStore = create<AppState>()((set, get) => {
           return
         }
         setServerOrigin(origin)
+        if (pin) {
+          history.replaceState(null, '', `${location.pathname}?pin=${encodeURIComponent(pin)}`)
+        }
         location.reload()
         return
       }

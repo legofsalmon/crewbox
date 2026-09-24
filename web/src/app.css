@@ -241,6 +241,13 @@ ul {
   text-decoration: underline;
 }
 
+/* In a phone's browser: the same form in the app, when the app is on the phone. */
+.join-app {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 /* In the apps: the join poster's QR fills in the address and event PIN. */
 .join-scan {
   display: flex;

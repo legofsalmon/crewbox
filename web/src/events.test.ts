@@ -635,6 +635,42 @@ describe('a box at an address typed into the Boxes screen', () => {
     expect(storageName('crewbox:token')).toBe('crewbox:token')
   })
 
+  it('carries the event PIN from a crewbox://join link to the new event’s join form', async () => {
+    inTheApp('http://10.0.0.2')
+    const store = await loadStore()
+    history.replaceState(null, '', '/m/patch/fridays-sheet')
+    store
+      .getState()
+      .openEventAt({ id: 'sunday', name: 'Quay Sessions', origin: 'http://10.0.0.9', pin: '48 21' })
+    expect(localStorage.getItem('crewbox:event')).toBe('sunday')
+    expect(reload).toHaveBeenCalledTimes(1)
+    // Where the poster's QR puts it, which is where the join form reads it.
+    expect(location.pathname).toBe('/')
+    expect(new URLSearchParams(location.search).get('pin')).toBe('48 21')
+  })
+
+  it('carries it to the join form of the open event’s box at its new address too', async () => {
+    inTheApp('http://10.0.0.2')
+    localStorage.removeItem('crewbox:token')
+    const store = await loadStore()
+    await store.getState().boot()
+    expect(store.getState().phase).toBe('join')
+    store
+      .getState()
+      .openEventAt({ id: 'friday', name: 'Harbour Fest', origin: 'http://10.0.0.9', pin: '4821' })
+    expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.9')
+    expect(new URLSearchParams(location.search).get('pin')).toBe('4821')
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('puts no PIN in the address when there is none to carry', async () => {
+    inTheApp('http://10.0.0.2')
+    const store = await loadStore()
+    store.getState().openEventAt({ id: 'sunday', name: 'Quay Sessions', origin: 'http://10.0.0.9' })
+    expect(location.search).toBe('')
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
   it('tries again, and goes nowhere, when it is the box this app already uses', async () => {
     inTheApp('http://10.0.0.2')
     const store = await loadStore()

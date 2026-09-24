@@ -21,6 +21,25 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- crewbox://join?server=…&pin=…, tapped in a message or on the join
+	     page in Safari: the join screen opens with the box and the event
+	     PIN filled in (web/src/lib/appLinks.ts). AppDelegate hands the link
+	     to Capacitor's App plugin. A scheme of the app's own rather than a
+	     universal link, which needs an https domain to verify, and a box on
+	     a crew network has none. Any app can claim a scheme and any page can
+	     send one, so the link only fills the form in: Join is still
+	     somebody's to press. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.colmhewson.crewbox</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>crewbox</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>

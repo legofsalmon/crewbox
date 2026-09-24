@@ -22,7 +22,8 @@ import MoveWorkOffer from './components/MoveWork.tsx'
 import { connectionScreen, elsewhereView, STUCK_AFTER_MS } from './lib/connscreen.ts'
 import { useBoxSearch } from './lib/discovery.ts'
 import { useFollowBoxes } from './lib/follow.ts'
-import { isNative, serverLabel } from './lib/server.ts'
+import { boxOrigin, isNative, serverLabel } from './lib/server.ts'
+import { clearJoinLink, currentJoinLink, subscribeJoinLink } from './lib/appLinks.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import FeedbackDialog from './components/FeedbackDialog.tsx'
@@ -37,11 +38,21 @@ export default function App() {
   const phase = useStore((s) => s.phase)
   const boot = useStore((s) => s.boot)
   const boxesOpen = useStore((s) => s.boxesOpen)
+  const link = useSyncExternalStore(subscribeJoinLink, currentJoinLink)
 
   useEffect(() => {
     void boot()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A crewbox://join link tapped while signed in (lib/appLinks.ts). This box
+  // needs nothing doing; another is for Your boxes, which takes it from here.
+  // At the join form the form takes it, and while booting it waits.
+  useEffect(() => {
+    if (!link || phase !== 'chat') return
+    if (link.origin === boxOrigin()) clearJoinLink()
+    else useStore.getState().setBoxesOpen(true)
+  }, [link, phase])
 
   // A file dropped anywhere without a listener makes the browser *open* it,
   // throwing away the running app — mid-shift, with unsent messages still in

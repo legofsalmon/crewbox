@@ -146,8 +146,10 @@ describe('in the native app', () => {
   const nativeApp = () => {
     const listeners: Record<string, (event: { canGoBack: boolean }) => void> = {}
     const app = {
-      addListener: vi.fn((event: string, listener: (event: { canGoBack: boolean }) => void) => {
-        listeners[event] = listener
+      // Each of the plugin's events has a listener of its own shape; this
+      // stand-in keeps them by name, and only the back button's is pressed.
+      addListener: vi.fn((event: string, listener: (event: never) => void) => {
+        listeners[event] = listener as (event: { canGoBack: boolean }) => void
         return { remove: async () => {} }
       }),
       minimizeApp: vi.fn(async () => {}),

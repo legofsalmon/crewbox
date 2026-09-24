@@ -1,5 +1,6 @@
 package com.colmhewson.crewbox;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Environment;
 
@@ -15,8 +16,26 @@ public class MainActivity extends BridgeActivity {
     registerPlugin(FilesPlugin.class);
     registerPlugin(DiscoveryPlugin.class);
     registerPlugin(ScannerPlugin.class);
+    forgetLinkFromRecents(getIntent());
     super.onCreate(savedInstanceState);
     forgetTakenPhotos();
+  }
+
+  /**
+   * A crewbox://join link is the page's once, when it is tapped.
+   *
+   * Android starts an activity from Recents, once it has let the process go,
+   * with the intent that started it, marked FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY.
+   * For an app a link started, that is the link, which Capacitor would hand
+   * the page as though it had just been tapped (appUrlOpen, which
+   * BridgeActivity fires for the starting intent, and getLaunchUrl): a link
+   * from the morning opening Your boxes in the afternoon. So it comes off the
+   * intent before Capacitor reads it.
+   */
+  private static void forgetLinkFromRecents(Intent intent) {
+    if (intent != null && (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
+      intent.setData(null);
+    }
   }
 
   /**

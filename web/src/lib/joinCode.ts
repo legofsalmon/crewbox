@@ -74,3 +74,74 @@ export function readJoinCode(text: string): JoinCode {
   if (pin.length > MAX_PIN) return { kind: 'other' }
   return { kind: 'join', origin: url.origin, pin }
 }
+
+/**
+ * An event PIN as the box takes one, 4 to 64 characters once trimmed
+ * (server/src/app.ts), with nothing in it a keyboard can't type; or null.
+ */
+function eventPin(value: string): string | null {
+  const pin = value.trim()
+  if (pin.length < 4 || pin.length > MAX_PIN || /\p{Cc}/u.test(pin)) return null
+  return pin
+}
+
+/**
+ * What a `crewbox://join` link says: the box's address as the Crew server
+ * field takes it, and the event PIN, as `crewbox://join?server=192.168.8.1&pin=4821`.
+ *
+ * A link is anybody's to send, as a QR is anybody's to print, so it is held
+ * to the same shape: a bare address, or nothing, and a PIN the box would take,
+ * or none. A link that doesn't fit is refused whole rather than tidied. The
+ * query is read here rather than by the web view's URL parser, which need not
+ * agree with other engines about an address with a scheme of its own.
+ */
+export function readJoinLink(link: string): Extract<JoinCode, { kind: 'join' | 'other' }> {
+  const match = /^crewbox:\/\/join\/?(?:\?([^#]*))?$/i.exec(link.trim())
+  if (!match) return { kind: 'other' }
+  const params = new URLSearchParams(match[1] ?? '')
+  const server = (params.get('server') ?? '').trim()
+  const pin = (params.get('pin') ?? '').trim()
+  if (!server || (pin && !eventPin(pin))) return { kind: 'other' }
+  // As the field takes it: with no scheme, plain HTTP, as on the poster.
+  let url: URL
+  try {
+    url = new URL(/^https?:\/\//i.test(server) ? server : `http://${server}`)
+  } catch {
+    return { kind: 'other' }
+  }
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    return { kind: 'other' }
+  }
+  return { kind: 'join', origin: url.origin, pin }
+}
+
+/**
+ * The crewbox://join link for a box and its event PIN, as readJoinLink reads
+ * it back: what a phone's join page offers to open the app with. The address
+ * is as the Crew server field takes it, bare for plain HTTP as on the poster.
+ */
+export function joinLink(origin: string, pin: string): string {
+  const url = new URL(origin)
+  const query = new URLSearchParams({ server: url.protocol === 'https:' ? url.origin : url.host })
+  // Only a PIN the box would take: half of one typed is left for the app's form.
+  const valid = eventPin(pin)
+  if (valid) query.set('pin', valid)
+  return `crewbox://join?${query}`
+}
+
+/** The Android app, as an `intent:` link names it: its applicationId (native/android). */
+const ANDROID_PACKAGE = 'com.colmhewson.crewbox'
+
+/**
+ * The same link as Chrome on Android takes it: an `intent:` URL naming the
+ * app, so a phone without the app goes to `fallback` rather than nowhere
+ * (developer.chrome.com/docs/android/intents). With the app, Chrome hands it
+ * `crewbox://join?…` as joinLink makes it.
+ */
+export function androidJoinLink(origin: string, pin: string, fallback: string): string {
+  const query = joinLink(origin, pin).slice('crewbox://join'.length)
+  return (
+    `intent://join${query}#Intent;scheme=crewbox;package=${ANDROID_PACKAGE};` +
+    `S.browser_fallback_url=${encodeURIComponent(fallback)};end`
+  )
+}

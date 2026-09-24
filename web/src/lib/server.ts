@@ -21,7 +21,14 @@ interface AlertsPlugin {
  */
 interface AppPlugin {
   addListener(event: 'backButton', listener: (event: { canGoBack: boolean }) => void): unknown
+  /**
+   * A link to the app, `crewbox://join` (lib/appLinks.ts): one tapped while it
+   * runs, and the one that started it, held until the page listens.
+   */
+  addListener(event: 'appUrlOpen', listener: (event: { url: string }) => void): unknown
   minimizeApp(): Promise<void>
+  /** Android: the link that started the app. An iPhone: the last link opened. */
+  getLaunchUrl?(): Promise<{ url: string } | undefined>
 }
 
 /** Android's side of voice (native/android VoicePlugin). */

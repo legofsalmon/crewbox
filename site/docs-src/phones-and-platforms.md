@@ -165,6 +165,21 @@ devices on your local network: the list needs a yes, and the field works
 either way. A browser can't look for boxes, so the join page there is
 unchanged.
 
+A `crewbox://join` link fills in the same two fields, and opens the app to
+do it: `crewbox://join?server=192.168.8.1&pin=4821`. Join is still yours to
+press. A link for another box, while the app is signed in to one, opens
+**Your boxes** with that box's address ready to **Connect**, and its join
+form then has the PIN. The app asks nothing of any box until you press one
+of those.
+
+On a phone, the join page in the browser offers **Open in the Crewbox app**:
+the same link, for that box and the PIN in its field. That is the way in from
+a message. Most messaging apps leave a `crewbox://` link as plain text but
+make a web address tappable, so send the address under the QR on `/connect`,
+which opens the join page. A phone without the app can't follow the link: an
+iPhone says Safari can't open the address, and an Android phone goes to the
+box's `/connect` page, which offers the app when the box has it.
+
 ## Desktop helpers
 
 - **macOS**: the box runs as a menu-bar item — event name, join link, copy

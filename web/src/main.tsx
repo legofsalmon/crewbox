@@ -8,8 +8,10 @@ import './app.css'
 import './lib/viewport.ts'
 import './shell/title.ts'
 import { installBackButton } from './shell/back.ts'
+import { installAppLinks } from './lib/appLinks.ts'
 
 installBackButton()
+installAppLinks()
 
 // The outermost net. The shell has its own around the main pane, so a module
 // that throws takes only itself down; this catches whatever is left.

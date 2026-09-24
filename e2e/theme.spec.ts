@@ -434,6 +434,23 @@ for (const scheme of ['light', 'dark'] as const) {
     }
   })
 
+  test(`the app link on a phone’s join page stays readable in ${scheme} theme`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: scheme,
+      userAgent:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 ' +
+        '(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      viewport: { width: 390, height: 844 },
+    })
+    const page = await context.newPage()
+    await page.goto('/?pin=4242')
+    await expect(page.getByRole('link', { name: 'Open in the Crewbox app' })).toBeVisible()
+    expect(await textContrast(page, '.join-app')).toBeGreaterThan(4.5)
+    await context.close()
+  })
+
   test(`the boxes on this Wi-Fi stay readable in ${scheme} theme`, async ({ browser }) => {
     // The iPhone app's join screen: the line asking before the first search,
     // then a box, one claiming the same event, and one nobody has set up.
