@@ -113,3 +113,38 @@ test('an env-configured box still shows the lighting fields it lets you change',
 
   await admin.context().close()
 })
+
+/**
+ * Whether the apps can find the box by themselves.
+ *
+ * A box run from source, as this one is, starts with it off. Turning it on
+ * and off again is one choice each, taking effect at once, and the line
+ * under it follows what the box reports. Left off at the end, so the rest
+ * of the suite puts nothing on the network.
+ */
+test('the panel says whether the apps can find the box, and turns it on and off', async ({
+  browser,
+}) => {
+  const admin = await newDevice(browser, 'Announce Admin')
+  await admin.getByRole('button', { name: 'Admin panel' }).click()
+  await admin.getByLabel('Admin password').fill('e2e-admin-password')
+  await admin.getByRole('button', { name: 'Unlock' }).click()
+  await expect(admin.getByRole('heading', { name: 'Crew' })).toBeVisible()
+
+  const choice = admin.getByLabel('Let the apps find this box on the crew network')
+  const off = admin.getByText('Off. Phones need the address or the QR code to find this box.')
+  await expect(choice).toHaveValue('off')
+  await expect(off).toBeVisible()
+
+  // Whatever this machine's networks make of it (announcing, or quiet with
+  // a reason), it is no longer off, and the box said so without a restart.
+  await choice.selectOption('auto')
+  await expect(off).toBeHidden()
+  await expect(choice).toHaveValue('auto')
+
+  await choice.selectOption('off')
+  await expect(off).toBeVisible()
+  await expect(admin.getByText('The box has stopped announcing itself')).toBeVisible()
+
+  await admin.context().close()
+})

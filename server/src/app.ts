@@ -42,6 +42,7 @@ import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
+import { ANNOUNCE_KEY, ANNOUNCE_SETTINGS, type AnnounceStatus } from './announce/index.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, BUNDLE_PAGE, type MetricsStore } from './audit/metrics.ts'
@@ -216,6 +217,8 @@ const settingsPatchSchema = z.object({
    * floor and is never shown to anyone who hasn't already unlocked.
    */
   adminPassword: z.string().min(8).max(128).optional(),
+  /** Whether the box announces itself on the crew network (server/src/announce). */
+  announce: z.enum(ANNOUNCE_SETTINGS).optional(),
 })
 
 /**
@@ -448,6 +451,18 @@ export interface AppDeps {
    * e2e fixture, none of which have one.
    */
   onSettingsChanged?: () => void
+  /**
+   * The box saying where it is on the crew network, so the apps can list it
+   * (server/src/announce). Omit and the panel says nothing about it, which
+   * is right for the unit tests, whose apps are not boxes on any network.
+   */
+  announce?: {
+    status: () => AnnounceStatus
+    /** Something it says changed; resolves once that has been acted on. */
+    refresh: () => Promise<void> | void
+    /** CREWBOX_ANNOUNCE decides it, so the panel cannot. */
+    settingFromEnv: boolean
+  }
   logger?: boolean
 }
 
@@ -501,6 +516,7 @@ export function buildApp({
   clock = () => new Date(),
   timeZone,
   onSettingsChanged = () => {},
+  announce,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -912,6 +928,9 @@ export function buildApp({
     effective: nextBootNetwork(),
     advertised: lanIps(effectiveIface())[0] ?? '',
     restartNeeded: networkRestartNeeded(),
+    // Whether phones can find the box without being told its address, and
+    // if not, why. Live: adapters come and go, and so does the answer.
+    ...(announce ? { announce: announce.status() } : {}),
   })
 
   /** Best routable IPv4 — the crew adapter when configured — for DNS entries. */
@@ -1128,6 +1147,8 @@ export function buildApp({
     // so before this the helper beside the box showed a blank name and the
     // random boot PIN for the entire event.
     onSettingsChanged()
+    // And where phones listing the box stop seeing "not set up yet".
+    void announce?.refresh()
     return reply.redirect('/connect')
   })
 
@@ -2468,11 +2489,23 @@ export function buildApp({
     }
   })
 
-  fastify.patch('/api/admin/settings', (req, reply) => {
+  fastify.patch('/api/admin/settings', async (req, reply) => {
     if (!authAdmin(req, reply)) return reply
     const parsed = settingsPatchSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    // Refused before anything is saved, the same as the admin password
+    // below: the panel does not offer it, so this was sent by hand, and
+    // saying "saved" while the environment goes on deciding would be a lie.
+    if (parsed.data.announce !== undefined && announce?.settingFromEnv) {
+      return reply.code(409).send({
+        error:
+          'This box takes its announcement setting from CREWBOX_ANNOUNCE in its service file. Change it there and restart, or unset it to choose here.',
+      })
+    }
+    if (parsed.data.announce !== undefined) {
+      store.setSetting(ANNOUNCE_KEY, parsed.data.announce)
     }
     if (parsed.data.eventName !== undefined) {
       store.setSetting('eventName', parsed.data.eventName)
@@ -2508,6 +2541,9 @@ export function buildApp({
     }
     hub.announceConfig()
     onSettingsChanged()
+    // A renamed event, or the setting itself: said on the network before the
+    // panel is told, so the status it shows is the new one.
+    await announce?.refresh()
     const config = publicConfig()
     return {
       settings: {

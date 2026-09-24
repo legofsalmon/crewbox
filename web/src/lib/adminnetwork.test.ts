@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { adapterMissing, listeningMode } from './adminnetwork.ts'
-import type { AdminNetwork } from './api.ts'
+import { adapterMissing, describeAnnounce, listeningMode } from './adminnetwork.ts'
+import type { AdminNetwork, AnnounceStatus } from './api.ts'
 
 const network = (over: Partial<AdminNetwork> = {}): AdminNetwork => ({
   adapters: [{ name: 'eth0', address: '192.168.1.50' }],
@@ -55,5 +55,33 @@ describe('an adapter the box cannot see', () => {
   it('is not reported for no selection at all', () => {
     // Blank is "all networks", which is a real answer and not a missing one.
     expect(adapterMissing([{ address: '192.168.1.50' }], '')).toBe(false)
+  })
+})
+
+describe('whether the apps can find the box', () => {
+  const status = (over: Partial<AnnounceStatus>): AnnounceStatus => ({
+    state: 'announcing',
+    setting: 'auto',
+    fromEnv: false,
+    ...over,
+  })
+
+  it('names what the apps list it as, and where', () => {
+    const line = describeAnnounce(
+      status({ name: 'Ashton Court 2026', address: '10.0.0.2', adapter: 'en0' })
+    )
+    expect(line).toMatch(/\u201cAshton Court 2026\u201d on 10\.0\.0\.2/)
+  })
+
+  it("passes on the box's reason for staying quiet, which only it knows", () => {
+    const reason = 'Quiet, because the lighting listener is on the crew network too.'
+    expect(describeAnnounce(status({ state: 'quiet', reason }))).toBe(reason)
+    expect(describeAnnounce(status({ state: 'failed', reason: 'Could not open it.' }))).toBe(
+      'Could not open it.'
+    )
+  })
+
+  it('says what off means for the crew', () => {
+    expect(describeAnnounce(status({ state: 'off', setting: 'off' }))).toMatch(/address or the QR/)
   })
 })

@@ -40,6 +40,18 @@ counts, no identifier. The reply is a version number and a link. Nothing is down
 admin asks for it, twice. `CREWBOX_UPDATE_CHECK=0` stops the box asking at
 all; see [Updating the box](/docs/updating).
 
+## What the box says on the crew network
+
+So the phone apps can find it, a box announces itself on the crew network
+the way a printer does (multicast DNS, often called Bonjour). Anyone on
+that network can hear it, and it says only what the join screen already
+shows anybody who reaches the box: the event's name, the box's version,
+whether it has been set up, the name on its certificate, and the event's
+ID, a random string that tells one event's box from another's. Never a
+PIN, a password or the Wi-Fi's. It is not announced on a lighting or media
+network the box listens to, and it never leaves the venue. An admin can
+turn it off under **Admin → This box**.
+
 ## What the network module listens to
 
 The [Network audit](/docs/network) grades networks by **passive

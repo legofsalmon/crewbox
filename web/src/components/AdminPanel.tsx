@@ -4,7 +4,7 @@ import { sessionToken, useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 import { deliveredNote, deliverFile, NO_DOWNLOADS } from '../lib/download.ts'
 import { adminError } from '../lib/adminerror.ts'
-import { adapterMissing, listeningMode } from '../lib/adminnetwork.ts'
+import { adapterMissing, describeAnnounce, listeningMode } from '../lib/adminnetwork.ts'
 import UpdateSection from './UpdateSection.tsx'
 
 const PIN_RE = /^\d{4,8}$/
@@ -367,7 +367,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
       setSaving(true)
       void api
         .adminUpdateSettings(auth(), patch)
-        .then(({ settings }) => {
+        .then(({ settings, network }) => {
           setEventName(settings.eventName)
           setSsid(settings.wifiSsid)
           setPin(settings.eventPin)
@@ -377,6 +377,9 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
                   ...d,
                   settings: { eventName: settings.eventName, wifiSsid: settings.wifiSsid },
                   serverInfo: { ...d.serverInfo, eventPin: settings.eventPin },
+                  // A renamed event is announced under its new name, and the
+                  // line under the setting should say so.
+                  ...(network ? { network } : {}),
                 }
               : d
           )
@@ -385,6 +388,19 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         .catch((err) => onNote(adminError(err, 'Save failed')))
         .finally(() => setSaving(false))
     }
+  }
+
+  /** Patch network settings, then show what the box now reports. */
+  function saveNetwork(patch: Parameters<typeof api.adminUpdateSettings>[1], note: string) {
+    setSaving(true)
+    void api
+      .adminUpdateSettings(auth(), patch)
+      .then(({ network: fresh }) => {
+        setData((d) => (d && fresh ? { ...d, network: fresh } : d))
+        onNote(note)
+      })
+      .catch((err) => onNote(adminError(err, 'Save failed')))
+      .finally(() => setSaving(false))
   }
 
   /**
@@ -468,21 +484,10 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         onSave={save({ wifiSsid: ssid.trim() }, 'Wi-Fi network saved')}
       />
       {data?.network && (
-        <NetworksSection
-          network={data.network}
-          saving={saving}
-          onSave={(patch, note) => {
-            setSaving(true)
-            void api
-              .adminUpdateSettings(auth(), patch)
-              .then(({ network: fresh }) => {
-                setData((d) => (d && fresh ? { ...d, network: fresh } : d))
-                onNote(note)
-              })
-              .catch((err) => onNote(adminError(err, 'Save failed')))
-              .finally(() => setSaving(false))
-          }}
-        />
+        <NetworksSection network={data.network} saving={saving} onSave={saveNetwork} />
+      )}
+      {data?.network.announce && (
+        <AnnounceSection status={data.network.announce} saving={saving} onSave={saveNetwork} />
       )}
       {info && <AdminPasswordField fromEnv={info.adminPasswordFromEnv} onNote={onNote} />}
       {/*
@@ -696,6 +701,54 @@ function NetworksSection({
         {saving ? 'Saving…' : 'Save networks'}
       </button>
     </form>
+  )
+}
+
+/**
+ * Whether the apps can find this box on the crew network by themselves.
+ *
+ * Its own control rather than a field of the Networks form: it takes effect
+ * the moment it changes, where the form's settings wait for a restart, and
+ * a note saying "restart to apply" beside it would be wrong.
+ */
+function AnnounceSection({
+  status,
+  saving,
+  onSave,
+}: {
+  status: api.AnnounceStatus
+  saving: boolean
+  onSave: (patch: Parameters<typeof api.adminUpdateSettings>[1], note: string) => void
+}) {
+  return (
+    <div className="admin-setting">
+      <label htmlFor="admin-announce">Let the apps find this box on the crew network</label>
+      {status.fromEnv ? (
+        <p className="admin-note">Set by CREWBOX_ANNOUNCE in the environment; change it there.</p>
+      ) : (
+        <select
+          id="admin-announce"
+          value={status.setting}
+          disabled={saving}
+          onChange={(e) => {
+            const announce = e.target.value as api.AnnounceSetting
+            onSave(
+              { announce },
+              announce === 'off'
+                ? 'The box has stopped announcing itself'
+                : 'Announcement setting saved'
+            )
+          }}
+        >
+          <option value="auto">Automatic: the crew network, never a show network</option>
+          <option value="on">Always, even where a show network shares it</option>
+          <option value="off">Never</option>
+        </select>
+      )}
+      <p className="admin-muted" role="status">
+        {describeAnnounce(status)}
+      </p>
+    </div>
   )
 }
 

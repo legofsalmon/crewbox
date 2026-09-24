@@ -1,9 +1,16 @@
 import { join } from 'node:path'
-import { HOME_CHANNEL } from '@crewbox/shared'
+import { HOME_CHANNEL, PROTOCOL_VERSION } from '@crewbox/shared'
 import { existsSync, mkdirSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
 import { config, dmxMode, warnOnDefaults } from './config.ts'
-import { attachWs, buildApp, mirrorOnLoopback } from './app.ts'
+import { SETUP_DONE_KEY, attachWs, buildApp, mirrorOnLoopback } from './app.ts'
+import {
+  ANNOUNCE_KEY,
+  Announcements,
+  parseAnnounceSetting,
+  type AnnounceSetting,
+  type Watcher,
+} from './announce/index.ts'
 import { DmxListener, parseUniverseList } from './dmx/listener.ts'
 import { NetWatch } from './netwatch/listener.ts'
 import { VideoService } from './video/service.ts'
@@ -437,6 +444,47 @@ async function main(): Promise<void> {
       })
     : undefined
 
+  // Saying where the box is, on the crew network only, so the apps can list
+  // it. Built here so the admin panel can report it; nothing is sent until
+  // start(), after listen(), because a box announced before it answers is a
+  // phone told to connect to nothing. See server/src/announce.
+  //
+  // The watchers are listed so the automatic setting can stay quiet on a
+  // crew network that is also a show network: crewbox never transmits on
+  // one of those (docs/NETWATCH.md). The LED wall counts only once it has an
+  // adapter, because without one it contacts nothing but the processors an
+  // admin armed, by address.
+  const watchers: Watcher[] = [
+    ...(dmx ? [{ what: 'lighting listener', iface: boot.dmxIface }] : []),
+    ...(netwatch ? [{ what: 'media watcher', iface: config.watch.interfaceIp ?? '' }] : []),
+    ...(video && config.video.interfaceIp
+      ? [{ what: 'LED wall scan', iface: config.video.interfaceIp }]
+      : []),
+  ]
+  const announceSetting = (): AnnounceSetting =>
+    config.announce ??
+    parseAnnounceSetting(store.getSetting(ANNOUNCE_KEY)) ??
+    (box ? 'auto' : 'off')
+  const announcements = new Announcements({
+    setting: announceSetting,
+    fromEnv: config.announce !== undefined,
+    crewIface: boot.iface,
+    watchers,
+    port: config.port,
+    // What the join screen already tells anyone before sign-in, and nothing
+    // more: never a PIN, a password or the Wi-Fi's.
+    details: () => ({
+      eventId: store.dbEpoch(),
+      eventName: store.getSetting('eventName') ?? '',
+      version: APP_VERSION,
+      protocol: PROTOCOL_VERSION,
+      setUp: store.getSetting(SETUP_DONE_KEY) === '1' || store.countUsers() > 0,
+      tls: Boolean(tls),
+      ...(certName ? { tlsName: certName } : {}),
+    }),
+    log: console,
+  })
+
   // How the updater lets go of the port and takes it back. Declared here so
   // the service below can close over them; assigned after listen(), because
   // before that there is nothing to close.
@@ -562,6 +610,11 @@ async function main(): Promise<void> {
     ...(video ? { video } : {}),
     ...(updates ? { updates } : {}),
     ...(tls ? { tls } : {}),
+    announce: {
+      status: () => announcements.status(),
+      refresh: () => announcements.refresh(),
+      settingFromEnv: config.announce !== undefined,
+    },
   })
   const hub = app.hub
 
@@ -669,6 +722,10 @@ async function main(): Promise<void> {
   // swapped and the box off the air with nothing to roll back to, so the wait
   // is bounded and a timeout is a failure the updater can act on.
   releaseListener = async () => {
+    // First, and with a goodbye: the box is about to stop answering, and a
+    // phone listing it should hear so now rather than when its records
+    // lapse. The new box announces itself when it is up; a rollback, below.
+    await announcements.stop()
     ws.terminateUpgraded()
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
@@ -700,6 +757,7 @@ async function main(): Promise<void> {
     })
     await openLoopback()
     if (captiveOpts) captive = await startCaptive(captiveOpts)
+    announcements.start()
     // Only when voice was this box's to run. `livekit.embedded` was decided
     // at boot and is what the app was built with, so starting an SFU it does
     // not know about would be worse than leaving voice off.
@@ -745,6 +803,11 @@ async function main(): Promise<void> {
         : `video: watching ${armed} LED processor${armed === 1 ? '' : 's'}`
     )
   }
+
+  // Last of the things that talk, so it announces a box that is answering.
+  // Never a reason for the box not to serve: a port it cannot open is a line
+  // in the admin panel and another try fifteen seconds later.
+  announcements.start()
 
   if (tlsReason) app.log.warn(`https: ${tlsReason} Serving plain HTTP.`)
   if (captive?.portal) {
@@ -831,6 +894,9 @@ async function main(): Promise<void> {
       // First, so a helper watching this file stops offering to open a box
       // that is on its way down.
       if (box) clearBoxStatus(dataDir)
+      // Before the sockets close, so the goodbye goes while the box can
+      // still say it.
+      await announcements.stop()
       // Same reason as the release path: app.close() waits for every open
       // connection, and a WebSocket is not something `closeAllConnections`
       // can reach. `hub.close()` below terminates the chat sockets, but the

@@ -12,6 +12,14 @@ listener's `receiveOnly` — `send` is removed from every socket before first
 use, and the test suite asserts it throws. Everything below is learned from
 traffic that multicasts to the whole network anyway.
 
+The box does multicast one thing, and it is not a watcher: it announces
+itself on the **crew** network so the phone apps can find it
+(`server/src/announce`, [DISCOVERY.md](DISCOVERY.md)). Its own socket, its own
+adapter, and in its automatic setting it stays quiet whenever a watcher is on
+the crew adapter or was left to the operating system's choice, since then the
+crew network may be this one. Only an admin choosing **Always** puts it on a
+network a watcher shares, and the panel names that choice for what it is.
+
 ## What it watches
 
 | Watcher | Where                      | What it learns                                                                                            |

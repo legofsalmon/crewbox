@@ -67,6 +67,16 @@ Below the list, the settings:
   restarts**, and a banner reminds you while saved settings differ from
   what the box started with. There's no restart button — stop and start
   the box ([how](/docs/run-the-box#day-to-day)).
+- **Let the apps find this box on the crew network** — the box announces
+  itself on the crew network the way printers and sound desks do (Bonjour),
+  so a phone app there can find it without being given the address.
+  **Automatic** announces on the crew network only, and stays quiet when a
+  lighting or media listener is on that network too, because the box does
+  not transmit on a show network unless told to. **Always** announces there
+  anyway, for a rig whose crew and show share one network on purpose, and
+  **Never** stops it. It takes effect at once, and the line underneath says
+  what the box is doing, or why it is quiet. A box run from source starts
+  with it off.
 - **Admin password** — changeable here; doing so locks every other device
   that had the panel open.
 

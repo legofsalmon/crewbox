@@ -163,8 +163,11 @@ defaults to every department module the build ships, and chat is always on),
 `CREWBOX_CAPTIVE` (`0` turns the connectivity-probe responder off; it is on
 for a packaged box and off when running from source) and
 `CREWBOX_CAPTIVE_PORT` (pins the responder's port; left unset it tries 80 and
-drops to 8880 when it may not have it) and `CREWBOX_TZ` (the festival's
-timezone as an IANA name, e.g. `Europe/London`).
+drops to 8880 when it may not have it), `CREWBOX_ANNOUNCE` (`auto`, `on` or
+`off`: whether the box announces itself on the crew network so the phone apps
+can find it; unset, the admin panel's choice stands, and a packaged box starts
+automatic and a source run off; see `docs/DISCOVERY.md`) and `CREWBOX_TZ` (the
+festival's timezone as an IANA name, e.g. `Europe/London`).
 Setting `LIVEKIT_URL` points voice at an SFU you run instead of the one
 inside the box.
 

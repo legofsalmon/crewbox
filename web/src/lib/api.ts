@@ -48,7 +48,28 @@ export interface AdminNetwork {
   advertised: string
   /** Saved settings differ from what this process booted with. */
   restartNeeded: boolean
+  /**
+   * Whether the apps can find this box on the crew network without being
+   * given its address. Optional so an older box still parses.
+   */
+  announce?: AnnounceStatus
 }
+
+/** The box announcing itself on the crew network (server/src/announce). */
+export interface AnnounceStatus {
+  state: 'announcing' | 'starting' | 'quiet' | 'off' | 'failed'
+  setting: AnnounceSetting
+  /** CREWBOX_ANNOUNCE decides it, so the panel cannot. */
+  fromEnv: boolean
+  /** Why it is quiet, off or failed, in words meant for the panel. */
+  reason?: string
+  address?: string
+  adapter?: string
+  /** The name the apps list it under. */
+  name?: string
+}
+
+export type AnnounceSetting = 'auto' | 'on' | 'off'
 
 export interface AdminSettings {
   settings: { eventName: string; wifiSsid: string }
@@ -321,6 +342,7 @@ export function adminUpdateSettings(
     dmxMode?: 'off' | 'artnet' | 'sacn' | 'both'
     dmxIface?: string
     dmxUniverses?: string
+    announce?: AnnounceSetting
   }
 ): Promise<{
   settings: { eventName: string; wifiSsid: string; eventPin: string }
