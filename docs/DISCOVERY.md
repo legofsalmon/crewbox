@@ -104,36 +104,65 @@ event.
 - `GET /api/identity?nonce=<challenge>` answers
   `{ "eventId", "key", "signature" }`. The challenge is 16 to 64 random bytes,
   base64url, fresh each time; anything else is a 400. The signature is ECDSA
-  with SHA-256 over the UTF-8 bytes of these three lines, with no line break
+  with SHA-256 over the UTF-8 bytes of these four lines, with no line break
   after the last:
 
   ```
   crewbox-identity-v1
   <eventId>
+  <host>
   <challenge>
   ```
 
-  in IEEE P1363 form (r, then s, 64 bytes), base64url, which is what
-  WebCrypto's `verify` takes.
+  `<host>` is the request's Host header in lower case: the address the app
+  connected to, as `new URL(origin).host` gives it, with the port unless it
+  is the scheme's default. The signature is in IEEE P1363 form (r, then s,
+  64 bytes), base64url, which is what WebCrypto's `verify` takes, with s in
+  the lower half of the group, so that a stricter verifier, one that takes
+  only that half, accepts it too.
 
-- **Check it against the key you kept, never against the one in the answer.**
-  Anything can send a key and a signature that agree with each other. A box
-  whose answer verifies against the key kept for that event holds that event's
-  database, and the app may follow the event to its address. One whose answer
-  doesn't, or that has no key, is another box however it announces itself: say
-  so and ask, as the app does for a box that has started afresh.
+- **Check it against the key you kept and the address you connected to,
+  never against the key in the answer.** Anything can send a key and a
+  signature that agree with each other. A box whose answer verifies against
+  the key kept for that event, over the address the app asked at, holds that
+  event's database and was reached there, and the app may follow the event to
+  that address. One whose answer doesn't, or that has no key, is another box
+  however it announces itself: say so and ask, as the app does for a box that
+  has started afresh.
+- **A box signs only for an address that is its own.** It answers 421
+  (Misdirected Request) instead of signing when the Host header is:
+  - an IP address other than the one the request arrived at,
+  - `localhost`, unless the request came over loopback from the box's own
+    machine, or
+  - any name, unless it is on the certificate the request was served with over
+    TLS. Over plain HTTP a name proves nothing, since whoever asks can put any
+    name in the header.
+
+  An app treats a 421 as a box it cannot check. A box reached through a port
+  forward, or by a name over plain HTTP (`crewbox.local`, typed), is one.
+
 - All of it is public and needs no sign-in, so an app checks a box before it
   sends it a token or anything of the event's.
 - An app holding an event from before its box had a key takes the key from
   that box the next time it connects at the address it already has, never
   from a box found somewhere else.
 
-What it does not do: on plain HTTP, something that sits in the middle of the
-connection can hand the challenge to the real box and its answer back. The
-signature proves that a box holding the key answered, not that nothing stands
-between; HTTPS (the `tls` key above) closes that. What it does stop is an app
-following its event to the wrong box: another event's, a stale address now
-used by something else, or anything announcing an ID it copied.
+Why the address is signed: without it, anything on the Wi-Fi could announce a
+phone's event at its own address, pass the phone's challenge on to the real
+box and the answer back, and stand between the phone and its box from then
+on. With it, the box won't sign for the relay's address, and an answer signed
+for the box's own address fails the check on a phone that connected to the
+relay.
+
+What it does not do: on plain HTTP, something on the path to the box's own
+address (by spoofing ARP or DHCP on the Wi-Fi, which a managed access point
+can refuse) can still pass challenges through, because the phone did connect
+to the box's address. The signature proves that a box holding the key
+answered at that address, not that nothing stands between; HTTPS (the `tls`
+key above) closes that. What it does stop is an app following its event to
+the wrong box: another event's, a stale address now used by something else,
+anything announcing an ID it copied, or a relay announcing the event at its
+own address.
 
 A box that predates this has no `eventKey` and answers `/api/identity` with a
 404; an app treats it as any box it cannot check.
@@ -278,11 +307,16 @@ join by address or QR as before.
   loop multicast back, and `CREWBOX_TEST_REQUIRE_MULTICAST=1` makes that a
   failure.
 - **The signature:** checked with WebCrypto (Node's, which implements the same
-  specification as the phones' web views) against the published key, and
-  refused for another event, another challenge or another box's key
-  (`server/test/identity.test.ts`). The same event ID and key come back from a
-  real `deploy/backup.sh` and `deploy/restore.sh`
-  (`server/test/backupRestore.test.ts`).
+  specification as the phones' web views) against the published key and the
+  address asked at, and refused for another event, another challenge, another
+  address or another box's key (`server/test/identity.test.ts`). The same
+  event ID and key come back from a real `deploy/backup.sh` and
+  `deploy/restore.sh` (`server/test/backupRestore.test.ts`).
+- **The address:** over real sockets, the box signs for the address a request
+  arrived at and refuses the asker's own address, loopback named from the
+  network, and names over plain HTTP, including its certificate's name on its
+  plain loopback mirror; over TLS it signs for its certificate's name and
+  refuses another (`server/test/identity.test.ts`).
 - **The apps' page:** what is listed and what is left out, the check when a
   box is picked, the iPhone's first tap and stopping when out of sight, in
   unit tests (`web/src/lib/discovery.test.ts`,

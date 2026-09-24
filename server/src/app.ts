@@ -43,7 +43,7 @@ import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
 import { ANNOUNCE_KEY, ANNOUNCE_SETTINGS, type AnnounceStatus } from './announce/index.ts'
-import { boxIdentity, NONCE_RE } from './identity.ts'
+import { boxIdentity, hostToSign, NONCE_RE } from './identity.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, BUNDLE_PAGE, type MetricsStore } from './audit/metrics.ts'
@@ -598,6 +598,9 @@ export function buildApp({
   // new address (identity.ts). Also minted at startup, so it is in the
   // database, and in the next backup, from the first boot that has it.
   const identity = boxIdentity(store, fastify.log)
+  // The names it answers for over TLS. A new certificate means a restart
+  // (deploy/cert-renew.sh), so they are read once.
+  const identityNames = tls ? certNames(tls.cert.toString()) : []
 
   /**
    * What the crew's own devices said about comms over the window a show moves
@@ -850,22 +853,40 @@ export function buildApp({
   fastify.get('/api/config', () => publicConfig())
 
   /**
-   * The box proving it is the event it says it is, by signing a phone's
-   * challenge with its key (identity.ts, docs/DISCOVERY.md).
+   * The box proving it is the event it says it is, at the address it was
+   * asked at, by signing a phone's challenge with its key (identity.ts,
+   * docs/DISCOVERY.md).
    *
    * Public, like /api/config, because a phone asks before it sends anything
    * to an address. The event's ID and key are in /api/config already, and
    * the signature is over a challenge the asker chose, which is no use to
    * anyone else: a phone's challenge is fresh every time. The key signs
    * nothing else, so answering whoever asks gives nothing away.
+   *
+   * The address is the raw Host header, never one a proxy forwarded
+   * (`req.host` is `X-Forwarded-Host` when trustProxy is on), checked
+   * against where the connection itself arrived.
    */
   fastify.get('/api/identity', (req, reply) => {
     const nonce = (req.query as { nonce?: unknown } | undefined)?.nonce
     if (typeof nonce !== 'string' || !NONCE_RE.test(nonce)) {
       return reply.code(400).send({ error: 'nonce must be 16 to 64 random bytes, base64url' })
     }
+    const asked = hostToSign(
+      req.headers.host,
+      {
+        localAddress: req.socket.localAddress,
+        tls: (req.socket as { encrypted?: boolean }).encrypted === true,
+      },
+      identityNames
+    )
+    if ('status' in asked) return reply.code(asked.status).send({ error: asked.error })
     const eventId = store.dbEpoch()
-    return { eventId, key: identity.publicKey, signature: identity.sign(eventId, nonce) }
+    return {
+      eventId,
+      key: identity.publicKey,
+      signature: identity.sign(eventId, asked.host, nonce),
+    }
   })
 
   // Any crewbox*.apk in the data directory, newest first — release assets
