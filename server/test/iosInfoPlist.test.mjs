@@ -62,21 +62,35 @@ describe('required device capabilities', () => {
 })
 
 describe('the oldest iOS the app installs on', () => {
+  const project = readFileSync(
+    join(import.meta.dirname, '..', '..', 'native/ios/App/App.xcodeproj/project.pbxproj'),
+    'utf8'
+  )
+
   it('is 17 in every build configuration', () => {
     // The native work planned for the app leans on iOS 16.1 to 16.4 —
     // Live Activities, the web audio session, push-to-talk woken by local
     // push — and a floor that differs between Debug and Release is how a
-    // feature tested on one build crashes the other. The Swift package in
-    // CapApp-SPM says 15: that is the lowest the package supports, not what
-    // the app targets, and the file belongs to the Capacitor CLI.
-    const project = readFileSync(
-      join(import.meta.dirname, '..', '..', 'native/ios/App/App.xcodeproj/project.pbxproj'),
-      'utf8'
-    )
+    // feature tested on one build crashes the other.
     const targets = [...project.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);/g)].map(
       (m) => m[1]
     )
     expect(targets.length).toBeGreaterThan(0)
     expect(new Set(targets)).toEqual(new Set(['17.0']))
+  })
+
+  it('is the one the Capacitor Swift package was last synced with', () => {
+    // `cap sync` copies the project's floor into CapApp-SPM/Package.swift:
+    // the major version of the first IPHONEOS_DEPLOYMENT_TARGET. Out of
+    // step, the next sync rewrites the file as an unexplained change in
+    // somebody else's diff, and a floor lowered without a sync stops the
+    // build, because a package cannot ask for a newer iOS than the app that
+    // links it.
+    const swiftPackage = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/CapApp-SPM/Package.swift'),
+      'utf8'
+    )
+    const floor = /IPHONEOS_DEPLOYMENT_TARGET = (\d+)/.exec(project)?.[1]
+    expect(swiftPackage).toContain(`platforms: [.iOS(.v${floor})]`)
   })
 })
