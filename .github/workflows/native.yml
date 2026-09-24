@@ -35,7 +35,9 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run build:native
-      - run: ./gradlew assembleDebug
+      # The app's JVM tests too (app/src/test): reading a QR from a camera
+      # frame is plain Java, and can be checked without a phone.
+      - run: ./gradlew assembleDebug testDebugUnitTest
         working-directory: native/android
       # Same check the release runs, here so a manifest change is caught by
       # the workflow that a manifest change triggers.

@@ -19,11 +19,14 @@ the spot — there are no accounts to create in advance and no email involved.
 1. Join the event Wi-Fi named on the poster (if your phone isn't on it
    already).
 2. Scan the QR code — it's on the join poster, on the box's screen, or on
-   the `/connect` page someone may have sent you. In the phone app you can
-   skip the scan: the join screen lists the boxes on this Wi-Fi under **On
-   this Wi-Fi**, and tapping **Pick** beside your event fills in its
-   address. On an iPhone, tap **Find boxes** the first time, and allow
-   Crewbox to find devices on your local network when the iPhone asks.
+   the `/connect` page someone may have sent you. In the phone app, scan it
+   from the app: tap **Scan the join poster** and point the camera at the
+   QR, and the app fills in the box's address and the event PIN. The
+   phone's own camera would open the QR in the browser instead. Or skip the
+   scan: the join screen lists the boxes on this Wi-Fi under **On this
+   Wi-Fi**, and tapping **Pick** beside your event fills in its address. On
+   an iPhone, tap **Find boxes** the first time, and allow Crewbox to find
+   devices on your local network when the iPhone asks.
 
 3. You'll land on the join screen. Fill in:
 
@@ -124,6 +127,18 @@ The app tells you what it's doing rather than spinning forever:
 - **"This iPhone doesn't let Crewbox look on the local network"** — Local
   Network is off for Crewbox. Tap **Open Settings** and switch it on, or
   type the address from the join poster, which works without it.
+- **"That code is for the Wi-Fi, …"** — in the phone apps, the scanner read
+  the Wi-Fi poster's QR, which is often on the same wall. Join that network
+  with the phone's own camera or its Wi-Fi settings, then scan the crew
+  code.
+- **"That isn't the crew code"** — the scanner read a QR that isn't a box's
+  join code. Scan the one on the join poster, or type the address printed
+  under it.
+- **"Crewbox isn't allowed to use the camera"** — the camera is off for
+  Crewbox. Tap **Open Settings** and allow it, or type the address from the
+  join poster.
+- **"This phone can't scan codes"** — the phone has no camera the scanner
+  can use. Type the address from the join poster.
 - **"An iPhone only connects to a name like … over HTTPS"** — in the iPhone
   app, you typed the box's name without `https://`. Type `https://` before
   it if the box has a certificate, or use the box's IP address from the join

@@ -17,6 +17,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		EE6D74E3BE8FDE2432AB7E75 /* DiscoveryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61600C20A3EB9382D2F1D291 /* DiscoveryPlugin.swift */; };
 		569EDF662508A6B8EA951655 /* CrewboxViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386E0BC8F259215C8A2F5A64 /* CrewboxViewController.swift */; };
+		16B29860B1A886C16D1C9A04 /* ScannerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C99AFBD9FF80EB07BD9CDE /* ScannerPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		61600C20A3EB9382D2F1D291 /* DiscoveryPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryPlugin.swift; sourceTree = "<group>"; };
 		386E0BC8F259215C8A2F5A64 /* CrewboxViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrewboxViewController.swift; sourceTree = "<group>"; };
+		02C99AFBD9FF80EB07BD9CDE /* ScannerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +72,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				61600C20A3EB9382D2F1D291 /* DiscoveryPlugin.swift */,
 				386E0BC8F259215C8A2F5A64 /* CrewboxViewController.swift */,
+				02C99AFBD9FF80EB07BD9CDE /* ScannerPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -164,6 +167,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				EE6D74E3BE8FDE2432AB7E75 /* DiscoveryPlugin.swift in Sources */,
 				569EDF662508A6B8EA951655 /* CrewboxViewController.swift in Sources */,
+				16B29860B1A886C16D1C9A04 /* ScannerPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

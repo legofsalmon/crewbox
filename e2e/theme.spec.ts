@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { textContrast } from './contrast.ts'
-import { addAct, appWithDiscovery, test } from './helpers'
+import { addAct, appWithDiscovery, scanWillGive, test } from './helpers'
 
 /**
  * Contrast guards for both themes.
@@ -412,6 +412,28 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 for (const scheme of ['light', 'dark'] as const) {
+  test(`scanning the join poster stays readable in ${scheme} theme`, async ({ browser }) => {
+    const page = await appWithDiscovery(browser, 'android', [], { colorScheme: scheme })
+    await page.goto('/')
+    await scanWillGive(
+      page,
+      { result: 'scanned', text: 'http://127.0.0.1:4299/?pin=4242' },
+      { result: 'denied' }
+    )
+    const scan = page.getByRole('button', { name: 'Scan the join poster' })
+    expect(await textContrast(page, '.join-scan > .admin-btn')).toBeGreaterThan(4.5)
+
+    await scan.click()
+    await expect(page.locator('.join-scan-note')).toBeVisible()
+    expect(await textContrast(page, '.join-scan-note')).toBeGreaterThan(4.5)
+
+    await scan.click()
+    await expect(page.locator('.join-settings')).toBeVisible()
+    for (const part of ['.join-error', '.join-settings']) {
+      expect(await textContrast(page, part), part).toBeGreaterThan(4.5)
+    }
+  })
+
   test(`the boxes on this Wi-Fi stay readable in ${scheme} theme`, async ({ browser }) => {
     // The iPhone app's join screen: the line asking before the first search,
     // then a box, one claiming the same event, and one nobody has set up.

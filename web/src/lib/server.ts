@@ -100,6 +100,32 @@ export interface FilesPlugin {
   share(file: FilePayload): Promise<void>
 }
 
+/** What the scanner came back with. */
+export type ScanOutcome =
+  | { result: 'scanned'; text: string }
+  /** Backed out of, with nothing read. */
+  | { result: 'cancelled' }
+  /** The camera isn't allowed for the app. `openSettings` is the way back. */
+  | { result: 'denied' }
+  /**
+   * This phone can't scan: no camera, a camera switched off by a profile or
+   * policy, or on an iPhone, a chip older than the A12.
+   */
+  | { result: 'unavailable' }
+
+/**
+ * Both apps' QR scanner (native ScannerPlugin): VisionKit's data scanner on
+ * the iPhone, and on Android CameraX for the picture with ZXing to read it.
+ * Both read on the phone with no network, and hand back the first QR code's
+ * text as it is.
+ */
+export interface ScannerPlugin {
+  /** Opens the camera until a QR code is read or the crew member backs out. */
+  scan(): Promise<ScanOutcome>
+  /** The app's page in the phone's settings, where the camera is allowed. */
+  openSettings(): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -113,6 +139,7 @@ declare global {
         SystemBars?: SystemBarsPlugin
         CrewboxFiles?: FilesPlugin
         CrewboxDiscovery?: DiscoveryPlugin
+        CrewboxScanner?: ScannerPlugin
       }
     }
   }
@@ -166,6 +193,11 @@ export function nativeFiles(): FilesPlugin | undefined {
 /** The apps' search for boxes on the Wi-Fi, when present (native builds only). */
 export function nativeDiscovery(): DiscoveryPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxDiscovery
+}
+
+/** The apps' QR scanner, when present (native builds only). */
+export function nativeScanner(): ScannerPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxScanner
 }
 
 /**

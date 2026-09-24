@@ -73,10 +73,18 @@ export interface FoundService {
   txt: Record<string, string>
 }
 
+/** What the apps' scanner hands the page: `ScanOutcome` in web/src/lib/server.ts. */
+export type ScanOutcome =
+  | { result: 'scanned'; text: string }
+  | { result: 'cancelled' }
+  | { result: 'denied' }
+  | { result: 'unavailable' }
+
 /**
- * One of the phone apps, with its search for boxes (DiscoveryPlugin) stood in
- * for: each start "finds" `boxes`, what it was asked is kept for
- * `discoveryCalls`, and `announce` changes what it has found.
+ * One of the phone apps, with its search for boxes (DiscoveryPlugin) and its
+ * QR scanner (ScannerPlugin) stood in for. Each start "finds" `boxes`, what it
+ * was asked is kept for `discoveryCalls`, and `announce` changes what it has
+ * found. Each scan hands back what `scanWillGive` queued, or is backed out of.
  */
 export const appWithDiscovery = async (
   browser: Browser,
@@ -96,6 +104,10 @@ export const appWithDiscovery = async (
       let found = boxes
       const w = window as unknown as Record<string, unknown>
       w.__discovery = calls
+      const scans: unknown[] = []
+      const scanner: string[] = []
+      w.__scans = scans
+      w.__scanner = scanner
       w.__announce = (next: typeof boxes) => {
         found = next
         emit('boxes', { boxes: found })
@@ -127,6 +139,15 @@ export const appWithDiscovery = async (
               }
             },
           },
+          CrewboxScanner: {
+            scan: async () => {
+              scanner.push('scan')
+              return scans.shift() ?? { result: 'cancelled' }
+            },
+            openSettings: async () => {
+              scanner.push('openSettings')
+            },
+          },
         },
       }
     },
@@ -149,6 +170,17 @@ export const announce = (page: Page, boxes: FoundService[]) =>
 /** What the stood-in search has been asked to do, in order. */
 export const discoveryCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as { __discovery: string[] }).__discovery)
+
+/** What the stood-in scanner hands back, one outcome per scan, on the page as loaded. */
+export const scanWillGive = (page: Page, ...outcomes: ScanOutcome[]) =>
+  page.evaluate(
+    (outcomes) => (window as unknown as { __scans: unknown[] }).__scans.push(...outcomes),
+    outcomes
+  )
+
+/** What the stood-in scanner has been asked to do, in order. */
+export const scannerCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __scanner: string[] }).__scanner)
 
 /** Open the patch module's sheet selector from the sidebar. */
 export const openPatch = async (page: Page) => {

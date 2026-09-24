@@ -241,6 +241,31 @@ ul {
   text-decoration: underline;
 }
 
+/* In the apps: the join poster's QR fills in the address and event PIN. */
+.join-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.join-scan > .admin-btn {
+  height: 44px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.join-scan-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.join-settings {
+  align-self: flex-start;
+  height: 36px;
+}
+
 .join-error {
   background: rgba(239, 106, 90, 0.12);
   border: 1px solid rgba(239, 106, 90, 0.4);

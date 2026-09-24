@@ -9,5 +9,6 @@ import UIKit
 class CrewboxViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(DiscoveryPlugin())
+        bridge?.registerPluginInstance(ScannerPlugin())
     }
 }

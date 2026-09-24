@@ -5,13 +5,16 @@ import { knownEvents, openEvent, subscribeKnownEvents } from '../lib/eventScope.
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { displayName, effectiveSsid } from '../lib/settings.ts'
+import { readJoinCode } from '../lib/joinCode.ts'
 import {
   iphoneRefusesPlainHttp,
   isIosApp,
   isNative,
+  nativeScanner,
   normalizeOrigin,
   serverOrigin,
   setServerOrigin,
+  type ScanOutcome,
 } from '../lib/server.ts'
 import type { PickedBox } from '../lib/boxes.ts'
 import { NearbyBoxes } from './NearbyBoxes.tsx'
@@ -29,6 +32,37 @@ function initialServer(): string {
 /** The QR on the poster/connect page carries ?pin= so crew never type it. */
 function initialEventPin(): string {
   return new URLSearchParams(location.search).get('pin') ?? ''
+}
+
+/**
+ * Said now, rather than after a timeout as "can't reach the server": the
+ * iPhone app would refuse the address without trying it.
+ */
+function iphoneRefusal(origin: string): string | null {
+  if (!isIosApp() || !iphoneRefusesPlainHttp(origin)) return null
+  return (
+    `An iPhone only connects to a name like ${new URL(origin).hostname} over HTTPS. ` +
+    'Type https:// before it if the box has a certificate, or use the box’s IP address, like 192.168.8.1.'
+  )
+}
+
+/** Why a scan filled nothing in, or null when there is nothing to say. */
+function scanTrouble(outcome: ScanOutcome | { result: 'failed' }): string | null {
+  switch (outcome.result) {
+    case 'scanned':
+    case 'cancelled':
+      return null
+    case 'denied':
+      return isIosApp()
+        ? 'Crewbox isn’t allowed to use the camera. Switch on Camera for Crewbox in Settings, ' +
+            'or type the address from the join poster.'
+        : 'Crewbox isn’t allowed to use the camera. Allow it in Settings, or type the address ' +
+            'from the join poster.'
+    case 'unavailable':
+      return 'This phone can’t scan codes. Type the address from the join poster.'
+    case 'failed':
+      return 'The camera didn’t start. Try again, or type the address from the join poster.'
+  }
 }
 
 export default function Join() {
@@ -51,31 +85,85 @@ export default function Join() {
   const found = useMemo(() => nearby(search.services, events), [search.services, events])
   const [picked, setPicked] = useState<string>()
   const nameField = useRef<HTMLInputElement>(null)
+  // In the apps, the join poster's QR fills in the address and the event PIN.
+  const scanner = showServer ? nativeScanner() : undefined
+  const [scanning, setScanning] = useState(false)
+  const [scanned, setScanned] = useState<string | null>(null)
+  const [cameraDenied, setCameraDenied] = useState(false)
 
   function onPick(box: PickedBox) {
     // As a poster prints it where that is enough; a name only works over HTTPS.
     setServer(box.origin.startsWith('https:') ? box.origin : addressOf(box.origin))
     setPicked(box.origin)
     setError(null)
+    setScanned(null)
+    setCameraDenied(false)
+    if (!name) nameField.current?.focus()
+  }
+
+  async function onScan() {
+    if (!scanner) return
+    setError(null)
+    setScanned(null)
+    setCameraDenied(false)
+    setScanning(true)
+    let outcome: ScanOutcome | { result: 'failed' }
+    try {
+      outcome = await scanner.scan()
+    } catch {
+      outcome = { result: 'failed' }
+    } finally {
+      setScanning(false)
+    }
+    if (outcome.result !== 'scanned') {
+      setError(scanTrouble(outcome))
+      setCameraDenied(outcome.result === 'denied')
+      return
+    }
+    const code = readJoinCode(outcome.text)
+    if (code.kind === 'wifi') {
+      setError(
+        `That code is for the Wi-Fi${code.ssid ? `, ${code.ssid}` : ''}. Join it with this ` +
+          'phone’s camera or its Wi-Fi settings, then scan the crew code on the join poster.'
+      )
+      return
+    }
+    if (code.kind === 'other') {
+      setError(
+        'That isn’t the crew code. Scan the QR on the join poster, or type the address under it.'
+      )
+      return
+    }
+    // As a poster prints it where that is enough; a name only works over HTTPS.
+    setServer(code.origin.startsWith('https:') ? code.origin : addressOf(code.origin))
+    setPicked(code.origin)
+    if (code.pin) setEventPin(code.pin)
+    const refusal = iphoneRefusal(code.origin)
+    if (refusal) {
+      setError(refusal)
+      return
+    }
+    setScanned(
+      code.pin
+        ? `Filled in ${addressOf(code.origin)} and the event PIN from the poster.`
+        : `Filled in ${addressOf(code.origin)}. The event PIN is on the poster.`
+    )
     if (!name) nameField.current?.focus()
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    setCameraDenied(false)
     if (showServer) {
       const origin = normalizeOrigin(server)
       if (!origin) {
         setError('Enter the crew server address (it’s on the join poster)')
         return
       }
-      // Said now, rather than after a timeout as "can't reach the server":
-      // the phone would refuse the address without trying it.
-      if (isIosApp() && iphoneRefusesPlainHttp(origin)) {
-        setError(
-          `An iPhone only connects to a name like ${new URL(origin).hostname} over HTTPS. ` +
-            'Type https:// before it if the box has a certificate, or use the box’s IP address, like 192.168.8.1.'
-        )
+      const refusal = iphoneRefusal(origin)
+      if (refusal) {
+        setError(refusal)
         return
       }
       setServerOrigin(server)
@@ -128,6 +216,23 @@ export default function Join() {
             disabled={busy}
             onPick={onPick}
           />
+        )}
+        {scanner && (
+          <div className="join-scan">
+            <button
+              type="button"
+              className="admin-btn"
+              disabled={busy || scanning}
+              onClick={() => void onScan()}
+            >
+              {scanning ? 'Scanning…' : 'Scan the join poster'}
+            </button>
+            {scanned && (
+              <p className="join-scan-note" role="status">
+                {scanned}
+              </p>
+            )}
+          </div>
         )}
         {showServer && (
           <label>
@@ -184,6 +289,15 @@ export default function Join() {
         </label>
 
         {error && <div className="join-error">{error}</div>}
+        {cameraDenied && (
+          <button
+            type="button"
+            className="admin-btn join-settings"
+            onClick={() => void scanner?.openSettings().catch(() => {})}
+          >
+            Open Settings
+          </button>
+        )}
 
         <button type="submit" disabled={busy}>
           {busy ? 'Joining…' : 'Join'}

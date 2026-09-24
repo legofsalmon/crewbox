@@ -55,6 +55,11 @@ box's data directory and `/connect` offers it
 notification permission and to be excused from battery optimisation — say
 yes to both, that's the superpower asking.
 
+Scanning the join poster asks to use the camera the first time, and **Take
+a photo** in the attach menu needs the same yes. Say no and both stop: the
+scan says so, and the photo option quietly does nothing. Allow it again
+under Settings → Apps → Crewbox → Permissions → Camera.
+
 Sideloading means Android warns about "unknown apps" once; that's the
 price of installing from your own box instead of a store.
 
@@ -142,9 +147,12 @@ connection error.
 
 Both phone apps show one extra field on the join screen — **Crew server** —
 because unlike a browser, the app doesn't know which box it belongs to.
-It's on the join poster, or baked into the QR so scanning fills it in. On an
-iPhone, a name there needs `https://` in front; an IP address doesn't
-([why](#the-ios-app)).
+It's on the join poster, and **Scan the join poster** reads the poster's QR
+with the phone's camera and fills in the field and the event PIN. The phone
+asks whether Crewbox may use the camera the first time. The scan happens on
+the phone, which sends what it read nowhere, and a QR that isn't a box's
+join code fills in nothing. On an iPhone, a name in the field needs
+`https://` in front; an IP address doesn't ([why](#the-ios-app)).
 
 Above the field, the apps list the boxes on this Wi-Fi, which announce
 themselves ([Admin → This box](/docs/admin)), and picking one fills the field

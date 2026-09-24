@@ -37,7 +37,9 @@ import { pathToFileURL } from 'node:url'
  * the two FOREGROUND_SERVICE permissions for the alerts service to survive a
  * 14-hour show day, CHANGE_WIFI_MULTICAST_STATE for finding the box on the
  * Wi-Fi on phones that hear mDNS only while an app holds a multicast lock
- * (Android 12 and older, and 13 before its T extensions 7 update).
+ * (Android 12 and older, and 13 before its T extensions 7 update), CAMERA for
+ * scanning the join poster, which the app does itself (ScannerActivity), and
+ * which "Take a photo" then needs as well.
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
@@ -50,6 +52,7 @@ export const REQUIRED = [
   'android.permission.FOREGROUND_SERVICE',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.CHANGE_WIFI_MULTICAST_STATE',
+  'android.permission.CAMERA',
 ]
 
 /**

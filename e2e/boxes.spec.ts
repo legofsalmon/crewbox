@@ -122,7 +122,8 @@ async function joinBox(page: Page, address: string, name: string, pin: string) {
   await page.getByLabel('Your name').fill(name)
   await page.getByLabel('Event PIN').fill(pin)
   await page.getByLabel('Your PIN').fill('1234')
-  await page.getByRole('button', { name: 'Join' }).click()
+  // Exactly: the apps' join screen also has "Scan the join poster".
+  await page.getByRole('button', { name: 'Join', exact: true }).click()
   await expect(page.getByPlaceholder(/Message/)).toBeVisible()
 }
 

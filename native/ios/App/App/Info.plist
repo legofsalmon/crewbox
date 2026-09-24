@@ -34,13 +34,15 @@
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Crewbox uses the microphone for push-to-talk crew voice.</string>
-	<!-- The web view's file picker offers Take Photo or Video wherever a file
-	     input takes images: the composer's attach button, lineup attachments.
-	     iOS terminates an app that opens the camera without this string, so
-	     without it a menu item crew use every day closed the app. Video from
-	     that picker records sound too, which the microphone string covers. -->
+	<!-- The join screen's Scan the join poster reads the poster's QR with the
+	     camera (ScannerPlugin.swift). The web view's file picker offers Take
+	     Photo or Video wherever a file input takes images: the composer's
+	     attach button, lineup attachments. iOS terminates an app that opens
+	     the camera without this string, so without it a menu item crew use
+	     every day closed the app. Video from that picker records sound too,
+	     which the microphone string covers. -->
 	<key>NSCameraUsageDescription</key>
-	<string>Crewbox uses the camera when you take a photo or video to share with your crew.</string>
+	<string>Crewbox uses the camera to scan the join poster, and when you take a photo or video to share with your crew.</string>
 	<!-- Long-pressing an image in the web view offers to save it to Photos,
 	     which needs add-only access, and is the same terminate-on-use if this
 	     is missing. Choosing a photo to send needs no string: the photo

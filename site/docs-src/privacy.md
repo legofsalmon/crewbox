@@ -40,6 +40,11 @@ voice server run elsewhere hands phones its own list of servers to ask, and
 a LiveKit server given no list of its own sends each phone joining voice to
 Google's and Twilio's public STUN servers to learn its internet address.
 
+Scanning the join poster in the apps reads the QR code on the phone, and
+neither the picture nor what it read goes anywhere. The iPhone app uses
+Apple's own scanner, and the Android app the open-source ZXing, rather than
+Google's ML Kit, which reports its use to Google.
+
 The box needs no internet and works the same without it. When it does have
 internet it makes the few requests below, and nothing else. If the operator
 sets up a remote support tunnel, connections through it are marked — that's

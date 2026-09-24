@@ -43,6 +43,13 @@
                 android:value="Continuous crew-communications link to an offline event-site server: message alerts must arrive for the full length of a 14+ hour show day." />
         </service>
 
+        <!-- Scan the join poster: the camera, full screen, until it reads the
+             QR. Only this app starts it (ScannerPlugin). -->
+        <activity
+            android:name=".ScannerActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -124,13 +131,34 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!--
-        The camera, for "Take a photo" in the attach menu. Capacitor's web
-        view looks for a camera app before it opens one, and since Android 11
-        an app only sees the other apps it has declared an interest in.
-        Without this the look comes back empty on some phones (a Pixel 7a on
-        Android 14 is on record, in Capacitor issue 7411) and the camera
-        option opens the file picker instead. Not a permission: nothing on
-        the install screen, and no CAMERA, which the camera app holds itself.
+        The camera, for scanning the join poster (ScannerPlugin): the app
+        shows the picture and reads the QR itself, which needs CAMERA. A
+        runtime permission, asked for the first time somebody scans.
+
+        It changes "Take a photo" in the attach menu, which opens the camera
+        app and needed no permission of its own: with CAMERA declared,
+        Android refuses that to an app that has not been granted it, so
+        Capacitor's web view asks for CAMERA first. Whoever says yes to one
+        has said yes to both.
+
+        No camera is required: a phone without one installs the app and
+        types the poster's address, and the scanner uses a camera on the
+        screen side when there is no other. A store reads CAMERA as needing
+        a back camera with autofocus unless told otherwise, and would hide
+        the app from phones and tablets without one, so both are said here.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!--
+        "Take a photo" in the attach menu. Capacitor's web view looks for a
+        camera app before it opens one, and since Android 11 an app only sees
+        the other apps it has declared an interest in. Without this the look
+        comes back empty on some phones (a Pixel 7a on Android 14 is on
+        record, in Capacitor issue 7411) and the camera option opens the file
+        picker instead. Not a permission: nothing on the install screen.
     -->
     <queries>
         <intent>

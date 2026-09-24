@@ -29,7 +29,8 @@ function stringFor(key) {
 
 describe('iPhone purpose strings', () => {
   it.each([
-    // Take Photo or Video in the web view's file picker.
+    // Scanning the join poster, and Take Photo or Video in the web view's
+    // file picker.
     'NSCameraUsageDescription',
     // Save to Photos from a long press on an image.
     'NSPhotoLibraryAddUsageDescription',
@@ -86,6 +87,29 @@ describe('finding boxes on the Wi-Fi', () => {
     for (const file of ['DiscoveryPlugin.swift', 'CrewboxViewController.swift']) {
       expect(project).toContain(`/* ${file} in Sources */,`)
     }
+  })
+})
+
+describe('scanning the join poster', () => {
+  it('registers the scanner beside the search, and builds it', () => {
+    // Without it the join screen offers no scan, which reads as a feature
+    // the iPhone app doesn't have rather than one that went missing.
+    const controller = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App/CrewboxViewController.swift'),
+      'utf8'
+    )
+    expect(controller).toContain('bridge?.registerPluginInstance(ScannerPlugin())')
+    const project = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App.xcodeproj/project.pbxproj'),
+      'utf8'
+    )
+    expect(project).toContain('/* ScannerPlugin.swift in Sources */,')
+    // Under the name the page looks for (nativeScanner in web/src/lib/server.ts).
+    const plugin = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App/ScannerPlugin.swift'),
+      'utf8'
+    )
+    expect(plugin).toContain('public let jsName = "CrewboxScanner"')
   })
 })
 

@@ -99,6 +99,7 @@ describe('judging what the APK holds', () => {
     const built = [
       'android.permission.BLUETOOTH',
       'android.permission.BLUETOOTH_CONNECT',
+      'android.permission.CAMERA',
       'android.permission.CHANGE_WIFI_MULTICAST_STATE',
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
