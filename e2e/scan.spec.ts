@@ -17,8 +17,10 @@ import {
  * each) and are stood in for: a scan hands back the text a phone would read.
  * That text is the box's own. Its /connect page is the poster, and the QR on
  * it says what the link under it says, so a change to what the box prints
- * that the apps would not take fails here. Joining a network from a Wi-Fi
- * code is the phone's too (WifiPlugin), and stood in for the same way.
+ * that the apps would not take fails here. The poster names the event and its
+ * key, so every join from it here is checked against the box first, as on
+ * site. Joining a network from a Wi-Fi code is the phone's too (WifiPlugin),
+ * and stood in for the same way.
  */
 
 const BOX = 'http://localhost:4299'
@@ -64,6 +66,44 @@ test('the Android app fills in the box and event PIN from the join poster', asyn
   await page.getByRole('button', { name: 'Join', exact: true }).tap()
   await expect(page.getByPlaceholder(/Message/)).toBeVisible()
   expect(await scannerCalls(page)).toEqual(['scan'])
+})
+
+/** A P-256 public key as a box gives one, and not this box's. */
+async function anotherKey(): Promise<string> {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ])
+  return Buffer.from(await crypto.subtle.exportKey('raw', pair.publicKey)).toString('base64url')
+}
+
+test('the Android app sends nothing to a box that isn’t the one on the poster', async ({
+  browser,
+}) => {
+  const page = await appWithDiscovery(browser, 'android', [])
+  await page.goto('/')
+  // This box's poster, with another box's key: what a phone on the wrong
+  // Wi-Fi meets, where something else has the poster's address.
+  const code = new URL(await posterCode())
+  code.searchParams.set('key', await anotherKey())
+  await scanWillGive(page, { result: 'scanned', text: code.href })
+  const joins: string[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/join') joins.push(request.url())
+  })
+
+  await page.getByRole('button', { name: 'Scan the join poster' }).click()
+  await expect(page.getByLabel('Event PIN')).toHaveValue('4242')
+  await page.getByLabel('Your name').fill(uniqueName('Wrong Wi-Fi Tech'))
+  await page.getByLabel('Your PIN').fill('1234')
+  await page.getByRole('button', { name: 'Join', exact: true }).click()
+
+  await expect(page.locator('.join-error')).toHaveText(
+    'The box at 127.0.0.1:4299 isn’t the one on this poster, so nothing has gone to it. ' +
+      'Check the phone is on the event’s Wi-Fi, then try again, or ask whether the poster is ' +
+      'current.'
+  )
+  expect(joins).toEqual([])
 })
 
 test('the iPhone app says what else it read, and where the camera is switched back on', async ({

@@ -1,21 +1,37 @@
+import { eventIdFrom } from './eventScope.ts'
+import { eventKeyFrom } from './identity.ts'
 import type { WifiNetwork } from './server.ts'
 
 /**
  * What a QR code read by the apps' scanner says, for the join screen.
  *
  * A box prints one QR for crew: its address, with the event PIN when the page
- * is read on the local network (`/connect` in server/src/app.ts, and the box's
- * console at start-up). So `http://192.168.8.1/?pin=4821`, or
- * `https://chat.crew.example/` with no PIN. Scanning it is typing both.
+ * is read on the local network, and the event's ID and public key
+ * (server/src/joinCode.ts, for `/connect` and the box's console at start-up).
+ * So `http://192.168.8.1/?pin=4821&event=…&key=…`, or
+ * `https://chat.crew.example/?event=…&key=…` with no PIN. Scanning it is typing
+ * the address and PIN, and Join checks the box there against the key before
+ * the PIN goes (docs/DISCOVERY.md, "The join QR"). A poster printed before the
+ * QR carried the key has only the address and PIN, and joins as they would
+ * typed.
  *
  * A QR is anybody's to print, so anything that isn't that shape is said to be
  * something else rather than tried as an address. One that is goes where a
  * typed address goes, with the same checks when Join is pressed.
  */
 
+/** The event a box's join QR names: its ID and public key, as `/api/config` gives them. */
+export interface PosterEvent {
+  id: string
+  key: string
+}
+
 export type JoinCode =
-  /** A box's join QR: where it is, and the event PIN when it carries one. */
-  | { kind: 'join'; origin: string; pin: string }
+  /**
+   * A box's join QR: where it is, the event PIN when it carries one, and the
+   * event, on a poster printed since the QR carried it.
+   */
+  | { kind: 'join'; origin: string; pin: string; event?: PosterEvent }
   /** A Wi-Fi network's QR (`WIFI:S:…;;`), as a phone's camera reads it. */
   | WifiCode
   | { kind: 'other' }
@@ -162,7 +178,21 @@ export function readJoinCode(text: string): JoinCode {
   if (url.username || url.password || url.pathname !== '/' || url.hash) return { kind: 'other' }
   const pin = (url.searchParams.get('pin') ?? '').trim()
   if (pin.length > MAX_PIN) return { kind: 'other' }
-  return { kind: 'join', origin: url.origin, pin }
+  const event = posterEvent(url.searchParams)
+  return { kind: 'join', origin: url.origin, pin, ...(event ? { event } : {}) }
+}
+
+/**
+ * The event a join QR names, when it names one this app can check: an ID and
+ * a key in the forms a box gives them. Anything else, a key in a form a later
+ * box might use among them, leaves the code as a poster from before the QR
+ * carried them, which joins unchecked, as a typed address does, rather than
+ * turning a real poster away.
+ */
+function posterEvent(query: URLSearchParams): PosterEvent | undefined {
+  const id = eventIdFrom(query.get('event'))
+  const key = eventKeyFrom(query.get('key'))
+  return id && key ? { id, key } : undefined
 }
 
 /**

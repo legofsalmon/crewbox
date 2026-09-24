@@ -8,6 +8,11 @@ import {
   type WifiCode,
 } from './joinCode.ts'
 
+/** An event's ID and public key as a box gives them (a P-256 point, 65 bytes, base64url). */
+const EVENT = '0mug582e8ls94xw09hzg6'
+const KEY =
+  'BBuVbRM8Sw6ywPD2sM35VyQ_clMVJITQeLbmoD9NOiWbRTujpujjBYFvhsuGAZ9pl2H4mLPL6OFxcs9MlgzIYaQ'
+
 describe('a box’s join QR', () => {
   it('is its address and the event PIN, as /connect prints it on the local network', () => {
     expect(readJoinCode('http://192.168.8.1/?pin=4821')).toEqual({
@@ -37,8 +42,47 @@ describe('a box’s join QR', () => {
     expect(readJoinCode(' http://192.168.8.1 \n')).toMatchObject({ kind: 'join', pin: '' })
   })
 
+  it('names the event, with its key, on a poster printed since the QR carried them', () => {
+    // As server/src/joinCode.ts writes it, on the local network and off it.
+    expect(readJoinCode(`http://192.168.8.1:8787/?pin=4821&event=${EVENT}&key=${KEY}`)).toEqual({
+      kind: 'join',
+      origin: 'http://192.168.8.1:8787',
+      pin: '4821',
+      event: { id: EVENT, key: KEY },
+    })
+    expect(readJoinCode(`https://chat.crew.example/?event=${EVENT}&key=${KEY}`)).toEqual({
+      kind: 'join',
+      origin: 'https://chat.crew.example',
+      pin: '',
+      event: { id: EVENT, key: KEY },
+    })
+  })
+
+  it('is a poster from before the QR carried the event, when it doesn’t name one the app can check', () => {
+    // Joined unchecked, as a typed address is, rather than turned away: a
+    // box printing a key in a form a later one might use is still the box.
+    for (const query of [
+      `event=${EVENT}`,
+      `key=${KEY}`,
+      `event=${EVENT}&key=${KEY.slice(1)}`,
+      `event=${EVENT}&key=${KEY}=`,
+      `event=${EVENT}&key=${KEY.slice(0, -1)}+`,
+      `event=${EVENT}&key=`,
+      `event=crewbox%40${EVENT}&key=${KEY}`,
+      `event=${'e'.repeat(65)}&key=${KEY}`,
+      `event=&key=${KEY}`,
+    ]) {
+      expect(readJoinCode(`http://192.168.8.1/?pin=4821&${query}`), query).toEqual({
+        kind: 'join',
+        origin: 'http://192.168.8.1',
+        pin: '4821',
+      })
+    }
+  })
+
   it('is only ever the bare address', () => {
     for (const text of [
+      `https://example.com/menu?event=${EVENT}&key=${KEY}`,
       'https://example.com/menu',
       'http://192.168.8.1/admin?pin=4821',
       'http://192.168.8.1/?pin=4821#chat',

@@ -44,6 +44,7 @@ import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
 import { ANNOUNCE_KEY, ANNOUNCE_SETTINGS, type AnnounceStatus } from './announce/index.ts'
 import { boxIdentity, hostToSign, NONCE_RE } from './identity.ts'
+import { joinCode, namesEventAt } from './joinCode.ts'
 import { continuesOf, EVENT_ID, saveContinues } from './continues.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
@@ -1321,6 +1322,26 @@ export function buildApp({
     return reply.redirect('/connect')
   })
 
+  /**
+   * The join QR as an SVG that CSS sizes: one unit per module, so every edge
+   * falls on a whole unit, drawn as one shape, which has no seams between
+   * its squares at any size. The key makes the code about three times as
+   * dense as the address and PIN alone, so the page draws it bigger.
+   */
+  const joinQrSvg = (content: string): string => {
+    const padding = 2
+    const size = new QRCode({ content }).qrcode.getModuleCount() + 2 * padding
+    return new QRCode({
+      content,
+      padding,
+      width: size,
+      height: size,
+      container: 'svg-viewbox',
+      join: true,
+      xmlDeclaration: false,
+    }).svg()
+  }
+
   // Live onboarding page: big QR of the join URL (PIN prefilled), the PIN in
   // print, Wi-Fi guidance, and the APK when installed. Always current — a
   // PIN change from the admin panel is reflected on the next load, unlike a
@@ -1345,13 +1366,19 @@ export function buildApp({
      * something you have to already know.
      */
     const local = isPrivateIp(req.socket.remoteAddress ?? '') && isPrivateIp(req.ip)
-    const joinUrl = local ? `${base}/?pin=${encodeURIComponent(pin)}` : `${base}/`
-    const qr = new QRCode({ content: joinUrl, padding: 2, width: 260, height: 260 }).svg()
+    // The event's ID and key go on and off the LAN, since /api/config gives
+    // them to anyone, but not at an address this box doesn't sign for.
+    const joinUrl = joinCode(base, {
+      ...(local ? { pin } : {}),
+      ...(namesEventAt(base) ? { event: { id: store.dbEpoch(), key: identity.publicKey } } : {}),
+    })
+    const qr = joinQrSvg(joinUrl)
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Join ${escapeHtml(config.eventName || 'Crewbox')}</title>
 <style>${PAGE_CSS}
-  .qr { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin: 20px 0; }
+  .qr { background: #fff; padding: 12px; border-radius: 16px; margin: 20px auto; box-sizing: border-box; }
+  .qr svg { display: block; width: 100%; height: auto; }
   .url { font-size: 20px; font-weight: 700; word-break: break-all; }
   .pin { font-size: 17px; margin-top: 10px; color: #f5b73e; }
 </style></head><body><div class="card">

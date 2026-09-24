@@ -184,7 +184,10 @@ answer does:
 Both phone apps show one extra field on the join screen — **Crew server** —
 because unlike a browser, the app doesn't know which box it belongs to.
 It's on the join poster, and **Scan the join poster** reads the poster's QR
-with the phone's camera and fills in the field and the event PIN. The phone
+with the phone's camera and fills in the field and the event PIN. The QR
+names the event and its key too, and **Join** checks the box at that address
+against them before the PIN goes to it
+([what that checks](/docs/getting-connected#when-it-wont-connect)). The phone
 asks whether Crewbox may use the camera the first time. The scan happens on
 the phone, which sends what it read nowhere, and a QR that isn't a box's
 join code fills in nothing. On an iPhone, a name in the field needs

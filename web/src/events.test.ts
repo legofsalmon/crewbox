@@ -660,6 +660,161 @@ describe('joining', () => {
   })
 })
 
+describe('joining from a poster that names its event and key', () => {
+  // A phone signed out of Friday, whose crew member scanned the poster on
+  // the wall (docs/DISCOVERY.md, "The join QR").
+  beforeEach(() => localStorage.removeItem('crewbox:token'))
+  afterEach(() => vi.unstubAllGlobals())
+  const NOT_THE_POSTERS =
+    /^The box at \S+ isn’t the one on this poster, so nothing has gone to it\./
+
+  it('checks the box is the poster’s before the PIN goes, and keeps the poster’s key', async () => {
+    const saturday = await aBox('saturday')
+    // How many joins had been sent each time the box was asked to prove itself.
+    const joinsWhenAsked: number[] = []
+    const asked = answering((input) => {
+      joinsWhenAsked.push(api.join.mock.calls.length)
+      return saturday.answer(input)
+    })
+    api.join.mockResolvedValue({
+      token: 'saturdays-sign-in',
+      eventId: 'saturday',
+      eventKey: saturday.key,
+    })
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().join('Sam', '4242', '1234', { id: 'saturday', key: saturday.key })
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toMatch(new RegExp(`^${location.origin}/api/identity\\?nonce=`))
+    expect(joinsWhenAsked).toEqual([0])
+    expect(api.join).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('crewbox@saturday:token')).toBe('saturdays-sign-in')
+    expect(knownEvent('saturday')).toMatchObject({ origin: location.origin, key: saturday.key })
+  })
+
+  it('sends no PIN to a box that isn’t the poster’s', async () => {
+    const saturday = await aBox('saturday')
+    const impostor = await aBox('saturday')
+    const sunday = await aBox('sunday')
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    for (const [what, answer] of [
+      ['signs with another key', impostor.answer],
+      ['runs another event', sunday.answer],
+      ['can’t sign at all', () => new Response('Not Found', { status: 404 })],
+    ] as const) {
+      answering(answer)
+      await expect(
+        store.getState().join('Sam', '4242', '1234', { id: 'saturday', key: saturday.key }),
+        what
+      ).rejects.toThrow(NOT_THE_POSTERS)
+    }
+    expect(api.join).not.toHaveBeenCalled()
+    expect(knownEvent('saturday')).toBeUndefined()
+    expect(localStorage.getItem('crewbox@saturday:token')).toBeNull()
+  })
+
+  it('says a box that doesn’t answer the check can’t be reached, and sends it nothing', async () => {
+    const saturday = await aBox('saturday')
+    answering(() => Promise.reject(new TypeError('Failed to fetch')))
+    const store = await loadStore()
+    await expect(
+      store.getState().join('Sam', '4242', '1234', { id: 'saturday', key: saturday.key })
+    ).rejects.toBeInstanceOf(TypeError)
+    expect(api.join).not.toHaveBeenCalled()
+  })
+
+  it('joins a box that won’t sign for its address when the sign-in names the poster’s event and key', async () => {
+    const saturday = await aBox('saturday')
+    // A box behind a port forward: it won't sign for the address asked at.
+    answering(() => new Response('{}', { status: 421 }))
+    api.join.mockResolvedValue({
+      token: 'saturdays-sign-in',
+      eventId: 'saturday',
+      eventKey: saturday.key,
+    })
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await store.getState().join('Sam', '4242', '1234', { id: 'saturday', key: saturday.key })
+    expect(localStorage.getItem('crewbox@saturday:token')).toBe('saturdays-sign-in')
+    expect(knownEvent('saturday')?.key).toBe(saturday.key)
+  })
+
+  it('keeps no sign-in from such a box when it answers as another event, or with another key', async () => {
+    const saturday = await aBox('saturday')
+    const impostor = await aBox('saturday')
+    answering(() => new Response('{}', { status: 421 }))
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    for (const joined of [
+      { token: 'not-saturdays', eventId: 'saturday', eventKey: impostor.key },
+      { token: 'not-saturdays', eventId: 'sunday', eventKey: saturday.key },
+      { token: 'not-saturdays', eventId: 'saturday' },
+      { token: 'not-saturdays' },
+    ]) {
+      api.join.mockResolvedValueOnce(joined)
+      await expect(
+        store.getState().join('Sam', '4242', '1234', { id: 'saturday', key: saturday.key }),
+        JSON.stringify(joined)
+      ).rejects.toThrow(/isn’t the one on this poster, so the app hasn’t kept its sign-in\./)
+    }
+    expect(api.join).toHaveBeenCalledTimes(4)
+    for (const name of ['crewbox:token', 'crewbox@saturday:token', 'crewbox@sunday:token']) {
+      expect(localStorage.getItem(name), name).toBeNull()
+    }
+    expect(knownEvent('saturday')).toBeUndefined()
+    expect(knownEvent('sunday')).toBeUndefined()
+    expect(localStorage.getItem('crewbox:event')).toBeNull()
+  })
+
+  it('asks nothing of the box when this phone holds the poster’s event with another key', async () => {
+    const saturday = await aBox('saturday')
+    const printed = await aBox('saturday')
+    const asked = answering(printed.answer)
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday(saturday.key)
+    await expect(
+      store.getState().join('Sam', '4242', '1234', { id: 'saturday', key: printed.key })
+    ).rejects.toThrow(
+      /^This poster doesn’t match “Harbour Tour” as this phone knows it, so nothing has gone to the box at \S+\. If you are sure it is the event’s box, open it from Your boxes\.$/
+    )
+    expect(asked).toHaveLength(0)
+    expect(api.join).not.toHaveBeenCalled()
+    expect(knownEvent('saturday')).toMatchObject({
+      origin: 'http://10.0.0.3:8787',
+      key: saturday.key,
+    })
+  })
+
+  /** Saturday, held at another address, and its box here proving it. */
+  async function movesHere(kept: boolean) {
+    const saturday = await aBox('saturday')
+    answering(saturday.answer)
+    api.join.mockResolvedValue({
+      token: 'saturdays-sign-in',
+      eventId: 'saturday',
+      eventKey: saturday.key,
+    })
+    const store = await loadStore()
+    const { knownEvent } = await import('./lib/eventScope.ts')
+    await holdSaturday(kept ? saturday.key : undefined)
+    await store.getState().join('Sam', '4242', '1234', { id: 'saturday', key: saturday.key })
+    expect(knownEvent('saturday')).toMatchObject({ origin: location.origin, key: saturday.key })
+    expect(localStorage.getItem('crewbox@saturday:token')).toBe('saturdays-sign-in')
+    // The poster named the event: its box's config wasn't needed to say which.
+    expect(api.getConfig).not.toHaveBeenCalled()
+  }
+
+  it('moves an event held elsewhere here once its box proves it with the key kept', async () => {
+    await movesHere(true)
+  })
+
+  it('moves one held with no key kept here too, and keeps the poster’s', async () => {
+    await movesHere(false)
+  })
+})
+
 describe('in the apps, a sign-in the app keeps', () => {
   /** The app, its Keychain stood in for by a map, holding what a test gives it. */
   function inTheApp(kept: Record<string, string> = {}) {

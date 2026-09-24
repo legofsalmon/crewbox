@@ -1,4 +1,5 @@
 import { knownEvent, type KnownEvent } from './eventScope.ts'
+import type { PosterEvent } from './joinCode.ts'
 
 /**
  * Whether a box at an address is the one this device knows an event by
@@ -148,6 +149,65 @@ export async function checkMove(
   const held = heldAs(eventId)
   if (!held?.origin || held.origin === origin) return null
   return prove(origin, held)
+}
+
+/**
+ * What the box at `origin` is to the poster whose QR gave that address and
+ * named `poster` (docs/DISCOVERY.md, "The join QR"), asked before anything
+ * goes to it.
+ *
+ * - `proven`: it signed for the poster's event, this address and a fresh
+ *   challenge with the poster's key.
+ * - `unchecked`: it won't sign for the name it was asked at (421), as a box
+ *   never does by a name over plain HTTP or through a tunnel, or this page
+ *   has no WebCrypto. The join goes ahead as for a typed address, and the
+ *   sign-in it gets has to name the poster's event and key.
+ * - `refused`: it says another event, signs with another key, can't sign
+ *   at all, which the poster's box can, or won't sign for the IP address it
+ *   was reached at. A box reached at its own address signs for it, so one
+ *   that won't is behind a port forward or isn't the poster's; either way a
+ *   421 is all it takes to say so, and the PIN isn't sent on that. (A box
+ *   names no event on a QR for a forward's address, so its own posters
+ *   never meet this.)
+ * - `unreachable`: nothing answered.
+ * - `kept-another`: this device holds the poster's event with another key,
+ *   the one that counts, so the box isn't asked: whichever of the two is
+ *   wrong, a poster is no reason to swap a kept key.
+ */
+export async function checkPoster(
+  origin: string,
+  poster: PosterEvent,
+  prove: typeof proveBox = proveBox,
+  heldAs: (id: string) => KnownEvent | undefined = knownEvent
+): Promise<'proven' | 'unchecked' | 'refused' | 'unreachable' | 'kept-another'> {
+  const kept = eventKeyFrom(heldAs(poster.id)?.key)
+  if (kept && kept !== poster.key) return 'kept-another'
+  const proof = await prove(origin, poster)
+  if (proof.kind !== 'unchecked') return proof.kind
+  switch (proof.reason) {
+    case 'unreachable':
+      return 'unreachable'
+    case 'misdirected':
+      return atAnIpAddress(origin) ? 'refused' : 'unchecked'
+    case 'no-crypto':
+      return 'unchecked'
+    case 'too-old':
+    case 'no-key':
+      // A box that predates signing, or a key that isn't a point on the
+      // curve: neither is the poster's box.
+      return 'refused'
+  }
+}
+
+/** Whether an origin is an IP address, which a parsed URL writes as a dotted quad or in brackets. */
+function atAnIpAddress(origin: string): boolean {
+  let host: string
+  try {
+    host = new URL(origin).hostname
+  } catch {
+    return false
+  }
+  return host.startsWith('[') || /^\d+\.\d+\.\d+\.\d+$/.test(host)
 }
 
 function toBase64url(bytes: Uint8Array): string {

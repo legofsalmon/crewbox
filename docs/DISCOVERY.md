@@ -206,6 +206,9 @@ What each allows depends on how the app came to the box:
   before. The join screen checks before the PIN goes, and checks the
   sign-in's event again after, in case the box's config could not be read
   first or said another event.
+- **Scanned from a poster** that names the event and its key, the box has to
+  be the poster's before the PIN goes, whatever this phone holds
+  ([below](#the-join-qr)).
 - **Refused** is said in so many words, and nothing goes to the box. In **Your
   boxes**, a refused box that offered a key of its own also gets **Open it
   anyway**, for a spare restored from a backup older than the event's key,
@@ -215,6 +218,103 @@ What each allows depends on how the app came to the box:
 A box at the address the phone already has, saying it runs the event the
 phone has open there, is taken at its word, as before: the app does not ask
 it to prove itself each time it connects.
+
+## The join QR
+
+The QR a box prints for crew, on `/connect` and in its console at start-up
+(`server/src/joinCode.ts`), is a link to the box that also names the event:
+
+```
+http://192.168.8.1:8787/?pin=4821&event=<eventId>&key=<eventKey>
+```
+
+- `pin` is the event PIN, only where whoever reads it may be shown it:
+  `/connect` leaves it out of the QR, as out of print, for a request from off
+  the LAN.
+- `event` and `key` are the event's ID and public key as `/api/config` gives
+  them to anyone, the key in full: 87 characters, the form the apps keep.
+  They are on it everywhere but at an IP address that isn't the box's own,
+  as a port forward's (`namesEventAt`): the box never signs there, and the
+  apps would refuse the poster (below), so it joins as an older one does.
+- A phone's own camera opens the link in the browser, where `pin` fills in
+  the join form and the rest goes unread. The apps' scanner reads all of it
+  (`web/src/lib/joinCode.ts`).
+
+Why the key is on it: the poster is the one thing a crew member has that came
+from the event's box rather than over the network. Without it, the event PIN
+and a new crew member's personal PIN went to whatever answered at the
+poster's address: on the wrong Wi-Fi, another stage's box at the same default
+address, a router, anything. With it, the box there has to sign for the
+poster's event with its key first, which only the box holding the event's
+database can. Wi-Fi Easy Connect puts a whole public key in its QR codes for
+the same reason: the code is how the key arrives by a way the network can't
+touch. A fingerprint of the key would make a smaller code, with
+the phone taking the key the box offers and checking it against the
+fingerprint; the whole key keeps to the one form the apps already keep and
+compare, with no hashing scheme of its own to get right.
+
+What the apps do with a poster that names its event (`checkPoster` in
+`web/src/lib/identity.ts`), before the PIN goes to the box at its address:
+
+- **Proven** against the poster's key: the join goes ahead, and the app keeps
+  the poster's key for the event, which from then on is what it checks that
+  event's boxes against. A move of an event this phone holds elsewhere is
+  proven by the same check.
+- **Refused**, or a box that can't sign at all (a 404, or a key that isn't a
+  point on the curve): nothing goes to it, and the join screen says _The box
+  at … isn’t the one on this poster, so nothing has gone to it._ Most often
+  the phone is on another Wi-Fi, where something else has that address.
+- **At an IP address, a box that won't sign for it (421) is refused too.** A
+  box reached at its own address signs for it, so one that won't is behind a
+  port forward or isn't the poster's box, and a 421 is all anything would
+  have to answer to be let past. The address can still be typed, and is
+  then joined as a typed address is.
+- **Unchecked**: a box reached by a name that won't sign for it (421), as a
+  box never does over plain HTTP or through a tunnel, or a web view without
+  WebCrypto. The join goes ahead, and the sign-in has to name the poster's
+  event and key, or the app keeps nothing of it and says so. That catches
+  the wrong box, not one set on the PIN, which can answer 421 and name the
+  poster's event: by a name, only HTTPS to a box holding its own certificate
+  stops that, since nothing else can answer by its name.
+- **No answer**: the join screen says the box can't be reached, as for any
+  address.
+- **A poster for an event this phone holds with another key** is refused
+  without asking the box: a poster is no reason to swap a kept key. The app
+  says so, and points to **Your boxes**, as for a refused box.
+
+The check belongs to the poster while the address is the one it gave. Typing
+over the address, picking a box from the list or following a
+`crewbox://join` link joins as a typed address does. A link names no key,
+and shouldn't: the page that offers it is served by the box it would vouch
+for.
+
+A poster printed before the QR named the event, or naming it in a form the
+app doesn't take, has an address and a PIN, and joins as it always did,
+unchecked.
+
+**Printed posters** from `deploy/make-poster.mjs` name the event too, when
+the box at the address given proves it there as the apps will ask it to: the
+script reads the event and key from `/api/config`, and checks the box's
+signature for that address over a fresh challenge (`posterEvent`). By a name
+the box has no certificate for, it names the event, and the apps check the
+sign-in. At an address where the box won't sign, or with no box answering,
+the poster names no event, and the script says why and that phones will
+join from it unchecked. So run it where the poster's address reaches the
+box.
+
+**When the event gets a new ID, print new posters.** A spare box started
+without the event's backup is another event, with an ID and key of its own,
+and the apps refuse the old posters there: print `/connect` again from the
+spare. A spare restored from the backup has the event's ID and key, and the
+posters on the wall still work.
+
+The key makes the code longer: about 150 characters with a LAN address and a
+PIN, version 8 or 9 at error correction M (49 or 53 modules across) where the
+address and PIN alone were version 3 (29). `/connect` draws it the full width
+of its card, one SVG unit to a module, so at a laptop's width each module is
+still seven-eighths of its old size; the console draws it at level L, 47
+characters wide. Both were checked by decoding them with ZXing, the page's at
+a phone's and a laptop's width.
 
 ## How the apps look
 
@@ -518,6 +618,17 @@ Two refusals have their own words in the admin panel:
   plugin is registered before the bridge starts
   (`server/test/iosInfoPlist.test.mjs`,
   `server/test/androidPlugins.test.mjs`).
-- **Not yet:** an iPhone or an Android phone listing a real box, or checking
-  one's signature. Neither search has been run on hardware, and this line
-  changes when it has.
+- **The join QR:** what the box prints and what the apps read of it
+  (`server/test/joinCode.test.ts`, `web/src/lib/joinCode.test.ts`), with the
+  `/connect` QR drawn from the link printed under it, on and off the LAN, by
+  a name, and at a forward's address, where it names no event; the printed
+  poster's, against a real box at its address, by a name and through a
+  forward (`server/test/poster.test.mjs`); the
+  check and the join in unit tests (`web/src/lib/identity.test.ts`,
+  `web/src/events.test.ts`, `web/src/components/JoinScan.test.tsx`); and in a
+  browser against a real box (`e2e/scan.spec.ts`), where every join from its
+  poster is proven first, and a poster with another box's key sends it
+  nothing. Each rule was removed in turn to see a test fail.
+- **Not yet:** an iPhone or an Android phone listing a real box, checking
+  one's signature, or scanning its poster. Neither app has been run on
+  hardware, and this line changes when it has.

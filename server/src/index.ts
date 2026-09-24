@@ -44,6 +44,7 @@ import {
 import { startCaptive } from './captive.ts'
 import { certNames } from './environment.ts'
 import { continuesOf } from './continues.ts'
+import { boxIdentity } from './identity.ts'
 import {
   canRunLiveKit,
   livekitCredentials,
@@ -968,6 +969,8 @@ async function main(): Promise<void> {
       firstRun,
       iface: boot.iface,
       ...(certName ? { hostname: certName } : {}),
+      // The key the app minted or read at startup, read back from the database.
+      event: { id: store.dbEpoch(), key: boxIdentity(store).publicKey },
     })
 
     // Tell the menu-bar/tray helper what to show and, crucially, which

@@ -63,6 +63,13 @@ the join URL as a tappable link, the PIN in print, and — once you've put
 the Android app on the box — a download link for it. Leave it on a spare
 screen, or print poster versions. Crew scan, pick a name, done.
 
+The QR also names the event and carries its key, so the phone apps check
+that the box at its address is this one before a PIN goes to it; a phone's
+own camera ignores them. That makes it a denser code than the address alone:
+print it from `/connect` at the size the page draws it or bigger. Posters
+printed before this version still work, without the check. Print them again
+when the event starts afresh on another box ([below](#data-backup-updates)).
+
 The box's own terminal prints the same thing, QR included, for headless
 machines.
 
@@ -103,10 +110,13 @@ and they carry straight on: the backup carries the event's ID and the box's
 signing key with everything else. At another address, phones check that key
 before they follow the event there: put the spare on the old address, or
 tell crew the new one to type. A box behind a port forward can't be checked,
-and phones take its typed address at the crew member's word; one restored
+and phones take its typed address at the crew member's word, and a QR shown
+at the forward's address names no event, so phones join from it the same
+way; one restored
 from a backup older than its key fails the check, and phones say so and send
 it nothing. One started with a fresh database is a new
-event: phones say the box has changed and send it nothing. When it takes
+event: phones say the box has changed and send it nothing, and the phone
+apps refuse the old event's posters there, so print its own from `/connect`. When it takes
 over from the event's box, say so in **Admin → This box → Carries on
 another event**, and each phone that has the event, once it has joined,
 offers to bring its documents, running order and unsent messages across

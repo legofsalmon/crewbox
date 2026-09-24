@@ -39,7 +39,13 @@ export default tseslint.config(
   },
   { ...reactRefresh.configs.vite, files: ['web/src/**/*.{ts,tsx}'] },
   {
-    files: ['deploy/**/*.mjs', 'scripts/**/*.mjs', 'web/scripts/**/*.mjs', 'site/**/*.mjs'],
+    files: [
+      'deploy/**/*.mjs',
+      'scripts/**/*.mjs',
+      'web/scripts/**/*.mjs',
+      'site/**/*.mjs',
+      'server/test/**/*.mjs',
+    ],
     languageOptions: {
       globals: {
         process: 'readonly',
@@ -48,6 +54,9 @@ export default tseslint.config(
         URL: 'readonly',
         URLSearchParams: 'readonly',
         fetch: 'readonly',
+        Response: 'readonly',
+        AbortSignal: 'readonly',
+        TextEncoder: 'readonly',
         WebSocket: 'readonly',
         crypto: 'readonly',
         setTimeout: 'readonly',

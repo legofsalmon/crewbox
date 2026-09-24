@@ -12,6 +12,7 @@ import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
+import { joinCode } from './joinCode.ts'
 import { releaseRunMarker } from './reports/marker.ts'
 
 /**
@@ -562,7 +563,15 @@ export function printBoxBanner(
     firstRun = false,
     iface = '',
     hostname = '',
-  }: { eventName?: string; firstRun?: boolean; iface?: string; hostname?: string } = {}
+    event,
+  }: {
+    eventName?: string
+    firstRun?: boolean
+    iface?: string
+    hostname?: string
+    /** The event's ID and public key, which the QR carries as /connect's does. */
+    event: { id: string; key: string }
+  }
 ): void {
   const urls = advertisedUrls(port, secure, { hostname, iface })
   const joinUrl = urls[0] ?? `${secure ? 'https' : 'http'}://localhost:${port}`
@@ -592,7 +601,10 @@ export function printBoxBanner(
         const qrcode = require('qrcode-terminal') as {
           generate: (text: string, opts: { small: boolean }) => void
         }
-        qrcode.generate(`${joinUrl}/?pin=${encodeURIComponent(eventPin)}`, { small: true })
+        // The box's own address or its certificate's name, so the event
+        // goes on it (namesEventAt).
+        const code = joinCode(joinUrl, { pin: eventPin, event })
+        qrcode.generate(code, { small: true })
         console.log('  Scan to join — or open /connect on any screen.\n')
       }
     } catch {

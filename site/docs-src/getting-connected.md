@@ -23,8 +23,11 @@ the spot — there are no accounts to create in advance and no email involved.
 2. Scan the QR code — it's on the join poster, on the box's screen, or on
    the `/connect` page someone may have sent you. In the phone app, scan it
    from the app: tap **Scan the join poster** and point the camera at the
-   QR, and the app fills in the box's address and the event PIN. The
-   phone's own camera would open the QR in the browser instead. Or skip the
+   QR, and the app fills in the box's address and the event PIN. The QR
+   also names the event, so when you tap **Join** the app first checks
+   that the box at that address is the one on the poster, and sends it
+   nothing if it isn't. The phone's own camera would open the QR in the
+   browser instead. Or skip the
    scan: the join screen lists the boxes on this Wi-Fi under **On this
    Wi-Fi**, and tapping **Pick** beside your event fills in its address. On
    an iPhone, tap **Find boxes** the first time, and allow Crewbox to find
@@ -164,6 +167,17 @@ The app tells you what it's doing rather than spinning forever:
 - **"The phone can't use that Wi-Fi code"** — the network name or password
   in the code can't be right: a WPA password is 8 to 63 characters. Ask
   whoever runs the Wi-Fi for its name and password.
+- **"The box at … isn’t the one on this poster"** — in the phone apps, the
+  box at the address on the poster couldn't show it is the poster's box, so
+  nothing has gone to it. Most often your phone is on another Wi-Fi, where
+  something else has that address: check you're on the event Wi-Fi, then
+  tap **Join** again. Or the poster is from a box that has since been
+  replaced: ask whoever runs the event for the current one.
+- **"This poster doesn’t match … as this phone knows it"** — your device
+  already holds that event, and the poster names another key for it, so
+  your device sent the box nothing. If you are sure it is your event's box,
+  a spare restored from an old backup, type its address in **Your boxes**,
+  where **Open it anyway** is beside the message.
 - **"That isn't the crew code"** — the scanner read a QR that isn't a box's
   join code. Scan the one on the join poster, or type the address printed
   under it.

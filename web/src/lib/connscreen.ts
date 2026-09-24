@@ -188,6 +188,36 @@ export function refusedCopy(input: { address: string; name: string }): string {
 }
 
 /**
+ * What to say when the box at the address a scanned poster gave isn't the
+ * poster's (lib/identity.ts, checkPoster): found out `before` anything went
+ * to it, or `after` it answered the join as another event, which it can only
+ * do when it couldn't be checked first. Most often the phone is on another
+ * Wi-Fi, where something else has that address, or the poster is from a box
+ * that has since been replaced.
+ */
+export function notThePostersCopy(address: string, when: 'before' | 'after'): string {
+  return (
+    `The box at ${address} isn’t the one on this poster, so ` +
+    (when === 'before' ? 'nothing has gone to it. ' : 'the app hasn’t kept its sign-in. ') +
+    'Check the phone is on the event’s Wi-Fi, then try again, or ask whether the poster is ' +
+    'current.'
+  )
+}
+
+/**
+ * What to say when a scanned poster names an event this phone holds, with
+ * another key than the one it kept: nothing goes to the box, and Your boxes
+ * is where a box that can't show it is the event's is opened anyway.
+ */
+export function posterDisagreesCopy(input: { address: string; name: string }): string {
+  const event = input.name.trim() ? `“${input.name.trim()}”` : 'the event it names'
+  return (
+    `This poster doesn’t match ${event} as this phone knows it, so nothing has gone to the ` +
+    `box at ${input.address}. If you are sure it is the event’s box, open it from Your boxes.`
+  )
+}
+
+/**
  * What to say while the box at this address, running an event this phone
  * holds at another address, has not shown it is that event's box: being
  * checked, failing, or unable to be checked. Nothing goes to it meanwhile.

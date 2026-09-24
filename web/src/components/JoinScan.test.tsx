@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useStore } from '../store.ts'
 import { forgetEventRecord, knownEvents } from '../lib/eventScope.ts'
 import { resetSearchForTests } from '../lib/discovery.ts'
+import { clearJoinLink, receiveLink } from '../lib/appLinks.ts'
 import type {
   ScanOutcome,
   ScannerPlugin,
@@ -18,10 +19,12 @@ import Join from './Join.tsx'
  * The join screen's scanner, in the apps.
  *
  * The join poster's QR is the box's address with the event PIN, and scanning
- * it fills in both, as if they had been typed: Join then does what it does
- * for a typed address. A Wi-Fi code asks the phone to join its network,
- * which the phone asks the crew member about. Anything else the camera reads
- * fills in nothing and says what it was.
+ * it fills in both, as if they had been typed. Since the QR has also named
+ * the event and its key, Join first checks the box at that address is the
+ * poster's (the store's join, tested in events.test.ts); a poster printed
+ * before then joins as a typed address does. A Wi-Fi code asks the phone to
+ * join its network, which the phone asks the crew member about. Anything else
+ * the camera reads fills in nothing and says what it was.
  */
 
 declare global {
@@ -96,6 +99,7 @@ beforeEach(() => {
   answer = async () => ({ result: 'cancelled' })
   openSettings.mockClear()
   join.mockClear()
+  clearJoinLink()
   joined = async () => ({ result: 'declined' })
   joinWifi.mockClear()
   useStore.setState({ join })
@@ -179,6 +183,79 @@ describe('scanning the join poster', () => {
 
     expect(join).toHaveBeenCalledWith('Alex', '4821', '1234')
     expect(localStorage.getItem('crewbox:server-url')).toBe('http://10.0.0.2:3000')
+  })
+
+  const EVENT = '0mug582e8ls94xw09hzg6'
+  const KEY =
+    'BBuVbRM8Sw6ywPD2sM35VyQ_clMVJITQeLbmoD9NOiWbRTujpujjBYFvhsuGAZ9pl2H4mLPL6OFxcs9MlgzIYaQ'
+  const NAMING = `event=${EVENT}&key=${KEY}`
+
+  /** A name and a personal PIN, then Join. */
+  async function joinAsAlex(): Promise<void> {
+    type(field('e.g. Alex'), 'Alex')
+    type(field('4–8 digits'), '1234')
+    await act(async () => {
+      host.querySelector('form')!.requestSubmit()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  it('has Join check the box is the poster’s, when the poster names its event', async () => {
+    for (const [code, platform] of [
+      [`http://10.0.0.2:3000/?pin=4821&${NAMING}`, 'android'],
+      [`http://192.168.8.1/?pin=4821&${NAMING}`, 'ios'],
+      [`https://chat.crew.example/?${NAMING}`, 'ios'],
+    ] as const) {
+      inApp(platform)
+      await render()
+      reads(code)
+      await scan()
+      type(eventPin(), '4821')
+      await joinAsAlex()
+      expect(join, code).toHaveBeenLastCalledWith('Alex', '4821', '1234', { id: EVENT, key: KEY })
+      act(() => root.unmount())
+      root = createRoot(host)
+    }
+  })
+
+  it('joins as typed once the address is typed over, even with the poster’s again', async () => {
+    inApp('android')
+    await render()
+    reads(`http://10.0.0.2:3000/?pin=4821&${NAMING}`)
+    await scan()
+    type(server(), '10.0.0.9:3000')
+    await joinAsAlex()
+    expect(join).toHaveBeenLastCalledWith('Alex', '4821', '1234')
+    // Somebody sure of the box, past a poster that doesn't match it.
+    type(server(), '10.0.0.2:3000')
+    await joinAsAlex()
+    expect(join).toHaveBeenLastCalledWith('Alex', '4821', '1234')
+  })
+
+  it('joins as typed from a poster printed before the QR named the event', async () => {
+    inApp('android')
+    await render()
+    reads(`http://10.0.0.2:3000/?pin=4821&${NAMING}`)
+    await scan()
+    // Then the older poster by the door, for the same box.
+    reads('http://10.0.0.2:3000/?pin=4821')
+    await scan()
+    await joinAsAlex()
+    expect(join).toHaveBeenLastCalledWith('Alex', '4821', '1234')
+  })
+
+  it('joins as typed from a link followed after the scan, which vouches for nothing', async () => {
+    inApp('android')
+    await render()
+    reads(`http://10.0.0.2:3000/?pin=4821&${NAMING}`)
+    await scan()
+    await act(async () => {
+      receiveLink('crewbox://join?server=10.0.0.2:3000&pin=4821')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(note()).toBe('Filled in 10.0.0.2:3000 and the event PIN from the link.')
+    await joinAsAlex()
+    expect(join).toHaveBeenLastCalledWith('Alex', '4821', '1234')
   })
 
   it('says a plain-HTTP name won’t work on an iPhone, as a typed one would', async () => {

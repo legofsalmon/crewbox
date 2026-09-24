@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { KnownEvent } from './eventScope.ts'
-import { checkMove, eventKeyFrom, proveBox, type ProveDeps } from './identity.ts'
+import {
+  checkMove,
+  checkPoster,
+  eventKeyFrom,
+  proveBox,
+  type Proof,
+  type ProveDeps,
+} from './identity.ts'
 
 /**
  * A phone checking a box against the key it kept, with WebCrypto, as the
@@ -235,5 +242,100 @@ describe('a move', () => {
   it('asks the box at the new address to prove it, against the event as held', async () => {
     expect(await checkMove('friday', ORIGIN, prove, heldAs)).toEqual({ kind: 'proven' })
     expect(prove).toHaveBeenCalledWith(ORIGIN, held.friday)
+  })
+})
+
+describe('a poster’s box', () => {
+  /** What the box at the poster's address answers, as proveBox reads it. */
+  const answers = (proof: Proof) => vi.fn(async () => proof)
+  const nothingHeld = () => undefined
+
+  it('is the poster’s once it signs for the poster’s event, this address and a fresh challenge', async () => {
+    const box = await aBox()
+    const { asked, deps } = reaching(box)
+    const prove: typeof proveBox = (origin, event) => proveBox(origin, event, deps)
+    const poster = { id: 'friday', key: box.key }
+    expect(await checkPoster(ORIGIN, poster, prove, nothingHeld)).toBe('proven')
+    expect(`${asked[0]!.origin}${asked[0]!.pathname}`).toBe(`${ORIGIN}/api/identity`)
+    // Another box at that address, the real one's answer passed on, or the
+    // poster's box for another event: none of them is the poster's.
+    const other = await aBox()
+    expect(await checkPoster(ORIGIN, { id: 'friday', key: other.key }, prove, nothingHeld)).toBe(
+      'refused'
+    )
+    expect(await checkPoster(ORIGIN, { id: 'saturday', key: box.key }, prove, nothingHeld)).toBe(
+      'refused'
+    )
+  })
+
+  it('is not the poster’s when it can’t sign at all, which the poster’s box can', async () => {
+    for (const reason of ['too-old', 'no-key'] as const) {
+      const prove = answers({ kind: 'unchecked', reason })
+      expect(
+        await checkPoster(ORIGIN, { id: 'friday', key: 'k' }, prove, nothingHeld),
+        reason
+      ).toBe('refused')
+    }
+    for (const reason of ['another-event', 'signature'] as const) {
+      const prove = answers({ kind: 'refused', reason })
+      expect(
+        await checkPoster(ORIGIN, { id: 'friday', key: 'k' }, prove, nothingHeld),
+        reason
+      ).toBe('refused')
+    }
+  })
+
+  it('is left to the sign-in when it won’t sign for a name, or can’t be checked here', async () => {
+    // By a name over plain HTTP, or through a tunnel, a box never signs.
+    const misdirected = answers({ kind: 'unchecked', reason: 'misdirected' })
+    for (const origin of ['http://crewbox.local:8787', 'https://chat.crew.example']) {
+      expect(await checkPoster(origin, { id: 'friday', key: 'k' }, misdirected, nothingHeld)).toBe(
+        'unchecked'
+      )
+    }
+    const noCrypto = answers({ kind: 'unchecked', reason: 'no-crypto' })
+    expect(await checkPoster(ORIGIN, { id: 'friday', key: 'k' }, noCrypto, nothingHeld)).toBe(
+      'unchecked'
+    )
+    const prove = answers({ kind: 'unchecked', reason: 'unreachable' })
+    expect(await checkPoster(ORIGIN, { id: 'friday', key: 'k' }, prove, nothingHeld)).toBe(
+      'unreachable'
+    )
+  })
+
+  it('is not the poster’s when it won’t sign for the IP address it was reached at', async () => {
+    // Which the poster's box, reached there, does: anything else can say
+    // it won't, and the PIN isn't sent on its say-so.
+    const misdirected = answers({ kind: 'unchecked', reason: 'misdirected' })
+    for (const origin of [ORIGIN, 'http://192.168.8.1', 'http://[fd00::8]:8787']) {
+      expect(
+        await checkPoster(origin, { id: 'friday', key: 'k' }, misdirected, nothingHeld),
+        origin
+      ).toBe('refused')
+    }
+  })
+
+  it('isn’t asked when this device holds the poster’s event with another key', async () => {
+    const kept = await aBox()
+    const printed = await aBox()
+    const held = (key?: string) => (id: string) =>
+      ({
+        id,
+        name: 'Harbour Fest',
+        origin: 'http://10.0.0.5:8787',
+        seenAt: 1,
+        ...(key ? { key } : {}),
+      }) satisfies KnownEvent
+    const prove = answers({ kind: 'proven' })
+    expect(
+      await checkPoster(ORIGIN, { id: 'friday', key: printed.key }, prove, held(kept.key))
+    ).toBe('kept-another')
+    expect(prove).not.toHaveBeenCalled()
+    // The key it kept, or none kept: the box is asked, with the poster's.
+    for (const key of [printed.key, undefined]) {
+      const poster = { id: 'friday', key: printed.key }
+      expect(await checkPoster(ORIGIN, poster, prove, held(key))).toBe('proven')
+      expect(prove).toHaveBeenLastCalledWith(ORIGIN, poster)
+    }
   })
 })

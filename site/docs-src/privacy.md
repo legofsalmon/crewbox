@@ -49,7 +49,9 @@ a LiveKit server given no list of its own sends each phone joining voice to
 Google's and Twilio's public STUN servers to learn its internet address.
 
 Scanning the join poster in the apps reads the QR code on the phone, and
-neither the picture nor what it read goes anywhere. The iPhone app uses
+neither the picture nor what it read goes anywhere. Before joining from it,
+the app asks the box at the poster's address to sign a random challenge,
+which is all it sends there until the box has shown it is the poster's. The iPhone app uses
 Apple's own scanner, and the Android app the open-source ZXing, rather than
 Google's ML Kit, which reports its use to Google.
 

@@ -10,6 +10,7 @@ import {
   joinLink,
   readJoinCode,
   wifiToJoin,
+  type PosterEvent,
   type WifiCode,
 } from '../lib/joinCode.ts'
 import { isIOS } from '../lib/devices.ts'
@@ -179,6 +180,10 @@ export default function Join() {
   const [joiningWifi, setJoiningWifi] = useState(false)
   // What a scan or a link filled in, said under the scan button.
   const [filled, setFilled] = useState<string | null>(null)
+  // The event the last poster scanned names, at the address it gave: Join
+  // checks the box there is that one before the PIN goes, until the address
+  // is typed over, or a box picked or a link followed instead.
+  const [poster, setPoster] = useState<{ origin: string; event: PosterEvent } | null>(null)
   const [cameraDenied, setCameraDenied] = useState(false)
   // A crewbox://join link (lib/appLinks.ts): the same as scanning the poster.
   const link = useSyncExternalStore(subscribeJoinLink, currentJoinLink)
@@ -212,6 +217,7 @@ export default function Join() {
     setError(null)
     setFilled(null)
     setCameraDenied(false)
+    setPoster(null)
     fillIn(link.origin, link.pin, 'link')
     // Once per link; fillIn reads the name as it is then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -224,6 +230,7 @@ export default function Join() {
     setError(null)
     setFilled(null)
     setCameraDenied(false)
+    setPoster(null)
     if (!name) nameField.current?.focus()
   }
 
@@ -257,6 +264,7 @@ export default function Join() {
       )
       return
     }
+    setPoster(code.event ? { origin: code.origin, event: code.event } : null)
     fillIn(code.origin, code.pin, 'poster')
   }
 
@@ -302,9 +310,12 @@ export default function Join() {
       }
       setServerOrigin(server)
     }
+    // The poster's event, while the address is still the one it gave.
+    const scanned = showServer && poster?.origin === normalizeOrigin(server) ? poster.event : null
     setBusy(true)
     try {
-      await join(name, eventPin, personalPin)
+      if (scanned) await join(name, eventPin, personalPin, scanned)
+      else await join(name, eventPin, personalPin)
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -379,7 +390,11 @@ export default function Join() {
             Crew server
             <input
               value={server}
-              onChange={(e) => setServer(e.target.value)}
+              onChange={(e) => {
+                setServer(e.target.value)
+                // An address typed over the poster's is the typist's to vouch for.
+                setPoster(null)
+              }}
               placeholder="e.g. chat.crew.example or 192.168.8.1"
               autoComplete="off"
               inputMode="url"

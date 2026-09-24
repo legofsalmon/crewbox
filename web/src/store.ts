@@ -70,9 +70,10 @@ import {
   storageNameFor,
   writeEventPref,
 } from './lib/eventScope.ts'
-import { checkMove, eventKeyFrom, proveBox, type Proof } from './lib/identity.ts'
+import { checkMove, checkPoster, eventKeyFrom, proveBox, type Proof } from './lib/identity.ts'
+import type { PosterEvent } from './lib/joinCode.ts'
 import { forgetSession, openSession, readSession, saveSession, TOKEN_KEY } from './lib/sessions.ts'
-import { refusedCopy } from './lib/connscreen.ts'
+import { notThePostersCopy, posterDisagreesCopy, refusedCopy } from './lib/connscreen.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
 /** The open event's; see lib/eventScope.ts. Its sign-in's is lib/sessions.ts's. */
@@ -409,7 +410,11 @@ export interface AppState {
   toggleLatch: () => void
   /** Let blocked audio through. Must be called from a real user gesture. */
   resumeVoiceAudio: () => void
-  join: (name: string, eventPin: string, personalPin: string) => Promise<void>
+  /**
+   * `poster`: the event named by the join QR that gave this address, which
+   * the box here has to be before the PIN goes to it.
+   */
+  join: (name: string, eventPin: string, personalPin: string, poster?: PosterEvent) => Promise<void>
   sendMessage: (channelId: string, body: string) => void
   /** File a show-log entry. Queued locally first, so nothing is lost offline. */
   logIncident: (entry: Omit<QueuedIncident, 'clientMsgId'>) => void
@@ -1540,7 +1545,7 @@ export const useStore = create<AppState>()((set, get) => {
       if (!get().elsewhere) startWs()
     },
 
-    async join(name, eventPin, personalPin) {
+    async join(name, eventPin, personalPin, poster) {
       // On Android, until the app has put its traffic for this box on the
       // Wi-Fi, a request to it can go out over mobile data and fail.
       await boxWifiSettled()
@@ -1548,7 +1553,21 @@ export const useStore = create<AppState>()((set, get) => {
       // device holds at another address has to pass the check, which would
       // otherwise move the event here, the open one included.
       let checked: string | undefined
-      if (checkableMoveHere()) {
+      if (poster) {
+        // Scanned from a poster naming its event and key: the box here has
+        // to be that one, whatever else this device holds.
+        const verdict = await checkPoster(here(), poster)
+        // Said as a box that can't be reached, which it is.
+        if (verdict === 'unreachable') throw new TypeError('The box did not answer the check')
+        if (verdict === 'kept-another') {
+          const held = knownEvent(poster.id)?.name ?? ''
+          throw new api.ApiError(posterDisagreesCopy({ address: serverLabel(), name: held }), 409)
+        }
+        if (verdict === 'refused') {
+          throw new api.ApiError(notThePostersCopy(serverLabel(), 'before'), 409)
+        }
+        checked = poster.id
+      } else if (checkableMoveHere()) {
         const config = await api.getConfig(AbortSignal.timeout(6000)).catch(() => null)
         checked = eventIdFrom(config?.eventId)
         await refuseUnproven(checked)
@@ -1556,9 +1575,20 @@ export const useStore = create<AppState>()((set, get) => {
       const joined = await api.join({ name, eventPin, personalPin })
       const { token } = joined
       const eventId = eventIdFrom(joined.eventId)
-      // A box that told the join another event than it said a moment ago.
-      if (eventId !== checked) await refuseUnproven(eventId)
-      const key = eventKeyFrom(joined.eventKey)
+      if (poster) {
+        // The sign-in has to name the poster's event and key: a box that
+        // proved them does, and one that couldn't be checked is taken as the
+        // poster's box only if it does too.
+        if (eventId !== poster.id || eventKeyFrom(joined.eventKey) !== poster.key) {
+          throw new api.ApiError(notThePostersCopy(serverLabel(), 'after'), 409)
+        }
+      } else if (eventId !== checked) {
+        // A box that told the join another event than it said a moment ago.
+        await refuseUnproven(eventId)
+      }
+      // From the poster where there was one: the key this device holds the
+      // event's boxes to from now on came from the wall, not the network.
+      const key = poster?.key ?? eventKeyFrom(joined.eventKey)
       if (eventId && !acceptEvent(eventId)) {
         // A box running another event than the one open: the sign-in is
         // that event's, and so is everything the box is about to send. File

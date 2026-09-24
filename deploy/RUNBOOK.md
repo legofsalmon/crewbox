@@ -17,7 +17,11 @@ The one document to print and keep in the production office.
   travel router covers a production office, not a site.
 - USB stick for backups, gaffer-taped to the server
 - Printed QR join posters (`node deploy/make-poster.mjs https://chat.<yourdomain>:8787 <EVENT_PIN>`
-  — the port matters: it goes on the poster exactly as typed here)
+  — the port matters: it goes on the poster exactly as typed here). Run it
+  where that address reaches the box: the QR then names the event, and the
+  phone apps check the box is the poster's before a PIN goes to it. It says
+  when it couldn't, and why. Print them again if the event starts afresh on
+  a spare without its backup.
 - This runbook
 
 ## A laptop box — trials, small rooms, and the spare in the car
