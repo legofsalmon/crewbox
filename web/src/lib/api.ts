@@ -162,6 +162,8 @@ export function join(input: { name: string; eventPin: string; personalPin: strin
   created: boolean
   /** Which event the sign-in is for; absent from a box that predates it. */
   eventId?: string
+  /** That event's public key (PublicConfig.eventKey); absent from a box that predates it. */
+  eventKey?: string
 }> {
   return request('/api/join', {
     method: 'POST',

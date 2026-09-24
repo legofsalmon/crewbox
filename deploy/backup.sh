@@ -9,7 +9,9 @@
 #
 # Not backed up, because the box rebuilds them on first boot: web-dist/ and
 # livekit/. The SFU's credentials live in the settings table, so they travel
-# inside the database and voice keeps working across the swap.
+# inside the database and voice keeps working across the swap. So does the
+# box's signing key, which is how a phone that joined before can tell a spare
+# restored from here is the same event (server/src/identity.ts).
 set -euo pipefail
 
 # The systemd rig and the one-file box keep data in different places. Prefer

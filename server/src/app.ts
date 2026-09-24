@@ -43,6 +43,7 @@ import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
 import { ANNOUNCE_KEY, ANNOUNCE_SETTINGS, type AnnounceStatus } from './announce/index.ts'
+import { boxIdentity, NONCE_RE } from './identity.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, BUNDLE_PAGE, type MetricsStore } from './audit/metrics.ts'
@@ -593,6 +594,11 @@ export function buildApp({
   // while someone is still looking at it.
   adminPasswordHash()
 
+  // The key a phone checks this box against before following its event to a
+  // new address (identity.ts). Also minted at startup, so it is in the
+  // database, and in the next backup, from the first boot that has it.
+  const identity = boxIdentity(store, fastify.log)
+
   /**
    * What the crew's own devices said about comms over the window a show moves
    * in. Null when nobody has been on voice, which is a different thing from
@@ -616,6 +622,7 @@ export function buildApp({
     voiceEnabled: voiceAvailable,
     modules,
     eventId: store.dbEpoch(),
+    eventKey: identity.publicKey,
   })
 
   // Warmed at startup so the admin panel reads a result rather than waiting
@@ -841,6 +848,25 @@ export function buildApp({
 
   // Public settings the pre-auth join screen and offline screen need.
   fastify.get('/api/config', () => publicConfig())
+
+  /**
+   * The box proving it is the event it says it is, by signing a phone's
+   * challenge with its key (identity.ts, docs/DISCOVERY.md).
+   *
+   * Public, like /api/config, because a phone asks before it sends anything
+   * to an address. The event's ID and key are in /api/config already, and
+   * the signature is over a challenge the asker chose, which is no use to
+   * anyone else: a phone's challenge is fresh every time. The key signs
+   * nothing else, so answering whoever asks gives nothing away.
+   */
+  fastify.get('/api/identity', (req, reply) => {
+    const nonce = (req.query as { nonce?: unknown } | undefined)?.nonce
+    if (typeof nonce !== 'string' || !NONCE_RE.test(nonce)) {
+      return reply.code(400).send({ error: 'nonce must be 16 to 64 random bytes, base64url' })
+    }
+    const eventId = store.dbEpoch()
+    return { eventId, key: identity.publicKey, signature: identity.sign(eventId, nonce) }
+  })
 
   // Any crewbox*.apk in the data directory, newest first — release assets
   // carry the version in the filename, so the file works as downloaded.
@@ -1247,8 +1273,15 @@ export function buildApp({
       store.createSession(token, existing.id)
       const { pinHash: _, ...user } = existing
       // The event with the token, so a phone files the sign-in under the
-      // event it belongs to (see PublicConfig.eventId).
-      return { token, user, created: false, eventId: store.dbEpoch() }
+      // event it belongs to (see PublicConfig.eventId), and the key it will
+      // hold that event's box to from then on.
+      return {
+        token,
+        user,
+        created: false,
+        eventId: store.dbEpoch(),
+        eventKey: identity.publicKey,
+      }
     }
 
     if (suppliedEventPin !== effectiveEventPin()) {
@@ -1269,7 +1302,7 @@ export function buildApp({
     const general = store.getChannelByName(HOME_CHANNEL)
     if (general) hub.systemMessage(general.id, `${user.name} joined`)
 
-    return { token, user, created: true, eventId: store.dbEpoch() }
+    return { token, user, created: true, eventId: store.dbEpoch(), eventKey: identity.publicKey }
   })
 
   fastify.get('/api/me', (req, reply) => {

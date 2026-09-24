@@ -78,14 +78,65 @@ page says so to the crew.
 
 **It is a hint, not an identity.** Anything on the crew Wi-Fi can announce
 `_crewbox._tcp` with any TXT record it likes. An app may list what it finds
-and use it to fill in an address, and it must still confirm, by connecting,
-that the box at that address is the one it thinks: `GET /api/config` returns
-the same event ID, and a box an app has joined before will prove itself with
-its signing key once that lands (the plan's next step). An app must never send
+and use it to fill in an address, but it must confirm, by connecting, that the
+box at that address is the one it thinks: `GET /api/config` returns the event's
+ID, and a box the app has joined before proves itself with its signing key
+([below](#how-a-box-proves-which-event-it-is)). An app must never send
 credentials to an address because of what a TXT record said.
 
 When `tls` names a certificate, connect by that name, as crew typing it would;
 the address in the A record is for a box without one.
+
+## How a box proves which event it is
+
+An event ID is public, so on its own it proves nothing. Each box also has a
+P-256 signing key, minted with its database and kept in it
+(`server/src/identity.ts`), so a backup carries the key with the ID: a spare
+restored from last night's backup proves itself as the same event, and a spare
+started with a fresh database has an ID and key of its own and is another
+event.
+
+- `GET /api/config`, and the answer to `POST /api/join`, carry the public key
+  as `eventKey`: the uncompressed point (65 bytes: `0x04`, then x and y),
+  base64url, which WebCrypto imports as `raw` with
+  `{ name: 'ECDSA', namedCurve: 'P-256' }`. An app keeps the key it was given
+  when it joined, with the event.
+- `GET /api/identity?nonce=<challenge>` answers
+  `{ "eventId", "key", "signature" }`. The challenge is 16 to 64 random bytes,
+  base64url, fresh each time; anything else is a 400. The signature is ECDSA
+  with SHA-256 over the UTF-8 bytes of these three lines, with no line break
+  after the last:
+
+  ```
+  crewbox-identity-v1
+  <eventId>
+  <challenge>
+  ```
+
+  in IEEE P1363 form (r, then s, 64 bytes), base64url, which is what
+  WebCrypto's `verify` takes.
+
+- **Check it against the key you kept, never against the one in the answer.**
+  Anything can send a key and a signature that agree with each other. A box
+  whose answer verifies against the key kept for that event holds that event's
+  database, and the app may follow the event to its address. One whose answer
+  doesn't, or that has no key, is another box however it announces itself: say
+  so and ask, as the app does for a box that has started afresh.
+- All of it is public and needs no sign-in, so an app checks a box before it
+  sends it a token or anything of the event's.
+- An app holding an event from before its box had a key takes the key from
+  that box the next time it connects at the address it already has, never
+  from a box found somewhere else.
+
+What it does not do: on plain HTTP, something that sits in the middle of the
+connection can hand the challenge to the real box and its answer back. The
+signature proves that a box holding the key answered, not that nothing stands
+between; HTTPS (the `tls` key above) closes that. What it does stop is an app
+following its event to the wrong box: another event's, a stale address now
+used by something else, or anything announcing an ID it copied.
+
+A box that predates this has no `eventKey` and answers `/api/identity` with a
+404; an app treats it as any box it cannot check.
 
 ## How it behaves on the network
 
@@ -146,6 +197,12 @@ join by address or QR as before.
   (`server/test/announceSocket.test.ts`). It skips on a machine that will not
   loop multicast back, and `CREWBOX_TEST_REQUIRE_MULTICAST=1` makes that a
   failure.
-- **Not yet:** an iPhone's or an Android phone's browser listing a real box.
-  The apps' side of discovery comes next, and this line changes when it has
-  been seen on hardware.
+- **The signature:** checked with WebCrypto (Node's, which implements the same
+  specification as the phones' web views) against the published key, and
+  refused for another event, another challenge or another box's key
+  (`server/test/identity.test.ts`). The same event ID and key come back from a
+  real `deploy/backup.sh` and `deploy/restore.sh`
+  (`server/test/backupRestore.test.ts`).
+- **Not yet:** an iPhone's or an Android phone's browser listing a real box, or
+  checking one's signature. The apps' side of discovery comes next, and this
+  line changes when it has been seen on hardware.

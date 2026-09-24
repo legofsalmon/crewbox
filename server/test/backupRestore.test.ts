@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
+import { openDb } from '../src/db.ts'
+import { boxIdentity } from '../src/identity.ts'
+import { Store } from '../src/store.ts'
 
 /**
  * `deploy/backup.sh` and `deploy/restore.sh`, run for real.
@@ -227,6 +230,30 @@ describe('restoring one', () => {
     expect(listing(spare)).toContain('crewbox-v0.18.0.apk')
     expect(listing(join(spare, 'files'))).toEqual(['stage-plot.jpg'])
     expect(listing(spare)).toContain('cert.pem')
+  })
+
+  it('brings back the same event, with the key its phones hold it to', () => {
+    // A real box's database this time, because what matters is what the box
+    // reads back from it: the event's ID, and the signing key a phone checks
+    // before following that event to a new address (identity.ts).
+    const root = scratch()
+    const dataDir = join(root, 'data')
+    const db = openDb(join(dataDir, 'crewbox.db'))
+    const box = new Store(db)
+    const eventId = box.dbEpoch()
+    const { publicKey } = boxIdentity(box)
+    db.close()
+
+    const backupDir = join(root, 'backups')
+    expect(run('backup.sh', [], { DATA_DIR: dataDir, BACKUP_DIR: backupDir }).status).toBe(0)
+    const spare = join(root, 'spare')
+    expect(run('restore.sh', [], { DATA_DIR: spare, BACKUP_DIR: backupDir }).status).toBe(0)
+
+    const restored = openDb(join(spare, 'crewbox.db'))
+    const onSpare = new Store(restored)
+    expect(onSpare.dbEpoch()).toBe(eventId)
+    expect(boxIdentity(onSpare).publicKey).toBe(publicKey)
+    restored.close()
   })
 
   it('warns when the backup carried no app, because the poster QR will 404', () => {

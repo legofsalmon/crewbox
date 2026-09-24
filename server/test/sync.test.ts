@@ -15,6 +15,7 @@ import {
 } from '@crewbox/shared'
 import { openDb, runMigrations } from '../src/db.ts'
 import { Store } from '../src/store.ts'
+import { boxIdentity } from '../src/identity.ts'
 import { isPrivateIp, isRemoteConnection } from '../src/hub.ts'
 import type { IncomingMessage } from 'node:http'
 import { attachWs, buildApp, type App } from '../src/app.ts'
@@ -1404,6 +1405,8 @@ describe('settings & config', () => {
       voiceEnabled: true,
       modules: ['chat'],
       eventId: store.dbEpoch(),
+      // The key the box minted at startup, read back from the same database.
+      eventKey: boxIdentity(store).publicKey,
     })
 
     // A member cannot change settings.
