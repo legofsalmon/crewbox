@@ -106,6 +106,7 @@ describe('judging what the APK holds', () => {
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECORD_AUDIO',
       'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+      'android.permission.VIBRATE',
       'com.colmhewson.crewbox.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
     ]
     expect(verdict(built)).toEqual({ missing: [], unexpected: [] })

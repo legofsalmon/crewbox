@@ -98,6 +98,16 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
+    <!--
+        The buzz that goes with an alert, through @capacitor/haptics. The
+        plugin's manifest asks for this as well and merges in; it is declared
+        here too so everything the app asks a phone for is in one place and in
+        the permission check. The web view's navigator.vibrate needed it just
+        the same and was never given it, so alerts in the app never vibrated.
+        A normal permission: granted at install, no prompt.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

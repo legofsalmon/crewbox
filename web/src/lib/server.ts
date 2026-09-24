@@ -30,6 +30,11 @@ interface VoicePlugin {
   prepare(): Promise<void>
 }
 
+/** Capacitor's Haptics plugin: the platform's own vibration, in both apps. */
+interface HapticsPlugin {
+  notification(options: { type: 'SUCCESS' | 'WARNING' | 'ERROR' }): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -38,6 +43,7 @@ declare global {
         CrewboxAlerts?: AlertsPlugin
         App?: AppPlugin
         CrewboxVoice?: VoicePlugin
+        Haptics?: HapticsPlugin
       }
     }
   }
@@ -61,6 +67,11 @@ export function nativeApp(): AppPlugin | undefined {
 /** The Android voice bridge, when present (Android builds only). */
 export function nativeVoice(): VoicePlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxVoice
+}
+
+/** Capacitor's Haptics plugin (native only). */
+export function nativeHaptics(): HapticsPlugin | undefined {
+  return window.Capacitor?.Plugins?.Haptics
 }
 
 /**

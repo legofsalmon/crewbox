@@ -33,8 +33,9 @@ import { pathToFileURL } from 'node:url'
  * POST_NOTIFICATIONS for the alert a rigger sees with the phone in a pocket,
  * RECORD_AUDIO and MODIFY_AUDIO_SETTINGS for talkback, BLUETOOTH and
  * BLUETOOTH_CONNECT for a headset on it (the first on Android 11 and older,
- * the second on 12 and later), the two FOREGROUND_SERVICE permissions for
- * the alerts service to survive a 14-hour show day.
+ * the second on 12 and later), VIBRATE for the buzz that goes with an alert,
+ * the two FOREGROUND_SERVICE permissions for the alerts service to survive a
+ * 14-hour show day.
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
@@ -43,6 +44,7 @@ export const REQUIRED = [
   'android.permission.MODIFY_AUDIO_SETTINGS',
   'android.permission.BLUETOOTH',
   'android.permission.BLUETOOTH_CONNECT',
+  'android.permission.VIBRATE',
   'android.permission.FOREGROUND_SERVICE',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
 ]
