@@ -17,6 +17,7 @@ import {
   type AudioKind,
   type DeviceInfo,
 } from './devices.ts'
+import { nativeVoice } from './server.ts'
 import { isSafari, shouldMixThroughWebAudio } from './voice-playback.ts'
 import { qosBetween, worstQos, type ReceiverSample, type VoiceQos } from './voice-qos.ts'
 
@@ -146,6 +147,15 @@ export class VoiceManager {
     await this.leave()
     this.channelId = channelId
     this.publish({ channelId, status: 'joining', error: null, participants: [] })
+    // Before anything below opens audio. The Android web view reads the
+    // Bluetooth permission once, when its audio first starts, so this is the
+    // moment asking about a headset can still count (VoicePlugin.java). A
+    // bridge that fails is a headset that doesn't follow, never a failed join.
+    await nativeVoice()
+      ?.prepare()
+      .catch(() => {})
+    // Left, or joined somewhere else, while Android was asking.
+    if (this.channelId !== channelId) return
 
     const savedIn = savedDeviceId('audioinput')
     const savedOut = savedDeviceId('audiooutput')

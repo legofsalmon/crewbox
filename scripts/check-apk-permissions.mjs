@@ -31,15 +31,18 @@ import { pathToFileURL } from 'node:url'
  *
  * Each one is load-bearing: INTERNET to reach the box at all,
  * POST_NOTIFICATIONS for the alert a rigger sees with the phone in a pocket,
- * RECORD_AUDIO and MODIFY_AUDIO_SETTINGS for talkback, the two
- * FOREGROUND_SERVICE permissions for the alerts service to survive a 14-hour
- * show day.
+ * RECORD_AUDIO and MODIFY_AUDIO_SETTINGS for talkback, BLUETOOTH and
+ * BLUETOOTH_CONNECT for a headset on it (the first on Android 11 and older,
+ * the second on 12 and later), the two FOREGROUND_SERVICE permissions for
+ * the alerts service to survive a 14-hour show day.
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
   'android.permission.POST_NOTIFICATIONS',
   'android.permission.RECORD_AUDIO',
   'android.permission.MODIFY_AUDIO_SETTINGS',
+  'android.permission.BLUETOOTH',
+  'android.permission.BLUETOOTH_CONNECT',
   'android.permission.FOREGROUND_SERVICE',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
 ]

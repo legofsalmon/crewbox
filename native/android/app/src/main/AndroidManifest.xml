@@ -78,6 +78,26 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
+        Bluetooth headsets in voice. The web view chooses the call's audio
+        device itself, and checks for Bluetooth permission once, when its
+        audio first starts:
+
+        - Android 11 and older check BLUETOOTH, and without it the web view
+          never moves a call onto a Bluetooth headset. A normal permission:
+          granted at install, no prompt, and gone from the list on newer
+          Android.
+        - Android 12 and later use a headset that is connected when voice
+          starts either way. BLUETOOTH_CONNECT is what lets the web view
+          notice one that connects during a call, or comes back after
+          dropping out of range, and move the call onto it. A runtime
+          permission, asked for once by VoicePlugin, and only of someone who
+          joins voice with a Bluetooth headset connected.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

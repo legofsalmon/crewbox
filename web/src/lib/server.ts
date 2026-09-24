@@ -24,11 +24,21 @@ interface AppPlugin {
   minimizeApp(): Promise<void>
 }
 
+/** Android's side of voice (native/android VoicePlugin). */
+interface VoicePlugin {
+  /** Before a join opens any audio: asks about Bluetooth once, when it matters. */
+  prepare(): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
       isNativePlatform?: () => boolean
-      Plugins?: { CrewboxAlerts?: AlertsPlugin; App?: AppPlugin }
+      Plugins?: {
+        CrewboxAlerts?: AlertsPlugin
+        App?: AppPlugin
+        CrewboxVoice?: VoicePlugin
+      }
     }
   }
 }
@@ -46,6 +56,11 @@ export function nativeAlerts(): AlertsPlugin | undefined {
 /** Capacitor's App plugin: the back button and the app's lifecycle (native only). */
 export function nativeApp(): AppPlugin | undefined {
   return window.Capacitor?.Plugins?.App
+}
+
+/** The Android voice bridge, when present (Android builds only). */
+export function nativeVoice(): VoicePlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxVoice
 }
 
 /**

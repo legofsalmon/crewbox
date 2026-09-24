@@ -97,6 +97,8 @@ describe('judging what the APK holds', () => {
     // Without an allowance for it, every build fails this check — and a
     // check that fails on every green build teaches people to ignore it.
     const built = [
+      'android.permission.BLUETOOTH',
+      'android.permission.BLUETOOTH_CONNECT',
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
       'android.permission.INTERNET',

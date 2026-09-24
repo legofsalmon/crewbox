@@ -2,7 +2,7 @@
 //
 // The manager reads saved device ids out of localStorage on every join.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { saveDeviceId, savedDeviceId } from './devices.ts'
 
 /**
@@ -382,5 +382,81 @@ describe('a room nobody is holding any more', () => {
     // leave() nulls the room before disconnecting, so reset() finds nothing
     // left to close — one hang-up, not two.
     expect(FakeRoom.disconnectCalls).toBe(1)
+  })
+})
+
+describe('asking Android about a Bluetooth headset', () => {
+  // The Android web view reads the Bluetooth permission once, when its audio
+  // first starts. Asked after the join has opened audio, a yes would change
+  // nothing until the app next starts afresh (VoicePlugin.java).
+
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete window.Capacitor
+  })
+
+  /** A bridge whose answer the test gives, when it chooses to. */
+  const askingBridge = () => {
+    const pending = { answer: undefined as (() => void) | undefined }
+    const prepare = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          pending.answer = resolve
+        })
+    )
+    window.Capacitor = { Plugins: { CrewboxVoice: { prepare } } }
+    return { prepare, pending }
+  }
+
+  it('happens before the join opens any audio, and waits for the answer', async () => {
+    const { prepare, pending } = askingBridge()
+    const connect = vi.spyOn(FakeRoom.prototype, 'connect')
+    const manager = new VoiceManager(() => {})
+
+    const joined = manager.join('chan-1', 'token', 'ws://box')
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce())
+    expect(connect).not.toHaveBeenCalled()
+
+    pending.answer?.()
+    await joined
+    expect(connect).toHaveBeenCalledOnce()
+  })
+
+  it('never costs the join, whatever the bridge does', async () => {
+    // A headset that doesn't follow the call is a nuisance. A crew member
+    // who can't get on comms because of it is a failure.
+    window.Capacitor = {
+      Plugins: { CrewboxVoice: { prepare: vi.fn(async () => Promise.reject(new Error('gone'))) } },
+    }
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+
+    await manager.join('chan-1', 'token', 'ws://box')
+    expect(states).toContainEqual(expect.objectContaining({ status: 'connected' }))
+  })
+
+  it('does not carry on into a channel that was left while Android asked', async () => {
+    const { pending } = askingBridge()
+    const connect = vi.spyOn(FakeRoom.prototype, 'connect')
+    const manager = new VoiceManager(() => {})
+
+    const joined = manager.join('chan-1', 'token', 'ws://box')
+    await vi.waitFor(() => expect(pending.answer).toBeTypeOf('function'))
+    await manager.leave()
+    pending.answer?.()
+    await joined
+
+    expect(connect).not.toHaveBeenCalled()
+  })
+
+  it('is not a step at all without the bridge: a browser, or the iPhone app', async () => {
+    const connect = vi.spyOn(FakeRoom.prototype, 'connect')
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    expect(connect).toHaveBeenCalledOnce()
   })
 })
