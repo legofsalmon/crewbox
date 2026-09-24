@@ -121,8 +121,37 @@ export function decideAnnounce(inputs: AnnounceInputs): AnnounceDecision {
 
 export type AnnounceState = 'announcing' | 'starting' | 'quiet' | 'off' | 'failed'
 
-const stopped = (error: string | null): string =>
-  `The announcement stopped (${error ?? 'no reason given'}). Trying again.`
+/**
+ * What an admin can do about an error the operating system gave the
+ * announcer, where there is something to do, or null.
+ *
+ * - macOS answers a send it won't allow on the local network with
+ *   EHOSTUNREACH. Sending multicast needs the Local Network permission
+ *   (Apple's TN3179), which macOS asks of Crewbox.app, the app that started
+ *   the box. A box run from Terminal is exempt, so this meets only the app.
+ * - EADDRINUSE: something holds 5353 without sharing it. The responders
+ *   that come with an operating system share it, Avahi included unless its
+ *   disallow-other-stacks is set.
+ */
+export function osAdvice(error: string, platform: NodeJS.Platform): string | null {
+  if (platform === 'darwin' && /\bEHOSTUNREACH\b/.test(error)) {
+    return "macOS refused to send it (EHOSTUNREACH), which usually means Crewbox hasn't been allowed on the local network. Say Allow if macOS is asking, or turn Crewbox on under System Settings → Privacy & Security → Local Network."
+  }
+  if (/\bEADDRINUSE\b/.test(error)) {
+    return platform === 'linux'
+      ? 'Another program keeps port 5353 to itself (EADDRINUSE). If that is Avahi, set disallow-other-stacks=no in /etc/avahi/avahi-daemon.conf and restart it.'
+      : 'Another program keeps port 5353 to itself (EADDRINUSE).'
+  }
+  return null
+}
+
+/** A sentence for the panel: the advice where there is some, else the error as it came. */
+function failure(what: string, error: string | null, platform: NodeJS.Platform): string {
+  const advice = error ? osAdvice(error, platform) : null
+  return advice
+    ? `${what}. ${advice} Trying again.`
+    : `${what} (${error ?? 'no reason given'}). Trying again.`
+}
 
 export interface AnnounceStatus {
   state: AnnounceState
@@ -163,6 +192,8 @@ export interface AnnouncementsOptions {
   createAnnouncer?: (options: AnnouncerOptions) => AnnouncerLike
   /** How often adapters are looked at again: a cable or a Wi-Fi can come and go. */
   intervalMs?: number
+  /** For tests: the operating system whose errors are explained. */
+  platform?: NodeJS.Platform
 }
 
 /**
@@ -185,6 +216,10 @@ export class Announcements {
 
   constructor(options: AnnouncementsOptions) {
     this.options = options
+  }
+
+  private stopped(error: string | null): string {
+    return failure('The announcement stopped', error, this.options.platform ?? process.platform)
   }
 
   start(): void {
@@ -225,7 +260,7 @@ export class Announcements {
       return { ...base, ...where, state: 'announcing', name: running.instanceName }
     }
     if (running?.state === 'failed') {
-      return { ...base, ...where, state: 'failed', reason: stopped(running.error) }
+      return { ...base, ...where, state: 'failed', reason: this.stopped(running.error) }
     }
     if (this.failure) return { ...base, ...where, state: 'failed', reason: this.failure }
     return { ...base, ...where, state: 'starting' }
@@ -252,7 +287,7 @@ export class Announcements {
       return
     }
     const current = this.current
-    if (current?.announcer.state === 'failed') this.failed(stopped(current.announcer.error))
+    if (current?.announcer.state === 'failed') this.failed(this.stopped(current.announcer.error))
     if (current?.announcer.state === 'announced' && this.failure) {
       // Only now, with packets actually going out: an announcer that opens
       // its port and then cannot send is not back.
@@ -292,7 +327,11 @@ export class Announcements {
       await announcer.start()
     } catch (err) {
       this.failed(
-        `Could not open the announcement port (${err instanceof Error ? err.message : String(err)}). Trying again.`
+        failure(
+          'Could not open the announcement port',
+          err instanceof Error ? err.message : String(err),
+          this.options.platform ?? process.platform
+        )
       )
       this.current = null
     }

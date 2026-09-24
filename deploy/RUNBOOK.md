@@ -44,7 +44,11 @@ router of its own, and that costs exactly two things (below).
    QR already scanned points at nothing.
 5. **macOS will ask to allow incoming connections** the first time. Say
    Allow. If you clicked past it: System Settings → Network → Firewall →
-   Options.
+   Options. It may also ask whether Crewbox can find and connect to devices
+   on your local network: say Allow, since that is how the phone apps find
+   the box on the Wi-Fi. If you said no: System Settings → Privacy &
+   Security → Local Network. **Admin → This box** says when this is what
+   is stopping the announcement.
 6. **Sleep is already handled** — the box holds a `caffeinate` assertion for
    as long as it runs, lid included. One exception it cannot beat: a MacBook
    on **battery** with the lid shut still sleeps. Keep it on mains.

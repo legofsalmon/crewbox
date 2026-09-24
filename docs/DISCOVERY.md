@@ -397,6 +397,19 @@ answer, which §15.1 asks of a responder that isn't first on the port; on a Mac
 or Windows the box never is. A phone that asks the box for a unicast answer
 still gets one, since that goes to the phone.
 
+Two refusals have their own words in the admin panel:
+
+- **Another program keeps 5353 to itself** (`EADDRINUSE`). The responders
+  that come with an operating system share the port; Avahi does unless
+  `disallow-other-stacks=yes` is set in `/etc/avahi/avahi-daemon.conf`, which
+  the panel names on Linux.
+- **macOS's Local Network permission.** Sending multicast needs it, and
+  macOS asks it of the app that started the box, Crewbox.app, whose
+  `NSLocalNetworkUsageDescription` says why (Apple's TN3179). A send it
+  refuses fails with `EHOSTUNREACH`, which on a Mac the panel explains with
+  where to allow it. A box run from Terminal is exempt, so this meets only
+  the app.
+
 ## What has been checked
 
 - **Against the RFCs:** the behaviours above, each in a unit test on a

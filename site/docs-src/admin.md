@@ -75,8 +75,9 @@ Below the list, the settings:
   not transmit on a show network unless told to. **Always** announces there
   anyway, for a rig whose crew and show share one network on purpose, and
   **Never** stops it. It takes effect at once, and the line underneath says
-  what the box is doing, or why it is quiet. A box run from source starts
-  with it off.
+  what the box is doing, or why it is quiet. On a Mac that has not allowed
+  Crewbox on the local network, it says so and where to allow it. A box
+  run from source starts with it off.
 - **Admin password** — changeable here; doing so locks every other device
   that had the panel open.
 

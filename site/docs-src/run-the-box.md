@@ -17,7 +17,10 @@ internet at the venue.
 - **macOS** — download the `.dmg` from [the front page](/), open, drag to
   Applications, launch. Signed and notarised, so it opens without warnings
   — including with no internet. It keeps the Mac awake while running, lid
-  shut included.
+  shut included. When macOS asks whether Crewbox may find and connect to
+  devices on your local network, say **Allow**: it is how the phone apps
+  find the box on the Wi-Fi. Said no by mistake? **System Settings →
+  Privacy & Security → Local Network**, and turn Crewbox on.
 - **Windows** — download the `.exe`, double-click. SmartScreen will warn
   about an unsigned app: **More info → Run anyway**. That means Windows
   hasn't seen the file before, not that something is wrong.

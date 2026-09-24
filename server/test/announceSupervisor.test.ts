@@ -10,6 +10,7 @@ import { buildApp, type App, type AppDeps } from '../src/app.ts'
 import {
   ANNOUNCE_KEY,
   Announcements,
+  osAdvice,
   type AnnounceSetting,
   type AnnouncerLike,
   type AnnouncementsOptions,
@@ -84,6 +85,8 @@ const supervise = (over: Partial<AnnouncementsOptions> = {}) =>
       return a
     },
     intervalMs: 15_000,
+    // The errors are explained per operating system; these tests pin one.
+    platform: 'linux',
     ...over,
   })
 
@@ -212,6 +215,40 @@ describe('keeping the box announced', () => {
     expect(made).toHaveLength(4)
     expect(logs.filter((l) => l.startsWith('warn:'))).toHaveLength(1)
     await s.stop()
+  })
+
+  it('says where to allow it when macOS will not let the box send', async () => {
+    const s = supervise({ platform: 'darwin' })
+    s.start()
+    await vi.advanceTimersByTimeAsync(0)
+    made[0]!.state = 'failed'
+    made[0]!.error = 'send EHOSTUNREACH 224.0.0.251:5353'
+    expect(s.status().reason).toBe(
+      "The announcement stopped. macOS refused to send it (EHOSTUNREACH), which usually means Crewbox hasn't been allowed on the local network. Say Allow if macOS is asking, or turn Crewbox on under System Settings → Privacy & Security → Local Network. Trying again."
+    )
+    await s.stop()
+  })
+
+  it('names Avahi on Linux when another program keeps the port to itself', async () => {
+    failNext = new Error('bind EADDRINUSE 0.0.0.0:5353')
+    const s = supervise()
+    s.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.status().reason).toMatch(
+      /^Could not open the announcement port\. Another program keeps port 5353 to itself \(EADDRINUSE\)\. If that is Avahi, set disallow-other-stacks=no/
+    )
+    await s.stop()
+  })
+
+  it('explains only what it knows the cause of, and only where it applies', () => {
+    // No route to a host is only macOS's way of refusing on macOS.
+    expect(osAdvice('send EHOSTUNREACH 224.0.0.251:5353', 'linux')).toBeNull()
+    expect(osAdvice('send EHOSTUNREACH 224.0.0.251:5353', 'win32')).toBeNull()
+    expect(osAdvice('bind EADDRINUSE 0.0.0.0:5353', 'win32')).toBe(
+      'Another program keeps port 5353 to itself (EADDRINUSE).'
+    )
+    expect(osAdvice('bind EADDRINUSE 0.0.0.0:5353', 'darwin')).not.toMatch(/Avahi/)
+    expect(osAdvice('send ENETDOWN 224.0.0.251:5353', 'darwin')).toBeNull()
   })
 
   it('says again what changed without being asked, within one look', async () => {
