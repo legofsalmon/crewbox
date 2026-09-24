@@ -95,6 +95,13 @@ import type { ReportService } from './reports/service.ts'
 import { FEEDBACK_TYPES, OSES } from './reports/payload.ts'
 import type { Store } from './store.ts'
 
+/**
+ * Every method a route here takes, for the apps' requests from their own
+ * origin (see the CORS registration). test/cors.test.ts fails on a route
+ * or a page using one that isn't here.
+ */
+export const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']
+
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 /**
@@ -880,8 +887,11 @@ export function buildApp({
   }
   // Native wrappers load the bundle from the app package, so their requests
   // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
-  // no CSRF surface on the crew LAN.
-  void fastify.register(cors, { origin: true })
+  // no CSRF surface on the crew LAN. The methods have to be named: left to
+  // itself @fastify/cors allows GET, HEAD and POST only, and a web view asks
+  // first and then refuses anything else, so deleting an account or a
+  // message and saving admin settings all failed in both apps.
+  void fastify.register(cors, { origin: true, methods: CORS_METHODS })
   // `fields`, `fieldSize` and `parts` as well as the file caps: the handler
   // reads exactly `width`, `height` and `thumb`, and busboy was otherwise
   // happy to buffer as many form fields as a client cared to send, each
