@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, openSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,9 +18,11 @@ const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url))
 const SERVER = fileURLToPath(new URL('..', import.meta.url))
 
 const children: ChildProcess[] = []
+const exits: string[] = []
 const dirs: string[] = []
 
 afterEach(() => {
+  exits.length = 0
   for (const child of children.splice(0)) {
     if (child.pid === undefined) continue
     try {
@@ -49,9 +51,12 @@ async function until<T>(what: string, check: () => T | undefined, ms = 30_000): 
 /** Start a box from source on a free port; resolve with the pid in its marker. */
 async function startBox(dataDir: string): Promise<number> {
   const before = new Set(markers(dataDir))
+  // The box's own log, for the failure message: a marker left behind says
+  // that the shutdown went wrong, and only the log says how.
+  const log = openSync(join(dataDir, 'box.log'), 'a')
   const child = spawn('npx', ['tsx', ENTRY], {
     cwd: SERVER,
-    stdio: 'ignore',
+    stdio: ['ignore', log, log],
     detached: true,
     env: {
       ...process.env,
@@ -66,6 +71,9 @@ async function startBox(dataDir: string): Promise<number> {
     },
   })
   children.push(child)
+  child.on('exit', (code, signal) => {
+    exits.push(`npx exited with ${signal ?? code}`)
+  })
   const name = await until('the box to write its run marker', () =>
     markers(dataDir).find((m) => !before.has(m))
   )
@@ -114,6 +122,7 @@ describe('a box that died without shutting down', () => {
     // Stopped properly, it leaves nothing behind to be mistaken for a crash.
     process.kill(second, 'SIGTERM')
     await until('the second box to stop', () => (alive(second) ? undefined : true))
-    expect(markers(dataDir)).toEqual([])
+    const why = () => `${exits.join('; ')}\n${readFileSync(join(dataDir, 'box.log'), 'utf8')}`
+    expect(markers(dataDir), why()).toEqual([])
   }, 90_000)
 })
