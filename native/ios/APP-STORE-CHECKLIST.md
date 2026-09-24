@@ -19,6 +19,34 @@ Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
   configuration: iPhone XS and newer. The planned native features need iOS
   16.1 to 16.4, and there are no installs on older versions to strand.
 - [x] **Privacy policy** — `site/docs/privacy-policy.html` (deployed at https://crewbox.letissier.ie/docs/privacy-policy).
+- [x] **No App Transport Security justification needed** — the one exemption
+  set is `NSAllowsLocalNetworking`, which is not on Apple's list of keys that
+  need one. It lets the app use plain HTTP to IP addresses, `.local` names and
+  one-word names, which is how a box without a certificate is reached.
+  `server/test/iosInfoPlist.test.mjs` fails if either key that does need a
+  justification appears (see the decision below).
+
+## Decided, and yours to overturn: no plain HTTP to other names
+
+`NSAllowsArbitraryLoadsInWebContent` would let the web view, which is the
+whole app, use plain HTTP to any name, so a box without a certificate could be
+reached as `crewbox.lan` as well as by its IP address. It is left off:
+
+- A box only advertises a name when it has a certificate for it, so nothing
+  the box prints leads an iPhone to a plain-HTTP name.
+- An iPhone user who types one is told at once to use the IP address, or
+  `https://` if the box has a certificate, rather than left on "can't reach".
+- It switches App Transport Security off for everything the web view loads,
+  and App Review asks for a justification. (`NSAllowsArbitraryLoads` is off
+  too: iOS 10 and later ignore it beside `NSAllowsLocalNetworking`, but it
+  still asks for one.)
+
+If venues turn out to reach plain-HTTP boxes by name, turning it on means:
+the key set to `true` in `Info.plist`, the test that forbids it changed,
+`iphoneRefusesPlainHttp` in `web/src/lib/server.ts` made to return false, and
+a justification at submission, along the lines of "the app connects to a
+server the event organiser runs on the event's own network, reached by a local
+name and usually without a certificate".
 
 ## Before you archive (Xcode)
 

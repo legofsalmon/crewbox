@@ -49,17 +49,30 @@
 	<string>Crewbox saves pictures you choose to your photo library.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- The crew server speaks plain HTTP on the local network only, and
-		     `NSAllowsLocalNetworking` is exactly that exemption: private
-		     addresses and .local names, nothing else.
+		<!-- A box without a certificate speaks plain HTTP, and
+		     `NSAllowsLocalNetworking` is the exemption that lets the app
+		     reach it. Apple's documentation of the key says what it covers:
+		     IP addresses (IPv4 and IPv6), `.local` names, and names with no
+		     dot in them. Since iOS 17 it is also what lets the app use an IP
+		     address at all, which is how such a box is advertised. It needs
+		     no justification in App Review.
 
-		     `NSAllowsArbitraryLoads` was set beside it, which is not "local
-		     only" — it turns App Transport Security off for every request the
-		     app makes, to anywhere, and takes precedence over the comment
-		     above it. It also draws a review question the app does not need
-		     an answer to. If a plain-HTTP box on a public address ever becomes
-		     a supported deployment, that is a decision to write down in
-		     native/ios/APP-STORE-CHECKLIST.md, not a key to leave switched on. -->
+		     Plain HTTP to any other name (crewbox.lan, chat.crew.example) is
+		     refused inside the phone before a request is sent. The join
+		     screen says so rather than trying: iphoneRefusesPlainHttp in
+		     web/src/lib/server.ts mirrors the rule, so keep the two in step.
+		     A box only advertises a name when it has a certificate for it,
+		     and ATS allows HTTPS to a name whose certificate meets its rules,
+		     as a Let's Encrypt one does.
+
+		     `NSAllowsArbitraryLoads` used to sit beside it. On iOS 10 and
+		     later, ATS ignores that key when this one is present, so it did
+		     nothing on any phone this app installs on, while still asking
+		     App Review for a justification. `NSAllowsArbitraryLoadsInWebContent`
+		     would open plain HTTP to every name, and is left off on purpose:
+		     native/ios/APP-STORE-CHECKLIST.md has the reasons, and what to
+		     change if venues need it. server/test/iosInfoPlist.test.mjs pins
+		     all three. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

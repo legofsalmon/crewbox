@@ -61,6 +61,29 @@ describe('required device capabilities', () => {
   })
 })
 
+describe('App Transport Security', () => {
+  const ats = /<key>NSAppTransportSecurity<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(plist)?.[1]
+
+  it('lets the app reach a plain-HTTP box by its address', () => {
+    // A box without a certificate advertises its IP address, and since
+    // iOS 17 plain HTTP to an IP address needs this key. Without it every
+    // iPhone joining such a box sees one that is switched off.
+    expect(ats, 'NSAppTransportSecurity is missing').toBeDefined()
+    expect(ats).toMatch(/<key>NSAllowsLocalNetworking<\/key>\s*<true\/>/)
+  })
+
+  it.each(['NSAllowsArbitraryLoads', 'NSAllowsArbitraryLoadsInWebContent'])(
+    'does not set %s',
+    (key) => {
+      // Each asks App Review for a justification. The first does nothing
+      // beside NSAllowsLocalNetworking on iOS 10 and later; the second opens
+      // plain HTTP to every name, a decision recorded in
+      // native/ios/APP-STORE-CHECKLIST.md rather than a key to add quietly.
+      expect(ats).not.toContain(`<key>${key}</key>`)
+    }
+  )
+})
+
 describe('the oldest iOS the app installs on', () => {
   const project = readFileSync(
     join(import.meta.dirname, '..', '..', 'native/ios/App/App.xcodeproj/project.pbxproj'),
