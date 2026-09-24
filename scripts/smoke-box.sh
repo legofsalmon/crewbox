@@ -142,19 +142,52 @@ index="$(curl -fsS "$BASE/")"
 contains "$index" '<div id="root"' || contains "$index" '<title' || fail "web app not served"
 pass "serves the web app"
 
-contains "$(curl -fsS "$BASE/setup")" 'name="eventName"' || fail "/setup did not render"
-pass "first-run setup page"
+# First-run setup has two right answers. A release box is "trial, then lock"
+# (LICENCE_POLICY in server/src/licence/decide.ts), and this script always
+# starts it on an empty data directory, so it has never had a trial or a key:
+# /setup shows the licence gate instead of the form, and a POST is refused
+# with 423 and saves nothing. That is the product working, not a fault, and
+# it is what every admin sees on a new box. A build whose policy is `open` or
+# `watermark`, or that has no verifying key, shows the form and saves.
+#
+# Either way the page has to render, and a lock has to actually hold.
+setup="$(curl -fsS "$BASE/setup")"
+if contains "$setup" 'name="eventName"'; then
+  LOCKED=0
+  pass "first-run setup page"
+elif contains "$setup" 'Licence needed'; then
+  LOCKED=1
+  # The way out of the gate is the Admin panel, so the page has to say how
+  # to get there: the PIN to join with.
+  contains "$setup" "$PIN" || fail "the licence gate on /setup does not show the event PIN"
+  pass "first-run setup page (unlicensed: asks for a licence first)"
+else
+  fail "/setup rendered neither the setup form nor the licence gate"
+fi
 
-code="$(curl -fsS -o /dev/null -w '%{http_code}' -X POST "$BASE/setup" \
+code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/setup" \
   --data-urlencode "eventName=$NAME" --data-urlencode "wifiSsid=SmokeNet" \
   --data-urlencode "eventPin=$PIN")"
-[ "$code" = "302" ] || fail "POST /setup returned $code, expected 302"
-pass "setup saves and redirects"
+if [ "$LOCKED" -eq 0 ]; then
+  [ "$code" = "302" ] || fail "POST /setup returned $code, expected 302"
+  pass "setup saves and redirects"
+else
+  [ "$code" = "423" ] || fail "POST /setup on an unlicensed box returned $code, expected 423"
+  pass "setup is refused until the box has a licence"
+fi
 
 connect="$(curl -fsS "$BASE/connect")"
-contains "$connect" "$NAME" || fail "/connect does not show the event name"
 contains "$connect" "$PIN" || fail "/connect does not show the event PIN"
-pass "join page shows the event and PIN"
+if [ "$LOCKED" -eq 0 ]; then
+  contains "$connect" "$NAME" || fail "/connect does not show the event name"
+  pass "join page shows the event and PIN"
+else
+  # The refused POST above must not have saved anything on the way out.
+  if contains "$connect" "$NAME"; then
+    fail "the refused setup saved the event name anyway"
+  fi
+  pass "join page shows the PIN, and the refused setup saved nothing"
+fi
 
 join="$(curl -fsS -X POST "$BASE/api/join" -H 'content-type: application/json' \
   -d "{\"name\":\"Smoke\",\"eventPin\":\"$PIN\",\"personalPin\":\"1234\"}")"
@@ -179,6 +212,21 @@ locked="$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/admin/settings" \
   -H "authorization: Bearer $token")"
 [ "$locked" = "403" ] || fail "admin panel answered $locked without an unlock, expected 403"
 pass "panel stays shut without the password"
+
+# The Licence section is how a locked box gets unlocked, and offline
+# activation — the usual case on site — needs this box's request code, which
+# is read from the OS differently on every platform. A locked box that cannot
+# name itself can never be licensed without internet, so check that here,
+# on each OS's real binary, rather than find out in a field.
+licence="$(curl -fsS "$BASE/api/admin/licence" \
+  -H "authorization: Bearer $token" -H "x-admin-token: $admin_token")" ||
+  fail "the admin Licence section did not answer"
+licence_status="$(echo "$licence" | grep -o '"status":"[^"]*"' | head -1 | sed 's/.*:"//;s/"//')"
+[ -n "$licence_status" ] || fail "the Licence section answered without a status: $licence"
+if [ "$LOCKED" -eq 1 ] && contains "$licence" '"requestCode":null'; then
+  fail "locked, and no request code to activate offline with: $licence"
+fi
+pass "the Licence section answers (status: $licence_status)"
 
 ready="$(curl -fsS "$BASE/api/admin/settings" \
   -H "authorization: Bearer $token" -H "x-admin-token: $admin_token")"
