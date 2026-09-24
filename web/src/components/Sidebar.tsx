@@ -64,6 +64,7 @@ export default function Sidebar() {
   const latencyMs = useStore((s) => s.latencyMs)
   const configModules = useStore((s) => s.config.modules)
   const eventName = useStore((s) => displayName(s.config.eventName))
+  const unlicensed = useStore((s) => s.config.unlicensed === true)
 
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -141,6 +142,10 @@ export default function Sidebar() {
             Delete account
           </button>
         )}
+        {/* The box's licence, not this phone's, and only ever a mark: nothing
+            a crew member does is blocked or slowed by it. Sized with the
+            version beside it so it is there without being in the way. */}
+        {unlicensed && <span className="unlicensed-mark">Unlicensed</span>}
         <span className="app-version" title={`Crewbox ${APP_VERSION}`}>
           v{APP_VERSION}
         </span>

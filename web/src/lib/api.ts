@@ -424,6 +424,93 @@ export function adminResetUpdate(auth: AdminAuth): Promise<{ flow: UpdateFlow }>
   })
 }
 
+/**
+ * The box's licence, as the admin panel's Licence section sees it. Mirrors
+ * `LicenceStatus` in server/src/licence/service.ts.
+ *
+ * The licence belongs to the box, never to a phone: none of this is ever in
+ * what the crew receive, apart from the one `unlicensed` flag in the public
+ * config that draws the drawer line.
+ */
+export type LicenceState =
+  'active' | 'update_required' | 'check_in_required' | 'expired' | 'wrong_machine' | 'invalid'
+
+export interface LicenceStatus {
+  policy: 'open' | 'watermark' | 'lock'
+  status: LicenceState
+  restricted: boolean
+  /** Show the "Unlicensed copy" banner. */
+  watermark: boolean
+  /** Event setup and configuration are refused until a licence is entered. */
+  locked: boolean
+  /** False on a build that cannot verify licences — nothing is restricted then. */
+  verifies: boolean
+  /** The raw machine id, typed into the account page for offline activation. */
+  requestCode: string | null
+  /** This box as the licence service names it. */
+  machine: string | null
+  key: string | null
+  licence: {
+    edition: string
+    name: string | null
+    seats: number
+    mode: string
+    checkInBy: number
+    maintenanceUntil: number
+    machine: string
+  } | null
+  lastCheckIn: { at: number; ok: boolean; error: string | null } | null
+  manageUrl: string
+  buildDate: number
+}
+
+export function adminGetLicence(auth: AdminAuth): Promise<{ licence: LicenceStatus }> {
+  return request('/api/admin/licence', { headers: adminHeaders(auth) })
+}
+
+function licencePost<T>(auth: AdminAuth, path: string, body?: unknown): Promise<T> {
+  return request(`/api/admin/licence/${path}`, {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+}
+
+/** Activate a key on this box. Needs the box to reach the licence service. */
+export function adminActivateLicence(
+  auth: AdminAuth,
+  key: string
+): Promise<{ licence: LicenceStatus }> {
+  return licencePost(auth, 'activate', { key })
+}
+
+export function adminStartTrial(
+  auth: AdminAuth,
+  email: string,
+  name?: string
+): Promise<{ licence: LicenceStatus }> {
+  return licencePost(auth, 'trial', { email, ...(name ? { name } : {}) })
+}
+
+/** Offline activation: a token from the account page, pasted in. No network. */
+export function adminPasteLicenceToken(
+  auth: AdminAuth,
+  token: string
+): Promise<{ licence: LicenceStatus }> {
+  return licencePost(auth, 'token', { token })
+}
+
+export function adminCheckInLicence(auth: AdminAuth): Promise<{ licence: LicenceStatus }> {
+  return licencePost(auth, 'check-in')
+}
+
+/** Free the seat (best effort) and forget the licence here (always). */
+export function adminReleaseLicence(
+  auth: AdminAuth
+): Promise<{ licence: LicenceStatus; released: boolean }> {
+  return licencePost(auth, 'release')
+}
+
 /** The export is downloaded as a blob so the UI can save it as a file. */
 export async function adminExport(auth: AdminAuth): Promise<Blob> {
   const res = await fetch(apiUrl('/api/admin/export'), { headers: adminHeaders(auth) })

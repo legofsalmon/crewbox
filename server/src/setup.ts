@@ -68,6 +68,14 @@ export interface SetupPageOptions {
    * dashboard, and "no internet" is normal and must stay silent.
    */
   warnings?: { label: string; detail: string; fix?: string }[]
+  /**
+   * Set when this box's licence policy withholds event setup until a key or a
+   * trial is entered (the `lock` policy). The page then says why and how,
+   * instead of offering a form it would refuse — and still shows the admin
+   * password and the join PIN, because those are exactly what somebody needs
+   * to reach Admin → Licence.
+   */
+  locked?: string
 }
 
 const field = (id: string, label: string, value: string, hint: string, attrs: string): string => `
@@ -155,7 +163,32 @@ const networkSection = (network: SetupValues['network']): string => {
   </details>`
 }
 
-export function setupPage({ values, base, error, warnings = [] }: SetupPageOptions): string {
+/**
+ * The page when setup is withheld for want of a licence: why, and the two
+ * things needed to get to the Licence section — the crew PIN to join, and the
+ * admin password to unlock the panel.
+ */
+const lockedBody = (message: string, values: SetupValues): string => `
+  <div class="warn"><b>Licence needed</b><p>${escapeHtml(message)}</p></div>
+  <p class="meta">Join with event PIN <strong>${escapeHtml(values.eventPin)}</strong>${
+    values.adminPassword
+      ? `, then unlock Admin with <strong>${escapeHtml(values.adminPassword)}</strong> — write it down; it is not shown again`
+      : ''
+  }.</p>
+  <a class="skip" href="/">Open the app</a>`
+
+export function setupPage({
+  values,
+  base,
+  error,
+  warnings = [],
+  locked,
+}: SetupPageOptions): string {
+  if (locked) return page(lockedBody(locked, values))
+  return page(formBody({ values, base, error, warnings }))
+}
+
+function page(body: string): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Set up Crewbox</title>
@@ -186,6 +219,12 @@ export function setupPage({ values, base, error, warnings = [] }: SetupPageOptio
 </style></head><body><div class="card">
   <h1>Crewbox</h1>
   <p class="meta">Two minutes of setup, then crew scan a QR and you're running.</p>
+  ${body}
+</div></body></html>`
+}
+
+function formBody({ values, base, error, warnings = [] }: SetupPageOptions): string {
+  return `
   ${error ? `<p class="error">${escapeHtml(error)}</p>` : ''}
   ${warnings
     .map(
@@ -217,5 +256,5 @@ export function setupPage({ values, base, error, warnings = [] }: SetupPageOptio
   </form>
   <p class="meta">Crew will use <strong>${escapeHtml(base.replace(/^https?:\/\//, ''))}</strong></p>
   <a class="skip" href="/connect">Skip — I'll set this up later in the app</a>
-</div></body></html>`
+`
 }

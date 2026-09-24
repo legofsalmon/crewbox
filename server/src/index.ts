@@ -10,7 +10,9 @@ import { VideoService } from './video/service.ts'
 import { UpdateChecker } from './update/check.ts'
 import { UpdateService } from './update/service.ts'
 import { realRestartIo, statusFileProbe } from './update/restart.ts'
-import { APP_VERSION } from './version.ts'
+import { APP_VERSION, BUILD_DATE } from './version.ts'
+import { LicenceService } from './licence/service.ts'
+import { readFingerprint } from './licence/fingerprint.ts'
 import {
   advertisedUrls,
   boxDataDir,
@@ -510,8 +512,21 @@ async function main(): Promise<void> {
     })
   }
 
+  // The box's licence. Decided offline from the token in the settings table;
+  // nothing here touches the network until well after the box is serving,
+  // and nothing it decides ever touches crew comms. See server/src/licence/.
+  const licence = new LicenceService({
+    settings: store,
+    fingerprint: readFingerprint(),
+    buildDate: BUILD_DATE,
+    ...(config.licence.publicKeyHex ? { publicKeyHex: config.licence.publicKeyHex } : {}),
+    ...(config.licence.serviceUrl ? { baseUrl: config.licence.serviceUrl } : {}),
+    log: console,
+  })
+
   const app = buildApp({
     store,
+    licence,
     // Setup and the admin panel change the event name and the PIN; the
     // helper beside the box has to follow them.
     ...(box ? { onSettingsChanged: publishStatus } : {}),
@@ -735,6 +750,10 @@ async function main(): Promise<void> {
   if (updates) {
     updates.start()
   }
+  // Same switch as the update check: a box told to make no outbound
+  // connections still re-reads its token, but only checks in when an admin
+  // asks. The first automatic check-in is a minute after serving.
+  licence.start({ checkIn: config.updateCheck ?? box })
 
   if (video) {
     video.start()
@@ -843,6 +862,7 @@ async function main(): Promise<void> {
       netwatch?.stop()
       video?.stop()
       updates?.stop()
+      licence.stop()
       await captive?.portal?.close()
       await closeLoopback?.()
       await app.close()

@@ -27,3 +27,19 @@ function readCommit(): string {
 
 /** Matches the web build's version string so the two can be compared. */
 export const APP_VERSION = `${readPkgVersion()}+${readCommit()}`
+
+/**
+ * When this build was released, as unix seconds — what a licence's
+ * `maintUntil` is compared against. A build released at or before it is
+ * entitled for ever; a newer one says "update window ended" and nothing more.
+ *
+ * Baked into the box binary by scripts/build-box.mjs (esbuild replaces
+ * `process.env.DEPLOY_BUILD_DATE` with a literal), so it is a property of the
+ * build rather than of a file anyone can edit. Running from source there is
+ * no build, and 0 is the honest answer: it is never after anybody's
+ * entitlement, so a source checkout never claims its updates have lapsed.
+ */
+export const BUILD_DATE: number = (() => {
+  const value = Number(process.env.DEPLOY_BUILD_DATE)
+  return Number.isInteger(value) && value > 0 ? value : 0
+})()

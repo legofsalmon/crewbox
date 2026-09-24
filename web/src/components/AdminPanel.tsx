@@ -6,6 +6,8 @@ import { deliveredNote, deliverFile, NO_DOWNLOADS } from '../lib/download.ts'
 import { adminError } from '../lib/adminerror.ts'
 import { adapterMissing, listeningMode } from '../lib/adminnetwork.ts'
 import UpdateSection from './UpdateSection.tsx'
+import LicenceSection from './LicenceSection.tsx'
+import { licenceBanner } from '../lib/licence.ts'
 
 const PIN_RE = /^\d{4,8}$/
 
@@ -32,6 +34,25 @@ export default function AdminPanel() {
 
   const [note, setNote] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  /**
+   * Null until loaded, and for good on a box that has no licensing at all
+   * (an older server answers 404) — the section and the banner are simply
+   * not there, rather than a row saying it could not tell.
+   */
+  const [licence, setLicence] = useState<api.LicenceStatus | null>(null)
+
+  useEffect(() => {
+    let live = true
+    api
+      .adminGetLicence(auth())
+      .then(({ licence: l }) => live && setLicence(l))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const banner = licenceBanner(licence)
 
   const crew = useMemo(
     () =>
@@ -88,6 +109,23 @@ export default function AdminPanel() {
             ✕
           </button>
         </header>
+        {/* Outside the scroll, so it stays put while the admin works: the
+            watermark policy's whole meaning is that this is not missed. */}
+        {banner && (
+          <div className="admin-licence-banner" role="status">
+            <span>{banner}</span>
+            <button
+              className="admin-btn"
+              onClick={() =>
+                document
+                  .getElementById('admin-licence')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+            >
+              Licence
+            </button>
+          </div>
+        )}
         {note && <div className="admin-note">{note}</div>}
         <div className="admin-scroll">
           <section>
@@ -114,7 +152,7 @@ export default function AdminPanel() {
           </section>
           <section>
             <h3 className="admin-section-title">This box</h3>
-            <ServerSection onNote={setNote} />
+            <ServerSection onNote={setNote} locked={licence?.locked ?? false} />
           </section>
           <section>
             <h3 className="admin-section-title">This network</h3>
@@ -124,6 +162,17 @@ export default function AdminPanel() {
             </p>
             <Environment onNote={setNote} />
           </section>
+          {licence && (
+            <section>
+              <h3 className="admin-section-title">Licence</h3>
+              <LicenceSection
+                licence={licence}
+                auth={auth}
+                onLicence={setLicence}
+                onNote={setNote}
+              />
+            </section>
+          )}
           <section>
             <h3 className="admin-section-title">Export</h3>
             <p className="admin-hint">
@@ -294,6 +343,7 @@ function SettingField({
   placeholder,
   minLength,
   saving,
+  disabled = false,
   onChange,
   onSave,
 }: {
@@ -305,6 +355,8 @@ function SettingField({
   placeholder: string
   minLength?: number
   saving: boolean
+  /** Refused by the box right now; the reason is shown above the fields. */
+  disabled?: boolean
   onChange: (value: string) => void
   onSave: (e: FormEvent) => void
 }) {
@@ -323,7 +375,7 @@ function SettingField({
         />
         <button
           className="admin-btn"
-          disabled={saving || saved === undefined || tooShort || value === saved}
+          disabled={disabled || saving || saved === undefined || tooShort || value === saved}
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -332,7 +384,14 @@ function SettingField({
   )
 }
 
-function ServerSection({ onNote }: { onNote: (note: string) => void }) {
+function ServerSection({
+  onNote,
+  locked,
+}: {
+  onNote: (note: string) => void
+  /** The lock policy is withholding event configuration until a licence is entered. */
+  locked: boolean
+}) {
   const [data, setData] = useState<api.AdminSettings | null>(null)
   const [eventName, setEventName] = useState('')
   const [ssid, setSsid] = useState('')
@@ -428,6 +487,12 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
           <Readiness checks={data.media} />
         </>
       )}
+      {locked && (
+        <p className="admin-hint admin-licence-locked">
+          Event name, Wi-Fi and networks are locked until this box has a licence — see Licence
+          below. The event PIN and admin password always work.
+        </p>
+      )}
       <SettingField
         id="admin-event-name"
         label="Event name (shown to crew instead of “Crewbox”)"
@@ -435,6 +500,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         saved={data?.settings.eventName}
         placeholder="e.g. Ashton Court 2026"
         saving={saving}
+        disabled={locked}
         onChange={setEventName}
         onSave={save({ eventName: eventName.trim() }, 'Event name saved')}
       />
@@ -459,6 +525,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         saved={data?.settings.wifiSsid}
         placeholder="e.g. CrewNet"
         saving={saving}
+        disabled={locked}
         onChange={setSsid}
         onSave={save({ wifiSsid: ssid.trim() }, 'Wi-Fi network saved')}
       />
@@ -466,6 +533,7 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
         <NetworksSection
           network={data.network}
           saving={saving}
+          disabled={locked}
           onSave={(patch, note) => {
             setSaving(true)
             void api
@@ -559,10 +627,13 @@ function NetworksSection({
   network,
   onSave,
   saving,
+  disabled = false,
 }: {
   network: api.AdminNetwork
   onSave: (patch: Parameters<typeof api.adminUpdateSettings>[1], note: string) => void
   saving: boolean
+  /** Refused by the box right now (the licence lock); said once, above. */
+  disabled?: boolean
 }) {
   const [crewIface, setCrewIface] = useState(network.saved.crewIface)
   const [dmxMode, setDmxMode] = useState(network.saved.dmxMode || 'off')
@@ -687,7 +758,7 @@ function NetworksSection({
           )}
         </>
       )}
-      <button className="admin-btn" type="submit" disabled={saving || !dirty}>
+      <button className="admin-btn" type="submit" disabled={disabled || saving || !dirty}>
         {saving ? 'Saving…' : 'Save networks'}
       </button>
     </form>
