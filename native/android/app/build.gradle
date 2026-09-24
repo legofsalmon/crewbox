@@ -1,10 +1,22 @@
 apply plugin: 'com.android.application'
 
-// Release version, from the tag CI passes in (CREWBOX_VERSION=v0.10.1).
+// Release version, from the tag CI passes in (CREWBOX_VERSION=v1.0.0).
 // versionCode must strictly increase for Android to allow an in-place
-// upgrade, so it is derived from the semver: 0.10.1 -> 1001. Local builds
-// without the variable keep the old constants.
+// upgrade, so it is derived from the semver: 0.10.1 -> 1001, 1.0.0 -> 10000.
+// The reset to 1.0.0 keeps that rule: every 0.x release was below 10000, so a
+// phone on 0.19 upgrades in place to 1.0.0. Never change this formula in a way
+// that gives a later release a smaller code.
+//
+// A local build without the variable reads the product version from the root
+// package.json, so it reports the same number the box does rather than "1.0"
+// with versionCode 1 (which no phone that ever had a release can install).
 def crewboxVersion = (System.getenv('CREWBOX_VERSION') ?: '').replaceFirst('^v', '')
+if (!crewboxVersion) {
+    def rootPackage = file('../../../package.json')
+    if (rootPackage.exists()) {
+        crewboxVersion = new groovy.json.JsonSlurper().parse(rootPackage).version ?: ''
+    }
+}
 def crewboxParts = crewboxVersion.tokenize('.')
 def crewboxCode = 1
 if (crewboxParts.size() == 3 && crewboxParts.every { it.isInteger() }) {
@@ -19,7 +31,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode crewboxCode
-        versionName crewboxVersion ?: "1.0"
+        versionName crewboxVersion ?: "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

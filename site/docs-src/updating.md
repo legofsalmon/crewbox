@@ -15,7 +15,7 @@ restart, and the second one shows you what the restart would interrupt.
 ## What you'll see
 
 When there's news, the admin panel grows a line above the version list:
-**v0.18.0 is available**, with a link to what changed.
+**v1.0.1 is available**, with a link to what changed.
 
 A box with nothing to do says nothing at all. There's no "up to date" row —
 a row that's almost always the same word is a row nobody reads.
@@ -87,7 +87,7 @@ of our GitHub account still couldn't publish something a box would run.
 If you want to check by hand, or your venue's IT wants to:
 
 ```
-sha256sum -c SHA256SUMS-v0.18.0
+sha256sum -c SHA256SUMS-v1.0.0
 ```
 
 The full procedure, including checking the signature, is in `docs/UPDATING.md`

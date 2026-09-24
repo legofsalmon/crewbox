@@ -238,6 +238,13 @@ export interface PublicConfig {
    * Optional, as `eventId` is: a box that predates it has no key.
    */
   eventKey?: string
+  /**
+   * The box has no usable licence and its policy marks that. The drawer shows
+   * a small "Unlicensed" line and nothing else changes — crew comms are never
+   * blocked or degraded over a licence. Absent means licensed, or a policy
+   * that marks nothing, or an older server; all three look the same.
+   */
+  unlicensed?: boolean
 }
 
 export interface WelcomeMessage {

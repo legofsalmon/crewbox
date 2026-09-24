@@ -28,6 +28,26 @@ what to do when it goes wrong.
 Steps 1–3 are reversible and nobody notices them. Step 5 is the only part
 where the box is off the air, and it lasts about twenty seconds.
 
+## The 1.0.0 reset
+
+Version numbers restarted at **1.0.0** on 24 September 2026, the first release
+sold with a licence. Every release before it is `v0.x` (the newest `v0.19.0`),
+so ordinary version order still points the right way and nothing special was
+needed in the checker:
+
+- A box on any 0.x release is offered 1.0.0 and installs it the normal way.
+- A 1.0.0 box asks for `/releases/latest`, compares it numerically, and is
+  never offered a 0.x release, even one that is still published.
+- Android's `versionCode` is derived from the version (`1.0.0` → `10000`),
+  which is above every 0.x code, so phones upgrade in place.
+
+What would break this: publishing a release on `crewbox-dist` numbered above
+the current line (say a stray `v1.2.0` left over from testing), or marking an
+old 0.x release as "latest" by hand. `/releases/latest` returns whichever
+release GitHub considers latest, and a box believes it. Check the release list
+before cutting a version, and cut releases only with the **Release** workflow's
+`workflow_dispatch` (type `v1.0.0`), never by pushing a tag.
+
 ## What the box trusts, and why
 
 Downloading a file off the internet and running it as the box is the most
@@ -75,7 +95,7 @@ over it.
 **The bytes:**
 
 ```bash
-sha256sum -c SHA256SUMS-v0.18.0
+sha256sum -c SHA256SUMS-v1.0.0
 ```
 
 Every file you downloaded should say `OK`. Files you did not download are
@@ -87,8 +107,8 @@ reported as missing, which is fine.
 # Save the public key as crewbox-release.pub.pem, then:
 openssl pkeyutl -verify \
   -pubin -inkey crewbox-release.pub.pem \
-  -rawin -in SHA256SUMS-v0.18.0 \
-  -sigfile <(base64 -d SHA256SUMS-v0.18.0.sig)
+  -rawin -in SHA256SUMS-v1.0.0 \
+  -sigfile <(base64 -d SHA256SUMS-v1.0.0.sig)
 ```
 
 `Signature Verified Successfully` means the manifest came from us. A box does

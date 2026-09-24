@@ -218,6 +218,31 @@ export const config = {
    */
   timeZone: process.env.CREWBOX_TZ?.trim() || undefined,
 
+  /**
+   * Licensing against a deployment other than letissier.ie — the e2e suite's
+   * test key, or a staging service. Unset, the live key compiled into
+   * server/src/licence/sdk.ts and the live service are used.
+   *
+   * The key is **baked into a box binary at bundle time** (scripts/
+   * build-box.mjs defines it, empty unless the build set it), so a shipped
+   * box cannot be re-keyed from its environment; only a source checkout —
+   * which can be edited anyway — reads it at runtime.
+   */
+  licence: {
+    publicKeyHex: process.env.CREWBOX_LICENCE_PUBLIC_KEY?.trim() || undefined,
+    serviceUrl: process.env.CREWBOX_LICENCE_URL?.trim() || undefined,
+  },
+
+  /**
+   * Where crash reports and feedback go (server/src/reports/). Unset, the
+   * studio's own intake at https://letissier.ie; `LETISSIER_API` points a test
+   * or a staging box somewhere else. Nothing is sent without an admin's yes
+   * (crashes) or somebody pressing Send (feedback) either way.
+   */
+  reports: {
+    serviceUrl: process.env.LETISSIER_API?.trim() || undefined,
+  },
+
   captive: {
     enabled:
       process.env.CREWBOX_CAPTIVE === '1'

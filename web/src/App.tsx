@@ -22,6 +22,11 @@ import MoveWorkOffer from './components/MoveWork.tsx'
 import { connectionScreen, elsewhereView, STUCK_AFTER_MS } from './lib/connscreen.ts'
 import { serverLabel } from './lib/server.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
+import ErrorBoundary from './components/ErrorBoundary.tsx'
+import FeedbackDialog from './components/FeedbackDialog.tsx'
+import { APP_VERSION } from './lib/pwa.ts'
+import { flushDeviceOutbox, sendCrash } from './lib/reports.ts'
+import { sessionToken } from './store.ts'
 import { registerShortcut } from './shell/keys.ts'
 import { allModules } from './shell/registry.ts'
 import { enabledModules } from './shell/modules.ts'
@@ -138,6 +143,10 @@ function Shell() {
     id: elsewhere.id,
     ...elsewhereView({ address: serverLabel(), open: eventName, here: elsewhere }),
   }
+  const activeModuleId = useStore((s) => s.activeModuleId)
+  const activeChannelId = useStore((s) => s.activeChannelId)
+  const feedbackOpen = useStore((s) => s.feedbackOpen)
+  const setFeedbackOpen = useStore((s) => s.setFeedbackOpen)
 
   // A returning user gets the app from cache and a thin banner, which is
   // right for a roam or a box restart and useless when the box has genuinely
@@ -157,6 +166,15 @@ function Shell() {
     }
     const timer = setTimeout(() => setStuck(true), STUCK_AFTER_MS)
     return () => clearTimeout(timer)
+  }, [online])
+
+  // Feedback or a crash report this device kept because the box was out of
+  // reach: handed over each time the connection comes back. Background work,
+  // never awaited, never an error.
+  useEffect(() => {
+    if (!online) return
+    const token = sessionToken()
+    if (token) void flushDeviceOutbox(token).catch(() => {})
   }, [online])
 
   useEffect(
@@ -237,7 +255,17 @@ function Shell() {
         <Sidebar />
         {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
         <main className="main">
-          <Main />
+          {/* A module or channel that throws takes only this pane down: the
+              sidebar, the voice bar and every other module keep working, and
+              moving anywhere else clears it. */}
+          <ErrorBoundary
+            header={<DrawerButton />}
+            resetKey={`${activeModuleId ?? ''}:${activeChannelId ?? ''}`}
+            version={APP_VERSION}
+            send={(crash) => sendCrash(crash, sessionToken() ?? '')}
+          >
+            <Main />
+          </ErrorBoundary>
         </main>
       </div>
       {searchOpen && <SearchOverlay />}
@@ -246,6 +274,7 @@ function Shell() {
       {adminOpen && (adminToken ? <AdminPanel /> : <AdminUnlock />)}
       {audioSettingsOpen && <AudioSettings />}
       {fileDetail && <FileDetail />}
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
       <IosInstallTip />
     </div>
   )

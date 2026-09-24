@@ -166,6 +166,66 @@ describe('checking', () => {
   })
 })
 
+describe('the reset to 1.0.0', () => {
+  /**
+   * The version numbering restarted at 1.0.0 on 24 September 2026. Every
+   * earlier release is 0.x (the newest v0.19.0), so plain semver already
+   * points the right way: a box in the field on 0.19 is offered 1.0.0, and a
+   * 1.0.0 box is never offered anything older. No epoch cut-off is needed
+   * while that stays true — see docs/UPDATING.md before publishing any
+   * release numbered above 1.0.0 on the old line.
+   *
+   * The body is the shape `/releases/latest` really answers with, trimmed.
+   */
+  const release = (tag: string, published: string) => ({
+    url: `https://api.github.com/repos/legofsalmon/crewbox-dist/releases/${tag}`,
+    html_url: `https://github.com/legofsalmon/crewbox-dist/releases/tag/${tag}`,
+    id: 250_000_000,
+    tag_name: tag,
+    target_commitish: 'main',
+    name: tag,
+    draft: false,
+    prerelease: false,
+    created_at: published,
+    published_at: published,
+    assets: [{ name: `crewbox-linux-x64-${tag}`, size: 60_000_000 }],
+  })
+  const github = (body: unknown): UpdateIo => ({
+    fetch: () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) }),
+    now: () => 1_000,
+  })
+
+  it('offers 1.0.0 to a box running the last 0.x release', async () => {
+    const state = await new UpdateChecker({
+      currentVersion: '0.19.0+def5678',
+      settings: settings(),
+      io: github(release('v1.0.0', '2026-09-24T09:00:00Z')),
+      url: 'https://example.invalid/releases/latest',
+    }).check()
+    expect(state.available?.version).toBe('v1.0.0')
+  })
+
+  it('never offers a 1.0.0 box an old 0.x release that is still published', async () => {
+    const state = await new UpdateChecker({
+      currentVersion: '1.0.0+abc1234',
+      settings: settings(),
+      io: github(release('v0.19.0', '2026-09-10T09:00:00Z')),
+      url: 'https://example.invalid/releases/latest',
+    }).check()
+    expect(state.available).toBeNull()
+  })
+
+  it('says nothing to a 1.0.0 box told about 1.0.0', async () => {
+    const state = await new UpdateChecker({
+      currentVersion: '1.0.0+abc1234',
+      settings: settings(),
+      io: github(release('v1.0.0', '2026-09-24T09:00:00Z')),
+      url: 'https://example.invalid/releases/latest',
+    }).check()
+    expect(state.available).toBeNull()
+  })
+})
+
 describe('what it remembers', () => {
   it('stores the release, not a verdict', async () => {
     // So a box that has since been updated stops advertising the release it

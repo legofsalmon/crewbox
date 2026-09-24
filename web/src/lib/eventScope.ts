@@ -83,6 +83,9 @@ export const DEVICE_PREF_KEYS: readonly string[] = [
   OPEN_EVENT_KEY,
   'crewbox:find-boxes-asked',
   'crewbox:ios-tip-dismissed',
+  // Reports somebody pressed Send on, for the studio, handed to whichever box
+  // the app is next online with (lib/reports.ts). Not the event's to delete.
+  'crewbox:report-outbox',
   'crewbox:server-url',
   'crewbox:sounds',
   'crewbox:theme',

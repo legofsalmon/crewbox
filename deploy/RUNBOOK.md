@@ -318,6 +318,47 @@ newest backup that is sound.
 Rehearse it. An untested backup is not a backup — step 7 of _Before the
 event_ is ten minutes at home against an hour of guesswork in a field.
 
+**The licence does not come with the backup.** A licence belongs to one
+machine, so a restored spare comes up unlicensed: crew comms work exactly as
+before, but event configuration is locked until the spare has a licence of
+its own (see _The box's licence_ below). Release the seat from the dead box's
+entry on the account page and activate the spare — offline if need be.
+
+## The box's licence
+
+A licence belongs to the **box** — the machine running the server — never to
+a crew phone. One seat per licence; the box checks in with letissier.ie when
+it has internet, and a Crewbox licence lets it go 90 days without.
+
+**Nothing licence-related ever touches crew comms.** Chat, voice, files and
+every department module work on an unlicensed box exactly as on a licensed
+one. An unlicensed box shows a banner in the admin console and a small
+"Unlicensed" line in the crew drawer, and — "trial, then lock" — it will not
+set up or configure an event (first-run setup, event name, Wi-Fi hint,
+networks) until a trial or a key is entered. The event PIN, the admin
+password, moderation, crew PIN resets, updates and the export always work.
+
+In **Admin → Licence**:
+
+- **Licence key** + **Activate** — needs the box on the internet for a moment.
+- **Start a 30-day trial** — an email address; one trial per box, needs the
+  internet.
+- **No internet here? Activate offline** — the usual case on site. The panel
+  shows this box's _request code_. On any phone with signal, sign in at
+  letissier.ie/account, pick the licence, type the request code, and paste
+  the token it gives you back into the panel. No connection at the box, ever.
+- **Check in now** / **Release this box** — releasing works offline too: the
+  box forgets its licence at once, and the seat can be freed from the account
+  page.
+
+"Check-in due" and "update window ended" are notes, not problems: neither
+restricts anything.
+
+A **refunded licence ends**: the next time the box checks in and the service
+says the licence was revoked, the box drops its token (keeping the key) and
+is unlicensed from then on — configuration locks, comms carry on. If the
+licence is reinstated, the next check-in with the kept key restores it.
+
 ## Health checks
 
 - App: `curl -k https://chat.<yourdomain>:8787/api/health` → `{"ok":true,...}`

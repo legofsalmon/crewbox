@@ -90,6 +90,9 @@ import type { UpdateChecker } from './update/check.ts'
 import type { UpdateService } from './update/service.ts'
 import { describeInterruption } from './update/guard.ts'
 import { InstallConfirmations } from './update/confirm.ts'
+import { LicenceProblem, type LicenceService } from './licence/service.ts'
+import type { ReportService } from './reports/service.ts'
+import { FEEDBACK_TYPES, OSES } from './reports/payload.ts'
 import type { Store } from './store.ts'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -244,6 +247,51 @@ const controlMessageSchema = z.object({
 
 const unlockBodySchema = z.object({
   password: z.string().min(1).max(128),
+})
+
+/** A licence key as typed. Opaque: the service folds and checks it. */
+const licenceKeySchema = z.object({ key: z.string().trim().min(1).max(64) })
+const licenceTrialSchema = z.object({
+  email: z.string().trim().min(3).max(254),
+  name: z.string().trim().max(120).optional(),
+})
+/** A signed token pasted from the account page. A few hundred bytes in practice. */
+const licenceTokenSchema = z.object({ token: z.string().trim().min(1).max(8192) })
+
+/**
+ * "Send feedback…" from any signed-in device. Limits are the intake's own
+ * (server/src/reports/payload.ts), checked here so a phone is told, rather
+ * than the studio silently dropping it later.
+ */
+const feedbackSchema = z.object({
+  type: z.enum(FEEDBACK_TYPES),
+  message: z
+    .string()
+    .trim()
+    .min(1, 'Write something first.')
+    .max(5000, 'Keep it under 5000 characters.'),
+  email: z
+    .string()
+    .trim()
+    .max(254)
+    .optional()
+    .refine((v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), 'That email address looks wrong.'),
+  public: z.boolean().optional(),
+  includeLicence: z.boolean().optional(),
+  os: z.enum(OSES).optional(),
+})
+
+/**
+ * A crash a phone's error screen offered to send, and the person pressed Send.
+ * Generous bounds: the box scrubs and cuts it to the intake's limits itself.
+ */
+const clientCrashSchema = z.object({
+  summary: z.string().trim().min(1).max(2000),
+  detail: z.string().max(100_000).optional(),
+  note: z.string().max(5000).optional(),
+  version: z.string().trim().min(1).max(64),
+  os: z.enum(OSES),
+  osVersion: z.string().trim().max(64).optional(),
 })
 
 /**
@@ -464,6 +512,18 @@ export interface AppDeps {
     /** CREWBOX_ANNOUNCE decides it, so the panel cannot. */
     settingFromEnv: boolean
   }
+  /**
+   * The box's licence (server/src/licence/). Omit and the box behaves as if
+   * licensing did not exist: no Licence section, no marks, nothing locked —
+   * which is what every test that is not about licensing wants.
+   */
+  licence?: LicenceService
+  /**
+   * Crash reports and feedback (server/src/reports/). Omit and the routes are
+   * not there: the web client treats that as "nowhere to send it" and keeps
+   * what it has, which is also how it behaves against an older box.
+   */
+  reports?: ReportService
   logger?: boolean
 }
 
@@ -518,6 +578,8 @@ export function buildApp({
   timeZone,
   onSettingsChanged = () => {},
   announce,
+  licence,
+  reports,
   logger = true,
 }: AppDeps): App {
   const fastify = Fastify({
@@ -626,7 +688,19 @@ export function buildApp({
     modules,
     eventId: store.dbEpoch(),
     eventKey: identity.publicKey,
+    // Only ever a mark. Nothing the crew use reads this to decide anything.
+    ...(licence?.effects().watermark ? { unlicensed: true } : {}),
   })
+
+  /**
+   * Whether event setup and configuration are refused for want of a licence.
+   * Only under the `lock` policy, and only ever for configuring an event —
+   * never for anything a crew already set up is using.
+   */
+  const configLocked = (): boolean => licence?.effects().locked ?? false
+  const LOCKED_MESSAGE =
+    'This box needs a licence before an event can be set up or configured. ' +
+    'Open Admin → Licence to enter a key or start a free trial — crew already on the box are unaffected.'
 
   // Warmed at startup so the admin panel reads a result rather than waiting
   // on one; see the route below.
@@ -635,6 +709,10 @@ export function buildApp({
   void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
+  // A licence entered, released or lapsed changes the drawer line on every
+  // phone, so the config goes out again — the same message an event rename
+  // sends, and nothing more.
+  licence?.onChange(() => hub.announceConfig())
   const tally = new Tally()
   hub.setTally(tally)
   const docs = new DocsRelay(relayLimits)
@@ -1101,7 +1179,12 @@ export function buildApp({
     if (!setupOpen()) return reply.redirect('/connect')
     return sendHtml(
       reply,
-      setupPage({ values: setupValues(), base: crewUrl(req), warnings: setupWarnings() })
+      setupPage({
+        values: setupValues(),
+        base: crewUrl(req),
+        warnings: setupWarnings(),
+        ...(configLocked() ? { locked: LOCKED_MESSAGE } : {}),
+      })
     )
   })
 
@@ -1135,6 +1218,14 @@ export function buildApp({
 
   fastify.post('/setup', (req, reply) => {
     if (!setupOpen()) return reply.redirect('/connect')
+    // Setting up an event is the "new session" the lock policy withholds.
+    // Nothing is saved; the page says where the licence goes.
+    if (configLocked()) {
+      return sendHtml(
+        reply.code(423),
+        setupPage({ values: setupValues(), base: crewUrl(req), locked: LOCKED_MESSAGE })
+      )
+    }
     const body = (req.body ?? {}) as Record<string, unknown>
     // Blank means "leave the admin password alone", so it is dropped before
     // validation rather than failing the 8-character floor.
@@ -2282,6 +2373,183 @@ export function buildApp({
     return reply.send({ ok: true })
   })
 
+  // -- licence ----------------------------------------------------------------
+  //
+  // The box's licence, admin-only throughout. The key and token never leave
+  // these routes: phones get one boolean in the public config, for the drawer
+  // line, and nothing else. See server/src/licence/.
+  if (licence) {
+    /** Run a licence action and answer with the panel's view of the result. */
+    const licenceAction = async (
+      reply: FastifyReply,
+      action: () => Promise<unknown> | unknown
+    ): Promise<unknown> => {
+      try {
+        return await action()
+      } catch (err) {
+        if (err instanceof LicenceProblem) {
+          return reply
+            .code(err.status)
+            .send({ error: err.message, ...(err.reason ? { reason: err.reason } : {}) })
+        }
+        throw err
+      }
+    }
+
+    fastify.get('/api/admin/licence', (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      return { licence: licence.status() }
+    })
+
+    fastify.post('/api/admin/licence/activate', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = licenceKeySchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'Enter a licence key.' })
+      return licenceAction(reply, async () => ({
+        licence: await licence.activate(parsed.data.key),
+      }))
+    })
+
+    fastify.post('/api/admin/licence/trial', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = licenceTrialSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'Enter an email address.' })
+      return licenceAction(reply, async () => ({
+        licence: await licence.startTrial(parsed.data.email, parsed.data.name),
+      }))
+    })
+
+    /** Offline activation: a token fetched with this box's request code. */
+    fastify.post('/api/admin/licence/token', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = licenceTokenSchema.safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'Paste the licence token.' })
+      return licenceAction(reply, () => ({ licence: licence.acceptToken(parsed.data.token) }))
+    })
+
+    fastify.post('/api/admin/licence/check-in', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      return licenceAction(reply, async () => ({ licence: await licence.checkIn() }))
+    })
+
+    fastify.post('/api/admin/licence/release', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const { status, released } = await licence.release()
+      return { licence: status, released }
+    })
+  }
+
+  // -- crash reports and feedback ----------------------------------------------
+  //
+  // Everything here only queues. The box sends from a timer, when it has a
+  // network, and a crash from the box itself waits for an admin's yes; see
+  // server/src/reports/. Crew get two routes — send feedback, send the crash
+  // report their own screen offered — and both need a signed-in session, so a
+  // stranger on the venue Wi-Fi cannot fill the queue.
+  if (reports) {
+    // Per person, generous for a human and useless for a script.
+    const feedbackLimiter = new RateLimiter(10, 60 * 60_000)
+    const clientCrashLimiter = new RateLimiter(5, 10 * 60_000)
+
+    fastify.post('/api/reports/feedback', (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      const parsed = feedbackSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+      }
+      if (!feedbackLimiter.allow(user.id)) {
+        return reply.code(429).send({ error: 'That is a lot of feedback — try again in a while.' })
+      }
+      // The box's licence belongs to whoever administers it, so only an
+      // unlocked admin can attach it — and the key itself never goes to the
+      // phone: the box adds it here, from its own settings.
+      let key: string | undefined
+      if (parsed.data.includeLicence) {
+        if (!unlocked(req)) {
+          return reply.code(403).send({ error: 'Only an admin can include the box’s licence.' })
+        }
+        const status = licence?.status()
+        key = status?.key ?? licence?.verdict().claims?.key ?? undefined
+        if (!key) return reply.code(409).send({ error: 'This box has no licence to include.' })
+      }
+      const queued = reports.submitFeedback(
+        {
+          type: parsed.data.type,
+          message: parsed.data.message,
+          ...(parsed.data.email ? { email: parsed.data.email } : {}),
+          ...(key ? { licence: key } : {}),
+          public: parsed.data.public === true,
+        },
+        parsed.data.os ?? 'web'
+      )
+      if (!queued) return reply.code(507).send({ error: 'The box could not save that.' })
+      return reply.code(202).send({ ok: true, outbound: reports.summary().outbound })
+    })
+
+    fastify.post('/api/reports/crash', (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      const parsed = clientCrashSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+      }
+      if (!clientCrashLimiter.allow(user.id)) {
+        return reply.code(429).send({ error: 'Too many reports from this device.' })
+      }
+      const queued = reports.recordClientCrash(
+        {
+          kind: 'exception',
+          summary: parsed.data.summary,
+          ...(parsed.data.detail ? { detail: parsed.data.detail } : {}),
+          ...(parsed.data.note ? { note: parsed.data.note } : {}),
+        },
+        {
+          version: parsed.data.version,
+          os: parsed.data.os,
+          ...(parsed.data.osVersion ? { osVersion: parsed.data.osVersion } : {}),
+        }
+      )
+      if (!queued) return reply.code(507).send({ error: 'The box could not save that.' })
+      return reply.code(202).send({ ok: true })
+    })
+
+    fastify.get('/api/admin/reports', (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      return { reports: reports.summary() }
+    })
+
+    fastify.patch('/api/admin/reports', (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = z.object({ autoSend: z.boolean() }).safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'autoSend must be true or false' })
+      reports.setAutoSend(parsed.data.autoSend)
+      return { reports: reports.summary() }
+    })
+
+    /** The admin's answer to the one-time "closed unexpectedly" question. */
+    fastify.post('/api/admin/reports/decide', (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const parsed = z
+        .object({ send: z.boolean(), always: z.boolean().optional() })
+        .safeParse(req.body)
+      if (!parsed.success) return reply.code(400).send({ error: 'send must be true or false' })
+      return {
+        reports: reports.decide({
+          send: parsed.data.send,
+          ...(parsed.data.always !== undefined ? { always: parsed.data.always } : {}),
+        }),
+      }
+    })
+
+    /** Send what may go, now — for the moment a box finds an uplink. */
+    fastify.post('/api/admin/reports/send', async (req, reply) => {
+      if (!authAdmin(req, reply)) return reply
+      const result = await reports.flush()
+      return { result, reports: reports.summary() }
+    })
+  }
+
   // Reset a crew member's forgotten personal PIN. Their sessions stay valid —
   // this is recovery, not a ban.
   fastify.post('/api/admin/users/:id/pin', (req, reply) => {
@@ -2548,6 +2816,16 @@ export function buildApp({
     const parsed = settingsPatchSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    // Configuring the event is what the lock policy withholds. The event PIN
+    // and the admin password are not in this list and never will be: they are
+    // how an admin shuts somebody out, and a licence must never be the reason
+    // that cannot happen mid-show.
+    if (configLocked()) {
+      const touched = (
+        ['eventName', 'wifiSsid', 'crewIface', 'dmxMode', 'dmxIface', 'dmxUniverses'] as const
+      ).filter((key) => parsed.data[key] !== undefined)
+      if (touched.length > 0) return reply.code(423).send({ error: LOCKED_MESSAGE })
     }
     // Refused before anything is saved, the same as the admin password
     // below: the panel does not offer it, so this was sent by hand, and

@@ -362,6 +362,8 @@ export interface AppState {
    */
   adminToken: string | null
   audioSettingsOpen: boolean
+  /** The "Send feedback…" dialog. */
+  feedbackOpen: boolean
   /** File message whose detail modal is open; null when closed. */
   fileDetail: Message | null
   /** Rolling median WS round-trip in ms; null while unknown/offline. */
@@ -461,6 +463,7 @@ export interface AppState {
    */
   setAdminToken: (adminToken: string) => void
   setAudioSettingsOpen: (open: boolean) => void
+  setFeedbackOpen: (open: boolean) => void
   openFileDetail: (message: Message) => void
   closeFileDetail: () => void
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
@@ -1292,6 +1295,7 @@ export const useStore = create<AppState>()((set, get) => {
     adminToken: null,
     adminLockedReason: null,
     audioSettingsOpen: false,
+    feedbackOpen: false,
     latencyMs: null,
     updateReady: false,
     toasts: [],
@@ -1922,6 +1926,9 @@ export const useStore = create<AppState>()((set, get) => {
       set({ adminToken })
     },
 
+    setFeedbackOpen(open) {
+      set({ feedbackOpen: open })
+    },
     setAudioSettingsOpen(open) {
       set({ audioSettingsOpen: open })
       if (open) {
