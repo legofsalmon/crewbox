@@ -13,6 +13,13 @@ Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
   save-to-Photos usage descriptions are set in `Info.plist`, and
   `server/test/iosInfoPlist.test.mjs` fails if one goes missing. iOS
   terminates an app that uses one of these without its string.
+- [x] **Wi-Fi entitlements** — `App/App.entitlements` asks for Hotspot
+  Configuration, to join the Wi-Fi from its QR code, and Access Wi-Fi
+  Information, to check the phone got on it. Both configurations of the
+  target sign with it, and `server/test/iosInfoPlist.test.mjs` fails if
+  either goes. Neither needs Apple's approval or a purpose string, but both
+  need the paid Apple Developer Program, as the App Store does. Joining
+  doesn't work in the Simulator, so try it on a phone.
 - [x] **iPhone-only target** — `TARGETED_DEVICE_FAMILY = 1`, so you only need
   iPhone screenshots, not iPad.
 - [x] **iOS 17 and later** — `IPHONEOS_DEPLOYMENT_TARGET = 17.0` in every
@@ -52,6 +59,11 @@ name and usually without a certificate".
 
 1. Open `native/ios/App/App.xcodeproj`.
 2. Signing & Capabilities → set your **Team**; let Xcode manage signing.
+   It lists **Hotspot Configuration** and **Access Wi-Fi Information** there,
+   from the entitlements file, and switches them on for the App ID. Signing
+   by hand instead, switch both on for `com.colmhewson.crewbox` under
+   Certificates, Identifiers & Profiles and make a new profile, or the
+   archive won't sign.
 3. Bump **Version** (`MARKETING_VERSION`) and **Build** (`CURRENT_PROJECT_VERSION`)
    for each upload.
 4. **Rebuild the web bundle into the shell first** — the app ships whatever is in

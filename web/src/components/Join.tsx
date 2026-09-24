@@ -5,7 +5,13 @@ import { knownEvents, openEvent, subscribeKnownEvents } from '../lib/eventScope.
 import { ApiError } from '../lib/api.ts'
 import { APP_VERSION } from '../lib/pwa.ts'
 import { displayName, effectiveSsid } from '../lib/settings.ts'
-import { androidJoinLink, joinLink, readJoinCode } from '../lib/joinCode.ts'
+import {
+  androidJoinLink,
+  joinLink,
+  readJoinCode,
+  wifiToJoin,
+  type WifiCode,
+} from '../lib/joinCode.ts'
 import { isIOS } from '../lib/devices.ts'
 import { clearJoinLink, currentJoinLink, subscribeJoinLink } from '../lib/appLinks.ts'
 import {
@@ -13,10 +19,12 @@ import {
   isIosApp,
   isNative,
   nativeScanner,
+  nativeWifi,
   normalizeOrigin,
   serverOrigin,
   setServerOrigin,
   type ScanOutcome,
+  type WifiOutcome,
 } from '../lib/server.ts'
 import type { PickedBox } from '../lib/boxes.ts'
 import { NearbyBoxes } from './NearbyBoxes.tsx'
@@ -84,6 +92,66 @@ function scanTrouble(outcome: ScanOutcome | { result: 'failed' }): string | null
   }
 }
 
+/** What comes after the Wi-Fi, however it was joined. */
+const NEXT = 'scan the crew code on the join poster.'
+
+/**
+ * What to say once a Wi-Fi code has been tried: a `note` when the phone is on
+ * the network or joining it, and an `error` when that is down to the phone's
+ * own Wi-Fi settings. `settings` is a kind of network the app doesn't join.
+ */
+function wifiSaid(
+  code: WifiCode,
+  outcome: WifiOutcome | { result: 'settings' }
+): { note: string } | { error: string } {
+  const name = code.ssid
+  switch (outcome.result) {
+    case 'joined':
+      return { note: `On ${name}. Now ${NEXT}` }
+    case 'saved':
+      return { note: `Saved ${name}, and the phone is joining it. Now ${NEXT}` }
+    case 'known':
+      return {
+        note:
+          `This phone already has ${name} saved. If it isn’t on it, pick it in the phone’s ` +
+          `Wi-Fi settings, then ${NEXT}`,
+      }
+    case 'declined':
+      return {
+        error: `The app didn’t join ${name}. Join it in the phone’s Wi-Fi settings, then ${NEXT}`,
+      }
+    case 'failed':
+      return {
+        error:
+          `The phone saved ${name} but doesn’t seem to be on it. If it’s in range, check the ` +
+          `password in the phone’s Wi-Fi settings, then ${NEXT}`,
+      }
+    case 'invalid':
+      return {
+        error:
+          'The phone can’t use that Wi-Fi code: the name or password in it isn’t valid. ' +
+          (name
+            ? `Join ${name} in the phone’s Wi-Fi settings, `
+            : 'Join the crew Wi-Fi in the phone’s settings, ') +
+          `then ${NEXT}`,
+      }
+    case 'settings':
+      return {
+        error:
+          `That code is for the Wi-Fi, ${name}, which the app can’t join. Join it in the ` +
+          `phone’s Wi-Fi settings, then ${NEXT}`,
+      }
+    case 'unavailable':
+    default:
+      // And anything else a native side might one day answer.
+      return {
+        error:
+          `That code is for the Wi-Fi${name ? `, ${name}` : ''}. Join it with this phone’s ` +
+          `camera or its Wi-Fi settings, then ${NEXT}`,
+      }
+  }
+}
+
 export default function Join() {
   const join = useStore((s) => s.join)
   const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
@@ -107,6 +175,8 @@ export default function Join() {
   // In the apps, the join poster's QR fills in the address and the event PIN.
   const scanner = showServer ? nativeScanner() : undefined
   const [scanning, setScanning] = useState(false)
+  // A Wi-Fi code read by the scanner, while the phone joins its network.
+  const [joiningWifi, setJoiningWifi] = useState(false)
   // What a scan or a link filled in, said under the scan button.
   const [filled, setFilled] = useState<string | null>(null)
   const [cameraDenied, setCameraDenied] = useState(false)
@@ -178,10 +248,7 @@ export default function Join() {
     }
     const code = readJoinCode(outcome.text)
     if (code.kind === 'wifi') {
-      setError(
-        `That code is for the Wi-Fi${code.ssid ? `, ${code.ssid}` : ''}. Join it with this ` +
-          'phone’s camera or its Wi-Fi settings, then scan the crew code on the join poster.'
-      )
+      await joinWifi(code)
       return
     }
     if (code.kind === 'other') {
@@ -191,6 +258,31 @@ export default function Join() {
       return
     }
     fillIn(code.origin, code.pin, 'poster')
+  }
+
+  /**
+   * A Wi-Fi code, most likely the crew network's: the phone asks before it
+   * joins, so scanning is the crew member's say-so to ask it.
+   */
+  async function joinWifi(code: WifiCode) {
+    const wifi = nativeWifi()
+    const network = wifiToJoin(code)
+    let outcome: WifiOutcome | { result: 'settings' }
+    if (!wifi) outcome = { result: 'unavailable' }
+    else if (typeof network === 'string') outcome = { result: network }
+    else {
+      setJoiningWifi(true)
+      try {
+        outcome = await wifi.join(network)
+      } catch {
+        outcome = { result: 'unavailable' }
+      } finally {
+        setJoiningWifi(false)
+      }
+    }
+    const said = wifiSaid(code, outcome)
+    if ('note' in said) setFilled(said.note)
+    else setError(said.error)
   }
 
   async function onSubmit(e: FormEvent) {
@@ -265,10 +357,14 @@ export default function Join() {
               <button
                 type="button"
                 className="admin-btn"
-                disabled={busy || scanning}
+                disabled={busy || scanning || joiningWifi}
                 onClick={() => void onScan()}
               >
-                {scanning ? 'Scanning…' : 'Scan the join poster'}
+                {scanning
+                  ? 'Scanning…'
+                  : joiningWifi
+                    ? 'Joining the Wi-Fi…'
+                    : 'Scan the join poster'}
               </button>
             )}
             {filled && (

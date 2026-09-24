@@ -1,3 +1,5 @@
+import type { WifiNetwork } from './server.ts'
+
 /**
  * What a QR code read by the apps' scanner says, for the join screen.
  *
@@ -14,9 +16,28 @@
 export type JoinCode =
   /** A box's join QR: where it is, and the event PIN when it carries one. */
   | { kind: 'join'; origin: string; pin: string }
-  /** A Wi-Fi network's QR (`WIFI:S:…;;`), which a phone's own camera joins. */
-  | { kind: 'wifi'; ssid: string }
+  /** A Wi-Fi network's QR (`WIFI:S:…;;`), as a phone's camera reads it. */
+  | WifiCode
   | { kind: 'other' }
+
+/**
+ * How a Wi-Fi code says its network is secured, from its `T:` field: `wpa`
+ * for WPA2 or WPA3 personal (`WPA`, which covers both), `wpa3` where the code
+ * says WPA3 alone (`SAE`), and `other` for WEP, enterprise networks and
+ * anything else, which the apps leave to the phone's own Wi-Fi settings.
+ */
+export type WifiSecurity = 'open' | 'wpa' | 'wpa3' | 'other'
+
+export interface WifiCode {
+  kind: 'wifi'
+  /** The network's name, '' when the code has none. */
+  ssid: string
+  /** '' for none. A code for an open network may carry one, which is ignored. */
+  password: string
+  security: WifiSecurity
+  /** `H:true`: a network that doesn't broadcast its name. */
+  hidden: boolean
+}
 
 /** An event PIN is 4 to 64 characters on the box (server/src/app.ts). */
 const MAX_PIN = 64
@@ -39,27 +60,96 @@ function wifiField(body: string, key: string): string | null {
     }
     const name = body.slice(i, colon)
     let value = ''
+    let escaped = false
     let j = colon + 1
     for (; j < body.length && body[j] !== ';'; j++) {
-      if (body[j] === '\\' && j + 1 < body.length) j++
+      escaped = body[j] === '\\' && j + 1 < body.length
+      if (escaped) j++
       value += body[j]
     }
     if (name.trim().toUpperCase() === key) {
-      return value.length >= 2 && value.startsWith('"') && value.endsWith('"')
-        ? value.slice(1, -1)
-        : value
+      // Quotes around a value only mark it as text, a name that could be read
+      // as hex, say. Escaped ones are part of it.
+      const quoted = body[colon + 1] === '"' && value.length >= 2 && value.endsWith('"') && !escaped
+      return quoted ? value.slice(1, -1) : value
     }
     i = j + 1
   }
   return null
 }
 
+/**
+ * A Wi-Fi code's fields: `S` the name, `P` the password, `T` the security and
+ * `H:true` for a hidden network. `E`, an EAP method, makes it enterprise,
+ * whatever `T` says. With no `T` the format means an open network, but a code
+ * that carries a password is taken to want it.
+ *
+ * `T` is read as Android's own scanner reads it: `SAE` is WPA3 alone, and any
+ * `WPA`, WPA3 included, is a WPA2 password, which is also how WPA2/WPA3
+ * networks take one. `R`, WPA3's "transition disable" bits in hex, makes it
+ * WPA3 alone when bit 0 is set.
+ */
+function readWifiCode(body: string): WifiCode {
+  const type = (wifiField(body, 'T') ?? '').trim().toUpperCase()
+  const given = wifiField(body, 'P') ?? ''
+  const disable = (wifiField(body, 'R') ?? '').trim()
+  let security: WifiSecurity
+  if (type.includes('EAP') || wifiField(body, 'E') !== null) security = 'other'
+  else if (type === '') security = given ? 'wpa' : 'open'
+  else if (type === 'NOPASS') security = 'open'
+  else if (type.startsWith('SAE')) security = 'wpa3'
+  // WPA, WPA2, WPA3, WPA/WPA2, WPA2/WPA3, WPA2-PSK and the like.
+  else if (type.startsWith('WPA')) security = 'wpa'
+  else security = 'other'
+  if (security === 'wpa' && /^[0-9a-f]+$/i.test(disable) && parseInt(disable.slice(-1), 16) & 1) {
+    security = 'wpa3'
+  }
+  return {
+    kind: 'wifi',
+    ssid: wifiField(body, 'S') ?? '',
+    password: security === 'open' ? '' : given,
+    security,
+    hidden: /^true$/i.test((wifiField(body, 'H') ?? '').trim()),
+  }
+}
+
+/**
+ * A WPA passphrase: 8 to 63 printable ASCII characters (IEEE 802.11i). The
+ * standard's other form, the key itself in 64 hex digits, neither phone takes
+ * from an app: Android's add-network screen is sent it as a passphrase, which
+ * can't be 64 characters, and iOS documents 8 to 63. WPA3 alone (SAE) has no
+ * 8-character floor, so it takes 1 to 63 characters.
+ */
+const WPA_PASSPHRASE = /^[\x20-\x7e]{8,63}$/
+const WPA_KEY = /^[0-9a-f]{64}$/i
+const SAE_PASSWORD = /^[\x20-\x7e]{1,63}$/
+
+/**
+ * The network in a Wi-Fi code as the apps join one, or why they won't:
+ * `settings` for a network only the phone's own Wi-Fi settings join (WEP,
+ * enterprise, or a WPA key in hex), and `invalid` for a name or password no
+ * phone would take (a name is 1 to 32 bytes), which is said without troubling
+ * the phone.
+ */
+export function wifiToJoin(code: WifiCode): WifiNetwork | 'settings' | 'invalid' {
+  const bytes = new TextEncoder().encode(code.ssid).length
+  if (bytes < 1 || bytes > 32) return 'invalid'
+  if (code.security === 'other') return 'settings'
+  if (code.security === 'wpa' && WPA_KEY.test(code.password)) return 'settings'
+  if (code.security === 'wpa' && !WPA_PASSPHRASE.test(code.password)) return 'invalid'
+  if (code.security === 'wpa3' && !SAE_PASSWORD.test(code.password)) return 'invalid'
+  return {
+    ssid: code.ssid,
+    password: code.password,
+    wpa3: code.security === 'wpa3',
+    hidden: code.hidden,
+  }
+}
+
 /** What the text of a scanned QR code is, for the join screen. */
 export function readJoinCode(text: string): JoinCode {
   const trimmed = text.trim()
-  if (/^WIFI:/i.test(trimmed)) {
-    return { kind: 'wifi', ssid: wifiField(trimmed.slice(5), 'S') ?? '' }
-  }
+  if (/^WIFI:/i.test(trimmed)) return readWifiCode(trimmed.slice(5))
   let url: URL
   try {
     url = new URL(trimmed)

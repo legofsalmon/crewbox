@@ -1,5 +1,14 @@
 import { expect } from '@playwright/test'
-import { appWithDiscovery, scanWillGive, scannerCalls, test, uniqueName } from './helpers'
+import {
+  appWithDiscovery,
+  scanWillGive,
+  scannerCalls,
+  test,
+  uniqueName,
+  wifiCalls,
+  wifiWillGive,
+  type WifiOutcome,
+} from './helpers'
 
 /**
  * Scanning the join poster, in the apps.
@@ -8,7 +17,8 @@ import { appWithDiscovery, scanWillGive, scannerCalls, test, uniqueName } from '
  * each) and are stood in for: a scan hands back the text a phone would read.
  * That text is the box's own. Its /connect page is the poster, and the QR on
  * it says what the link under it says, so a change to what the box prints
- * that the apps would not take fails here.
+ * that the apps would not take fails here. Joining a network from a Wi-Fi
+ * code is the phone's too (WifiPlugin), and stood in for the same way.
  */
 
 const BOX = 'http://localhost:4299'
@@ -63,18 +73,19 @@ test('the iPhone app says what else it read, and where the camera is switched ba
   await page.goto('/')
   await scanWillGive(
     page,
-    // The Wi-Fi poster, which is often on the same wall.
-    { result: 'scanned', text: 'WIFI:T:WPA;S:Crew Net;P:backstage;;' },
+    // The venue's own staff network, whose code may be on the same wall.
+    { result: 'scanned', text: 'WIFI:T:WPA2-EAP;S:Venue Staff;E:PEAP;I:crew;P:password;;' },
     { result: 'denied' }
   )
   const scan = page.getByRole('button', { name: 'Scan the join poster' })
 
   await scan.click()
   await expect(page.locator('.join-error')).toHaveText(
-    'That code is for the Wi-Fi, Crew Net. Join it with this phone’s camera or its Wi-Fi ' +
-      'settings, then scan the crew code on the join poster.'
+    'That code is for the Wi-Fi, Venue Staff, which the app can’t join. Join it in the ' +
+      'phone’s Wi-Fi settings, then scan the crew code on the join poster.'
   )
   await expect(page.getByLabel('Crew server')).toHaveValue('')
+  expect(await wifiCalls(page)).toEqual([])
 
   await scan.click()
   await expect(page.locator('.join-error')).toContainText(
@@ -83,3 +94,44 @@ test('the iPhone app says what else it read, and where the camera is switched ba
   await page.getByRole('button', { name: 'Open Settings', exact: true }).click()
   expect(await scannerCalls(page)).toEqual(['scan', 'scan', 'openSettings'])
 })
+
+for (const [platform, app, outcome, said] of [
+  ['ios', 'iPhone', 'joined', 'On Crew Net. Now scan the crew code on the join poster.'],
+  [
+    'android',
+    'Android',
+    'saved',
+    'Saved Crew Net, and the phone is joining it. Now scan the crew code on the join poster.',
+  ],
+] as const) {
+  test(`the ${app} app joins the crew Wi-Fi from its code, then the poster fills in the rest`, async ({
+    browser,
+  }) => {
+    const page = await appWithDiscovery(browser, platform, [])
+    await page.goto('/')
+    await scanWillGive(
+      page,
+      // The Wi-Fi's code, often on the same wall, and then the poster's own.
+      { result: 'scanned', text: 'WIFI:T:WPA;S:Crew Net;P:backstage;;' },
+      { result: 'scanned', text: await posterCode() }
+    )
+    await wifiWillGive(page, { result: outcome } satisfies WifiOutcome)
+    const scan = page.getByRole('button', { name: 'Scan the join poster' })
+
+    await scan.click()
+    await expect(page.locator('.join-scan-note')).toHaveText(said)
+    await expect(page.locator('.join-error')).toHaveCount(0)
+    expect(await wifiCalls(page)).toEqual([
+      { ssid: 'Crew Net', password: 'backstage', wpa3: false, hidden: false },
+    ])
+
+    await scan.click()
+    await expect(page.getByLabel('Crew server')).toHaveValue('127.0.0.1:4299')
+    await expect(page.getByLabel('Event PIN')).toHaveValue('4242')
+    await page.getByLabel('Your name').fill(uniqueName('Wi-Fi Tech'))
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join', exact: true }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+    expect(await wifiCalls(page)).toHaveLength(1)
+  })
+}

@@ -145,6 +145,47 @@ export interface ScannerPlugin {
   checkPermissions?(): Promise<{ camera: CameraPermission }>
 }
 
+/** A Wi-Fi network for the apps to join, as a scanned `WIFI:` code gives it (lib/joinCode.ts). */
+export interface WifiNetwork {
+  ssid: string
+  /** '' for an open network. */
+  password: string
+  /** WPA3 alone (`T:SAE`), which Android has to be told. The iPhone's join has no such setting. */
+  wpa3: boolean
+  hidden: boolean
+}
+
+/** What asking the phone to join a network came to. */
+export type WifiOutcome =
+  /** On it: an iPhone checks once it has joined, and says so if it was on it already. */
+  | { result: 'joined' }
+  /** Android saved it, and has been asked to join it by its own settings screen. */
+  | { result: 'saved' }
+  /** Android has it saved already, as the code gives it, so asked nothing. */
+  | { result: 'known' }
+  /**
+   * Not saved: turned down at the phone's question, or on Android, a phone
+   * that doesn't offer the question (a guest user, or a work profile's rules).
+   */
+  | { result: 'declined' }
+  /** The iPhone saved it and isn't on it after waiting: out of range, or a wrong password. */
+  | { result: 'failed' }
+  /** The phone refused the code's name or password without asking anything. */
+  | { result: 'invalid' }
+  /** Not done, and nothing to say why: Android 10 and older, or the phone erred. */
+  | { result: 'unavailable' }
+
+/**
+ * Both apps' way onto a Wi-Fi network from its code (native WifiPlugin): on
+ * the iPhone NEHotspotConfiguration, which iOS asks the crew member about; on
+ * Android 11 and later the phone's own "Save this network?" screen, which
+ * joins the network once saved. Either way the network is saved on the phone
+ * as one joined in its settings is, and the phone asks before it is.
+ */
+export interface WifiPlugin {
+  join(network: WifiNetwork): Promise<WifiOutcome>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -159,6 +200,7 @@ declare global {
         CrewboxFiles?: FilesPlugin
         CrewboxDiscovery?: DiscoveryPlugin
         CrewboxScanner?: ScannerPlugin
+        CrewboxWifi?: WifiPlugin
       }
     }
   }
@@ -217,6 +259,11 @@ export function nativeDiscovery(): DiscoveryPlugin | undefined {
 /** The apps' QR scanner, when present (native builds only). */
 export function nativeScanner(): ScannerPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxScanner
+}
+
+/** The apps' way onto a Wi-Fi network from its code, when present (native builds only). */
+export function nativeWifi(): WifiPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxWifi
 }
 
 /**

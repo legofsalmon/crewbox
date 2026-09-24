@@ -156,6 +156,24 @@ the phone, which sends what it read nowhere, and a QR that isn't a box's
 join code fills in nothing. On an iPhone, a name in the field needs
 `https://` in front; an IP address doesn't ([why](#the-ios-app)).
 
+The same button reads a Wi-Fi network's QR code, the kind printed on a
+router's label or shown by a phone sharing its Wi-Fi, and asks the phone to
+join that network. The phone asks you first: an iPhone asks whether Crewbox
+may join it, and Android 11 and later show their own screen asking whether
+to save it, naming the app. Once saved it is one of the phone's own
+networks, as if typed into its Wi-Fi settings, and the phone goes back to it
+by itself, though an iPhone forgets it if the app is deleted. The iPhone app
+then checks that the phone got on it, which iOS lets an app see only for a
+network that app added. WEP networks, ones where each person signs in with
+their own username, and codes that give the password as a 64-digit key are
+left to the phone's Wi-Fi settings, and so is Android 10 and older, which
+can't add a network for an app without a permission Crewbox doesn't ask
+for.
+
+Set the crew Wi-Fi to WPA2/WPA3 rather than WPA3 alone. A phone without
+WPA3 can't join a WPA3-only network at all, and Apple doesn't say whether an
+app can join one on an iPhone.
+
 Above the field, the apps list the boxes on this Wi-Fi, which announce
 themselves ([Admin → This box](/docs/admin)), and picking one fills the field
 in after asking that box which event it runs. The apps look only while that

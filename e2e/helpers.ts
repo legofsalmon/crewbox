@@ -80,11 +80,18 @@ export type ScanOutcome =
   | { result: 'denied' }
   | { result: 'unavailable' }
 
+/** What the apps' Wi-Fi join hands the page: `WifiOutcome` in web/src/lib/server.ts. */
+export interface WifiOutcome {
+  result: 'joined' | 'saved' | 'known' | 'declined' | 'failed' | 'invalid' | 'unavailable'
+}
+
 /**
- * One of the phone apps, with its search for boxes (DiscoveryPlugin) and its
- * QR scanner (ScannerPlugin) stood in for. Each start "finds" `boxes`, what it
- * was asked is kept for `discoveryCalls`, and `announce` changes what it has
- * found. Each scan hands back what `scanWillGive` queued, or is backed out of.
+ * One of the phone apps, with its search for boxes (DiscoveryPlugin), its QR
+ * scanner (ScannerPlugin) and its Wi-Fi join (WifiPlugin) stood in for. Each
+ * start "finds" `boxes`, what it was asked is kept for `discoveryCalls`, and
+ * `announce` changes what it has found. Each scan hands back what
+ * `scanWillGive` queued, or is backed out of, and each network asked for is
+ * kept for `wifiCalls` and answered as `wifiWillGive` queued, or turned down.
  */
 export const appWithDiscovery = async (
   browser: Browser,
@@ -108,6 +115,10 @@ export const appWithDiscovery = async (
       const scanner: string[] = []
       w.__scans = scans
       w.__scanner = scanner
+      const wifiAnswers: unknown[] = []
+      const networks: unknown[] = []
+      w.__wifiAnswers = wifiAnswers
+      w.__networks = networks
       w.__announce = (next: typeof boxes) => {
         found = next
         emit('boxes', { boxes: found })
@@ -148,6 +159,12 @@ export const appWithDiscovery = async (
               scanner.push('openSettings')
             },
           },
+          CrewboxWifi: {
+            join: async (network: unknown) => {
+              networks.push(network)
+              return wifiAnswers.shift() ?? { result: 'declined' }
+            },
+          },
         },
       }
     },
@@ -181,6 +198,18 @@ export const scanWillGive = (page: Page, ...outcomes: ScanOutcome[]) =>
 /** What the stood-in scanner has been asked to do, in order. */
 export const scannerCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as { __scanner: string[] }).__scanner)
+
+/** What the stood-in Wi-Fi join answers, one outcome per network, on the page as loaded. */
+export const wifiWillGive = (page: Page, ...outcomes: WifiOutcome[]) =>
+  page.evaluate(
+    (outcomes) =>
+      (window as unknown as { __wifiAnswers: unknown[] }).__wifiAnswers.push(...outcomes),
+    outcomes
+  )
+
+/** The networks the stood-in Wi-Fi join has been asked to join, in order. */
+export const wifiCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __networks: unknown[] }).__networks)
 
 /** Open the patch module's sheet selector from the sidebar. */
 export const openPatch = async (page: Page) => {

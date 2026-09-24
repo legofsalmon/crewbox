@@ -17,7 +17,9 @@ the spot — there are no accounts to create in advance and no email involved.
 ![The /connect page: QR code, join link and event PIN](shot:connect-page)
 
 1. Join the event Wi-Fi named on the poster (if your phone isn't on it
-   already).
+   already). In the phone app, **Scan the join poster** also reads the
+   Wi-Fi's own QR code, where there is one, and asks the phone to join
+   that network.
 2. Scan the QR code — it's on the join poster, on the box's screen, or on
    the `/connect` page someone may have sent you. In the phone app, scan it
    from the app: tap **Scan the join poster** and point the camera at the
@@ -127,10 +129,28 @@ The app tells you what it's doing rather than spinning forever:
 - **"This iPhone doesn't let Crewbox look on the local network"** — Local
   Network is off for Crewbox. Tap **Open Settings** and switch it on, or
   type the address from the join poster, which works without it.
-- **"That code is for the Wi-Fi, …"** — in the phone apps, the scanner read
-  the Wi-Fi poster's QR, which is often on the same wall. Join that network
-  with the phone's own camera or its Wi-Fi settings, then scan the crew
+- **"The app didn't join …"** — the phone asked whether to join the Wi-Fi
+  whose code you scanned, and the answer was no, or an Android phone didn't
+  offer to (a guest user, or a work profile that doesn't allow it). Join it
+  in the phone's Wi-Fi settings, then scan the crew code.
+- **"The phone saved … but doesn't seem to be on it"** — the iPhone has the
+  network now, but the app didn't see it get on: it's out of range, or the
+  code's password is wrong. It joins by itself once in range. If it is in
+  range, check the password in the phone's Wi-Fi settings. If the settings
+  show it joined, carry on and scan the crew code.
+- **"That code is for the Wi-Fi, …, which the app can't join"** — the code
+  is for an older WEP network, one where each person signs in with their
+  own username, or it gives the password as a 64-digit key. Join it in the
+  phone's Wi-Fi settings.
+- **"That code is for the Wi-Fi, …"** — the app couldn't ask the phone:
+  Android 10 and older can't join a network for an app, and now and then
+  iOS refuses without saying why. On an iPhone, point the Camera app at the
+  code and tap the Wi-Fi banner. On Android, join it in the Wi-Fi settings,
+  where **Add network** may offer to scan the code. Then scan the crew
   code.
+- **"The phone can't use that Wi-Fi code"** — the network name or password
+  in the code can't be right: a WPA password is 8 to 63 characters. Ask
+  whoever runs the Wi-Fi for its name and password.
 - **"That isn't the crew code"** — the scanner read a QR that isn't a box's
   join code. Scan the one on the join poster, or type the address printed
   under it.

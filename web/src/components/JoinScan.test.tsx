@@ -5,7 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useStore } from '../store.ts'
 import { forgetEventRecord, knownEvents } from '../lib/eventScope.ts'
 import { resetSearchForTests } from '../lib/discovery.ts'
-import type { ScanOutcome, ScannerPlugin } from '../lib/server.ts'
+import type {
+  ScanOutcome,
+  ScannerPlugin,
+  WifiNetwork,
+  WifiOutcome,
+  WifiPlugin,
+} from '../lib/server.ts'
 import Join from './Join.tsx'
 
 /**
@@ -13,8 +19,9 @@ import Join from './Join.tsx'
  *
  * The join poster's QR is the box's address with the event PIN, and scanning
  * it fills in both, as if they had been typed: Join then does what it does
- * for a typed address. Anything else the camera reads fills in nothing and
- * says what it was.
+ * for a typed address. A Wi-Fi code asks the phone to join its network,
+ * which the phone asks the crew member about. Anything else the camera reads
+ * fills in nothing and says what it was.
  */
 
 declare global {
@@ -26,14 +33,25 @@ let host: HTMLElement
 let answer: () => Promise<ScanOutcome>
 const openSettings = vi.fn(async () => {})
 const join = vi.fn(async () => {})
+let joined: (network: WifiNetwork) => Promise<WifiOutcome>
+const joinWifi = vi.fn((network: WifiNetwork) => joined(network))
 
-function inApp(platform: 'android' | 'ios', scanner = true): void {
+function inApp(platform: 'android' | 'ios', scanner = true, wifi = true): void {
   const plugin: ScannerPlugin = { scan: () => answer(), openSettings }
+  const wifiPlugin: WifiPlugin = { join: joinWifi }
   window.Capacitor = {
     isNativePlatform: () => true,
     getPlatform: () => platform,
-    Plugins: scanner ? { CrewboxScanner: plugin } : {},
+    Plugins: {
+      ...(scanner ? { CrewboxScanner: plugin } : {}),
+      ...(wifi ? { CrewboxWifi: wifiPlugin } : {}),
+    },
   }
+}
+
+/** What the phone says to joining a network from now on. */
+const wifiGives = (outcome: WifiOutcome) => {
+  joined = async () => outcome
 }
 
 const scans = (outcome: ScanOutcome) => {
@@ -78,6 +96,8 @@ beforeEach(() => {
   answer = async () => ({ result: 'cancelled' })
   openSettings.mockClear()
   join.mockClear()
+  joined = async () => ({ result: 'declined' })
+  joinWifi.mockClear()
   useStore.setState({ join })
   document.body.innerHTML = ''
   host = document.createElement('div')
@@ -174,11 +194,162 @@ describe('scanning the join poster', () => {
   })
 })
 
-describe('what else the camera might read', () => {
-  it('names a Wi-Fi code’s network and fills in nothing', async () => {
+describe('a Wi-Fi code', () => {
+  const CREW_NET = 'WIFI:T:WPA;S:Crew Net;P:backstage;;'
+
+  it('asks the phone to join its network, then says to scan the crew code', async () => {
+    inApp('ios')
+    await render()
+    reads(CREW_NET)
+    wifiGives({ result: 'joined' })
+
+    await scan()
+
+    expect(joinWifi).toHaveBeenCalledExactlyOnceWith({
+      ssid: 'Crew Net',
+      password: 'backstage',
+      wpa3: false,
+      hidden: false,
+    })
+    expect(note()).toBe('On Crew Net. Now scan the crew code on the join poster.')
+    expect(error()).toBeNull()
+    expect(server().value).toBe('')
+
+    // Which is the next scan.
+    reads('http://192.168.8.1/?pin=4821')
+    await scan()
+    expect(note()).toBe('Filled in 192.168.8.1 and the event PIN from the poster.')
+    expect(joinWifi).toHaveBeenCalledOnce()
+  })
+
+  it('passes on WPA3 alone and a hidden network, as the code says', async () => {
     inApp('android')
     await render()
-    reads('WIFI:T:WPA;S:Crew Net;P:secret;;')
+    reads('WIFI:T:SAE;S:Crew Net;P:backstage;H:true;;')
+    wifiGives({ result: 'saved' })
+
+    await scan()
+
+    expect(joinWifi).toHaveBeenCalledExactlyOnceWith({
+      ssid: 'Crew Net',
+      password: 'backstage',
+      wpa3: true,
+      hidden: true,
+    })
+  })
+
+  it('says what the phone did with it', async () => {
+    const said: [WifiOutcome, 'note' | 'error', string][] = [
+      [
+        { result: 'saved' },
+        'note',
+        'Saved Crew Net, and the phone is joining it. Now scan the crew code on the join poster.',
+      ],
+      [
+        { result: 'known' },
+        'note',
+        'This phone already has Crew Net saved. If it isn’t on it, pick it in the phone’s ' +
+          'Wi-Fi settings, then scan the crew code on the join poster.',
+      ],
+      [
+        { result: 'declined' },
+        'error',
+        'The app didn’t join Crew Net. Join it in the phone’s Wi-Fi settings, then scan the ' +
+          'crew code on the join poster.',
+      ],
+      [
+        { result: 'failed' },
+        'error',
+        'The phone saved Crew Net but doesn’t seem to be on it. If it’s in range, check the ' +
+          'password in the phone’s Wi-Fi settings, then scan the crew code on the join poster.',
+      ],
+      [
+        { result: 'invalid' },
+        'error',
+        'The phone can’t use that Wi-Fi code: the name or password in it isn’t valid. Join ' +
+          'Crew Net in the phone’s Wi-Fi settings, then scan the crew code on the join poster.',
+      ],
+      [
+        { result: 'unavailable' },
+        'error',
+        'That code is for the Wi-Fi, Crew Net. Join it with this phone’s camera or its Wi-Fi ' +
+          'settings, then scan the crew code on the join poster.',
+      ],
+    ]
+    inApp('android')
+    await render()
+    reads(CREW_NET)
+    for (const [outcome, where, text] of said) {
+      wifiGives(outcome)
+      await scan()
+      expect(where === 'note' ? note() : error(), outcome.result).toBe(text)
+      expect(where === 'note' ? error() : note(), outcome.result).toBeNull()
+    }
+    expect(joinWifi).toHaveBeenCalledTimes(said.length)
+  })
+
+  it('says “Joining the Wi-Fi…” until the phone answers', async () => {
+    inApp('ios')
+    await render()
+    reads(CREW_NET)
+    let answer!: (outcome: WifiOutcome) => void
+    joined = () => new Promise((resolve) => (answer = resolve))
+
+    await scan()
+
+    const busy = button('Joining the Wi-Fi…')
+    expect(busy?.disabled).toBe(true)
+    await act(async () => {
+      answer({ result: 'joined' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(button('Scan the join poster')?.disabled).toBe(false)
+    expect(note()).toBe('On Crew Net. Now scan the crew code on the join poster.')
+  })
+
+  it('doesn’t trouble the phone with a code it couldn’t use', async () => {
+    inApp('android')
+    await render()
+
+    // A WPA password is 8 characters at least.
+    reads('WIFI:T:WPA;S:Crew Net;P:back;;')
+    await scan()
+    expect(error()).toBe(
+      'The phone can’t use that Wi-Fi code: the name or password in it isn’t valid. Join ' +
+        'Crew Net in the phone’s Wi-Fi settings, then scan the crew code on the join poster.'
+    )
+
+    reads('WIFI:T:WPA;P:backstage;;')
+    await scan()
+    expect(error()).toBe(
+      'The phone can’t use that Wi-Fi code: the name or password in it isn’t valid. Join ' +
+        'the crew Wi-Fi in the phone’s settings, then scan the crew code on the join poster.'
+    )
+    expect(joinWifi).not.toHaveBeenCalled()
+  })
+
+  it('leaves WEP, enterprise networks and a key in hex to the phone’s settings', async () => {
+    inApp('ios')
+    await render()
+    for (const code of [
+      'WIFI:T:WEP;S:Crew Net;P:0123456789;;',
+      'WIFI:T:WPA2-EAP;S:Crew Net;E:PEAP;I:tech;P:backstage;;',
+      `WIFI:T:WPA;S:Crew Net;P:${'0123456789abcdef'.repeat(4)};;`,
+    ]) {
+      reads(code)
+      await scan()
+      expect(error(), code).toBe(
+        'That code is for the Wi-Fi, Crew Net, which the app can’t join. Join it in the ' +
+          'phone’s Wi-Fi settings, then scan the crew code on the join poster.'
+      )
+    }
+    expect(joinWifi).not.toHaveBeenCalled()
+  })
+
+  it('names the network, and fills in nothing, where the app can’t join it', async () => {
+    inApp('android', true, false)
+    await render()
+    reads(CREW_NET)
 
     await scan()
 
@@ -189,6 +360,33 @@ describe('what else the camera might read', () => {
     )
   })
 
+  it('says the same when asking the phone fails, or it answers something new', async () => {
+    const same =
+      'That code is for the Wi-Fi, Crew Net. Join it with this phone’s camera or its Wi-Fi ' +
+      'settings, then scan the crew code on the join poster.'
+    inApp('ios')
+    await render()
+    reads(CREW_NET)
+    joined = async () => {
+      throw new Error('bridge gone')
+    }
+
+    await scan()
+
+    expect(error()).toBe(same)
+    expect(button('Scan the join poster')?.disabled).toBe(false)
+
+    // A later app's native side, with an answer this page doesn't know.
+    wifiGives({ result: 'queued' } as unknown as WifiOutcome)
+    reads(CREW_NET)
+    await scan()
+
+    expect(error()).toBe(same)
+    expect(joinWifi).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('what else the camera might read', () => {
   it('says anything else isn’t the crew code', async () => {
     inApp('android')
     await render()

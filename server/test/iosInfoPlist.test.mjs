@@ -113,6 +113,48 @@ describe('scanning the join poster', () => {
   })
 })
 
+describe('joining the Wi-Fi from its code', () => {
+  const read = (path) => readFileSync(join(import.meta.dirname, '..', '..', path), 'utf8')
+
+  it('registers the Wi-Fi join beside the scanner, and builds it', () => {
+    expect(read('native/ios/App/App/CrewboxViewController.swift')).toContain(
+      'bridge?.registerPluginInstance(WifiPlugin())'
+    )
+    expect(read('native/ios/App/App.xcodeproj/project.pbxproj')).toContain(
+      '/* WifiPlugin.swift in Sources */,'
+    )
+    // Under the name the page looks for (nativeWifi in web/src/lib/server.ts).
+    expect(read('native/ios/App/App/WifiPlugin.swift')).toContain(
+      'public let jsName = "CrewboxWifi"'
+    )
+  })
+
+  it('signs the app with the two entitlements the join needs, and only those', () => {
+    // Without Hotspot Configuration iOS refuses every network the app hands
+    // it, and without Access Wi-Fi Information the check that the phone got
+    // on the network always reads none, so every join would say it failed.
+    // Each is a capability of the App ID on the developer account as well.
+    const entitlements = read('native/ios/App/App/App.entitlements').replace(/<!--[\s\S]*?-->/g, '')
+    const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>\s*<true\/>/g)].map((m) => m[1])
+    expect(keys.sort()).toEqual([
+      'com.apple.developer.networking.HotspotConfiguration',
+      'com.apple.developer.networking.wifi-info',
+    ])
+    expect([...entitlements.matchAll(/<key>/g)]).toHaveLength(2)
+    // In every configuration of the app's target, which is the one with the
+    // bundle identifier: a build without them installs, and joins nothing.
+    const configurations = [
+      ...read('native/ios/App/App.xcodeproj/project.pbxproj').matchAll(
+        /buildSettings = \{([^}]*PRODUCT_BUNDLE_IDENTIFIER[^}]*)\}/g
+      ),
+    ]
+    expect(configurations).toHaveLength(2)
+    for (const [, settings] of configurations) {
+      expect(settings).toContain('CODE_SIGN_ENTITLEMENTS = App/App.entitlements;')
+    }
+  })
+})
+
 describe('required device capabilities', () => {
   it('name the architecture the app is built for', () => {
     // Capacitor's template says armv7. The build is arm64 only, and an

@@ -45,6 +45,13 @@ neither the picture nor what it read goes anywhere. The iPhone app uses
 Apple's own scanner, and the Android app the open-source ZXing, rather than
 Google's ML Kit, which reports its use to Google.
 
+A Wi-Fi network's QR code, scanned in the apps, goes to the phone's own
+Wi-Fi settings, which ask before joining it, and its password stays there.
+The iPhone app then asks iOS which network the phone is on, which iOS
+answers only for a network the app added itself. The app doesn't ask for
+your location, and learns nothing of the phone's other networks. The Android
+app learns only whether the network was saved.
+
 The box needs no internet and works the same without it. When it does have
 internet it makes the few requests below, and nothing else. If the operator
 sets up a remote support tunnel, connections through it are marked — that's

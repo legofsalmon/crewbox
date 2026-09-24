@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
     registerPlugin(FilesPlugin.class);
     registerPlugin(DiscoveryPlugin.class);
     registerPlugin(ScannerPlugin.class);
+    registerPlugin(WifiPlugin.class);
     forgetLinkFromRecents(getIntent());
     super.onCreate(savedInstanceState);
     forgetTakenPhotos();
