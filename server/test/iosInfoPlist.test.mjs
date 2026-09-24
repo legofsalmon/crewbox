@@ -47,6 +47,20 @@ describe('iPhone purpose strings', () => {
   })
 })
 
+describe('required device capabilities', () => {
+  it('name the architecture the app is built for', () => {
+    // Capacitor's template says armv7. The build is arm64 only, and an
+    // upload whose list lacks arm64 has been refused by App Store Connect
+    // (ITMS-90502) — a failure that surfaces at submission, not in CI.
+    const list = /<key>UIRequiredDeviceCapabilities<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(
+      plist
+    )?.[1]
+    const values = [...(list ?? '').matchAll(/<string>([^<]*)<\/string>/g)].map((m) => m[1])
+    expect(values).toContain('arm64')
+    expect(values).not.toContain('armv7')
+  })
+})
+
 describe('the oldest iOS the app installs on', () => {
   it('is 17 in every build configuration', () => {
     // The native work planned for the app leans on iOS 16.1 to 16.4 —

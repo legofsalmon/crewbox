@@ -30,17 +30,18 @@ Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
    `web/dist`: `npm --prefix web run build && npx --prefix native cap sync ios`.
 5. Product → Archive → Distribute App → App Store Connect.
 
-## Host the privacy policy (need a public URL)
+## The privacy policy's public URL
 
-- Repo Settings → Pages → deploy from `main` / `/docs`. That serves
-  `https://crewbox.letissier.ie/docs/privacy-policy`.
-- Edit `site/docs/privacy-policy.html`: replace **[YOUR SUPPORT EMAIL]** with a real
-  contact address before publishing.
+- The docs site deploys to Vercel from `site/` (see `site/README.md`), and
+  serves the policy at `https://crewbox.letissier.ie/docs/privacy-policy` with
+  the rest of the docs. There is nothing separate to host.
+- Edit `site/docs/privacy-policy.html`: replace **[YOUR SUPPORT EMAIL]** with a
+  real contact address before submitting. App Review opens the policy.
 
 ## In App Store Connect (manual)
 
 1. **Create the app** — name, primary language, bundle id, SKU.
-2. **Privacy Policy URL** — the Pages URL above (required).
+2. **Privacy Policy URL** — the URL above (required).
 3. **App Privacy questionnaire** — answer to match the policy:
    - Data collected: *Name* and *User Content* (messages), linked to the user,
      used only for **App Functionality**. No tracking, no third-party sharing,
