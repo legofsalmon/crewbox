@@ -90,3 +90,35 @@ test('tapping a channel does not open the keyboard on a phone', async ({ browser
 
   await context.close()
 })
+
+/**
+ * The closed drawer left a grey band down the left of the screen.
+ *
+ * It waits just off the left edge, and its shadow reached 40px back onto the
+ * screen from there, in both themes and plain to see in the light one. The
+ * shadow belongs to the drawer only while it is open.
+ */
+test('the closed drawer leaves nothing on the screen', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+    colorScheme: 'light',
+  })
+  const page = await context.newPage()
+  await page.goto('/?pin=4242')
+  await page.getByLabel('Your name').fill(uniqueName('Edge Tech'))
+  await page.getByLabel('Your PIN').fill('1234')
+  await page.getByRole('button', { name: 'Join' }).click()
+  await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+  const shadow = () => page.locator('.sidebar').evaluate((el) => getComputedStyle(el).boxShadow)
+  expect(await shadow()).toBe('none')
+
+  // Open, it still stands out from the page behind it.
+  await page.getByRole('button', { name: 'Open channels' }).first().tap()
+  await expect(page.getByRole('button', { name: '#general' })).toBeVisible()
+  await expect.poll(shadow).not.toBe('none')
+
+  await context.close()
+})

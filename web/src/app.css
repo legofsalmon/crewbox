@@ -2483,17 +2483,25 @@ ul {
     height: var(--app-height, 100dvh);
     z-index: 50;
     transform: translateX(-100%);
-    transition: transform 0.22s ease;
+    transition:
+      transform 0.22s ease,
+      box-shadow 0.22s ease;
     width: min(var(--sidebar-w), 85vw);
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
     /* Fixed drawer escapes .app's safe-area padding — re-apply both ends, or
        the bottom row sits under the home indicator. */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /*
+   * The shadow only while open. Closed, the drawer waits just off the left
+   * edge, and a 40px shadow reached back onto the screen from there: a grey
+   * band down the left of every phone screen, plain to see in the light
+   * theme.
+   */
   .sidebar-open .sidebar {
     transform: translateX(0);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
   }
 
   .backdrop {
