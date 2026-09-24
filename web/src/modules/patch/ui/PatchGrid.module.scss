@@ -203,6 +203,50 @@ $act-row-height: 38px;
   opacity: 1;
 }
 
+/*
+ * A finger cannot hover, so on a touch screen the buttons were invisible
+ * until the channel's name was being typed in, and then 19 by 17 pixels, one
+ * on top of the other, so a thumb aimed at + could land on −. Here they are
+ * always there, side by side, each the height of the row, and muted so ten
+ * rows of them don't outshout the channel numbers.
+ *
+ * `any-pointer: coarse` as well as `hover: none`: older Android web views
+ * took a phone's stylus, or a mouse some makers' phones list without having
+ * one, for its main pointer and reported `hover: hover` (mdn
+ * browser-compat-data issue 24451; Chromium now prefers the touchscreen).
+ * Every phone lists its touchscreen among its pointers, so `any-pointer:
+ * coarse` matches there either way. A laptop with a touchscreen gets the
+ * buttons too, which does no harm.
+ */
+@media (hover: none), (any-pointer: coarse) {
+  .channelActions {
+    opacity: 1;
+    flex-direction: row;
+    gap: 2px;
+
+    button {
+      width: 32px;
+      height: 34px;
+      font-size: 1.1rem;
+      color: var(--text-muted);
+    }
+  }
+}
+
+/*
+ * The channel column stays put while the acts scroll past it, and the house
+ * input made it 272 pixels of a 390-pixel phone, leaving one act column in
+ * view at a time. On a phone the input is 120 pixels, room for a dozen
+ * capitals in bold: "SNARE BOTTOM" is 106 in Arial's widths. At 96, channels
+ * 15 and 16 of a festival patch both read "FRONT VOX". A longer name scrolls
+ * inside its box.
+ */
+@media (max-width: 640px) {
+  .houseInput {
+    width: 120px;
+  }
+}
+
 .cell {
   @extend %gridCell;
   padding: 0;

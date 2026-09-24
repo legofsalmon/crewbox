@@ -50,7 +50,10 @@ Rows are desk channels; each act gets a column group of five fields:
   ([all shortcuts](/docs/shortcuts)).
 - **← Copy** in an act's header copies the previous act's whole patch — the
   fastest start for a shared backline.
-- **+ Add Channel** at the bottom grows the sheet.
+- **+ Add Channel** at the bottom grows the sheet. Each channel also has a
+  **+**, which inserts a channel below it, and a **−**, which removes it
+  (asking first if any act has something on it). On a computer they appear
+  when you point at the channel; on a phone or tablet they are always there.
 
 ![The grid on a phone](shot:patch-grid-phone)
 
