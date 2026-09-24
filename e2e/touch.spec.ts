@@ -1,5 +1,6 @@
+import { truncateSync, writeFileSync } from 'node:fs'
 import { expect, type Browser, type Page } from '@playwright/test'
-import { test, uniqueName } from './helpers'
+import { newDevice, test, uniqueName } from './helpers'
 
 /** A phone, joined to the event. */
 const phone = async (browser: Browser, name: string): Promise<Page> => {
@@ -549,4 +550,32 @@ test('a plot is undone and redone from a phone', async ({ browser }) => {
   expect(Math.abs(button.y + button.height / 2 - (tabs.y + tabs.height / 2))).toBeLessThan(4)
 
   await page.context().close()
+})
+
+/**
+ * An import holds the whole file in memory while it reads it, and a phone
+ * that runs out loses the app, or the tab, with it. A rig file too big for
+ * a phone is sent to a computer, which reads it as it always has.
+ */
+test('a rig too big for a phone is sent to a computer, which reads it', async ({ browser }) => {
+  const big = test.info().outputPath('Arena Rig.mvr')
+  writeFileSync(big, '')
+  truncateSync(big, 101 * 1024 * 1024)
+
+  const page = await phone(browser, 'Arena Tech')
+  await page.getByRole('button', { name: 'Open channels' }).first().tap()
+  await page.getByRole('button', { name: 'All plots…' }).tap()
+  await page.getByLabel('Import CSV or MVR file').setInputFiles(big)
+  await expect(
+    page.getByText(/^Arena Rig\.mvr is 101 MB, too big to read on a phone\./)
+  ).toBeVisible()
+  await expect(page.locator('main').getByText('Arena Rig', { exact: true })).toHaveCount(0)
+  await page.context().close()
+
+  // This one is 101 MB of nothing, so a computer reads as far as finding
+  // that it isn't an archive at all.
+  const computer = await newDevice(browser)
+  await computer.getByRole('button', { name: 'All plots…' }).click()
+  await computer.getByLabel('Import CSV or MVR file').setInputFiles(big)
+  await expect(computer.getByText(/^Import failed: /)).toBeVisible()
 })

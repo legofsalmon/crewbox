@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { deliveredNote, deliverText, type Delivered } from '../../../lib/download.ts'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
@@ -34,6 +26,7 @@ import PlotElevation from './PlotElevation'
 import PlotPlan from './PlotPlan'
 import PositionManager from './PositionManager'
 import styles from './PlotView.module.scss'
+import { isRigFile, rigFileAccept, rigFileProblem } from './rigFile.ts'
 
 /**
  * The four ways to look at a plot.
@@ -117,10 +110,9 @@ function PlotDropZone({
   rootRef: RefObject<HTMLDivElement | null>
   children: ReactNode
 }) {
-  const accept = useCallback((file: File) => /\.(csv|mvr)$/i.test(file.name), [])
   // Disabled mid-import so a second drop can't interleave with a parse
   // already chewing through a 40 MB venue file.
-  const drop = useFileDrop(onFiles, { disabled: importing, accept, onReject })
+  const drop = useFileDrop(onFiles, { disabled: importing, accept: isRigFile, onReject })
   return (
     <div
       ref={rootRef}
@@ -217,6 +209,11 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   }
 
   const importFile = async (file: File) => {
+    const problem = rigFileProblem(file)
+    if (problem) {
+      setFlash(problem)
+      return
+    }
     // A festival MVR is tens of megabytes and takes seconds to inflate and
     // parse, all of it on the main thread. Say so rather than looking hung.
     setImporting(true)
@@ -308,7 +305,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
             {importing ? 'Reading…' : 'Import'}
             <input
               type="file"
-              accept=".csv,.mvr,text/csv"
+              accept={rigFileAccept()}
               className={styles.fileInput}
               disabled={importing}
               onChange={(e) => {

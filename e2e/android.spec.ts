@@ -1,3 +1,4 @@
+import { truncateSync, writeFileSync } from 'node:fs'
 import { expect, type Browser } from '@playwright/test'
 import { test, uniqueName } from './helpers'
 
@@ -91,6 +92,52 @@ test('the Android app keeps the ordinary picker one tap further in', async ({ br
   const name = uniqueName('rider') + '.txt'
   await picker.setFiles({ name, mimeType: 'text/plain', buffer: Buffer.from('Stage left: 2x DI') })
   await expect(page.getByText(name)).toBeVisible({ timeout: 15_000 })
+
+  await context.close()
+})
+
+/**
+ * Android's file chooser filters by MIME type, and there is none for .mvr:
+ * asked for ".csv,.mvr,text/csv", Capacitor dropped the extension it had no
+ * type for and the chooser offered CSVs only. So the app asks for no type
+ * at all, and turns away what isn't a rig file once it has been chosen.
+ */
+test('the Android app can pick an MVR, and is told what else it picked', async ({ browser }) => {
+  const { context, page } = await androidApp(browser)
+  await page.getByRole('button', { name: 'Open channels' }).first().tap()
+  await page.getByRole('button', { name: 'All plots…' }).tap()
+
+  const choose = async () => {
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: /Import CSV \/ MVR/ }).tap()
+    return chooser
+  }
+  let picker = await choose()
+  expect(await picker.element().getAttribute('accept')).toBeNull()
+  const pdf = Buffer.from('%PDF-1.7')
+  await picker.setFiles({ name: 'Rider.pdf', mimeType: 'application/pdf', buffer: pdf })
+  await expect(page.getByText('Rider.pdf isn’t a CSV or MVR')).toBeVisible()
+
+  // A phone's memory: a file too big to read is sent to a computer instead,
+  // before a byte of it is read or a plot is made for it.
+  const big = test.info().outputPath('Festival Rig.mvr')
+  writeFileSync(big, '')
+  truncateSync(big, 101 * 1024 * 1024)
+  picker = await choose()
+  await picker.setFiles(big)
+  await expect(
+    page.getByText(/^Festival Rig\.mvr is 101 MB, too big to read on a phone\./)
+  ).toBeVisible()
+  await expect(page.locator('main').getByText('Festival Rig', { exact: true })).toHaveCount(0)
+
+  picker = await choose()
+  await picker.setFiles('e2e/fixtures/rig.mvr')
+  await expect(page.getByText(/Imported 4 fixtures across/)).toBeVisible()
+  // A plot's own Import button asks the same way, and answers the same.
+  const own = page.getByLabel('Import', { exact: true })
+  expect(await own.getAttribute('accept')).toBeNull()
+  await own.setInputFiles({ name: 'Rider.pdf', mimeType: 'application/pdf', buffer: pdf })
+  await expect(page.getByText('Rider.pdf isn’t a CSV or MVR')).toBeVisible()
 
   await context.close()
 })

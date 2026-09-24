@@ -37,6 +37,20 @@ import reads:
 Large MVRs take a moment; the UI says "Reading…" rather than freezing
 silently.
 
+## On a phone
+
+**Import CSV / MVR** opens the phone's own file picker, in either app or a
+phone's browser. In the apps, and in any browser on an iPhone, the picker
+offers every file rather than only rig files, because the phone has no file
+type for an MVR to narrow it down by. On an iPhone that means the photo
+library and the camera are offered too: tap **Choose File** for your
+files. Choose something that isn't a CSV or an MVR and crewbox says so.
+
+A phone won't import a file over **100 MB**. An import holds the whole file
+in memory while it reads it, and a phone that runs out doesn't just fail
+the import: the app closes or starts over. Import a file that big on a
+computer instead: the plot reaches every phone on the box from there.
+
 ## What each route unlocks
 
 | Capability                               | CSV                                   | MVR + GDTF                   |
