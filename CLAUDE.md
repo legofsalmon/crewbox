@@ -24,8 +24,13 @@ npm run lint
 npm run format:check
 npm run build                               # typechecks both workspaces
 npm test                                    # server + web unit tests
+npm run docs:test && npm run docs:build     # then commit any change it makes
 npm run build -w web && npx playwright test # e2e (needs the built web app)
 ```
+
+The docs site is committed as built HTML, and CI rebuilds it and fails on
+any difference. An edit to `site/docs-src` without its rebuilt page in the
+same push turns CI red with every test passing.
 
 `npm run build` is the typecheck, and nothing else here covers it: vitest
 transpiles without checking types, so a type error in a _test_ file passes
