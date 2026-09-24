@@ -122,7 +122,9 @@ scripts/smoke-box.sh ./crewbox-darwin-arm64
 ```
 
 Starts the box on a scratch port, walks setup → join → admin, confirms the
-voice server came up, and cleans up after itself. Needs nothing but `curl`.
+voice server came up, and cleans up after itself. The scratch box has no
+licence, so it reports setup as refused until there is one — that is the
+check passing, not a problem with your download. Needs nothing but `curl`.
 Every release runs the same script on every platform, so a failure here means
 something specific to your machine — worth knowing in the office rather than
 on site.

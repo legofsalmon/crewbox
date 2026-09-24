@@ -185,15 +185,18 @@ members for a minute and asserts exactly-once delivery for every client.
 ## Smoke-testing a build
 
 `scripts/smoke-box.sh build/box/crewbox-linux-x64` starts a built box, walks
-setup → join → admin, and asserts the voice server actually came up. Plain sh
-and curl, so it also runs on a festival admin's Mac against a downloaded
-release.
+setup → join → admin, and asserts the voice server actually came up. It starts
+the box on an empty data directory, so a release box is unlicensed there: it
+checks that first-run setup asks for a licence and refuses to save, rather
+than that it saves. Plain sh and curl, so it also runs on a festival admin's
+Mac against a downloaded release.
 
 Every release runs it on each platform, including against the universal
-`Crewbox.app`. It exists because a box can build perfectly and still ship
-without working voice — a missing SFU asset, an SFU that won't execute on that
-OS, a universal binary whose slices lost their payload — and none of that
-appears in a build log.
+`Crewbox.app`, and CI runs it against the Linux box on every pull request. It
+exists because a box can build perfectly and still ship without working voice
+— a missing SFU asset, an SFU that won't execute on that OS, a universal
+binary whose slices lost their payload — and none of that appears in a build
+log.
 
 ## Versioning & updates
 
