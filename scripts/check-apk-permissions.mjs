@@ -172,7 +172,7 @@ function main(argv) {
   }
   for (const name of unexpected) {
     console.error(
-      `::error::${name} is in the built APK and was not asked for — most likely pulled in by a library's manifest. If it is meant to be there, add it to ALLOWED_EXTRA in scripts/check-apk-permissions.mjs and say why.`
+      `::error::${name} is in the built APK and was not asked for — most likely pulled in by a library's manifest. If the app does without it, take it out in the app's AndroidManifest.xml with tools:node="remove"; if it is meant to be there, add it to ALLOWED_EXTRA in scripts/check-apk-permissions.mjs and say why.`
     )
   }
   if (missing.length || unexpected.length) return 1

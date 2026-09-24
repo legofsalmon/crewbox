@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -151,6 +152,15 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!--
+        Not asked for: the network's state. CameraX's preview comes with its
+        video half, which brings Media3, and Media3 asks for this for a video
+        player's bandwidth estimate. Nothing here plays or records video, and
+        nothing in the app asks Android about the network, so it is taken out
+        rather than shown to crew on the install screen.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
     <!--
         "Take a photo" in the attach menu. Capacitor's web view looks for a

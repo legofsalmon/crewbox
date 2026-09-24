@@ -176,14 +176,41 @@ describe('the list and the manifest', () => {
   it('are the same set, so neither can drift from the other', () => {
     // The manifest stays the source of truth — this is what makes deleting a
     // line from it a failure here rather than a discovery in a field.
-    const manifest = readFileSync(
-      join(import.meta.dirname, '..', '..', 'native/android/app/src/main/AndroidManifest.xml'),
-      'utf8'
-    )
-    const declared = [...manifest.matchAll(/<uses-permission\s+android:name="([\w.]+)"/g)].map(
-      (m) => m[1]
-    )
+    const declared = permissions(manifestText())
+      .filter((p) => !p.removed)
+      .map((p) => p.name)
     expect(declared.length).toBeGreaterThan(0)
     expect([...declared].sort()).toEqual([...REQUIRED, ...ALLOWED_EXTRA].sort())
   })
+
+  it('takes out only what a library asks for and the app does without', () => {
+    // A library's permission comes out with tools:node="remove", which the
+    // APK check can't see: the merged manifest simply lacks it. Taking out
+    // one the app needs would be the missing-permission failure again, with
+    // the manifest looking as if it had been thought about.
+    const removed = permissions(manifestText())
+      .filter((p) => p.removed)
+      .map((p) => p.name)
+    // Media3, which CameraX's video half brings, for a player the app hasn't.
+    expect(removed).toEqual(['android.permission.ACCESS_NETWORK_STATE'])
+    for (const name of removed) {
+      expect(REQUIRED).not.toContain(name)
+      expect(ALLOWED_EXTRA).not.toContain(name)
+    }
+  })
 })
+
+function manifestText() {
+  return readFileSync(
+    join(import.meta.dirname, '..', '..', 'native/android/app/src/main/AndroidManifest.xml'),
+    'utf8'
+  )
+}
+
+/** Each `<uses-permission>` in the manifest, and whether it takes one out. */
+function permissions(manifest) {
+  return [...manifest.matchAll(/<uses-permission\s+android:name="([\w.]+)"([^>]*)>/g)].map((m) => ({
+    name: m[1],
+    removed: /\btools:node="remove"/.test(m[2]),
+  }))
+}
