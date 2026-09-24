@@ -271,7 +271,8 @@ const sameName = (name: string): string => name.trim().toLocaleLowerCase()
 /**
  * What the list shows, from what was found and the events this device holds.
  *
- * - `boxes`: those running an event this device does not hold, one row each.
+ * - `boxes`: those running an event this device does not hold, one row each,
+ *   the ones set up first, then by name and address.
  * - `here`: events this device holds whose box is announcing at the very
  *   address the device knows it by, so its row can say it is on this Wi-Fi.
  *
@@ -316,8 +317,11 @@ export function nearby(
           (box.eventName !== '' && sameName(other.eventName) === sameName(box.eventName)))
     )
   }
+  // Boxes crew can join come first: one nobody has set up has no name to
+  // sort by and no button, and would otherwise head the list.
   boxes.sort(
     (a, b) =>
+      Number(b.setUp) - Number(a.setUp) ||
       a.eventName.localeCompare(b.eventName, undefined, { sensitivity: 'base' }) ||
       a.address.localeCompare(b.address, undefined, { numeric: true })
   )

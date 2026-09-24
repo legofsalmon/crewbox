@@ -181,6 +181,21 @@ describe('what the list shows', () => {
     const { boxes } = nearby([at('10.0.0.10', 'b'), at('10.0.0.9', 'b'), at('10.0.0.200', 'A')], [])
     expect(boxes.map((box) => box.address)).toEqual(['10.0.0.200', '10.0.0.9', '10.0.0.10'])
   })
+
+  it('lists the boxes crew can join before any nobody has set up', () => {
+    // A fresh box has no name yet, which would sort it first by name.
+    const fresh = service({ name: 'crewbox', addresses: ['10.0.0.5'], txt: { setup: '0' } })
+    const set = service({
+      name: 'Fest',
+      addresses: ['10.0.0.9'],
+      txt: { id: 'fest', name: 'Fest' },
+    })
+    const { boxes } = nearby([fresh, set], [])
+    expect(boxes.map((box) => [box.address, box.setUp])).toEqual([
+      ['10.0.0.9', true],
+      ['10.0.0.5', false],
+    ])
+  })
 })
 
 describe('what the native side sends', () => {
