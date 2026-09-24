@@ -73,6 +73,14 @@ loaded on your device, and it clears itself when you switch channels
 precisely so this state can't linger. For history beyond what's loaded, use
 search (`⌘K`), which asks the box for everything.
 
+## "Sheet not found" or "Plot not found"
+
+The box keeps every sheet, plot and screen map that anyone has opened since
+it last started. So this usually means it has restarted, and nobody who has
+that one has opened it since. Ask whoever made it to open it: it appears on
+your screen as soon as they do. Otherwise it has been deleted, or the link
+you followed came from a different box.
+
 ## "The reload pill does nothing"
 
 **New version available — Reload** occasionally needs a few seconds while

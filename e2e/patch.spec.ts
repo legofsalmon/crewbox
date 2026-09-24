@@ -32,9 +32,9 @@ test('sheet edits persist across reload and the URL deep-links the sheet', async
    *
    * A second device seeing the value is the only durability signal the app
    * offers, and it is the right one: it proves the update is off this device
-   * and in the box. The witness is closed again before the reload, so the
-   * relay room dies with it and the reloaded page still has to restore from
-   * its own IndexedDB — which is what this test is about.
+   * and in the box. The box keeps the sheet after the witness leaves, so the
+   * reloaded page is kept off the relay: what it shows has to come from its
+   * own IndexedDB, which is what this test is about.
    */
   const witness = await newDevice(browser)
   await openPatch(witness)
@@ -42,6 +42,7 @@ test('sheet edits persist across reload and the URL deep-links the sheet', async
   await expect(cell(witness, 'Act 1', '2', 'Description')).toHaveValue('Snare top')
   await witness.context().close()
 
+  await page.routeWebSocket(/\/ws\/docs\//, (ws) => ws.close())
   await page.reload()
   // The route restores the same sheet without any navigation.
   await expect(page.locator('table')).toBeVisible()
@@ -118,6 +119,35 @@ test('two devices sync a sheet through the box, with crew identity presence', as
 
   // The status chip reflects the shared room.
   await expect(deviceA.getByText(/Synced · 2 devices/)).toBeVisible()
+})
+
+/**
+ * A sheet nobody has open, opened by somebody who has never had it.
+ *
+ * A device lets go of a sheet a few seconds after it stops looking at it, and
+ * the box used to forget the sheet with its last device. So a crew member who
+ * joined after the author had moved on tapped the sheet in the list and was
+ * told it had been deleted, and it only filled in when the author happened to
+ * open it again. The box keeps it now.
+ */
+test('a crew member who joins later can open a sheet nobody has open', async ({ browser }) => {
+  const author = await newDevice(browser)
+  await openPatch(author)
+  const name = uniqueName('Late Crew')
+  await createSheet(author, name)
+  await commitCell(author, 'Act 1', '1', 'Input', 'Kick')
+
+  // The author moves on and stays in the app, until past the ten seconds a
+  // device keeps a sheet it has stopped looking at (CLOSE_GRACE_MS in
+  // web/src/lib/docs/store.ts), when it leaves the sheet's room.
+  await author.getByRole('button', { name: '#general' }).click()
+  await expect(author.getByPlaceholder(/Message/)).toBeVisible()
+  await author.waitForTimeout(12_000)
+
+  const late = await newDevice(browser)
+  await openPatch(late)
+  await openSheetByName(late, name)
+  await expect(cell(late, 'Act 1', '1', 'Input')).toHaveValue('Kick')
 })
 
 test('undo on one device never reverts the other device’s edit', async ({ browser }) => {

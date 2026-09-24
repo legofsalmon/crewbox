@@ -14,8 +14,10 @@ event's own network.
 ## Where your data lives
 
 Everything you type, send or upload is stored **on the box** — messages,
-files, patch sheets, plots, your name and PIN (the PIN as a hash, not the
-number). Your own device keeps a working copy so the app opens offline.
+files, your name and PIN (the PIN as a hash, not the number). Patch sheets,
+plots and screen maps are kept on the crew's devices and pass through the
+box, which holds them in its memory, not on its disk, until it restarts.
+Your own device keeps a working copy so the app opens offline.
 
 The makers of crewbox operate no server, receive nothing, and track
 nothing. When the event ends, the data is wherever the box's operator put

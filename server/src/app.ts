@@ -2129,9 +2129,9 @@ export function buildApp({
     const stats = hub.stats()
     const onAir = tally.current()
 
-    // Only while a phone on site has the app open: the relay holds documents
-    // for connected clients and nothing else, so an empty box genuinely does
-    // not know the running order rather than knowing it is empty.
+    // The last copy the relay saw. A box that has restarted and not heard
+    // from a phone since has none, and genuinely does not know the running
+    // order rather than knowing it is empty.
     const timetable = docs.peek(TIMETABLE_ROOM)
     const board = stageBoard(readRunningOrder(timetable), clock(), timeZone)
 

@@ -14,7 +14,8 @@ import { parseRoomName } from '../src/docs.ts'
  * Shared-docs relay integration: the real server, the real y-websocket v3
  * client (the one the web app will use), real sockets. Proves session-token
  * auth on the upgrade, module-namespace enforcement, two-client convergence,
- * presence, and room teardown.
+ * presence, and a document outliving its last client (what is kept, and for
+ * how long, is docsKeep.test.ts).
  */
 
 let dir: string
@@ -172,21 +173,19 @@ describe('docs relay sync', () => {
     }
   })
 
-  it('frees a room when the last client leaves (clients hold the durable copy)', async () => {
+  it('keeps a document after the last client leaves, for one that joins later', async () => {
     const doc = new Y.Doc()
-    doc.getMap('meta').set('title', 'Ephemeral')
-    const prov = provider('patch/sheet-ephemeral', doc, token)
-    await waitFor(() => prov.synced)
+    doc.getMap('meta').set('title', 'Kept')
+    const prov = provider('patch/sheet-kept', doc, token)
+    await waitFor(() => app.docs.peek('patch/sheet-kept')?.getMap('meta').get('title') === 'Kept')
     prov.destroy()
-    await waitFor(() => {
-      const { rooms } = app.docs.stats()
-      return rooms === 0
-    })
-    // Same room, fresh doc: server has nothing (the client would re-seed).
+    await waitFor(() => app.docs.stats().rooms === 0)
+
+    // Same room, fresh doc: the box hands over what the first client left,
+    // with nobody else there to send it.
     const doc2 = new Y.Doc()
-    const prov2 = provider('patch/sheet-ephemeral', doc2, token)
-    await waitFor(() => prov2.synced)
-    expect(doc2.getMap('meta').get('title')).toBeUndefined()
+    const prov2 = provider('patch/sheet-kept', doc2, token)
+    await waitFor(() => doc2.getMap('meta').get('title') === 'Kept')
     prov2.destroy()
   })
 })

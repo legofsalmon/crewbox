@@ -101,9 +101,10 @@ Two details worth knowing:
 
 - **`known: false` means the box is not holding a copy of the running
   order**, which is different from the running order being empty. The
-  timetable lives on the crew's phones and syncs through the box; when
-  nobody on site has the app open there is nothing to read. A button should
-  show a dash rather than an empty stage.
+  timetable lives on the crew's phones and syncs through the box, which
+  keeps the last copy it saw. So this happens only after the box restarts,
+  until a phone with the app open reconnects. A button should show a dash
+  rather than an empty stage.
 - **The clock is the show's, not the calendar's.** A set at 00:30 belongs to
   the night that started at 19:00, and the box says so — it reads the running
   order with exactly the code the app uses, so a desk and a phone can never
