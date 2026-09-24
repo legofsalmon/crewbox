@@ -60,7 +60,8 @@ Everything above is passive. The one exception is the **deep probe** — a
 single admin-triggered sweep that checks the internet uplink, venue DNS,
 sends **one** Art-Net poll and **one** mDNS query, and stops. Every packet
 it sends is listed in the results **verbatim**, so a strict venue can verify
-the claim against a capture. Only an unlocked admin device shows the **Run
+the claim against a capture. A box set to make no outbound connections
+(`CREWBOX_UPDATE_CHECK=0`) skips the uplink check and sends nothing for it. Only an unlocked admin device shows the **Run
 deep probe** button; the results are visible to everyone.
 
 If your venue forbids any transmission on the show networks: simply don't

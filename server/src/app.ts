@@ -458,8 +458,9 @@ export interface AppDeps {
    * The same switch as the update check — `CREWBOX_UPDATE_CHECK=0`, whose
    * own documentation says "on a box whose network must make no outbound
    * connections at all". The environment sweep ignored it and made three
-   * off-site connections at every startup regardless, so the promise was
-   * only ever true of the update check itself.
+   * off-site connections at every startup regardless, and the deep probe
+   * made the same three whenever an admin ran it, so the promise was only
+   * ever true of the update check itself. Both honour it now.
    */
   outbound?: boolean
   /**
@@ -768,6 +769,7 @@ export function buildApp({
         ...(netwatch ? { mdnsCount: () => netwatch.mdns.roster().length } : {}),
         certHostname: () => (tls ? certNames(tls.cert.toString())[0] : undefined),
         watching: () => Boolean(netwatch),
+        outbound: () => outbound,
       },
       metrics
     )

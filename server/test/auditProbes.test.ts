@@ -269,6 +269,31 @@ describe('Prober', () => {
     expect(r.state).toBe('info') // no internet is normal on site, not a fault
   })
 
+  it('stays on site when the box is told to make no outbound connections', async () => {
+    // CREWBOX_UPDATE_CHECK=0 is the one switch that says nothing goes
+    // off-site, and the startup check already honours it. The probe
+    // connected to Cloudflare and Google regardless.
+    let asked = 0
+    const { prober } = harness(
+      { outbound: () => false },
+      {
+        tcpReachable: async () => {
+          asked++
+          return true
+        },
+        noContentOk: async () => {
+          asked++
+          return true
+        },
+      }
+    )
+    const r = result(await prober.run('a'), 'crew-uplink')
+    expect(asked).toBe(0)
+    expect(r.state).toBe('skipped')
+    expect(r.sent).toBe('nothing')
+    expect(r.fix).toContain('CREWBOX_UPDATE_CHECK')
+  })
+
   it('checks the venue DNS against this box, both ways', async () => {
     const right = harness(
       { certHostname: () => 'chat.example.ie' },

@@ -85,6 +85,11 @@ export interface ProberDeps {
   certHostname: () => string | undefined
   /** Whether the media watchers are running (mDNS replies need a listener). */
   watching: () => boolean
+  /**
+   * Whether this box may go off-site at all. CREWBOX_UPDATE_CHECK=0 says it
+   * may not, and the uplink probe then sends nothing. Omitted, it may.
+   */
+  outbound?: () => boolean
 }
 
 /**
@@ -267,6 +272,20 @@ export class Prober {
   // -- the probes -------------------------------------------------------------
 
   private async probeUplink(): Promise<ProbeResult> {
+    // The switch the startup check already honours (environment.ts). The
+    // probe ignored it and connected to Cloudflare and Google on a box whose
+    // operator had asked for no outbound connections at all, and pressing a
+    // button labelled for the show's networks is not asking for one.
+    if (this.deps.outbound?.() === false) {
+      return {
+        id: 'crew-uplink',
+        network: 'crew',
+        state: 'skipped',
+        sent: 'nothing',
+        detail: 'Not checked — this box is configured to make no outbound connections.',
+        fix: 'Nothing here needs it. Unset CREWBOX_UPDATE_CHECK=0 if you want the box to look.',
+      }
+    }
     const sent =
       'TCP connections to 1.1.1.1:443 and 8.8.8.8:443, and one HTTP request to gstatic generate_204'
     try {
