@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
@@ -16,14 +16,16 @@ import { attachWs, buildApp, type App } from '../src/app.ts'
  * and the relay used to free a document along with its last device. So a
  * sheet could only be reached while somebody had it open, and a crew member
  * who joined later and tapped it in the list was told it had been deleted.
- * The relay keeps documents now: within a budget, longest-kept out first,
- * never an empty one, and never one its module's index says is deleted.
+ * The relay keeps documents now: in memory within a budget, longest-kept out
+ * first, and saved on disk (docsSaved.test.ts), never an empty one and never
+ * one its module's index says is deleted.
  *
  * The real budget is 16 MB. This runs against a small one, because the thing
  * worth proving is that it is kept to, not what the number is.
  */
 
 let dir: string
+let store: Store
 let app: App
 let wsBase: string
 let token: string
@@ -32,7 +34,7 @@ const KEEP = 2500
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'crewbox-relay-keep-'))
-  const store = new Store(openDb(join(dir, 'crewbox.db')))
+  store = new Store(openDb(join(dir, 'crewbox.db')))
   store.createChannel('general', 'public', '')
   app = buildApp({
     store,
@@ -192,28 +194,40 @@ describe('what the relay keeps for nobody in particular', { timeout: TEST_TIMEOU
     expect(app.docs.stats().kept).toBe(before.kept)
   })
 
-  it('keeps no more than its budget, letting the longest-kept go first', async () => {
+  it('keeps no more in memory than its budget, letting the longest-kept go first', async () => {
     // The module's index, kept before any of the sheets below.
     await writeAndLeave('patch/index', 'Index')
     // Three documents of about a kilobyte each, in a budget of two and a half.
     const kilobyte = 'x'.repeat(1000)
     await writeAndLeave('patch/sheet-first', 'First', kilobyte)
     await writeAndLeave('patch/sheet-second', 'Second', kilobyte)
-    expect(titleOnBox('patch/sheet-first')).toBe('First')
+    const reads = vi.spyOn(store, 'loadDoc')
+    try {
+      expect(titleOnBox('patch/sheet-first')).toBe('First')
+      expect(reads).not.toHaveBeenCalled()
 
-    await writeAndLeave('patch/sheet-third', 'Third', kilobyte)
-    expect(app.docs.peek('patch/sheet-first')).toBeNull()
-    expect(titleOnBox('patch/sheet-second')).toBe('Second')
-    expect(titleOnBox('patch/sheet-third')).toBe('Third')
-    expect(app.docs.stats().keptBytes).toBeLessThanOrEqual(KEEP)
-    // The index goes last, since it is what says which kept documents have
-    // been deleted.
-    expect(titleOnBox('patch/index')).toBe('Index')
+      await writeAndLeave('patch/sheet-third', 'Third', kilobyte)
+      expect(app.docs.stats().keptBytes).toBeLessThanOrEqual(KEEP)
+      // Saving the third read its own rows; only what the box is asked for
+      // from here counts.
+      reads.mockClear()
+      // The index goes last, since it is what says which kept documents have
+      // been deleted: still in memory, so not read from disk.
+      expect(titleOnBox('patch/index')).toBe('Index')
+      expect(reads).not.toHaveBeenCalled()
+      // The longest-kept went from memory, and is still the box's to give:
+      // read back from disk.
+      expect(titleOnBox('patch/sheet-first')).toBe('First')
+      expect(reads).toHaveBeenCalledWith('patch/sheet-first')
+      expect(app.docs.stats().keptBytes).toBeLessThanOrEqual(KEEP)
+    } finally {
+      reads.mockRestore()
+    }
   })
 })
 
 describe('a box shutting down', { timeout: TEST_TIMEOUT }, () => {
-  it('lets go of everything, kept or still open', async () => {
+  it('saves everything, and lets go of it, kept or still open', async () => {
     // A box of its own, since its relay is shut down.
     const other = buildApp({
       store: new Store(openDb(join(dir, 'other.db'))),
@@ -245,15 +259,19 @@ describe('a box shutting down', { timeout: TEST_TIMEOUT }, () => {
       keptProv.destroy()
       await waitFor(() => other.docs.stats().kept === 1)
 
-      // The relay's part of shutting down. What was kept goes at once.
+      // The relay's part of shutting down. What was kept goes from memory at
+      // once, and is not read back from disk on the way out.
       other.docs.close()
       expect(other.docs.peek('patch/sheet-kept')).toBeNull()
+      expect(other.docs.stats().kept).toBe(0)
 
       // What was open goes when its device does, rather than being kept on
       // the way out with nothing left to let it go.
       openProv.destroy()
       await waitFor(() => other.docs.stats().connections === 0)
-      expect(other.docs.stats()).toEqual({ rooms: 0, connections: 0, kept: 0, keptBytes: 0 })
+      expect(other.docs.stats()).toMatchObject({ rooms: 0, connections: 0, kept: 0, keptBytes: 0 })
+      // Both are on disk for the box that comes next.
+      expect(other.docs.stats().saved).toBe(2)
     } finally {
       keptProv.destroy()
       openProv.destroy()

@@ -12,13 +12,14 @@ import * as decoding from 'lib0/decoding'
  * than y-websocket's server utils to pin the wire format deliberately and
  * avoid its unused LevelDB dependency tree.
  *
- * The durable copies are the clients' IndexedDB stores, which re-seed state
- * on every connect (Live Patch's model, unchanged). The box holds a document
- * in memory while anyone has it open, and keeps it after the last of them
- * leaves, until it restarts or needs the room (see `KEEP_BYTES`), so a crew
- * member who opens it later gets it from the box. Nothing is written to
- * disk: the box's only server-side module state is file attachments, which
- * go through the existing files service.
+ * Every device keeps the documents it has opened, in IndexedDB, and gives
+ * the box what it lacks on every connect (Live Patch's model, unchanged).
+ * The box saves what it relays as well, in its database (`doc_updates`,
+ * see `SavedDocs`), so a crew member who opens a document later gets it from
+ * the box, whatever has happened to the box since. It holds a document in
+ * memory while anyone has it open, and keeps it there a while after (see
+ * `KEEP_BYTES`). A document its module's index marks deleted is deleted
+ * from the box's disk as well, and never saved again.
  */
 
 const MESSAGE_SYNC = 0
@@ -29,6 +30,9 @@ const INDEX_SUFFIX = '/index'
 const TOMBSTONES = 'deleted'
 
 const PING_INTERVAL_MS = 15_000
+
+/** Origin of what a room is read back with from disk, which is saved already. */
+const FROM_DISK = Symbol('from disk')
 
 interface Room {
   doc: Y.Doc
@@ -41,6 +45,16 @@ interface Room {
   measuredAt: number
   /** When the last device left it, while nobody has it open; null while somebody does. */
   keptSince: number | null
+  /** What devices have changed since the last save. */
+  pending: Uint8Array[]
+  /**
+   * The next save writes the whole document rather than what changed: a
+   * save failed, so the saved copy may be missing a change, or its rows
+   * hold something since deleted.
+   */
+  whole: boolean
+  /** Its module's index says it has been deleted, so it is never saved again. */
+  deleted: boolean
 }
 
 /**
@@ -60,25 +74,54 @@ interface Room {
 const MAX_ROOM_BYTES = 8 * 1024 * 1024
 
 /**
- * How much of what nobody has open the box keeps, in encoded bytes.
+ * How much of what nobody has open the box keeps in memory, in encoded bytes.
  *
- * A device lets go of a document a few seconds after it stops looking at it,
- * and the box used to free a document as soon as its last device left. So a
- * sheet could only be reached while somebody had it open: a crew member who
- * joined later and tapped it in the list was told it had been deleted, until
- * its author happened to open it again. The box keeps it instead, and once
- * the total passes this, lets the longest-kept go first (see `trimKept`).
+ * A device lets go of a document a few seconds after it stops looking at it.
+ * The box keeps it in memory for whoever opens it next, and once the total
+ * passes this, lets the longest-kept go first (see `trimKept`). What it lets
+ * go of is still saved, and is read back from disk when somebody opens it.
  *
  * A festival's paperwork is a few megabytes (a master patch is under a
  * hundred kilobytes encoded, a thousand-fixture plot a few hundred), so this
  * keeps all of it with room to spare. In memory a document takes ten to
  * seventeen times its encoded size (measured on synthetic sheets and plots),
  * so what is kept costs the box under three hundred megabytes at most, and a
- * box that has relayed a great many large plots cannot grow without bound. A
- * restart forgets everything, and a document is back the first time a device
- * that has it opens it.
+ * box that has relayed a great many large plots cannot grow without bound.
  */
 const KEEP_BYTES = 16 * 1024 * 1024
+
+/**
+ * How much the box saves, in encoded bytes, before it deletes the least
+ * recently saved documents from disk.
+ *
+ * Four times what it keeps in memory and far past a festival's paperwork, so
+ * no event should meet it. It is there so that a box which has relayed a
+ * great many large plots cannot grow its database, and every backup of it,
+ * without bound. A document let go this way is still on the devices that
+ * have it, and is saved again the next time one of them opens it.
+ */
+const SAVE_BYTES = 64 * 1024 * 1024
+
+/**
+ * How long a change waits to be saved, so that a burst of typing is one row
+ * rather than one per keystroke.
+ *
+ * It is also the most of a change a power cut can cost the box, and every
+ * device that made the change still has it, and gives it back on its next
+ * connect.
+ */
+const SAVE_EVERY_MS = 500
+
+/**
+ * How many rows a document may have on disk before they are folded into one.
+ *
+ * A save adds a row holding only what changed, which is cheap to write, and
+ * reading a document back applies every row. Folding them into the
+ * document's state also drops what was typed and then deleted, which the
+ * rows hold and the state does not. A document is folded when its last
+ * device leaves, too.
+ */
+const COMPACT_ROWS = 100
 
 /** The encoded size of a document with nothing in it. */
 const EMPTY_UPDATE_BYTES = 2
@@ -111,6 +154,34 @@ export interface RelayLimits {
   frameLimit: number
   frameWindowMs: number
   keepBytes: number
+  saveBytes: number
+  saveEveryMs: number
+}
+
+/**
+ * Where the relay saves documents: the box's database (`Store`). Each
+ * document is rows of Yjs updates under its room name, which the relay reads
+ * back and applies in any order, as Yjs allows.
+ */
+export interface SavedDocs {
+  /** Every saved document, with its bytes and rows and when it was last saved. */
+  savedDocs(): { room: string; bytes: number; rows: number; savedAt: number }[]
+  /** A document's rows, and the last one read, for `compactDoc`. */
+  loadDoc(room: string): { rows: Uint8Array[]; upTo: number }
+  /** One row for each of several documents, all or none. */
+  appendDocs(updates: { room: string; data: Uint8Array }[], at: number): void
+  /** Replace the rows read up to `upTo` with one. */
+  compactDoc(room: string, state: Uint8Array, upTo: number, at: number): void
+  /** Delete documents, overwriting what they held. */
+  wipeDocs(rooms: string[]): void
+  /** Empty the write-ahead log, which can still hold what a delete overwrote. */
+  emptyDocLog(): void
+}
+
+interface Saved {
+  bytes: number
+  rows: number
+  savedAt: number
 }
 
 export class DocsRelay {
@@ -120,14 +191,33 @@ export class DocsRelay {
   private limits: RelayLimits
   /** Shut down: nothing is kept from here on. */
   private closed = false
+  /** Where documents are saved. None, and the relay keeps them in memory only. */
+  private disk: SavedDocs | undefined
+  /** What is saved, by room. */
+  private saved = new Map<string, Saved>()
+  /** Rooms with something for the next save. */
+  private dirty = new Set<string>()
+  private saveTimer: NodeJS.Timeout | null = null
+  /** Something was deleted, so the next save empties the database's log. */
+  private emptyLog = false
+  private warn: (message: string) => void
+  /** Saving has failed and been said so. Quiet until something works. */
+  private failing = false
 
-  constructor(limits: Partial<RelayLimits> = {}) {
+  constructor(
+    limits: Partial<RelayLimits> = {},
+    options: { disk?: SavedDocs; warn?: (message: string) => void } = {}
+  ) {
     this.limits = {
       maxRoomBytes: limits.maxRoomBytes ?? MAX_ROOM_BYTES,
       frameLimit: limits.frameLimit ?? FRAME_LIMIT,
       frameWindowMs: limits.frameWindowMs ?? FRAME_WINDOW_MS,
       keepBytes: limits.keepBytes ?? KEEP_BYTES,
+      saveBytes: limits.saveBytes ?? SAVE_BYTES,
+      saveEveryMs: limits.saveEveryMs ?? SAVE_EVERY_MS,
     }
+    this.disk = options.disk
+    this.warn = options.warn ?? (() => {})
     this.heartbeat = setInterval(() => {
       for (const room of this.rooms.values()) {
         for (const ws of room.conns.keys()) {
@@ -141,21 +231,37 @@ export class DocsRelay {
       }
     }, PING_INTERVAL_MS)
     this.heartbeat.unref()
+
+    if (this.disk) {
+      try {
+        for (const { room, bytes, rows, savedAt } of this.disk.savedDocs()) {
+          this.saved.set(room, { bytes, rows, savedAt })
+        }
+      } catch (err) {
+        this.failed('read what it has saved', err)
+      }
+      // Each module's index is read now rather than when somebody first asks,
+      // because reading one deletes whatever saved document it marks deleted:
+      // anything a failed delete left behind goes before anybody can open it.
+      for (const name of [...this.saved.keys()]) {
+        if (name.endsWith(INDEX_SUFFIX) && !this.rooms.has(name)) this.loadKept(name)
+      }
+    }
   }
 
   /**
-   * A room's document, if this box has one.
+   * A room's document, if this box has one: in memory, or saved.
    *
-   * Not "if it has ever relayed one": a restart forgets every document, a
-   * deleted one is let go, and so is the longest-kept once the box holds too
-   * much that nobody has open (see `KEEP_BYTES`), because the durable copies
-   * live on the phones. So a caller gets the last copy the box saw, or null
-   * until a device that has the document opens it — which is the honest
-   * answer, and the reason every caller here has a fallback.
+   * Not "if it has ever relayed one": a deleted document is gone, and so is
+   * one the box let go of when it had saved too much (see `SAVE_BYTES`), or
+   * that was never relayed on this database. So a caller gets the last copy
+   * the box saw, or null until a device that has the document opens it —
+   * which is the honest answer, and the reason every caller here has a
+   * fallback.
    *
-   * Read-only, and deliberately does *not* create the room — asking whether
-   * anybody has put a running order on this box must not conjure an empty
-   * one and start relaying it.
+   * Read-only, and deliberately does *not* create an empty room — asking
+   * whether anybody has put a running order on this box must not conjure an
+   * empty one and start relaying it. A saved one is read back into memory.
    *
    * The relay has no business parsing what it carries (beyond the tombstones
    * in a module's index, see `isDeleted`); this exists so a
@@ -164,7 +270,10 @@ export class DocsRelay {
    * about the contents.
    */
   peek(name: string): Y.Doc | null {
-    return this.rooms.get(name)?.doc ?? null
+    const room = this.rooms.get(name)
+    if (room) return room.doc
+    if (this.closed || !this.saved.has(name)) return null
+    return this.loadKept(name)?.doc ?? null
   }
 
   /** Frame timestamps per connection, for `overFrameLimit`. */
@@ -196,10 +305,24 @@ export class DocsRelay {
   private getRoom(name: string): Room {
     let room = this.rooms.get(name)
     if (room) return room
+    // Asked before the room exists, because the answer can mean reading the
+    // module's index from disk, and reading an index deletes what it marks
+    // deleted.
+    const deleted = !name.endsWith(INDEX_SUFFIX) && this.isDeleted(name)
     const doc = new Y.Doc()
     const awareness = new awarenessProtocol.Awareness(doc)
     awareness.setLocalState(null)
-    room = { doc, awareness, conns: new Map(), bytes: 0, measuredAt: 0, keptSince: null }
+    room = {
+      doc,
+      awareness,
+      conns: new Map(),
+      bytes: 0,
+      measuredAt: 0,
+      keptSince: null,
+      pending: [],
+      whole: false,
+      deleted,
+    }
     this.rooms.set(name, room)
 
     // A module's index says which of its documents have been deleted. A kept
@@ -210,12 +333,14 @@ export class DocsRelay {
       doc.getMap(TOMBSTONES).observe(() => this.forgetDeleted(namespace))
     }
 
-    // Broadcast doc updates and awareness changes to every conn in the room.
-    doc.on('update', (update: Uint8Array) => {
+    // Broadcast doc updates and awareness changes to every conn in the room,
+    // and save what devices change.
+    doc.on('update', (update: Uint8Array, origin: unknown) => {
       const encoder = encoding.createEncoder()
       encoding.writeVarUint(encoder, MESSAGE_SYNC)
       syncProtocol.writeUpdate(encoder, update)
       this.broadcast(name, encoding.toUint8Array(encoder))
+      if (origin !== FROM_DISK) this.queueSave(name, room!, update)
     })
     awareness.on(
       'update',
@@ -241,7 +366,200 @@ export class DocsRelay {
         this.broadcast(name, encoding.toUint8Array(encoder))
       }
     )
+
+    // What the box saved of it, before any device is told what it has. A
+    // deleted one is not read, so an old link to it opens nothing.
+    if (deleted) this.wipe([name])
+    else this.readSaved(name, room)
     return room
+  }
+
+  /** Apply what the box saved of a document to its room. */
+  private readSaved(name: string, room: Room): void {
+    if (!this.disk || !this.saved.has(name)) return
+    let rows: Uint8Array[]
+    try {
+      rows = this.disk.loadDoc(name).rows
+    } catch (err) {
+      this.failed('read a saved document', err)
+      return
+    }
+    try {
+      if (rows.length > 0) Y.applyUpdate(room.doc, Y.mergeUpdates(rows), FROM_DISK)
+    } catch (err) {
+      // Rows that will not decode would fail every time anybody opened it.
+      // The devices that have it still do, and give it back.
+      this.failed('read a saved document', err)
+      this.wipe([name])
+    }
+  }
+
+  /**
+   * Read a saved document into memory for nobody in particular: for `peek`,
+   * and for a module's index when the relay needs to know what it says.
+   */
+  private loadKept(name: string): Room | null {
+    const room = this.getRoom(name)
+    room.bytes = Y.encodeStateAsUpdate(room.doc).length
+    room.measuredAt = Date.now()
+    if (room.deleted || room.bytes <= EMPTY_UPDATE_BYTES) {
+      this.free(name, room)
+      return null
+    }
+    room.keptSince = room.measuredAt
+    this.trimKept(name)
+    return room
+  }
+
+  /** A device changed a document: save it along with whatever else changes soon. */
+  private queueSave(name: string, room: Room, update: Uint8Array): void {
+    if (!this.disk || this.closed || room.deleted) return
+    room.pending.push(update)
+    this.dirty.add(name)
+    this.scheduleSave()
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimer || this.closed || !this.disk) return
+    this.saveTimer = setTimeout(() => this.save(), this.limits.saveEveryMs)
+    this.saveTimer.unref()
+  }
+
+  /**
+   * Save everything waiting: each document's changes as one row, all in one
+   * transaction. A document with enough rows, or marked to be saved whole,
+   * is folded into one.
+   */
+  private save(): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer)
+    this.saveTimer = null
+    if (!this.disk) return
+    const updates: { room: string; data: Uint8Array }[] = []
+    const whole: string[] = []
+    for (const name of this.dirty) {
+      const room = this.rooms.get(name)
+      if (!room || room.deleted) continue
+      if (room.whole) whole.push(name)
+      else if (room.pending.length > 0) {
+        updates.push({ room: name, data: Y.mergeUpdates(room.pending) })
+      }
+    }
+    this.dirty.clear()
+    const now = Date.now()
+    if (updates.length > 0) {
+      try {
+        this.disk.appendDocs(updates, now)
+        this.failing = false
+        for (const { room: name, data } of updates) {
+          this.rooms.get(name)!.pending = []
+          const was = this.saved.get(name)
+          const rows = (was?.rows ?? 0) + 1
+          this.saved.set(name, { bytes: (was?.bytes ?? 0) + data.length, rows, savedAt: now })
+          if (rows > COMPACT_ROWS) whole.push(name)
+        }
+      } catch (err) {
+        // What was waiting is in the documents, and each is saved whole the
+        // next time the relay saves: after the next change anywhere, when
+        // its last device leaves, or when the box shuts down.
+        for (const { room: name } of updates) {
+          const room = this.rooms.get(name)!
+          room.pending = []
+          room.whole = true
+          this.dirty.add(name)
+        }
+        this.failed('save shared documents', err)
+      }
+    }
+    for (const name of whole) {
+      // Looked up again: folding one document can apply rows that delete another.
+      const room = this.rooms.get(name)
+      if (room) this.compact(name, room)
+    }
+    this.trimSaved()
+    if (this.emptyLog) {
+      try {
+        this.disk.emptyDocLog()
+        this.emptyLog = false
+      } catch (err) {
+        this.failed('empty the database log', err)
+      }
+    }
+  }
+
+  /**
+   * Replace a document's saved rows with its state, which has everything in
+   * them: what devices changed since, and nothing of what was deleted.
+   */
+  private compact(name: string, room: Room): void {
+    if (!this.disk || room.deleted) return
+    const now = Date.now()
+    try {
+      const { rows, upTo } = this.disk.loadDoc(name)
+      // What is saved is taken in first, so folding never loses a row: one
+      // that could not be read back when the document was opened, say.
+      // Rows the document already has change nothing.
+      if (rows.length > 0) Y.applyUpdate(room.doc, Y.mergeUpdates(rows), FROM_DISK)
+      const state = Y.encodeStateAsUpdate(room.doc)
+      this.disk.compactDoc(name, state, upTo, now)
+      this.saved.set(name, { bytes: state.length, rows: 1, savedAt: now })
+      room.pending = []
+      room.whole = false
+      this.failing = false
+    } catch (err) {
+      room.whole = true
+      this.dirty.add(name)
+      this.failed('save shared documents', err)
+    }
+  }
+
+  /** Delete documents from the box's disk. */
+  private wipe(names: string[]): void {
+    const saved = names.filter((name) => this.saved.has(name))
+    if (!this.disk || saved.length === 0) return
+    try {
+      this.disk.wipeDocs(saved)
+      for (const name of saved) this.saved.delete(name)
+      this.failing = false
+      // Soon rather than now: a delete often comes in a burst, and inside a
+      // change to an index, which is no place to be writing.
+      this.emptyLog = true
+      this.scheduleSave()
+    } catch (err) {
+      // Still listed as saved, so the next time its index is read tries again.
+      this.failed('delete shared documents', err)
+    }
+  }
+
+  /**
+   * Delete the least recently saved documents from disk until what is saved
+   * fits the budget. Never one somebody has open, and a module's index last,
+   * as in `trimKept`.
+   */
+  private trimSaved(): void {
+    let total = 0
+    for (const { bytes } of this.saved.values()) total += bytes
+    if (total <= this.limits.saveBytes) return
+    const index = (name: string) => (name.endsWith(INDEX_SUFFIX) ? 1 : 0)
+    const order = [...this.saved]
+      .filter(([name]) => this.rooms.get(name)?.keptSince !== null)
+      .sort(([a, x], [b, y]) => index(a) - index(b) || x.savedAt - y.savedAt)
+    const gone: string[] = []
+    for (const [name, { bytes }] of order) {
+      if (total <= this.limits.saveBytes) break
+      total -= bytes
+      gone.push(name)
+      const room = this.rooms.get(name)
+      if (room) this.free(name, room)
+    }
+    this.wipe(gone)
+  }
+
+  /** Say once that saving is failing, rather than on every save while it does. */
+  private failed(what: string, err: unknown): void {
+    if (this.failing) return
+    this.failing = true
+    const reason = err instanceof Error ? err.message : String(err)
+    this.warn(`docs relay: could not ${what} (${reason}). The devices that have them still do.`)
   }
 
   private broadcast(roomName: string, payload: Uint8Array): void {
@@ -361,12 +679,18 @@ export class DocsRelay {
     }
     room.bytes = Y.encodeStateAsUpdate(room.doc).length
     room.measuredAt = Date.now()
-    if (room.bytes <= EMPTY_UPDATE_BYTES || this.isDeleted(name)) {
+    if (room.bytes <= EMPTY_UPDATE_BYTES || room.deleted || this.isDeleted(name)) {
       this.free(name, room)
+      this.wipe([name])
       return
     }
+    // Nobody is changing it now, so what it has on disk and what was waiting
+    // to be saved become one row.
+    const rows = this.saved.get(name)?.rows ?? 0
+    if (room.pending.length > 0 || room.whole || rows > 1) this.compact(name, room)
     room.keptSince = room.measuredAt
     this.trimKept()
+    this.trimSaved()
   }
 
   private free(name: string, room: Room): void {
@@ -376,18 +700,21 @@ export class DocsRelay {
   }
 
   /**
-   * Let the longest-kept documents go until what is kept fits the budget.
+   * Let the longest-kept documents go from memory until what is kept fits the
+   * budget. They are still saved. `except` is one just read back, which its
+   * caller is about to use.
    *
    * A module's index goes last, however long it has been kept: it is a few
    * kilobytes, and it is what says which kept documents have been deleted.
    */
-  private trimKept(): void {
+  private trimKept(except?: string): void {
     const kept = [...this.rooms].filter(([, room]) => room.keptSince !== null)
     let total = kept.reduce((sum, [, room]) => sum + room.bytes, 0)
     const index = (name: string) => (name.endsWith(INDEX_SUFFIX) ? 1 : 0)
     kept.sort(([a, x], [b, y]) => index(a) - index(b) || x.keptSince! - y.keptSince!)
     for (const [name, room] of kept) {
       if (total <= this.limits.keepBytes) break
+      if (name === except) continue
       total -= room.bytes
       this.free(name, room)
     }
@@ -404,7 +731,10 @@ export class DocsRelay {
    * in a kind or an id cannot defeat the check.
    */
   private isDeleted(name: string): boolean {
-    const index = this.rooms.get(name.slice(0, name.indexOf('/')) + INDEX_SUFFIX)
+    const indexName = name.slice(0, name.indexOf('/')) + INDEX_SUFFIX
+    const index =
+      this.rooms.get(indexName) ??
+      (this.saved.has(indexName) && !this.closed ? this.loadKept(indexName) : null)
     if (!index) return false
     for (const id of index.doc.getMap(TOMBSTONES).keys()) {
       if (name.endsWith(`-${id}`)) return true
@@ -412,24 +742,58 @@ export class DocsRelay {
     return false
   }
 
-  /** A module's index has changed: let go of any kept document it now marks deleted. */
+  /**
+   * A module's index has changed: delete what it now marks deleted from the
+   * box's disk. A kept document goes from memory too, and one somebody has
+   * open goes when they leave. None of them is saved again.
+   */
   private forgetDeleted(namespace: string): void {
+    const inModule = (name: string) =>
+      name.startsWith(`${namespace}/`) && !name.endsWith(INDEX_SUFFIX)
+    const gone: string[] = []
     for (const [name, room] of this.rooms) {
-      if (room.keptSince !== null && name.startsWith(`${namespace}/`) && this.isDeleted(name)) {
-        this.free(name, room)
-      }
+      if (room.deleted || !inModule(name) || !this.isDeleted(name)) continue
+      room.deleted = true
+      room.pending = []
+      gone.push(name)
+      if (room.keptSince !== null) this.free(name, room)
+    }
+    for (const name of this.saved.keys()) {
+      if (inModule(name) && !this.rooms.has(name) && this.isDeleted(name)) gone.push(name)
+    }
+    const wiped = gone.filter((name) => this.saved.has(name))
+    if (wiped.length === 0) return
+    this.wipe(wiped)
+    // The index's own rows still say what each one was called, until they
+    // are folded into its state, which does not. Not from in here: this runs
+    // inside a change to the index.
+    const indexName = namespace + INDEX_SUFFIX
+    const index = this.rooms.get(indexName)
+    if (index) {
+      index.whole = true
+      this.dirty.add(indexName)
+      this.scheduleSave()
     }
   }
 
   /**
-   * Rooms somebody has open and their connections, and what is kept for
-   * nobody in particular, in encoded bytes.
+   * Rooms somebody has open and their connections, what is kept in memory
+   * for nobody in particular, and what is saved, in encoded bytes.
    */
-  stats(): { rooms: number; connections: number; kept: number; keptBytes: number } {
+  stats(): {
+    rooms: number
+    connections: number
+    kept: number
+    keptBytes: number
+    saved: number
+    savedBytes: number
+  } {
     let rooms = 0
     let connections = 0
     let kept = 0
     let keptBytes = 0
+    let savedBytes = 0
+    for (const { bytes } of this.saved.values()) savedBytes += bytes
     for (const room of this.rooms.values()) {
       if (room.keptSince === null) {
         rooms++
@@ -439,16 +803,20 @@ export class DocsRelay {
         keptBytes += room.bytes
       }
     }
-    return { rooms, connections, kept, keptBytes }
+    return { rooms, connections, kept, keptBytes, saved: this.saved.size, savedBytes }
   }
 
   /**
-   * Shut down. What is kept goes now, and what is open goes as its devices'
-   * connections close, so no room is left holding its presence timer.
+   * Shut down. What changed since the last save is saved now. What is kept
+   * goes from memory now, and what is open goes as its devices' connections
+   * close, so no room is left holding its presence timer.
    */
   close(): void {
     clearInterval(this.heartbeat)
+    this.save()
     this.closed = true
+    if (this.saveTimer) clearTimeout(this.saveTimer)
+    this.saveTimer = null
     for (const [name, room] of this.rooms) {
       if (room.conns.size === 0) this.free(name, room)
       for (const ws of room.conns.keys()) ws.close()

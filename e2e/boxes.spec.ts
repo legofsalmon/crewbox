@@ -4,7 +4,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, type Browser, type Page } from '@playwright/test'
-import { addAct, createSheet, openPatch, test, uniqueName } from './helpers'
+import {
+  addAct,
+  cell,
+  commitCell,
+  createSheet,
+  openPatch,
+  openSheetByName,
+  test,
+  uniqueName,
+} from './helpers'
 
 /**
  * One phone, more than one box.
@@ -74,10 +83,10 @@ async function startBox(port: number, pin: string, dataDir?: string): Promise<Bo
   }
 }
 
-/** What a box's relay is holding: rooms open, and documents kept. */
-async function relayOf(box: Box): Promise<{ rooms: number; kept: number }> {
+/** What a box's relay is holding: rooms open, documents kept, and documents saved. */
+async function relayOf(box: Box): Promise<{ rooms: number; kept: number; saved: number }> {
   const health = (await (await fetch(`http://${box.address}/api/health`)).json()) as {
-    docs: { rooms: number; kept: number }
+    docs: { rooms: number; kept: number; saved: number }
   }
   return health.docs
 }
@@ -255,6 +264,48 @@ test('a box that comes back with a new database is sent nothing of the old event
     await box.stop()
     rmSync(box.dataDir, { recursive: true, force: true })
     rmSync(firstDir, { recursive: true, force: true })
+  }
+})
+
+/**
+ * A sheet whose crew have all gone, on a box that has restarted since.
+ *
+ * The box held shared documents in memory only, so after a restart a crew
+ * member who had never had a sheet was told it had been deleted, until
+ * somebody who had it opened it again. It saves them now.
+ */
+test('a sheet is still there for somebody who opens it after the box restarts', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000)
+  let box = await startBox(4321, '5252')
+  try {
+    const author = await browserAt(browser, box, '5252')
+    await openPatch(author)
+    const name = uniqueName('Restart Stage')
+    await createSheet(author, name)
+    await commitCell(author, 'Act 1', '1', 'Input', 'Kick')
+    // Another device has the edit, so the box has had it.
+    const checker = await browserAt(browser, box, '5252')
+    await openPatch(checker)
+    await openSheetByName(checker, name)
+    await expect(cell(checker, 'Act 1', '1', 'Input')).toHaveValue('Kick')
+
+    // Everybody who has it gone, and the box restarted.
+    await author.context().close()
+    await checker.context().close()
+    await box.stop()
+    box = await startBox(4321, '5252', box.dataDir)
+    expect(await relayOf(box)).toMatchObject({ rooms: 0 })
+    expect((await relayOf(box)).saved).toBeGreaterThanOrEqual(2)
+
+    const late = await browserAt(browser, box, '5252')
+    await openPatch(late)
+    await openSheetByName(late, name)
+    await expect(cell(late, 'Act 1', '1', 'Input')).toHaveValue('Kick')
+  } finally {
+    await box.stop()
+    rmSync(box.dataDir, { recursive: true, force: true })
   }
 })
 

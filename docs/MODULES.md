@@ -138,8 +138,10 @@ relay room      <moduleId>/<docName>
 registry key    crewbox:<moduleId>-docs
 ```
 
-Changing any of them after a module has shipped strands data. Pick
-`moduleId` once and leave it alone. `registryKey` exists as an override only
+Changing any of them after a module has shipped strands data. The box
+saves each document under its relay room name as well (`doc_updates`, see
+`server/src/docs.ts`), so a renamed room strands the box's copy along with
+the phones'. Pick `moduleId` once and leave it alone. `registryKey` exists as an override only
 because the patch module shipped before this store did.
 
 A phone that has been at more than one event keeps each event's apart

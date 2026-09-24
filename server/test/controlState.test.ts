@@ -260,10 +260,9 @@ describe('a box nobody has the app open on', () => {
     expect(main?.onNow?.name).toBe('The Fixture')
   })
 
-  it('says it does not know the running order after a restart, rather than that there is none', async () => {
-    // A restart forgets what the box kept, and until a phone brings the
-    // running order back, "I am not holding a copy" and "the running order is
-    // empty" are different answers.
+  it('still reads it after a restart, from what the box saved', async () => {
+    // The box saves what it relays, so a restart does not blank the desk
+    // until the first phone reconnects.
     const restarted = buildApp({
       store,
       eventPin: EVENT_PIN,
@@ -279,10 +278,37 @@ describe('a box nobody has the app open on', () => {
       })
       expect(res.statusCode).toBe(200)
       const body = res.json() as StateBody
+      expect(body.runningOrder.known).toBe(true)
+      const main = body.runningOrder.stages.find((s) => s.stage === 'Main Stage')
+      expect(main?.onNow?.name).toBe('The Fixture')
+    } finally {
+      await restarted.close()
+    }
+  })
+
+  it('says it does not know the running order when no phone has brought one, rather than that there is none', async () => {
+    // A box on a database no phone has synced a running order to. "I am not
+    // holding a copy" and "the running order is empty" are different answers.
+    const other = new Store(openDb(':memory:'))
+    const fresh = buildApp({
+      store: other,
+      eventPin: EVENT_PIN,
+      dataDir: dir,
+      logger: false,
+      clock: () => NOW,
+    })
+    try {
+      const res = await fresh.inject({
+        method: 'GET',
+        url: '/api/control/state',
+        headers: { 'x-api-key': controlKey(other, {}) },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as StateBody
       expect(body.runningOrder.known).toBe(false)
       expect(body.runningOrder.stages).toEqual([])
     } finally {
-      await restarted.close()
+      await fresh.close()
     }
   })
 })

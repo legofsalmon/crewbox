@@ -14,10 +14,17 @@ event's own network.
 ## Where your data lives
 
 Everything you type, send or upload is stored **on the box** — messages,
-files, your name and PIN (the PIN as a hash, not the number). Patch sheets,
-plots and screen maps are kept on the crew's devices and pass through the
-box, which holds them in its memory, not on its disk, until it restarts.
-Your own device keeps a working copy so the app opens offline.
+files, your name and PIN (the PIN as a hash, not the number). So are the
+patch sheets, plots and screen maps that pass through it, so that somebody
+who opens one later gets it from the box. Your own device keeps a working
+copy so the app opens offline.
+
+Deleting a sheet, plot or screen map deletes it from the box too. The box
+overwrites what it held rather than only marking the space free, and never
+saves it again, though the SD card or disk underneath can keep an old copy
+of a block it has moved, as it can of any file. Each device that had a copy
+deletes it the next time it opens that list, once it has heard of the
+delete. A backup of the box made before the delete still has it.
 
 The makers of Crewbox never receive your messages, files or name, and track
 nothing. When the event ends, the data is wherever the box's operator put

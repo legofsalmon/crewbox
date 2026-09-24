@@ -99,12 +99,12 @@ print `starts` without doing any arithmetic of its own.
 
 Two details worth knowing:
 
-- **`known: false` means the box is not holding a copy of the running
-  order**, which is different from the running order being empty. The
-  timetable lives on the crew's phones and syncs through the box, which
-  keeps the last copy it saw. So this happens only after the box restarts,
-  until a phone with the app open reconnects. A button should show a dash
-  rather than an empty stage.
+- **`known: false` means the box has no copy of the running order**, which
+  is different from the running order being empty. The timetable lives on
+  the crew's phones and syncs through the box, which saves the last copy it
+  saw. So this happens only on a box no phone has brought one to yet, such
+  as a spare started with a fresh database, until a phone with the app open
+  connects. A button should show a dash rather than an empty stage.
 - **The clock is the show's, not the calendar's.** A set at 00:30 belongs to
   the night that started at 19:00, and the box says so — it reads the running
   order with exactly the code the app uses, so a desk and a phone can never

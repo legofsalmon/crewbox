@@ -84,11 +84,12 @@ search (`⌘K`), which asks the box for everything.
 
 ## "Sheet not found" or "Plot not found"
 
-The box keeps every sheet, plot and screen map that anyone has opened since
-it last started. So this usually means it has restarted, and nobody who has
-that one has opened it since. Ask whoever made it to open it: it appears on
-your screen as soon as they do. Otherwise it has been deleted, or the link
-you followed came from a different box.
+The box saves every sheet, plot and screen map that passes through it, so
+this usually means it has been deleted, or the link you followed came from a
+different box. It can also be one this box has never had: one made on a
+phone that hasn't reached the box since, or one from before the box was
+started again with a fresh database. Ask whoever made it to open it with the
+app connected: it appears on your screen as soon as they do.
 
 ## "The reload pill does nothing"
 

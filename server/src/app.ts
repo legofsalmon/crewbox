@@ -715,7 +715,10 @@ export function buildApp({
   licence?.onChange(() => hub.announceConfig())
   const tally = new Tally()
   hub.setTally(tally)
-  const docs = new DocsRelay(relayLimits)
+  const docs = new DocsRelay(relayLimits, {
+    disk: store,
+    warn: (message) => fastify.log.warn(message),
+  })
   fastify.addHook('onClose', () => docs.close())
 
   // The network audit's collector: strictly a reader over the state the
