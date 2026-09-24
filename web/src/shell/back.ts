@@ -13,8 +13,8 @@ import { nativeApp } from '../lib/server.ts'
  * something listens for the button, and then leaves every press to the
  * listener. So this answers all of them, in the order a phone user expects:
  *
- *  1. The dialog on top gets an Escape. Each dialog already owns how it
- *     closes (see keys.ts), and back is one more way of asking it to: the
+ *  1. The dialog or menu on top gets an Escape. Each one already owns how
+ *     it closes (see keys.ts), and back is one more way of asking it to: the
  *     same handler runs, with the same exceptions. One that ignores Escape,
  *     like the account deletion while it is deleting, keeps the press, so
  *     back never leaves the screen underneath an open dialog. A field that
@@ -38,10 +38,13 @@ export type BackStep = 'dialog' | 'drawer' | 'history' | 'background'
  * after the panel, so document order puts the one on top last.
  * `checkVisibility` leaves out a dialog that is mounted but not showing,
  * which would otherwise take every press for ever.
+ *
+ * An open menu counts: it is on top of the screen in the same way, and back
+ * closing it is what a phone user expects.
  */
 export function topmostDialog(root: ParentNode = document): HTMLElement | null {
   const dialogs = [
-    ...root.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]'),
+    ...root.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], [role="menu"]'),
   ].filter((el) => el.checkVisibility())
   return dialogs.at(-1) ?? null
 }

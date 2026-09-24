@@ -1331,6 +1331,46 @@ ul {
   padding: 4px 10px 2px;
 }
 
+/* The attach button's menu, in the Android app only (see AttachMenu.tsx). */
+.attach-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 14px;
+  margin-bottom: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  min-width: 230px;
+}
+
+.attach-menu button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+}
+
+.attach-menu button:hover,
+.attach-menu button:focus-visible {
+  background: var(--bg-hover);
+}
+
+.attach-menu svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* ---------------------------------------------------------------- voice */
 .voice-btn {
   margin-left: auto;

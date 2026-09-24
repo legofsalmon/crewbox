@@ -39,6 +39,7 @@ declare global {
   interface Window {
     Capacitor?: {
       isNativePlatform?: () => boolean
+      getPlatform?: () => string
       Plugins?: {
         CrewboxAlerts?: AlertsPlugin
         App?: AppPlugin
@@ -52,6 +53,11 @@ declare global {
 /** True when running inside a Capacitor native shell. */
 export function isNative(): boolean {
   return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
+}
+
+/** True inside the Android app, as opposed to the iPhone app or any browser. */
+export function isAndroidApp(): boolean {
+  return isNative() && window.Capacitor?.getPlatform?.() === 'android'
 }
 
 /** The Android background-alerts bridge, when present (native builds only). */

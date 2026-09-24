@@ -111,4 +111,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+        The camera, for "Take a photo" in the attach menu. Capacitor's web
+        view looks for a camera app before it opens one, and since Android 11
+        an app only sees the other apps it has declared an interest in.
+        Without this the look comes back empty on some phones (a Pixel 7a on
+        Android 14 is on record, in Capacitor issue 7411) and the camera
+        option opens the file picker instead. Not a permission: nothing on
+        the install screen, and no CAMERA, which the camera app holds itself.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
 </manifest>

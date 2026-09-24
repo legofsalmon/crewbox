@@ -1,12 +1,16 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type ClipboardEvent,
   type KeyboardEvent,
 } from 'react'
 import { useStore } from '../store.ts'
+import { isAndroidApp } from '../lib/server.ts'
+import AttachMenu from './AttachMenu.tsx'
 
 const coarsePointer =
   typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
@@ -46,6 +50,12 @@ export default function Composer({
   const [mention, setMention] = useState<MentionState | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const attachRef = useRef<HTMLButtonElement>(null)
+  const [attachOpen, setAttachOpen] = useState(false)
+  const closeAttach = useCallback(() => setAttachOpen(false), [])
+  // The one place the phone's own picker has no camera (see AttachMenu).
+  const offersCamera = isAndroidApp()
 
   // Track the value in the per-channel draft store so it survives a switch,
   // and clear the entry once nothing is left to keep.
@@ -59,6 +69,7 @@ export default function Composer({
     // Restore this channel's draft rather than blanking the box.
     setValue(drafts.get(channelId) ?? '')
     setMention(null)
+    setAttachOpen(false)
     // Not on a phone. Focusing the box opens the soft keyboard, so every tap
     // on a channel in the drawer arrived with half the screen gone and the
     // messages the crew member had just navigated to pushed out of sight —
@@ -141,6 +152,21 @@ export default function Composer({
     }
   }
 
+  function onPicked(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) void sendFile(channelId, file)
+    e.target.value = ''
+  }
+
+  function onAttach() {
+    if (!offersCamera) {
+      fileRef.current?.click()
+      return
+    }
+    setMention(null)
+    setAttachOpen((open) => !open)
+  }
+
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
     const file = Array.from(e.clipboardData.files)[0]
     if (file) {
@@ -166,22 +192,34 @@ export default function Composer({
           <span className="mention-hint">Tab to complete</span>
         </div>
       )}
-      <div className="composer">
-        <input
-          ref={fileRef}
-          type="file"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) void sendFile(channelId, file)
-            e.target.value = ''
-          }}
+      {attachOpen && (
+        <AttachMenu
+          anchor={attachRef}
+          onCamera={() => cameraRef.current?.click()}
+          onFile={() => fileRef.current?.click()}
+          onClose={closeAttach}
         />
+      )}
+      <div className="composer">
+        <input ref={fileRef} type="file" hidden onChange={onPicked} />
+        {offersCamera && (
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            hidden
+            onChange={onPicked}
+          />
+        )}
         <button
+          ref={attachRef}
           className="attach-btn"
           aria-label="Attach a file or photo"
+          aria-haspopup={offersCamera ? 'menu' : undefined}
+          aria-expanded={offersCamera ? attachOpen : undefined}
           disabled={uploading}
-          onClick={() => fileRef.current?.click()}
+          onClick={onAttach}
         >
           {uploading ? (
             <span className="spinner" aria-hidden />

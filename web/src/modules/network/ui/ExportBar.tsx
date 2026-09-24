@@ -57,7 +57,17 @@ export default function ExportBar({
     worst.length > 0 ? `Network audit — check ${worst.join(', ')}` : 'Network audit — all good'
 
   return (
-    <section className={styles.bar} aria-label="Export">
+    <section
+      className={styles.bar}
+      aria-label="Export"
+      onKeyDown={(e) => {
+        // Escape closes the channel list, and so does Android's back button,
+        // which sends the open menu an Escape (see shell/back.ts).
+        if (e.key !== 'Escape' || !sharing) return
+        e.stopPropagation()
+        setSharing(false)
+      }}
+    >
       <button className={styles.btn} onClick={() => void download()}>
         Download HTML report
       </button>

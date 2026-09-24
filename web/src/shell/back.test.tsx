@@ -6,6 +6,8 @@ import type { VideoIntent } from '@crewbox/shared'
 import { useStore } from '../store.ts'
 import ConnectionHelp from '../components/ConnectionHelp.tsx'
 import ConfirmTransmit from '../modules/video/ui/ConfirmTransmit.tsx'
+import ExportBar from '../modules/network/ui/ExportBar.tsx'
+import type { AuditPayload } from '../modules/network/model/types.ts'
 import { goBack, installBackButton, topmostDialog } from './back.ts'
 
 /**
@@ -50,6 +52,13 @@ afterEach(() => {
 })
 
 describe('which dialog a back press is for', () => {
+  it('is an open menu as well', () => {
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'menu')
+    document.body.append(menu)
+    expect(topmostDialog()).toBe(menu)
+  })
+
   it('is the last open one, which is the one on top', () => {
     // A confirmation inside a panel comes after the panel in the document.
     const panel = dialog({ 'aria-label': 'Admin panel' })
@@ -225,6 +234,22 @@ describe('real dialogs', () => {
     act(() => void goBack(false))
     expect(onCancel).toHaveBeenCalledOnce()
     expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('include the network audit’s channel list, which closes rather than keeping the press', () => {
+    // A menu that ignored Escape would now take back presses and do nothing
+    // with them, where back used to leave the view.
+    const payload = { report: { networks: [], generatedAt: 0 } } as unknown as AuditPayload
+    act(() => root.render(<ExportBar payload={payload} series={new Map()} />))
+    const share = [...host.querySelectorAll('button')].find((b) =>
+      /Share to channel/.test(b.textContent ?? '')
+    )!
+    act(() => share.click())
+    expect(host.querySelector('[role="menu"]')).not.toBeNull()
+
+    act(() => void goBack(true))
+    expect(host.querySelector('[role="menu"]')).toBeNull()
+    expect(share.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('leave a confirmation up once it is sending, like its Cancel button', () => {
