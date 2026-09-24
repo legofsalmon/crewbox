@@ -15,6 +15,9 @@ Connect. Bundle id: `com.colmhewson.crewbox`. Target: iPhone only.
   terminates an app that uses one of these without its string.
 - [x] **iPhone-only target** — `TARGETED_DEVICE_FAMILY = 1`, so you only need
   iPhone screenshots, not iPad.
+- [x] **iOS 17 and later** — `IPHONEOS_DEPLOYMENT_TARGET = 17.0` in every
+  configuration: iPhone XS and newer. The planned native features need iOS
+  16.1 to 16.4, and there are no installs on older versions to strand.
 - [x] **Privacy policy** — `site/docs/privacy-policy.html` (deployed at https://crewbox.letissier.ie/docs/privacy-policy).
 
 ## Before you archive (Xcode)

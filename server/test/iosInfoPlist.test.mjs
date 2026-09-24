@@ -46,3 +46,23 @@ describe('iPhone purpose strings', () => {
     expect(text).toMatch(/^Crewbox .{20,}\.$/)
   })
 })
+
+describe('the oldest iOS the app installs on', () => {
+  it('is 17 in every build configuration', () => {
+    // The native work planned for the app leans on iOS 16.1 to 16.4 —
+    // Live Activities, the web audio session, push-to-talk woken by local
+    // push — and a floor that differs between Debug and Release is how a
+    // feature tested on one build crashes the other. The Swift package in
+    // CapApp-SPM says 15: that is the lowest the package supports, not what
+    // the app targets, and the file belongs to the Capacitor CLI.
+    const project = readFileSync(
+      join(import.meta.dirname, '..', '..', 'native/ios/App/App.xcodeproj/project.pbxproj'),
+      'utf8'
+    )
+    const targets = [...project.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);/g)].map(
+      (m) => m[1]
+    )
+    expect(targets.length).toBeGreaterThan(0)
+    expect(new Set(targets)).toEqual(new Set(['17.0']))
+  })
+})
