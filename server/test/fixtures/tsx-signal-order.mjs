@@ -5,6 +5,9 @@
 // registered before the box's; on CI it was once registered after, and that
 // order is the one that ended a shutdown early. This puts it last, so the
 // test always runs the order that failed rather than whichever one it gets.
+import process from 'node:process'
+import { setInterval } from 'node:timers'
+
 const reorder = setInterval(() => {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const all = process.rawListeners(signal)
