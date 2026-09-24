@@ -35,6 +35,7 @@ describe('the Android app’s own plugins', () => {
       'CrewboxAlerts',
       'CrewboxDiscovery',
       'CrewboxFiles',
+      'CrewboxNetwork',
       'CrewboxScanner',
       'CrewboxVoice',
       'CrewboxWifi',
@@ -61,5 +62,34 @@ describe('the Android app’s own plugins', () => {
     for (const { name } of plugins) {
       expect(server, name).toContain(`Plugins?.${name}`)
     }
+  })
+})
+
+/**
+ * The app's hold on the crew Wi-Fi (SiteWifi), which keeps its traffic for
+ * the box on a Wi-Fi with no internet when mobile data is on. Where it
+ * starts, and what it hears, is wiring only a phone would otherwise show.
+ */
+describe('the app’s hold on the crew Wi-Fi', () => {
+  const read = (file) => readFileSync(join(SRC, file), 'utf8')
+
+  it('starts before the page loads, so its first request to the box goes over the Wi-Fi', () => {
+    const activity = read('MainActivity.java')
+    const at = activity.indexOf('SiteWifi.get(this).start(')
+    expect(at).toBeGreaterThan(0)
+    expect(at).toBeLessThan(activity.indexOf('super.onCreate('))
+  })
+
+  it('starts in the alerts service too, which Android restarts without a page, before it connects', () => {
+    expect(read('AlertsService.java')).toMatch(
+      /siteWifi\.start\(serverUrl\);\s*siteWifi\.whenSettled\(onWifi -> handler\.post\(this::connect\)\);/
+    )
+  })
+
+  it('hears when the app starts searching the Wi-Fi for boxes, and each way it stops', () => {
+    const discovery = read('DiscoveryPlugin.java')
+    expect(discovery.match(/SiteWifi\.get\(getContext\(\)\)\.searching\(true\)/g)).toHaveLength(1)
+    // Asked to stop, and a new page, which wants no search until it says so.
+    expect(discovery.match(/SiteWifi\.get\(getContext\(\)\)\.searching\(false\)/g)).toHaveLength(2)
   })
 })

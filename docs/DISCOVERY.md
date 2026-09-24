@@ -272,6 +272,12 @@ target (API 36) local network access comes with the internet permission.
   user allows it (`ACCESS_LOCAL_NETWORK`). The app passes that refusal on as
   it does the iPhone's; raising the target will need the permission in the
   manifest and a way to ask for it.
+- With mobile data on, Android sends an app's traffic over mobile data rather
+  than a Wi-Fi with no internet, and a box found on that Wi-Fi can't be
+  reached that way. So while the search runs on such a Wi-Fi, the app's
+  traffic goes over it (`SiteWifi.java`), and asking a found box, or
+  following one, reaches it. The app's own box keeps it there too, whenever
+  its address is on the Wi-Fi.
 
 **What they list.** Each box found is a row: the event's name from `name`, and
 the address the app would connect to, the certificate's name from `tls` where

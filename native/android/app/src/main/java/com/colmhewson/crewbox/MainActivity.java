@@ -11,12 +11,16 @@ import java.io.File;
 public class MainActivity extends BridgeActivity {
   @Override
   public void onCreate(Bundle savedInstanceState) {
+    // Before the page loads, so a box kept from last time is reached over
+    // its Wi-Fi from the first request.
+    SiteWifi.get(this).start("");
     registerPlugin(AlertsPlugin.class);
     registerPlugin(VoicePlugin.class);
     registerPlugin(FilesPlugin.class);
     registerPlugin(DiscoveryPlugin.class);
     registerPlugin(ScannerPlugin.class);
     registerPlugin(WifiPlugin.class);
+    registerPlugin(NetworkPlugin.class);
     forgetLinkFromRecents(getIntent());
     super.onCreate(savedInstanceState);
     forgetTakenPhotos();

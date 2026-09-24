@@ -186,6 +186,17 @@ export interface WifiPlugin {
   join(network: WifiNetwork): Promise<WifiOutcome>
 }
 
+/**
+ * The Android app's hold on the crew Wi-Fi (native SiteWifi). Told which box
+ * the page uses, it keeps the app's traffic on the Wi-Fi that box is on, so a
+ * crew Wi-Fi with no internet still reaches the box with mobile data on.
+ * `onWifi` is whether the traffic goes over the Wi-Fi now, once that is
+ * settled or after a moment.
+ */
+export interface NetworkPlugin {
+  useBox(options: { origin: string }): Promise<{ onWifi: boolean }>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -201,6 +212,7 @@ declare global {
         CrewboxDiscovery?: DiscoveryPlugin
         CrewboxScanner?: ScannerPlugin
         CrewboxWifi?: WifiPlugin
+        CrewboxNetwork?: NetworkPlugin
       }
     }
   }
@@ -264,6 +276,11 @@ export function nativeScanner(): ScannerPlugin | undefined {
 /** The apps' way onto a Wi-Fi network from its code, when present (native builds only). */
 export function nativeWifi(): WifiPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxWifi
+}
+
+/** The Android app's hold on the crew Wi-Fi, when present (Android builds only). */
+export function nativeNetwork(): NetworkPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxNetwork
 }
 
 /**
@@ -340,6 +357,38 @@ export function setServerOrigin(input: string): void {
   const origin = normalizeOrigin(input)
   if (origin) localStorage.setItem(SERVER_KEY, origin)
   else localStorage.removeItem(SERVER_KEY)
+  holdBoxWifi(origin)
+}
+
+/** The longest a join waits to hear which way its requests go; see boxWifiSettled. */
+const BOX_WIFI_WAIT_MS = 3000
+
+/** Settles when the Android app has said which way the box's traffic goes. */
+let boxWifi: Promise<unknown> = Promise.resolve()
+
+/**
+ * Tell the Android app which box the page uses (native SiteWifi), so the
+ * app's traffic for it goes over the Wi-Fi it is on, whether or not that
+ * Wi-Fi has internet. The app keeps the box for its next start too. Nothing
+ * to do anywhere else: a browser, or an iPhone.
+ */
+export function holdBoxWifi(origin = serverOrigin()): void {
+  const network = isNative() ? nativeNetwork() : undefined
+  if (!network) return
+  boxWifi = Promise.race([
+    network.useBox({ origin }).catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, BOX_WIFI_WAIT_MS)),
+  ])
+}
+
+/**
+ * Settles once the Android app has said which way the box's traffic goes
+ * since the page last told it of a box, or has had its moment to; at once
+ * anywhere else. A join waits for it, so its first request goes over the
+ * Wi-Fi rather than failing on mobile data.
+ */
+export function boxWifiSettled(): Promise<unknown> {
+  return boxWifi
 }
 
 /** Prefix a server-relative path (e.g. `/api/join`) with the configured origin. */

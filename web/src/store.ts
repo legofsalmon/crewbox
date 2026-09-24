@@ -40,6 +40,7 @@ import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
 import {
   boxOrigin,
+  boxWifiSettled,
   isIosApp,
   isNative,
   nativeAlerts,
@@ -1494,6 +1495,9 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     async join(name, eventPin, personalPin) {
+      // On Android, until the app has put its traffic for this box on the
+      // Wi-Fi, a request to it can go out over mobile data and fail.
+      await boxWifiSettled()
       // Before a PIN goes to it: a box that says it runs an event this
       // device holds at another address has to pass the check, which would
       // otherwise move the event here, the open one included.

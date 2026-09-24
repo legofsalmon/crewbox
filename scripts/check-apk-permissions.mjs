@@ -39,7 +39,9 @@ import { pathToFileURL } from 'node:url'
  * Wi-Fi on phones that hear mDNS only while an app holds a multicast lock
  * (Android 12 and older, and 13 before its T extensions 7 update), CAMERA for
  * scanning the join poster, which the app does itself (ScannerActivity), and
- * which "Take a photo" then needs as well.
+ * which "Take a photo" then needs as well, and CHANGE_NETWORK_STATE for
+ * holding the crew Wi-Fi, so the box is reached over it when it has no
+ * internet and mobile data is on (SiteWifi).
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
@@ -53,6 +55,7 @@ export const REQUIRED = [
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.CHANGE_WIFI_MULTICAST_STATE',
   'android.permission.CAMERA',
+  'android.permission.CHANGE_NETWORK_STATE',
 ]
 
 /**

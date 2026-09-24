@@ -145,6 +145,16 @@
     -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <!--
+        Reaching the box over a crew Wi-Fi with no internet (SiteWifi). With
+        mobile data on, Android sends an app's traffic over mobile data, not
+        over a Wi-Fi that failed its internet check, so the app asks for the
+        Wi-Fi and binds itself to it while its box is there. Asking for a
+        network needs this. A normal permission: granted at install, no
+        prompt.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -176,8 +186,9 @@
         Not asked for: the network's state. CameraX's preview comes with its
         video half, which brings Media3, and Media3 asks for this for a video
         player's bandwidth estimate. Nothing here plays or records video, and
-        nothing in the app asks Android about the network, so it is taken out
-        rather than shown to crew on the install screen.
+        the app never asks Android which networks there are: it asks for the
+        Wi-Fi (CHANGE_NETWORK_STATE, above), and hears about that one only.
+        So it is taken out rather than shown to crew on the install screen.
     -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 

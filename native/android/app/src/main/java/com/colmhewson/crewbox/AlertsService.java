@@ -162,8 +162,13 @@ public class AlertsService extends Service {
     startForeground(NOTIF_FOREGROUND, serviceNotification("Connecting to crew server…"));
     // Every start is a fresh attempt, including the redeliveries START_STICKY
     // brings after the OS has killed us, and the plugin's own restart when
-    // the crew member signs in again with a new token.
-    connect();
+    // the crew member signs in again with a new token. Once the app's traffic
+    // for the box is on its Wi-Fi: a restart Android makes on its own has no
+    // page to say so, and a first attempt over mobile data would only fail
+    // and wait out a retry.
+    SiteWifi siteWifi = SiteWifi.get(this);
+    siteWifi.start(serverUrl);
+    siteWifi.whenSettled(onWifi -> handler.post(this::connect));
     return START_STICKY;
   }
 

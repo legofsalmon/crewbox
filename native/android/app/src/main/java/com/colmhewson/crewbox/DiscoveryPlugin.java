@@ -59,8 +59,10 @@ import java.util.Map;
  * {@code denied}.
  *
  * What is passed on is what the network said and no more. The page treats
- * every entry as a claim and asks the box itself before using one. Every
- * callback is taken to the main thread, where all of this runs.
+ * every entry as a claim and asks the box itself before using one, over the
+ * Wi-Fi even when it has no internet: SiteWifi keeps the app's traffic there
+ * while the page is searching. Every callback is taken to the main thread,
+ * where all of this runs.
  */
 @CapacitorPlugin(name = "CrewboxDiscovery")
 public class DiscoveryPlugin extends Plugin {
@@ -127,6 +129,7 @@ public class DiscoveryPlugin extends Plugin {
   public void start(PluginCall call) {
     main.post(() -> {
       wanted = true;
+      SiteWifi.get(getContext()).searching(true);
       if (discovery == null) {
         begin();
       } else {
@@ -143,6 +146,7 @@ public class DiscoveryPlugin extends Plugin {
   public void stop(PluginCall call) {
     main.post(() -> {
       wanted = false;
+      SiteWifi.get(getContext()).searching(false);
       end();
       call.resolve();
     });
@@ -166,6 +170,7 @@ public class DiscoveryPlugin extends Plugin {
     super.removeAllListeners();
     main.post(() -> {
       wanted = false;
+      SiteWifi.get(getContext()).searching(false);
       end();
     });
   }

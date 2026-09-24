@@ -2,6 +2,8 @@ import { expect, type Page } from '@playwright/test'
 import {
   announce,
   appWithDiscovery,
+  boxWifiCalls,
+  boxWifiTakes,
   discoveryCalls,
   test,
   uniqueName,
@@ -61,6 +63,27 @@ test('the Android app lists the box on this Wi-Fi, and joins it with nothing typ
 
   // Nothing on screen is looking any more, so neither is the phone.
   await expect.poll(() => discoveryCalls(page)).toEqual(['start', 'stop'])
+})
+
+test('the Android app has its traffic for the box on the Wi-Fi before the join goes there', async ({
+  browser,
+}) => {
+  // On a crew Wi-Fi with no internet and mobile data on, a request the app
+  // makes before then can go out over mobile data and fail.
+  const page = await appWithDiscovery(browser, 'android', [await suiteBox('Main Stage Crew')])
+  await page.goto('/')
+  await boxWifiTakes(page, 1000)
+  let told: Awaited<ReturnType<typeof boxWifiCalls>> = []
+  await page.route('**/api/join', async (route) => {
+    told = await boxWifiCalls(page)
+    await route.continue()
+  })
+
+  await nearby(page).getByRole('button', { name: 'Pick Main Stage Crew' }).click()
+  await expect(page.getByLabel('Your name')).toBeFocused()
+  await joinAs(page, uniqueName('Held Tech'))
+
+  expect(told.at(-1)).toEqual({ origin: 'http://127.0.0.1:4299', answered: true })
 })
 
 test('the iPhone app asks before its first search, and looks by itself after that', async ({

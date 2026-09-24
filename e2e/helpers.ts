@@ -85,6 +85,12 @@ export interface WifiOutcome {
   result: 'joined' | 'saved' | 'known' | 'declined' | 'failed' | 'invalid' | 'unavailable'
 }
 
+/** A box the Android app was told of (NetworkPlugin), and when it answered. */
+export interface BoxWifiCall {
+  origin: string
+  answered: boolean
+}
+
 /**
  * One of the phone apps, with its search for boxes (DiscoveryPlugin), its QR
  * scanner (ScannerPlugin) and its Wi-Fi join (WifiPlugin) stood in for. Each
@@ -92,6 +98,9 @@ export interface WifiOutcome {
  * `announce` changes what it has found. Each scan hands back what
  * `scanWillGive` queued, or is backed out of, and each network asked for is
  * kept for `wifiCalls` and answered as `wifiWillGive` queued, or turned down.
+ * The Android one also has its hold on the Wi-Fi (NetworkPlugin): each box
+ * it is told of is kept for `boxWifiCalls`, and answered after
+ * `boxWifiTakes`, at once unless told otherwise.
  */
 export const appWithDiscovery = async (
   browser: Browser,
@@ -119,6 +128,9 @@ export const appWithDiscovery = async (
       const networks: unknown[] = []
       w.__wifiAnswers = wifiAnswers
       w.__networks = networks
+      const boxWifi: { origin: string; answered: boolean }[] = []
+      w.__boxWifi = boxWifi
+      w.__boxWifiTakes = 0
       w.__announce = (next: typeof boxes) => {
         found = next
         emit('boxes', { boxes: found })
@@ -165,6 +177,22 @@ export const appWithDiscovery = async (
               return wifiAnswers.shift() ?? { result: 'declined' }
             },
           },
+          ...(platform === 'android'
+            ? {
+                CrewboxNetwork: {
+                  useBox: ({ origin }: { origin: string }) => {
+                    const call = { origin, answered: false }
+                    boxWifi.push(call)
+                    return new Promise((resolve) =>
+                      setTimeout(() => {
+                        call.answered = true
+                        resolve({ onWifi: true })
+                      }, w.__boxWifiTakes as number)
+                    )
+                  },
+                },
+              }
+            : {}),
         },
       }
     },
@@ -210,6 +238,16 @@ export const wifiWillGive = (page: Page, ...outcomes: WifiOutcome[]) =>
 /** The networks the stood-in Wi-Fi join has been asked to join, in order. */
 export const wifiCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as { __networks: unknown[] }).__networks)
+
+/** How long the stood-in Android app takes to answer each box it is told of from now on. */
+export const boxWifiTakes = (page: Page, ms: number) =>
+  page.evaluate((ms) => ((window as unknown as { __boxWifiTakes: number }).__boxWifiTakes = ms), ms)
+
+/** The boxes the stood-in Android app has been told of, in order, and whether it has answered. */
+export const boxWifiCalls = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as { __boxWifi: BoxWifiCall[] }).__boxWifi.map((call) => ({ ...call }))
+  )
 
 /** Open the patch module's sheet selector from the sidebar. */
 export const openPatch = async (page: Page) => {
