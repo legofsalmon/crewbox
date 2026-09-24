@@ -157,7 +157,11 @@ interface TallySource {
 
 interface CollectorSink {
   noteRtt: (ms: number) => void
-  noteVoice: (stats: { lossPct: number; jitterMs: number; concealedPct: number }) => void
+  /** `from` tells one device's reports from another's, and is only ever counted. */
+  noteVoice: (
+    stats: { lossPct: number; jitterMs: number; concealedPct: number },
+    from: object
+  ) => void
 }
 
 interface Logger {
@@ -459,11 +463,13 @@ export class Hub {
         // are computed on a device the box does not own, so the schema has
         // already bounded them before they reach here.
         if (this.overActionLimit(conn)) break
-        this.collector?.noteVoice({
-          lossPct: msg.lossPct,
-          jitterMs: msg.jitterMs,
-          concealedPct: msg.concealedPct,
-        })
+        this.collector?.noteVoice(
+          { lossPct: msg.lossPct, jitterMs: msg.jitterMs, concealedPct: msg.concealedPct },
+          // The connection itself, so the collector can count phones rather
+          // than reports. It keeps the reference for the minute and writes
+          // down only how many there were.
+          conn
+        )
         break
       case 'logIncident': {
         // The same flood guard as `send`, and rejected the same way, because

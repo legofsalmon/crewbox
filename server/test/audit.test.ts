@@ -4,8 +4,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
-import { MetricsStore } from '../src/audit/metrics.ts'
+import { BUCKET_MS, MetricsStore } from '../src/audit/metrics.ts'
 import { buildApp, type App } from '../src/app.ts'
+import { controlKey } from '../src/control.ts'
 
 /**
  * The audit endpoints belong to the whole crew — session-authed, never
@@ -330,6 +331,51 @@ describe('POST /api/audit/probe', () => {
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
     throw new Error('probe run never finished')
+  })
+})
+
+describe('how comms sounded, as a desk reads it', () => {
+  it('counts phones on comms, not their reports', async () => {
+    // One phone on comms for a minute sends four readings. The desk API and
+    // the readiness line were handed the four and called them devices.
+    await app.close()
+    const db = openDb(':memory:')
+    const store = new Store(db)
+    const recorded = new MetricsStore(db)
+    app = buildApp({
+      store,
+      eventPin: EVENT_PIN,
+      filesDir,
+      dataDir: filesDir,
+      metrics: recorded,
+      adminPassword: ADMIN_PASSWORD,
+      logger: false,
+    })
+    const minute = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS - BUCKET_MS
+    const row = (metric: string, max: number, count: number) => ({
+      ts: minute,
+      metric,
+      key: '',
+      min: 0,
+      avg: max,
+      max,
+      count,
+    })
+    recorded.flush([
+      row('voice.concealedPct', 2, 4),
+      row('voice.lossPct', 1, 4),
+      row('voice.devices', 1, 1),
+    ])
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/control/state',
+      headers: { 'x-api-key': controlKey(store, {}) },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { voice: { quality: { devices: number } | null } }
+    expect(body.voice.quality).toMatchObject({ devices: 1, concealedPct: 2 })
   })
 })
 

@@ -679,7 +679,7 @@ export function buildApp({
     const now = Date.now()
     const worst = metrics.worstVoice(now - VOICE_QUALITY_WINDOW_MS, now)
     if (!worst) return null
-    return { concealedPct: worst.concealedPct, lossPct: worst.lossPct, devices: worst.samples }
+    return { concealedPct: worst.concealedPct, lossPct: worst.lossPct, devices: worst.devices }
   }
 
   const publicConfig = (): PublicConfig => ({

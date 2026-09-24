@@ -98,6 +98,24 @@ describe('what comms actually sounded like', () => {
     expect(seen).toEqual([{ lossPct: 12.5, jitterMs: 40, concealedPct: 3.25 }])
   })
 
+  it('says which connection each report came from, so phones can be counted', () => {
+    // Four reports a minute from every phone: counted as they arrive, one
+    // phone on comms reads as four. The connection is what tells them apart.
+    const from: object[] = []
+    const collector = sink({ noteVoice: (_stats, sender) => void from.push(sender) })
+    const one = socket(collector)
+    const two = socket(collector)
+    const report = { type: 'voiceStats', lossPct: 0, jitterMs: 0, concealedPct: 0 }
+
+    one.deliver(report)
+    one.deliver(report)
+    two.deliver(report)
+
+    expect(from).toHaveLength(3)
+    expect(from[1]).toBe(from[0])
+    expect(from[2]).not.toBe(from[0])
+  })
+
   it('drops a report from a socket that is already being chatty', () => {
     // Same guard as every other client-driven action: a phone with a stuck
     // timer must not be able to bury the rollup under its own telemetry.
