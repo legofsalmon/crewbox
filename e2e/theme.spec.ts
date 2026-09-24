@@ -252,6 +252,9 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(await textContrast(page, '.admin-btn.admin-btn-primary')).toBeGreaterThan(4.5)
     await page.getByRole('button', { name: 'Unlock' }).click()
     await expect(page.getByRole('heading', { name: 'Crew' })).toBeVisible()
+    // The line saying whether the apps can find the box is read, not a
+    // footnote: it started out in the panel's faint grey, 3.5:1.
+    expect(await textContrast(page, '.admin-status')).toBeGreaterThan(4.5)
 
     // Scoped to the row: the sidebar has a channel button of the same name.
     const row = page.locator('.admin-channel', { hasText: channel })

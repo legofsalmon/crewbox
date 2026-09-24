@@ -2355,6 +2355,13 @@ ul {
   color: var(--text-faint);
 }
 
+/* What a setting that acts at once is doing now: something to read, not a
+   footnote, so it is not faint. */
+.admin-status {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
 .admin-topic {
   flex: 1;
   overflow: hidden;
@@ -2502,7 +2509,8 @@ ul {
 }
 
 .admin-networks select,
-.admin-networks input {
+.admin-networks input,
+.admin-setting select {
   height: 40px;
   padding: 0 12px;
   border-radius: 9px;

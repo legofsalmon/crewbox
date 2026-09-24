@@ -9,6 +9,9 @@ import UpdateSection from './UpdateSection.tsx'
 
 const PIN_RE = /^\d{4,8}$/
 
+/** How soon the panel asks again while the box is still claiming its name. */
+const ANNOUNCE_RECHECK_MS = 1000
+
 /**
  * Session plus unlock. Read from the store rather than passed down, because
  * every row in this panel needs it and threading it through would be noise.
@@ -356,6 +359,33 @@ function ServerSection({ onNote }: { onNote: (note: string) => void }) {
       live = false
     }
   }, [onNote])
+
+  /**
+   * Follows the announcement until it has claimed its name. A change comes
+   * back while the box is still probing, which takes about a second, and the
+   * line under the setting would otherwise say "Starting" until the panel was
+   * next opened. Each answer is a new object, so this asks again while the
+   * box is still starting and stops once it says anything else.
+   */
+  const announce = data?.network.announce
+  useEffect(() => {
+    if (announce?.state !== 'starting') return
+    let live = true
+    const timer = window.setTimeout(() => {
+      api
+        .adminGetSettings(auth())
+        .then((d) => {
+          if (live) setData((cur) => (cur ? { ...cur, network: d.network } : cur))
+        })
+        .catch(() => {
+          // Left as it was: the next change, or opening the panel, reads it again.
+        })
+    }, ANNOUNCE_RECHECK_MS)
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+    }
+  }, [announce])
 
   /** Patch one setting, then refresh local state from what the server kept. */
   function save(
@@ -740,12 +770,12 @@ function AnnounceSection({
             )
           }}
         >
-          <option value="auto">Automatic: the crew network, never a show network</option>
-          <option value="on">Always, even where a show network shares it</option>
+          <option value="auto">Automatic: not on a show network</option>
+          <option value="on">Always, even on a show network</option>
           <option value="off">Never</option>
         </select>
       )}
-      <p className="admin-muted" role="status">
+      <p className="admin-status" role="status">
         {describeAnnounce(status)}
       </p>
     </div>

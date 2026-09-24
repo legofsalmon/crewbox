@@ -141,6 +141,10 @@ test('the panel says whether the apps can find the box, and turns it on and off'
   await choice.selectOption('auto')
   await expect(off).toBeHidden()
   await expect(choice).toHaveValue('auto')
+  // And it says what came of it rather than "Starting" until the panel is
+  // next opened: the save comes back while the box is still claiming its
+  // name, which takes it about a second.
+  await expect(admin.getByText(/^Starting to announce/)).toBeHidden({ timeout: 10_000 })
 
   await choice.selectOption('off')
   await expect(off).toBeVisible()
