@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { useLiveLook } from '../store/useLiveLook.ts'
 import { fixturePoint3, isVertical, positionEnds } from '../model/geometry'
 import { fixturesOnPosition } from '../model/plotDoc'
 import type { Fixture, PlotSnapshot } from '../model/types'
 import type { PlotIssues } from '../store/hooks'
 import styles from './PlotPlan.module.scss'
+import { usePanZoom } from './usePanZoom.ts'
 
 /**
  * The rig seen from the audience: x across, height up.
@@ -42,7 +43,8 @@ export default function PlotElevation({
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
-  const [zoom, setZoom] = useState(1)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const { zoom, step, boxProps } = usePanZoom(svgRef)
   const look = useLiveLook(snapshot)
 
   /**
@@ -108,7 +110,7 @@ export default function PlotElevation({
         <button
           type="button"
           className={styles.zoomButton}
-          onClick={() => setZoom((z) => Math.max(0.4, Math.round((z - 0.2) * 10) / 10))}
+          onClick={() => step(-0.2)}
           aria-label="Zoom out"
         >
           −
@@ -117,7 +119,7 @@ export default function PlotElevation({
         <button
           type="button"
           className={styles.zoomButton}
-          onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.2) * 10) / 10))}
+          onClick={() => step(0.2)}
           aria-label="Zoom in"
         >
           +
@@ -125,8 +127,9 @@ export default function PlotElevation({
         <span className={styles.hint}>Trim heights come from Positions</span>
       </div>
 
-      <div className={styles.canvas}>
+      <div className={styles.canvas} {...boxProps}>
         <svg
+          ref={svgRef}
           width={width}
           height={height}
           role="img"
