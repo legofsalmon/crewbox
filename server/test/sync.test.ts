@@ -1162,6 +1162,22 @@ describe('voice', () => {
     expect(denied.statusCode).toBe(404)
   })
 
+  it('leaves the ICE servers to an SFU somebody else runs', async () => {
+    // This box is pointed at an SFU by url, not running its own. That SFU
+    // may need its STUN or TURN servers to get a phone through a NAT, so
+    // the box sends no list of its own and the SFU's stands.
+    const token = await join('Remote Sfu')
+    const general = store.getChannelByName('general')!
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/voice/token',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { channelId: general.id },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).not.toHaveProperty('iceServers')
+  })
+
   it('gives one person on two devices two identities', async () => {
     // LiveKit disconnects the older participant when a second joins with
     // the same identity, and the identity was the user id — so "one

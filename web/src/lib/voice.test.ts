@@ -26,6 +26,8 @@ class FakeRoom {
   /** Whether the browser lets this page make a noise without a gesture. */
   static playbackBehaviour: 'allowed' | 'blocked' = 'allowed'
   static disconnectCalls = 0
+  /** What each connect was given: url, token and the options, if any. */
+  static connectCalls: unknown[][] = []
   handlers = new Map<string, Handler[]>()
   state = 'disconnected'
   canPlaybackAudio = true
@@ -50,7 +52,8 @@ class FakeRoom {
     for (const handler of this.handlers.get(event) ?? []) handler(...args)
   }
 
-  async connect(): Promise<void> {
+  async connect(...args: unknown[]): Promise<void> {
+    FakeRoom.connectCalls.push(args)
     if (FakeRoom.connectBehaviour === 'fail') {
       // A real Room fires this on the way out of a failed connect, which is
       // the whole point of the test below.
@@ -382,6 +385,39 @@ describe('a room nobody is holding any more', () => {
     // leave() nulls the room before disconnecting, so reset() finds nothing
     // left to close — one hang-up, not two.
     expect(FakeRoom.disconnectCalls).toBe(1)
+  })
+})
+
+describe('the STUN servers a phone asks', () => {
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    FakeRoom.playbackBehaviour = 'allowed'
+    FakeRoom.connectCalls = []
+  })
+
+  it('asks none when the box says so, because the empty list reaches the SDK', async () => {
+    // LiveKit hands every participant Twilio's and Google's STUN servers when
+    // it has none of its own, and the SDK applies them unless
+    // `rtcConfig.iceServers` is set. So the box's empty list has to arrive as
+    // a list: dropped for being empty, it would put all three back.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box', [])
+
+    expect(FakeRoom.connectCalls.at(-1)).toEqual([
+      'ws://box',
+      'token',
+      { rtcConfig: { iceServers: [] } },
+    ])
+  })
+
+  it('leaves the list to an SFU the box does not run', async () => {
+    // Somebody else's SFU may need its STUN or TURN servers to get through a
+    // NAT, and only it knows which, so the box sends no list and the phone
+    // passes no options at all.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'wss://sfu.example')
+
+    expect(FakeRoom.connectCalls.at(-1)).toEqual(['wss://sfu.example', 'token', undefined])
   })
 })
 

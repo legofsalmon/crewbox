@@ -1700,7 +1700,20 @@ export function buildApp({
       ttl: '12h',
     })
     at.addGrant({ room: channel.id, roomJoin: true, canPublish: true, canSubscribe: true })
-    return { url: voiceUrl(req), token: await at.toJwt() }
+    return {
+      url: voiceUrl(req),
+      token: await at.toJwt(),
+      // No ICE servers, for this box's own SFU. LiveKit hands every
+      // participant Twilio's and Google's public STUN servers when it has
+      // none configured (iceServersForParticipant, in its roommanager.go), and
+      // the phone then asks all three for its public address: from a crew
+      // network, a phone telling two companies it is on comms, for an answer
+      // no one here can use, because the SFU is on the same network and
+      // answers on its own address. An empty list tells the phone to ask
+      // nobody. An SFU somebody else runs (LIVEKIT_URL) keeps its own list,
+      // which it may need to get through a NAT.
+      ...(livekit?.embedded ? { iceServers: [] } : {}),
+    }
   })
 
   fastify.get('/api/search', (req, reply) => {

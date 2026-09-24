@@ -148,7 +148,17 @@ export class VoiceManager {
     })
   }
 
-  async join(channelId: string, token: string, url: string): Promise<void> {
+  /**
+   * `iceServers` is the box's list, when it sent one, and replaces the SFU's.
+   * Empty means ask no STUN server at all, which is what a box sends for its
+   * own SFU (see /api/voice/token). Absent, the SFU's list stands.
+   */
+  async join(
+    channelId: string,
+    token: string,
+    url: string,
+    iceServers?: RTCIceServer[]
+  ): Promise<void> {
     await this.leave()
     this.channelId = channelId
     this.publish({ channelId, status: 'joining', error: null, participants: [] })
@@ -254,7 +264,10 @@ export class VoiceManager {
 
     try {
       await Promise.race([
-        room.connect(url, token),
+        // An empty list has to reach the SDK as a list: it applies the SFU's
+        // servers whenever `rtcConfig.iceServers` is missing, and an empty
+        // array is not missing (makeRTCConfiguration, in livekit-client).
+        room.connect(url, token, iceServers ? { rtcConfig: { iceServers } } : undefined),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS)
         ),

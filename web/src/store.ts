@@ -1339,8 +1339,8 @@ export const useStore = create<AppState>()((set, get) => {
         )
       }
       try {
-        const { url, token } = await api.voiceToken(getToken() ?? '', channelId)
-        await voiceManager.join(channelId, token, url)
+        const { url, token, iceServers } = await api.voiceToken(getToken() ?? '', channelId)
+        await voiceManager.join(channelId, token, url, iceServers)
       } catch (err) {
         set({ voice: { ...initialVoiceState } })
         // Say what actually went wrong. This used to substitute a generic

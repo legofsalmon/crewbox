@@ -192,10 +192,17 @@ export function uploadFile(
   })
 }
 
+/**
+ * A room token, and where to use it.
+ *
+ * `iceServers`, when the box sends it, replaces the list the SFU would hand
+ * the phone. The box sends an empty one for its own SFU, so a phone on comms
+ * asks no STUN server on the internet for its address (see the route).
+ */
 export function voiceToken(
   token: string,
   channelId: string
-): Promise<{ url: string; token: string }> {
+): Promise<{ url: string; token: string; iceServers?: RTCIceServer[] }> {
   return request('/api/voice/token', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
