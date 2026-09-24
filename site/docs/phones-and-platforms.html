@@ -42,9 +42,9 @@
 <p>Native microphone permission, so <strong>voice talk works over plain HTTP</strong> — the main reason it exists. But read the last row of the table again:</p>
 <div class="callout callout-warning"><p><strong>A locked iPhone on an offline network cannot be alerted.</strong> Apple
 notifications go through Apple's servers, which an offline event network
-can't reach — no app can work around this. In-app sounds work while the
-app is open. Don't promise lock-screen alerts on iOS; hand the on-call
-radio roles an Android.</p></div>
+can't reach — no app can work around this. Alerts sound and show a banner
+while the app is open. Don't promise lock-screen alerts on iOS; hand the
+on-call radio roles an Android.</p></div>
 <p>One rule about addresses, which iOS enforces inside the phone: <strong>the iPhone app uses plain HTTP only with an IP address</strong> like <code>192.168.8.1</code>, a <code>.local</code> name, or a one-word name like <code>crewbox</code>. A box without a certificate advertises its IP address, so its poster and QR already work. What doesn't is a name the network knows the box by, like <code>crewbox.lan</code>, typed without <code>https://</code>: iOS refuses to send anything to it, and the join screen says so rather than trying. A name needs the box to have a certificate for it (see <a href="/docs/https-and-voice">HTTPS, names and certificates</a>), and <code>https://</code> in front.</p>
 <h2 id="the-no-internet-problem"><a class="anchor" href="#the-no-internet-problem">The &quot;no internet&quot; problem</a></h2>
 <p>Every phone tests a Wi-Fi network the moment it joins: it fetches one fixed web address and checks the answer. An event network with no uplink fails that test, and each platform reacts differently.</p>

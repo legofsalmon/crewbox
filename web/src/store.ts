@@ -221,6 +221,15 @@ export interface BoxEvent {
   name: string
 }
 export type ToastKind = 'info' | 'warning' | 'error'
+
+/** A message that needs this crew member, shown over the app while it is open. */
+export interface AlertBanner {
+  id: number
+  title: string
+  body: string
+  /** Where it takes you. None when it covers more than one channel. */
+  channelId?: string
+}
 export type Connection = 'connecting' | 'online' | 'offline'
 
 export interface AppState {
@@ -345,6 +354,8 @@ export interface AppState {
   updateReady: boolean
   /** Transient notices; each auto-dismisses on its own timer. */
   toasts: { id: number; message: string; kind: ToastKind }[]
+  /** A mention or DM that arrived while the app was on screen; null when none. */
+  alertBanner: AlertBanner | null
   loadingOlder: boolean
   uploading: boolean
   theme: Theme
@@ -383,6 +394,10 @@ export interface AppState {
   applyRoute: (route: Route) => void
   /** Show a transient notice; auto-dismisses after a few seconds. */
   toast: (message: string, kind?: ToastKind) => void
+  /** Go to what the alert banner is about, out of whatever is open. */
+  openAlertBanner: () => void
+  /** Put the alert banner away; given an id, only while it is still that one. */
+  dismissAlertBanner: (id?: number) => void
   /** Open a channel scrolled to a specific message (search results). */
   jumpToMessage: (channelId: string, seq: number) => Promise<void>
   clearJumpTarget: () => void
@@ -485,6 +500,7 @@ let updateSW: ((reload?: boolean) => Promise<void>) | null = null
 let pwaStarted = false
 const lastTypingSent = new Map<string, number>()
 let toastSeq = 0
+let bannerSeq = 0
 
 function getToken(): string | null {
   return readEventPref(TOKEN_KEY)
@@ -714,6 +730,22 @@ export const useStore = create<AppState>()((set, get) => {
     }, 1000)
   }
 
+  /**
+   * Somebody needs this crew member: chirp and buzz, and say who and where.
+   *
+   * Out of sight, saying so is the system's notification. On screen it was
+   * nothing: the chirp said somebody wanted you and not who, and on a phone
+   * the channel list whose badge would say is shut away in the drawer. So on
+   * screen it is the banner.
+   */
+  function announce(alert: { title: string; body: string; channelId?: string }): void {
+    playAlert()
+    notify(alert.title, alert.body)
+    if (document.visibilityState !== 'visible') return
+    const { title, body, channelId } = alert
+    set({ alertBanner: { id: ++bannerSeq, title, body, ...(channelId ? { channelId } : {}) } })
+  }
+
   function markRead(channelId: string, seq: number): void {
     const current = get().readState[channelId] ?? 0
     if (seq <= current) return
@@ -869,10 +901,7 @@ export const useStore = create<AppState>()((set, get) => {
         readState,
         focusedChannelId: focused,
       })
-      if (alert) {
-        playAlert()
-        notify(alert.title, alert.body)
-      }
+      if (alert) announce(alert)
     }
 
     // Android wrapper: hand the session to the foreground service so the
@@ -1000,11 +1029,12 @@ export const useStore = create<AppState>()((set, get) => {
           const channel = channels[msg.message.channelId]
           const author = users[msg.message.authorId]?.name ?? 'Someone'
           if (channel?.kind === 'dm' || isMentioned(msg.message.body, me?.name)) {
-            playAlert()
-            notify(
-              channel?.kind === 'dm' ? author : `${author} in #${channel?.name ?? 'channel'}`,
-              msg.message.body || msg.message.file?.name || ''
-            )
+            announce({
+              title:
+                channel?.kind === 'dm' ? author : `${author} in #${channel?.name ?? 'channel'}`,
+              body: msg.message.body || msg.message.file?.name || '',
+              channelId: msg.message.channelId,
+            })
           }
         }
         break
@@ -1189,6 +1219,7 @@ export const useStore = create<AppState>()((set, get) => {
     latencyMs: null,
     updateReady: false,
     toasts: [],
+    alertBanner: null,
     loadingOlder: false,
     uploading: false,
     theme: initialTheme(),
@@ -1564,6 +1595,30 @@ export const useStore = create<AppState>()((set, get) => {
       setTimeout(() => {
         set({ toasts: get().toasts.filter((toast) => toast.id !== id) })
       }, 5000)
+    },
+
+    openAlertBanner() {
+      const banner = get().alertBanner
+      if (!banner) return
+      set({ alertBanner: null })
+      // Out of whatever is over the chat, the way a phone's own notification
+      // takes you out of what you were doing.
+      const state = get()
+      if (state.searchOpen) state.setSearchOpen(false)
+      if (state.adminOpen) state.setAdminOpen(false)
+      if (state.audioSettingsOpen) state.setAudioSettingsOpen(false)
+      if (state.fileDetail) state.closeFileDetail()
+      if (state.boxesOpen) state.setBoxesOpen(false)
+      if (banner.channelId && state.channels[banner.channelId]) {
+        state.setActiveChannel(banner.channelId)
+      } else {
+        // More than one channel: the list, whose badges say which.
+        state.setSidebarOpen(true)
+      }
+    },
+
+    dismissAlertBanner(id) {
+      if (id === undefined || get().alertBanner?.id === id) set({ alertBanner: null })
     },
 
     async jumpToMessage(channelId, seq) {

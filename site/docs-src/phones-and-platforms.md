@@ -66,9 +66,9 @@ the main reason it exists. But read the last row of the table again:
 > [!WARNING]
 > **A locked iPhone on an offline network cannot be alerted.** Apple
 > notifications go through Apple's servers, which an offline event network
-> can't reach — no app can work around this. In-app sounds work while the
-> app is open. Don't promise lock-screen alerts on iOS; hand the on-call
-> radio roles an Android.
+> can't reach — no app can work around this. Alerts sound and show a banner
+> while the app is open. Don't promise lock-screen alerts on iOS; hand the
+> on-call radio roles an Android.
 
 One rule about addresses, which iOS enforces inside the phone: **the iPhone
 app uses plain HTTP only with an IP address** like `192.168.8.1`, a `.local`

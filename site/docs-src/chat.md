@@ -46,9 +46,12 @@ at me" is fast.
 ## Alerts
 
 Mentions and DMs chirp and vibrate; the bell button in the sidebar mutes the
-sounds when you're next to the stage. If the app is in the background, you
-get a notification. For alerts that reach a **locked phone with no
-internet**, use the Android app —
+sounds when you're next to the stage. While the app is open, a banner at the
+top says who it is and what they wrote: tap it to go to the message, or ×
+to put it away. It goes by itself after a few seconds, and the channel keeps
+its unread badge. If the app is in the background, you get a notification
+instead. For alerts that reach a **locked phone with no internet**, use the
+Android app —
 [Phones and platforms](/docs/phones-and-platforms) covers what each
 platform can and can't do.
 

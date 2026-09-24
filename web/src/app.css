@@ -415,6 +415,69 @@ ul {
 }
 
 /*
+ * A mention or DM while the app is open (components/AlertBanner.tsx). At the
+ * top, where a phone's own notifications arrive, rather than down with the
+ * toasts: those answer something you just did, and this interrupts. Over
+ * every panel, as the toasts are, because it is somebody wanting you now
+ * whatever is open.
+ */
+.alert-banner {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: stretch;
+  width: min(92vw, 440px);
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.alert-banner-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 4px 10px 14px;
+  text-align: left;
+}
+
+.alert-banner-title {
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* Two lines of the message: enough to know whether to go now. */
+.alert-banner-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.alert-banner-close {
+  flex-shrink: 0;
+  width: 44px;
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.alert-banner-close:hover {
+  color: var(--text);
+}
+
+/*
  * A file with one more step (components/FileOfferBar.tsx). In the stack, so
  * a toast and an offer never overlap, but it takes taps where the toasts
  * don't: its button is the point of it.

@@ -440,4 +440,45 @@ for (const scheme of ['light', 'dark'] as const) {
 
     await context.close()
   })
+
+  test(`a direct message's banner stays readable on a phone in ${scheme} theme`, async ({
+    browser,
+  }) => {
+    const join = async (name: string, phone: boolean) => {
+      const context = await browser.newContext({
+        colorScheme: scheme,
+        ...(phone ? { viewport: { width: 390, height: 844 }, hasTouch: true } : {}),
+      })
+      const page = await context.newPage()
+      page.on('pageerror', (e) => {
+        throw new Error(`Page error: ${e.message}`)
+      })
+      await page.goto('/?pin=4242')
+      await page.getByLabel('Your name').fill(name)
+      await page.getByLabel('Your PIN').fill('1234')
+      await page.getByRole('button', { name: 'Join' }).click()
+      await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+      return { context, page }
+    }
+    const name = `Banner ${scheme} ${Date.now().toString(36)}`
+    const phone = await join(name, true)
+    const desk = await join(`Desk ${scheme} ${Date.now().toString(36)}`, false)
+    await desk.page.getByRole('button', { name: `Message ${name}` }).click()
+    const toPhone = desk.page.getByPlaceholder(`Message ${name}`)
+    await toPhone.fill('Can you come to FOH before doors?')
+    await toPhone.press('Enter')
+
+    const banner = phone.page.locator('.alert-banner')
+    await expect(banner).toBeVisible()
+    for (const part of ['.alert-banner-title', '.alert-banner-body', '.alert-banner-close']) {
+      expect(await textContrast(phone.page, part), part).toBeGreaterThan(4.5)
+    }
+    // On the screen, clear of both edges.
+    const box = (await banner.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(8)
+    expect(box.x + box.width).toBeLessThanOrEqual(390 - 8)
+
+    await phone.context.close()
+    await desk.context.close()
+  })
 }

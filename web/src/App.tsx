@@ -13,6 +13,7 @@ import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
 import FileDetail from './components/FileDetail.tsx'
 import FileOfferBar from './components/FileOfferBar.tsx'
+import AlertBanner from './components/AlertBanner.tsx'
 import IosInstallTip from './components/IosInstallTip.tsx'
 import ServerUnreachable, { Connecting } from './components/ServerUnreachable.tsx'
 import ConnectionHelp from './components/ConnectionHelp.tsx'
@@ -214,6 +215,7 @@ function Shell() {
           {fileOffer && <FileOfferBar key={fileOffer.id} offer={fileOffer} />}
         </div>
       )}
+      <AlertBanner />
       {updateReady && (
         <button className="update-pill" onClick={applyUpdate}>
           <span>New version available</span>
