@@ -42,6 +42,16 @@ try {
 } catch {
   /* release tarballs have no .git */
 }
+// When this build was made, for the licence's update entitlement (see
+// BUILD_DATE in server/src/version.ts). The commit's own time, so the same
+// commit always builds the same binary; the clock only when there is no git.
+let buildDate = Math.floor(Date.now() / 1000)
+try {
+  const committed = Number(execSync('git log -1 --format=%ct', { cwd: root }).toString().trim())
+  if (Number.isInteger(committed) && committed > 0) buildDate = committed
+} catch {
+  /* release tarballs have no .git */
+}
 
 // 1. Bundle the TS server (workspace deps included) into one CJS file.
 await build({
@@ -56,6 +66,12 @@ await build({
   define: {
     'process.env.DEPLOY_VERSION': JSON.stringify(version),
     'process.env.DEPLOY_COMMIT': JSON.stringify(commit),
+    'process.env.DEPLOY_BUILD_DATE': JSON.stringify(String(buildDate)),
+    // Baked, so a shipped box cannot be re-keyed from its environment. Empty
+    // (the live key) unless this build was deliberately made for another one.
+    'process.env.CREWBOX_LICENCE_PUBLIC_KEY': JSON.stringify(
+      process.env.CREWBOX_LICENCE_PUBLIC_KEY ?? ''
+    ),
   },
   logLevel: 'warning',
 })
