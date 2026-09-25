@@ -192,6 +192,24 @@ skipped, never an error: a newer box may send more.
 - `from`, `seq`, `channelName`: for messages only. `from` is absent for the
   desk.
 
+### On the phone
+
+Both apps post an alert under its `id`, so a repeat replaces it, without
+sound when `quiet`. A tap opens a `crewbox://open` link naming the event and
+where to go: `&channel=<id>`, `&to=showlog` or `&stage=<name>`. The page
+follows it only for the event it has open.
+
+- **Android** (`AlertNotice.java`): messages as conversations on the
+  Mentions or Messages channel, show stops on Show stops (the alarm stream),
+  calls on Changeover calls. While the app is on screen it posts only show
+  stops and calls; the page announces the rest.
+- **iPhone** (`Alerts/AlertPoster.swift`, the Local Push provider): the
+  notification's `userInfo` carries `kind` (the alert's), `link`, `event`,
+  and for a channel `channelId` and `seq`, which a `read` uses to take it
+  back. `threadIdentifier` is `thread`; `urgent` is Time Sensitive. The
+  app's delegate (`AlertsNotifications.swift`) shows `showStop` and
+  `changeover` while the app is open and opens `link` on a tap.
+
 ### The countdown
 
 `stages` lists each followed stage's set on now and the next, as instants
@@ -200,6 +218,12 @@ maths, so a phone's lock-screen countdown agrees with its own sidebar. The
 phone counts to them with its own clock; the box's clock and the phone's are
 never compared. `end` is `null` when the running order gives no end and
 nothing follows.
+
+On the iPhone the countdown is a Live Activity, which only the app can
+update. The app never hears `stages`: the page works out the same thing
+from its own running order with the same code (`countdownFor`) and hands it
+to the app whenever the running order changes and whenever it is opened.
+Its `staleDate` is five minutes after the next set is due on.
 
 ### Heartbeats
 

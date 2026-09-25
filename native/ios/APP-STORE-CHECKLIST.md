@@ -102,6 +102,10 @@ fails until the account has the entitlement. Once Apple grants it:
 5. On a phone, run the tests in docs/ALERTS.md, "Tests only a phone can
    run", starting with a locked iPhone on an offline Wi-Fi buzzing for an
    @mention.
+6. In the review notes, say that the alerts need the event's own box and
+   Wi-Fi, which a reviewer can't be on, and attach a short video of a locked
+   iPhone on a crew Wi-Fi buzzing for an @mention. App Review asks for one
+   when a feature needs an environment that is hard to replicate.
 
 ## The privacy policy's public URL
 

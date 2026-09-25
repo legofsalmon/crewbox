@@ -45,13 +45,28 @@ at me" is fast.
 
 ## Alerts
 
-Mentions and DMs chirp and vibrate; the bell button in the sidebar mutes the
+The box decides what buzzes, the same for your phone and your laptop. Each
+channel has a bell in its header with three settings:
+
+- **Mentions**, where every channel starts: your name, `@channel` and the
+  production desk.
+- **All messages**: everything in it.
+- **Muted**: only your own name gets through, because somebody needs you in
+  particular.
+
+A DM buzzes for every message unless you mute it. **Alerts…** at the foot of
+the sidebar lists every channel's setting in one place, with the stages you
+follow for changeover calls. A busy channel sounds at most once every 30
+seconds; the rest arrive quietly.
+
+Alerts chirp and vibrate; the bell button in the sidebar mutes the
 sounds when you're next to the stage. While the app is open, a banner at the
 top says who it is and what they wrote: tap it to go to the message, or ×
 to put it away. It goes by itself after a few seconds, and the channel keeps
 its unread badge. If the app is in the background, you get a notification
 instead. For alerts that reach a **locked phone with no internet**, use the
-Android app —
+Android app. Tapping one opens the channel, the show log or the running
+order it is about —
 [Phones and platforms](/docs/phones-and-platforms) covers what each
 platform can and can't do.
 
