@@ -54,7 +54,9 @@ after:
   that usually isn't plugged in), so the script leaves it a note. A backup
   regime that quietly stopped three events ago looks identical from the
   production desk to one that ran last night; this is the row that tells
-  them apart.
+  them apart. The release downloads carry no `deploy/` folder, so on a box
+  run from one the row says to quit Crewbox and copy its data folder
+  instead. It can't see those copies, so it stays amber after one.
 
 Below the list, the settings:
 

@@ -382,7 +382,8 @@ function backupCheck(mark: { at: number; dest?: string }, now: number): Readines
     state: stale ? 'limited' : 'ok',
     detail: `Last backup ${duration(ageMinutes)} ago${where}.`,
     fix: stale
-      ? 'Run deploy/backup.sh. Chat history, accounts, uploads and the event PIN live only in this box until it has run.'
+      ? // Only backup.sh leaves the mark, so whoever sees this has it.
+        'Run deploy/backup.sh again. Chat history, accounts, uploads and the event PIN live only in this box until it has run.'
       : undefined,
   }
 }
@@ -697,7 +698,14 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
             label: 'Backup',
             state: 'limited',
             detail: 'No backup has ever been taken from this box.',
-            fix: 'Run deploy/backup.sh — onto a USB stick, before the event rather than during it. Chat history, accounts, uploads and the event PIN exist nowhere else.',
+            // The release downloads are one file each, so deploy/backup.sh is
+            // only on rigs installed from source. Copying the data folder
+            // with the box stopped is the backup every box can take; this line
+            // cannot see that one, and says so rather than looking broken.
+            fix:
+              `Quit Crewbox and copy its data folder, ${input.dataDir}, onto a USB stick — before the event rather than during it. ` +
+              'Chat history, accounts, uploads and the event PIN exist nowhere else. ' +
+              'A rig installed from source has deploy/backup.sh, which copies it without stopping the box; only its backups show up here.',
           }
     )
   }

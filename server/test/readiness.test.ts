@@ -378,10 +378,15 @@ describe('backup', () => {
 
   it('says plainly when there has never been one', () => {
     // null means the box looked. That is worth printing; a silent gap is not.
-    const check = find(boxReadiness(input({ backup: null })), 'backup')
+    const box = input({ backup: null })
+    const check = find(boxReadiness(box), 'backup')
     expect(check.state).toBe('limited')
     expect(check.detail).toMatch(/No backup has ever been taken/)
-    expect(check.fix).toMatch(/backup\.sh/)
+    // The release downloads carry no deploy/ folder, so the first thing it
+    // asks has to be something a box from a download can do.
+    expect(check.fix).toMatch(/^Quit Crewbox and copy its data folder/)
+    expect(check.fix).toContain(box.dataDir)
+    expect(check.fix).toMatch(/installed from source has deploy\/backup\.sh/)
   })
 
   it('is content with a backup from last night', () => {
