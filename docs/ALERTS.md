@@ -203,7 +203,7 @@ follows it only for the event it has open.
   Mentions or Messages channel, show stops on Show stops (the alarm stream),
   calls on Changeover calls. While the app is on screen it posts only show
   stops and calls; the page announces the rest.
-- **iPhone** (`Alerts/AlertPoster.swift`, the Local Push provider): the
+- **iPhone** (`native/ios/App/Alerts/AlertPoster.swift`, the Local Push provider): the
   notification's `userInfo` carries `kind` (the alert's), `link`, `event`,
   and for a channel `channelId` and `seq`, which a `read` uses to take it
   back. `threadIdentifier` is `thread`; `urgent` is Time Sensitive. The
