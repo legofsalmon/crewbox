@@ -51,7 +51,7 @@ public class RecordsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// The folder, made when it isn't there yet, and marked to stay out of backups.
-    func recordsFolder() throws -> URL {
+    static func root() throws -> URL {
         var root = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         ).appendingPathComponent(RecordsPlugin.folder, isDirectory: true)
@@ -60,6 +60,32 @@ public class RecordsPlugin: CAPPlugin, CAPBridgedPlugin {
         values.isExcludedFromBackup = true
         try root.setResourceValues(values)
         return root
+    }
+
+    /// Every event's copy of one slot, by event ID. Throws rather than leaving
+    /// one out when a file won't read.
+    static func readAll(slot: String, in root: URL) throws -> [String: String] {
+        let events = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        var values: [String: String] = [:]
+        for event in events where isEvent(event) {
+            let file = root.appendingPathComponent(event, isDirectory: true)
+                .appendingPathComponent(slot, isDirectory: false)
+            guard FileManager.default.fileExists(atPath: file.path) else { continue }
+            let data = try Data(contentsOf: file)
+            values[event] = String(decoding: data, as: UTF8.self)
+        }
+        return values
+    }
+
+    /// Keep one slot of an event's, in place of what was there. Written beside
+    /// it and moved over it, so a phone that dies halfway has the old copy or
+    /// the new one, never half of one. ScreensPlugin keeps one slot here too.
+    static func keep(_ value: String, event: String, slot: String) throws {
+        let folder = try root().appendingPathComponent(event, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(value.utf8).write(
+            to: folder.appendingPathComponent(slot, isDirectory: false),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     /// Every event's copy of one slot, by event ID. Rejects rather than leaving
@@ -71,25 +97,14 @@ public class RecordsPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         do {
-            let root = try recordsFolder()
-            let events = try FileManager.default.contentsOfDirectory(atPath: root.path)
-            var values: [String: String] = [:]
-            for event in events where RecordsPlugin.isEvent(event) {
-                let file = root.appendingPathComponent(event, isDirectory: true)
-                    .appendingPathComponent(slot, isDirectory: false)
-                guard FileManager.default.fileExists(atPath: file.path) else { continue }
-                let data = try Data(contentsOf: file)
-                values[event] = String(decoding: data, as: UTF8.self)
-            }
+            let values = try RecordsPlugin.readAll(slot: slot, in: RecordsPlugin.root())
             call.resolve(["values": values])
         } catch {
             call.reject("The app's files answered \(error)")
         }
     }
 
-    /// Keep one slot of an event's, in place of what was there. Written beside
-    /// it and moved over it, so a phone that dies halfway has the old copy or
-    /// the new one, never half of one.
+    /// Keep one slot of an event's, in place of what was there.
     @objc func write(_ call: CAPPluginCall) {
         guard let event = call.getString("event"), RecordsPlugin.isEvent(event),
               let slot = call.getString("slot"), RecordsPlugin.isSlot(slot),
@@ -99,11 +114,7 @@ public class RecordsPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         do {
-            let folder = try recordsFolder().appendingPathComponent(event, isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try Data(value.utf8).write(
-                to: folder.appendingPathComponent(slot, isDirectory: false),
-                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            try RecordsPlugin.keep(value, event: event, slot: slot)
             call.resolve()
         } catch {
             call.reject("The app's files answered \(error)")
@@ -120,7 +131,7 @@ public class RecordsPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         do {
-            var target = try recordsFolder().appendingPathComponent(event, isDirectory: true)
+            var target = try RecordsPlugin.root().appendingPathComponent(event, isDirectory: true)
             if let slot = slot {
                 target = target.appendingPathComponent(slot, isDirectory: false)
             }

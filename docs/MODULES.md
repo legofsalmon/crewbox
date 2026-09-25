@@ -198,9 +198,15 @@ folder per version, `crewbox-screens/<version>/`, beside `crewbox-records`
 on both apps, holding the files the signed list names, the list
 (`WEBSUMS`), its signature (`WEBSUMS.sig`) and a `.checked` mark, the
 list's digest. A download goes into `crewbox-screens/.partial-<version>/`
-and is renamed into place only once every file has checked out. Those names
-reach phones too. A module's code is in the screens, so a module needs
-nothing of its own for this.
+and is renamed into place only once every file has checked out. Beside the
+versions, `crewbox-screens/.launches` counts the starts of downloaded
+screens that haven't yet said they started (`ready` in
+`web/src/lib/server.ts`), and names the versions that never did, for one
+build of the app. Each event's folder in `crewbox-records` has one slot the
+app writes and the page doesn't: `screens`, the version of the screens the
+event last started with, which a start opening that event runs if this
+build of the app still does. Those names reach phones too. A module's code
+is in the screens, so a module needs nothing of its own for this.
 
 ## The five steps
 

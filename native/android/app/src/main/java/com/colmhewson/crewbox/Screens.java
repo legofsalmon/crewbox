@@ -1,6 +1,7 @@
 package com.colmhewson.crewbox;
 
 import com.google.crypto.tink.subtle.Ed25519Verify;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -20,8 +21,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,6 +52,14 @@ import java.util.regex.Pattern;
  * once every file has been checked, so a folder with a version's name is a
  * whole set. Its .checked mark is the digest of the list it was checked
  * against. These names reach phones: renaming one strands what is kept.
+ *
+ * Which screens run is chosen natively, at every start (launch), and swapped
+ * while the app runs only when the page asks (use). Each event remembers the
+ * screens it last started with, in its records (Records), so a phone opened
+ * with no signal shows its event as it last saw it. Downloaded screens have
+ * to say they started (started, when the page calls ready()): a start that
+ * doesn't is counted, and two of them fail that version on this build of the
+ * app, which then runs its own. The app's own screens always start.
  */
 final class Screens {
   private Screens() {}
@@ -104,6 +117,37 @@ final class Screens {
 
   /** A download on its way: no version is called this, since a version starts with a digit. */
   static final String PARTIAL = ".partial-";
+
+  /**
+   * The file beside the versions that counts the starts of downloaded screens
+   * that haven't said they started, and names the versions that failed, for
+   * one build of the app. A new build starts afresh: it may run what an
+   * earlier one couldn't.
+   */
+  static final String LAUNCHES = ".launches";
+
+  /** Starts that never say they started, after which a version has failed on this build. */
+  static final int MAX_TRIES = 2;
+
+  /**
+   * How long downloaded screens have, with the app in front, to say they
+   * started before the app goes back to its own: twice the 10 seconds
+   * live-update plugins give, since going back wrongly leaves the phone on
+   * screens that may not match its box.
+   */
+  static final long READY_WITHIN_MS = 20 * 1000;
+
+  /** The slot the page keeps each event's record in (web/src/lib/appCopy.ts). */
+  static final String RECORD = "event";
+
+  /**
+   * The slot in each event's records where the app keeps the version of the
+   * screens the event last started with. The app writes it, not the page.
+   */
+  static final String EVENT_SLOT = "screens";
+
+  private static final int MAX_LAUNCHES_BYTES = 64 * 1024;
+  private static final int MAX_RECORD_BYTES = 64 * 1024;
 
   /**
    * A version as crewbox writes one, `1.2.3`, perhaps a pre-release, then `+`
@@ -232,9 +276,57 @@ final class Screens {
       return new Answer("incompatible", version, update, null);
     }
 
-    /** The network or the phone's storage let the check down; asking again may work. */
+    /**
+     * The network or the phone's storage let the check down, and asking again
+     * may work; or the screens didn't start on this phone, and this build
+     * runs them no more.
+     */
     static Answer failed(String reason) {
       return new Answer("failed", null, null, reason);
+    }
+  }
+
+  /** The screens a start runs, and the event it opens. */
+  static final class Launch {
+    /** The event this phone opened last, which the page opens, or null for none. */
+    final String event;
+    /** The version of the screens, or null when the app's own can't say what they are. */
+    final String version;
+    /** The folder they are kept in, or null for the app's own. */
+    final File folder;
+
+    Launch(String event, String version, File folder) {
+      this.event = event;
+      this.version = version;
+      this.folder = folder;
+    }
+  }
+
+  /** What starts of downloaded screens have shown on one build of the app (LAUNCHES). */
+  static final class Launches {
+    final String build;
+    /** Starts of each version since it last said it started. */
+    final Map<String, Integer> tries = new TreeMap<>();
+    /** Versions that didn't start, which this build runs no more. */
+    final Set<String> failed = new TreeSet<>();
+
+    Launches(String build) {
+      this.build = build;
+    }
+
+    int tries(String version) {
+      Integer count = tries.get(version);
+      return count == null ? 0 : count;
+    }
+
+    /** Whether this build runs `version` no more: it failed, or started as often as it may without saying so. */
+    boolean refuses(String version) {
+      return failed.contains(version) || tries(version) >= MAX_TRIES;
+    }
+
+    void fail(String version) {
+      tries.remove(version);
+      failed.add(version);
     }
   }
 
@@ -449,8 +541,10 @@ final class Screens {
    *
    * @param usable the room left for the app's files, asked for only when a
    *     download is needed
+   * @param running the version running now, whose folder nothing here
+   *     changes until the next start, or null
    */
-  static Answer prepare(Box box, File root, App app, LongSupplier usable) {
+  static Answer prepare(Box box, File root, App app, LongSupplier usable, String running) {
     Offer offer;
     try {
       byte[] answer = fetch(box, OFFER, MAX_OFFER_BYTES);
@@ -475,12 +569,19 @@ final class Screens {
     } catch (Refused e) {
       return Answer.unsigned(e.getMessage());
     }
+    if (launches(root, app.builtIn).refuses(offer.version)) {
+      return Answer.failed("these screens didn't start on this phone");
+    }
 
     File folder = new File(root, offer.version);
     Info kept = kept(folder, offer.version, app);
     if (kept != null) {
       Answer refused = judge(kept, offer.version, app);
       return refused != null ? refused : Answer.ready(offer.version);
+    }
+    // A download would replace the folder the screens running now load from.
+    if (offer.version.equals(running)) {
+      return Answer.failed("the screens running now aren't as they were checked");
     }
     try {
       // What the screens are first, so nothing more is fetched for screens
@@ -572,15 +673,226 @@ final class Screens {
 
   /**
    * Clear away what no start will use: a download that never finished, a
-   * folder whose mark isn't the digest of its list, and anything else that
-   * isn't a version's folder.
+   * folder whose mark isn't the digest of its list, a version not in `keep`
+   * when that is known, and anything else that isn't a version's folder or
+   * the count of starts.
    */
-  static void sweep(File root) {
+  static void sweep(File root, Set<String> keep) {
     String[] names = root.list();
     if (names == null) return;
     for (String name : names) {
+      if (name.equals(LAUNCHES)) continue;
       File entry = new File(root, name);
-      if (!isVersion(name) || !entry.isDirectory() || !marked(entry)) deleteTree(entry);
+      if (!isVersion(name)
+          || !entry.isDirectory()
+          || !marked(entry)
+          || (keep != null && !keep.contains(name))) {
+        deleteTree(entry);
+      }
+    }
+  }
+
+  /**
+   * The downloaded screens a start keeps: those running, and those this
+   * phone's events last started with, unless they have failed. None of
+   * them the app's own, which it runs from what it came with. Null when the
+   * records won't read, and then every whole set is kept.
+   */
+  static Set<String> inUse(File root, File records, App app, String running) {
+    Set<String> keep = new HashSet<>();
+    if (running != null) keep.add(running);
+    try {
+      Set<String> events = Records.readAll(records, RECORD).keySet();
+      Launches launches = launches(root, app.builtIn);
+      for (Map.Entry<String, String> used : Records.readAll(records, EVENT_SLOT).entrySet()) {
+        if (events.contains(used.getKey()) && !launches.refuses(used.getValue())) {
+          keep.add(used.getValue());
+        }
+      }
+    } catch (IOException e) {
+      return null;
+    }
+    keep.remove(app.builtIn);
+    return keep;
+  }
+
+  /**
+   * The screens a start runs: those the event it opens last started with,
+   * when they are kept whole, still check out against this build, and
+   * haven't failed on it; otherwise the app's own. A start of downloaded
+   * screens is counted before the page loads, and the count goes when they
+   * say they started (started): a start that takes the app down never says
+   * so, and after MAX_TRIES of them the version has failed.
+   */
+  static Launch launch(File root, File records, App app) {
+    String event = lastOpened(records);
+    Launch own = new Launch(event, app.builtIn, null);
+    String version = event == null ? null : remembered(records, event);
+    if (version == null || version.equals(app.builtIn)) return own;
+    Launches launches = launches(root, app.builtIn);
+    if (launches.failed.contains(version)) return own;
+    if (launches.tries(version) >= MAX_TRIES) {
+      launches.fail(version);
+      try {
+        save(root, launches);
+      } catch (IOException e) {
+        // Counted still, and failed again at the next start.
+      }
+      return own;
+    }
+    File folder = new File(root, version);
+    Info info = kept(folder, version, app);
+    if (info == null || judge(info, version, app) != null) return own;
+    launches.tries.put(version, launches.tries(version) + 1);
+    try {
+      save(root, launches);
+    } catch (IOException e) {
+      // A start that can't be counted couldn't be gone back on.
+      return own;
+    }
+    return new Launch(event, version, folder);
+  }
+
+  /**
+   * Where to serve `version` from once the page reloads, for a switch while
+   * the app runs: its folder, checked again, or null for the app's own
+   * screens. The start that follows is counted, as at a launch. Refused
+   * when this build won't run them.
+   */
+  static File use(File root, App app, String version) throws Refused, IOException {
+    if (version.equals(app.builtIn)) return null;
+    if (!isVersion(version)) throw new Refused(version + " is no version of the screens");
+    Launches launches = launches(root, app.builtIn);
+    if (launches.refuses(version)) throw new Refused(version + " didn't start on this phone");
+    File folder = new File(root, version);
+    Info info = kept(folder, version, app);
+    if (info == null) throw new Refused(version + " isn't kept whole on this phone");
+    if (judge(info, version, app) != null) throw new Refused(version + " doesn't run in this app");
+    launches.tries.put(version, launches.tries(version) + 1);
+    save(root, launches);
+    return folder;
+  }
+
+  /**
+   * Screens that said they started: their starts no longer count against
+   * them, and `event`, when a switch was for one, starts with them from now
+   * on.
+   */
+  static void started(File root, File records, App app, String version, String event)
+      throws IOException {
+    if (!version.equals(app.builtIn)) {
+      Launches launches = launches(root, app.builtIn);
+      if (launches.tries.remove(version) != null) save(root, launches);
+    }
+    if (event != null) Records.write(records, event, EVENT_SLOT, version);
+  }
+
+  /** Screens that didn't say they started in time: this build runs them no more. */
+  static void failed(File root, App app, String version) throws IOException {
+    Launches launches = launches(root, app.builtIn);
+    launches.fail(version);
+    save(root, launches);
+  }
+
+  /**
+   * The event the page opens at a start: the one this phone opened last, by
+   * the openedAt the page keeps in each event's record (lastOpened in
+   * web/src/lib/appCopy.ts). Null when no record says.
+   */
+  static String lastOpened(File records) {
+    String[] events = records.list();
+    if (events == null) return null;
+    String last = null;
+    double latest = 0;
+    for (String event : events) {
+      if (!Records.isEvent(event)) continue;
+      try {
+        File file = new File(new File(records, event), RECORD);
+        JsonElement at = object(readSmall(file, MAX_RECORD_BYTES), "a record").get("openedAt");
+        double opened =
+            at != null && at.isJsonPrimitive() && at.getAsJsonPrimitive().isNumber()
+                ? at.getAsDouble()
+                : 0;
+        if (opened > latest) {
+          latest = opened;
+          last = event;
+        }
+      } catch (IOException | Refused e) {
+        // No record, or none that reads: no event the page opens.
+      }
+    }
+    return last;
+  }
+
+  /** The version of the screens `event` last started with, or null. */
+  static String remembered(File records, String event) {
+    try {
+      byte[] kept = readSmall(new File(new File(records, event), EVENT_SLOT), 2 * MAX_VERSION_LENGTH);
+      String version = new String(kept, StandardCharsets.US_ASCII);
+      return isVersion(version) ? version : null;
+    } catch (IOException e) {
+      return null;
+    }
+  }
+
+  /**
+   * This build's count of starts: nothing counted when the file is missing,
+   * unreadable, or another build's.
+   */
+  static Launches launches(File root, String build) {
+    Launches launches = new Launches(build == null ? "" : build);
+    try {
+      JsonObject kept = object(readSmall(new File(root, LAUNCHES), MAX_LAUNCHES_BYTES), LAUNCHES);
+      if (!launches.build.equals(string(kept, "build"))) return launches;
+      JsonElement tries = kept.get("tries");
+      if (tries != null && tries.isJsonObject()) {
+        for (Map.Entry<String, JsonElement> count : tries.getAsJsonObject().entrySet()) {
+          double times = whole(count.getValue());
+          if (isVersion(count.getKey()) && times > 0) {
+            launches.tries.put(count.getKey(), (int) Math.min(times, MAX_TRIES));
+          }
+        }
+      }
+      JsonElement failed = kept.get("failed");
+      if (failed != null && failed.isJsonArray()) {
+        for (JsonElement version : failed.getAsJsonArray()) {
+          if (version.isJsonPrimitive()
+              && version.getAsJsonPrimitive().isString()
+              && isVersion(version.getAsString())) {
+            launches.failed.add(version.getAsString());
+          }
+        }
+      }
+    } catch (IOException | Refused e) {
+      // Nothing counted yet, or nothing that reads: every version starts afresh.
+    }
+    return launches;
+  }
+
+  /** Keep the count of starts, written beside its file and renamed over it. */
+  static void save(File root, Launches launches) throws IOException {
+    JsonObject tries = new JsonObject();
+    for (Map.Entry<String, Integer> count : launches.tries.entrySet()) {
+      tries.addProperty(count.getKey(), count.getValue());
+    }
+    JsonArray failed = new JsonArray();
+    for (String version : launches.failed) failed.add(version);
+    JsonObject json = new JsonObject();
+    json.addProperty("build", launches.build);
+    json.add("tries", tries);
+    json.add("failed", failed);
+    if (!root.isDirectory() && !root.mkdirs() && !root.isDirectory()) {
+      throw new IOException("Couldn't make " + root);
+    }
+    File file = new File(root, LAUNCHES);
+    File partial = new File(root, LAUNCHES + "-new");
+    try {
+      write(partial, (json + "\n").getBytes(StandardCharsets.UTF_8));
+      if (!partial.renameTo(file)) throw new IOException("Couldn't replace " + file);
+    } catch (IOException e) {
+      //noinspection ResultOfMethodCallIgnored
+      partial.delete();
+      throw e;
     }
   }
 

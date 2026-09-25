@@ -46,6 +46,10 @@ const withoutCommentLines = (code) => code.replace(/^\s*\/\/.*$/gm, '')
 const JAVA = read('native/android/app/src/main/java/com/colmhewson/crewbox/Screens.java')
 const PLUGIN = read('native/android/app/src/main/java/com/colmhewson/crewbox/ScreensPlugin.java')
 const SWIFT = read('native/ios/App/App/ScreensPlugin.swift')
+const MAIN_ACTIVITY = read(
+  'native/android/app/src/main/java/com/colmhewson/crewbox/MainActivity.java'
+)
+const VIEW_CONTROLLER = read('native/ios/App/App/CrewboxViewController.swift')
 
 /** A Java constant: its string literals joined and unescaped, or its number worked out. */
 function java(name) {
@@ -252,7 +256,7 @@ describe('where the apps keep what they fetch', () => {
     expect(swift('folder')).toBe('crewbox-screens')
     // Android leaves getNoBackupFilesDir() out of backups and transfers.
     expect(withoutComments(PLUGIN)).toContain(
-      'new File(getContext().getNoBackupFilesDir(), Screens.FOLDER)'
+      'new File(context.getNoBackupFilesDir(), Screens.FOLDER)'
     )
     // Not Caches, which iOS empties when it likes, and marked on the folder.
     const code = withoutComments(SWIFT)
@@ -273,10 +277,78 @@ describe('where the apps keep what they fetch', () => {
   })
 })
 
+describe('which screens a start runs', () => {
+  it('is chosen by the app before the first page loads, and never saved for Capacitor', () => {
+    // Android: the path goes on the bridge before it is built, and so before
+    // anything loads; Capacitor then takes it over any path it saved.
+    const main = withoutComments(MAIN_ACTIVITY)
+    const chosen = main.indexOf('bridgeBuilder.setServerPath(ScreensPlugin.choose(this));')
+    expect(chosen).toBeGreaterThan(-1)
+    expect(chosen).toBeLessThan(main.indexOf('super.onCreate(savedInstanceState);'))
+    // iPhone: capacitorDidLoad runs before viewDidLoad loads the first page,
+    // which looks for its start file in the folder set here (loadWebView).
+    const controller = withoutComments(VIEW_CONTROLLER)
+    expect(controller).toMatch(
+      /override open func capacitorDidLoad\(\) \{\s*let launch = Screens\.chooseAtLaunch\(\)\s*bridge\?\.setServerBasePath\(\(launch\.folder \?\? Screens\.ownFolder\(\)\)\.path\)/
+    )
+    // A path saved for Capacitor wins over nothing here but is looked for,
+    // on the iPhone, where a missing one stops the app at every launch
+    // (phase3-design.md, Decision 6). Nothing saves one, and the page's own
+    // switch, which loads the root and loses the address, isn't used.
+    for (const [name, code] of [
+      ['Screens.java', JAVA],
+      ['ScreensPlugin.java', PLUGIN],
+      ['MainActivity.java', MAIN_ACTIVITY],
+      ['ScreensPlugin.swift', SWIFT],
+      ['CrewboxViewController.swift', VIEW_CONTROLLER],
+      ['web/src/lib/appScreens.ts', read('web/src/lib/appScreens.ts')],
+    ]) {
+      expect(code, name).not.toMatch(/persistServerBasePath|setServerBasePath\(path:/)
+    }
+  })
+
+  it('is counted by both apps alike, in a file whose name reaches phones', () => {
+    expect(java('LAUNCHES')).toBe('.launches')
+    expect(swift('launches')).toBe('.launches')
+    // Beside the versions, so nothing that is one: a version starts with a digit.
+    expect(isVersion(java('LAUNCHES'))).toBe(false)
+    expect(java('MAX_TRIES')).toBe(2)
+    expect(swift('maxTries')).toBe(java('MAX_TRIES'))
+    // Twice the 10 seconds Capgo and Capawesome give (phase3-design.md).
+    expect(java('READY_WITHIN_MS')).toBe(20_000)
+    expect(swift('readyWithinSeconds') * 1000).toBe(java('READY_WITHIN_MS'))
+    // Both keep the file when they clear away what no start uses.
+    expect(withoutComments(JAVA)).toContain('if (name.equals(LAUNCHES)) continue;')
+    expect(withoutComments(SWIFT)).toContain('for name in names where name != Screens.launches {')
+  })
+
+  it('is remembered for each event beside the page’s record of it, in a slot the page leaves alone', () => {
+    // The event a start opens is the one the page opened last, by the
+    // openedAt in the record it keeps (lastOpened in web/src/lib/appCopy.ts).
+    const copy = read('web/src/lib/appCopy.ts')
+    expect(copy).toContain(`const SLOT = '${java('RECORD')}'`)
+    expect(swift('record')).toBe(java('RECORD'))
+    expect(copy).toContain('const at = record?.openedAt')
+    expect(withoutComments(JAVA)).toContain('.get("openedAt")')
+    expect(withoutComments(SWIFT)).toContain('said["openedAt"]')
+    // The app's own slot, in the same folder: a slot name, and none the page writes.
+    expect(java('EVENT_SLOT')).toBe('screens')
+    expect(swift('eventSlot')).toBe(java('EVENT_SLOT'))
+    expect(java('EVENT_SLOT')).toMatch(/^[0-9A-Za-z_][0-9A-Za-z_-]{0,63}$/)
+    for (const path of [
+      'web/src/lib/appCopy.ts',
+      'web/src/lib/unsent.ts',
+      'web/src/lib/docs/unsentEdits.ts',
+    ]) {
+      expect(read(path), path).not.toMatch(/SLOT = 'screens'/)
+    }
+  })
+})
+
 describe('the iPhone app’s plugin', () => {
   it('is registered on the bridge, built, and goes by the name the page looks for', () => {
-    expect(read('native/ios/App/App/CrewboxViewController.swift')).toContain(
-      'bridge?.registerPluginInstance(ScreensPlugin())'
+    expect(withoutComments(VIEW_CONTROLLER)).toMatch(
+      /let screens = ScreensPlugin\(\)\s*screens\.launched = launch\s*bridge\?\.registerPluginInstance\(screens\)/
     )
     expect(read('native/ios/App/App.xcodeproj/project.pbxproj')).toContain(
       '/* ScreensPlugin.swift in Sources */,'

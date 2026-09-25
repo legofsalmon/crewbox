@@ -1,6 +1,8 @@
 import Capacitor
 import CryptoKit
 import Foundation
+import UIKit
+import WebKit
 
 /// The screens a box serves, downloaded and checked before the app runs any
 /// of them, as `window.Capacitor.Plugins.CrewboxScreens`.
@@ -27,21 +29,123 @@ import Foundation
 /// list it was checked against. These names reach phones: renaming one
 /// strands what is kept.
 ///
-/// One download at a time, on a queue of the plugin's own, since one can take
-/// a while and Capacitor calls each plugin's methods in turn on one queue.
+/// CrewboxViewController chooses what a start runs before the first page
+/// loads (Screens.chooseAtLaunch). While the app runs, the page switches only
+/// by asking (`use`), and then reloads itself, which keeps its address.
+/// Downloaded screens that don't say they started (`ready`) within
+/// `readyWithinSeconds` of loading, with the app in front, have failed: the
+/// app goes back to its own, and reloads. Each time the app comes back in
+/// front they have that long again, since out of sight the page may not run
+/// at all. The folder of the screens running is never changed until the next
+/// start.
+///
+/// Everything but the web view's own calls runs on a queue of the plugin's,
+/// one thing at a time, and so does its state. A download can take a while,
+/// and Capacitor calls each plugin's methods in turn on one queue.
 @objc(ScreensPlugin)
 public class ScreensPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "ScreensPlugin"
     public let jsName = "CrewboxScreens"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "prepare", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "use", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "ready", returnType: CAPPluginReturnPromise),
     ]
+
+    /// What this start runs, chosen before the plugin loads (CrewboxViewController).
+    var launched: Screens.Launch?
 
     private let queue = DispatchQueue(label: "crewbox-screens")
 
+    /// This build, as Screens checks against it. On the queue, as is all that follows.
+    private var app = Screens.App.thisBuild(builtIn: nil)
+
+    /// The version of the screens running, or nil when the app's own can't say.
+    private var running: String?
+
+    /// The event a switch was for, which starts with the screens it switched to once they say they started.
+    private var switchedFor: String?
+
+    /// Which wait for `ready` is the current one: a timer from any other does nothing.
+    private var waiting = 0
+
+    /// Whether downloaded screens are loading that haven't said they started.
+    private var awaiting = false
+
+    private var observers: [NSObjectProtocol] = []
+
     override public func load() {
+        let launch = launched
+        observers = [
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.backInFront()
+            },
+        ]
         queue.async {
-            if let root = try? Screens.root() { Screens.sweep(root) }
+            self.app = Screens.App.thisBuild(builtIn: Screens.builtIn())
+            self.running = launch?.version ?? self.app.builtIn
+            if launch?.folder != nil { self.waitForReady() }
+            if let root = try? Screens.root() {
+                let records = try? RecordsPlugin.root()
+                let keep = records.flatMap {
+                    Screens.inUse(root: root, records: $0, app: self.app, running: self.running)
+                }
+                Screens.sweep(root, keep: keep)
+            }
+        }
+    }
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func backInFront() {
+        queue.async {
+            if self.awaiting { self.waitForReady() }
+        }
+    }
+
+    /// Whether the app is in front, where the page runs. On the main queue.
+    private func inFront() -> Bool {
+        UIApplication.shared.applicationState != .background
+    }
+
+    /// On the queue: give the screens that are loading `readyWithinSeconds`
+    /// in front to say they started. Out of sight when it runs out, the wait
+    /// begins again once the app is back (backInFront).
+    private func waitForReady() {
+        waiting += 1
+        awaiting = true
+        let wait = waiting
+        let deadline = DispatchTime.now() + .seconds(Screens.readyWithinSeconds)
+        DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
+            guard let self, self.inFront() else { return }
+            self.queue.async { self.waited(wait) }
+        }
+    }
+
+    private func waited(_ wait: Int) {
+        if wait == waiting && awaiting { goBack() }
+    }
+
+    /// Downloaded screens that never said they started: the app's own from now on, at once.
+    private func goBack() {
+        let failed = running
+        waiting += 1
+        awaiting = false
+        switchedFor = nil
+        running = app.builtIn
+        if let failed, let root = try? Screens.root() {
+            // Their start was counted, so the next start fails them.
+            try? Screens.failed(root: root, app: app, version: failed)
+        }
+        DispatchQueue.main.async {
+            self.bridge?.setServerBasePath(Screens.ownFolder().path)
+            self.bridge?.webView?.reload()
         }
     }
 
@@ -62,12 +166,71 @@ public class ScreensPlugin: CAPPlugin, CAPBridgedPlugin {
                 answer = Screens.prepare(
                     box: BoxOverHttp(base: base),
                     root: root,
-                    app: Screens.App.thisBuild(builtIn: Screens.builtIn()),
-                    usable: Screens.usableSpace)
+                    app: self.app,
+                    usable: Screens.usableSpace,
+                    running: self.running)
             } catch {
                 answer = .failed(Screens.describe(error))
             }
             call.resolve(answer.values)
+        }
+    }
+
+    /// Serve `version` for `event` once the page reloads, which it does as
+    /// soon as this resolves: the app's own screens when they are that
+    /// version, and otherwise its kept folder, checked again. Rejects, and
+    /// changes nothing, when this build won't run them. The event starts with
+    /// them from then on once they say they started.
+    @objc func use(_ call: CAPPluginCall) {
+        guard let event = call.getString("event"), RecordsPlugin.isEvent(event),
+              let version = call.getString("version")
+        else {
+            call.reject("An event and a version are needed")
+            return
+        }
+        queue.async {
+            let folder: URL?
+            do {
+                folder = try Screens.use(root: Screens.root(), app: self.app, version: version)
+            } catch {
+                call.reject(Screens.describe(error))
+                return
+            }
+            self.switchedFor = event
+            self.running = version
+            if folder != nil {
+                self.waitForReady()
+            } else {
+                self.waiting += 1
+                self.awaiting = false
+            }
+            DispatchQueue.main.async {
+                self.bridge?.setServerBasePath((folder ?? Screens.ownFolder()).path)
+                call.resolve()
+            }
+        }
+    }
+
+    /// The page has drawn: screens that say they are `version` started.
+    /// Ignored unless they are the screens running, since a page on its way
+    /// out can still call.
+    @objc func ready(_ call: CAPPluginCall) {
+        let version = call.getString("version")
+        queue.async {
+            guard let version, version == self.running else {
+                call.resolve()
+                return
+            }
+            self.waiting += 1
+            self.awaiting = false
+            let event = self.switchedFor
+            self.switchedFor = nil
+            if let root = try? Screens.root() {
+                // Counted again at the next start, which runs what the event
+                // started with before.
+                try? Screens.started(root: root, app: self.app, version: version, event: event)
+            }
+            call.resolve()
         }
     }
 }
@@ -129,6 +292,31 @@ enum Screens {
 
     /// A download on its way: no version is called this, since a version starts with a digit.
     static let partial = ".partial-"
+
+    /// The file beside the versions that counts the starts of downloaded
+    /// screens that haven't said they started, and names the versions that
+    /// failed, for one build of the app. A new build starts afresh: it may run
+    /// what an earlier one couldn't.
+    static let launches = ".launches"
+
+    /// Starts that never say they started, after which a version has failed on this build.
+    static let maxTries = 2
+
+    /// How long downloaded screens have, with the app in front, to say they
+    /// started before the app goes back to its own: twice the 10 seconds
+    /// live-update plugins give, since going back wrongly leaves the phone on
+    /// screens that may not match its box.
+    static let readyWithinSeconds = 20
+
+    /// The slot the page keeps each event's record in (web/src/lib/appCopy.ts).
+    static let record = "event"
+
+    /// The slot in each event's records where the app keeps the version of
+    /// the screens the event last started with. The app writes it, not the page.
+    static let eventSlot = "screens"
+
+    static let maxLaunchesBytes = 64 * 1024
+    static let maxRecordBytes = 64 * 1024
 
     /// A version as crewbox writes one, `1.2.3`, perhaps a pre-release, then
     /// `+` and the commit: isVersion in scripts/web-sums.mjs. It names a
@@ -216,7 +404,9 @@ enum Screens {
             Answer(result: "incompatible", version: version, update: update)
         }
 
-        /// The network or the phone's storage let the check down; asking again may work.
+        /// The network or the phone's storage let the check down, and asking
+        /// again may work; or the screens didn't start on this phone, and
+        /// this build runs them no more.
         static func failed(_ reason: String) -> Answer { Answer(result: "failed", reason: reason) }
 
         var values: [String: Any] {
@@ -225,6 +415,40 @@ enum Screens {
             if let update = update { values["update"] = update }
             if let reason = reason { values["reason"] = reason }
             return values
+        }
+    }
+
+    /// The screens a start runs, and the event it opens.
+    struct Launch {
+        /// The event this phone opened last, which the page opens, or nil for none.
+        let event: String?
+        /// The version of the screens, or nil when the app's own can't say what they are.
+        let version: String?
+        /// The folder they are kept in, or nil for the app's own.
+        let folder: URL?
+    }
+
+    /// What starts of downloaded screens have shown on one build of the app (`launches`).
+    struct Launches {
+        let build: String
+        /// Starts of each version since it last said it started.
+        var tries: [String: Int] = [:]
+        /// Versions that didn't start, which this build runs no more.
+        var failed: Set<String> = []
+
+        init(build: String) {
+            self.build = build
+        }
+
+        /// Whether this build runs `version` no more: it failed, or started as
+        /// often as it may without saying so.
+        func refuses(_ version: String) -> Bool {
+            failed.contains(version) || tries[version, default: 0] >= Screens.maxTries
+        }
+
+        mutating func fail(_ version: String) {
+            tries[version] = nil
+            failed.insert(version)
         }
     }
 
@@ -242,9 +466,17 @@ enum Screens {
         return root
     }
 
+    /// The folder the app's own screens came in, where Capacitor looks for
+    /// them (CAPInstanceDescriptor).
+    static func ownFolder() -> URL {
+        Bundle.main.url(forResource: "public", withExtension: nil)
+            ?? (Bundle.main.resourceURL ?? Bundle.main.bundleURL)
+                .appendingPathComponent("public", isDirectory: true)
+    }
+
     /// The version the app's own screens were built as, from the crewbox-web.json they came with.
     static func builtIn() -> String? {
-        let file = Bundle.main.bundleURL.appendingPathComponent("public/\(info)", isDirectory: false)
+        let file = ownFolder().appendingPathComponent(info, isDirectory: false)
         guard let data = try? readSmall(file, cap: maxInfoBytes) else { return nil }
         return (try? readInfo(data))?.version
     }
@@ -460,8 +692,12 @@ enum Screens {
     /// Ask the box for its screens, and have them on the phone, checked, if
     /// this build runs them. Nothing it does to the phone's storage is seen
     /// unless the whole set checks out. `usable` is the room left for the
-    /// app's files, asked for only when a download is needed.
-    static func prepare(box: ScreensBox, root: URL, app: App, usable: () -> Int64) -> Answer {
+    /// app's files, asked for only when a download is needed. `running` is
+    /// the version running now, whose folder nothing here changes until the
+    /// next start.
+    static func prepare(
+        box: ScreensBox, root: URL, app: App, usable: () -> Int64, running: String?
+    ) -> Answer {
         let offer: Offer
         do {
             guard let answer = try fetch(box, Screens.offer, cap: maxOfferBytes) else {
@@ -489,10 +725,17 @@ enum Screens {
         guard let infoDigest = listed.first(where: { $0.path == info })?.digest else {
             return .unsigned("\(Screens.sums) doesn't list \(info)")
         }
+        if readLaunches(root: root, build: app.builtIn).refuses(offer.version) {
+            return .failed("these screens didn't start on this phone")
+        }
 
         let folder = root.appendingPathComponent(offer.version, isDirectory: true)
         if let said = kept(folder, version: offer.version, app: app) {
             return judge(said, offer.version, app) ?? .ready(offer.version)
+        }
+        // A download would replace the folder the screens running now load from.
+        if offer.version == running {
+            return .failed("the screens running now aren't as they were checked")
         }
         do {
             // What the screens are first, so nothing more is fetched for
@@ -581,18 +824,186 @@ enum Screens {
     }
 
     /// Clear away what no start will use: a download that never finished, a
-    /// folder whose mark isn't the digest of its list, and anything else that
-    /// isn't a version's folder.
-    static func sweep(_ root: URL) {
+    /// folder whose mark isn't the digest of its list, a version not in
+    /// `keep` when that is known, and anything else that isn't a version's
+    /// folder or the count of starts.
+    static func sweep(_ root: URL, keep: Set<String>?) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) else {
             return
         }
-        for name in names {
+        for name in names where name != Screens.launches {
             let entry = root.appendingPathComponent(name)
-            if !isVersion(name) || !isDirectory(entry) || !marked(entry) {
+            if !isVersion(name) || !isDirectory(entry) || !marked(entry)
+                || !(keep?.contains(name) ?? true) {
                 try? FileManager.default.removeItem(at: entry)
             }
         }
+    }
+
+    /// The downloaded screens a start keeps: those running, and those this
+    /// phone's events last started with, unless they have failed. None of
+    /// them the app's own, which it runs from what it came with. Nil when the
+    /// records won't read, and then every whole set is kept.
+    static func inUse(root: URL, records: URL, app: App, running: String?) -> Set<String>? {
+        var keep = Set<String>()
+        if let running { keep.insert(running) }
+        do {
+            let events = try RecordsPlugin.readAll(slot: record, in: records)
+            let launches = readLaunches(root: root, build: app.builtIn)
+            for (event, version) in try RecordsPlugin.readAll(slot: eventSlot, in: records)
+            where events[event] != nil && !launches.refuses(version) {
+                keep.insert(version)
+            }
+        } catch {
+            return nil
+        }
+        if let builtIn = app.builtIn { keep.remove(builtIn) }
+        return keep
+    }
+
+    /// The screens the first page loads, before it loads anything (launch).
+    /// Never throws: the app's own always start.
+    static func chooseAtLaunch() -> Launch {
+        let app = App.thisBuild(builtIn: builtIn())
+        guard let root = try? Screens.root(), let records = try? RecordsPlugin.root() else {
+            return Launch(event: nil, version: app.builtIn, folder: nil)
+        }
+        return launch(root: root, records: records, app: app)
+    }
+
+    /// The screens a start runs: those the event it opens last started with,
+    /// when they are kept whole, still check out against this build, and
+    /// haven't failed on it; otherwise the app's own. A start of downloaded
+    /// screens is counted before the page loads, and the count goes when
+    /// they say they started (started): a start that takes the app down
+    /// never says so, and after `maxTries` of them the version has failed.
+    static func launch(root: URL, records: URL, app: App) -> Launch {
+        let event = lastOpened(records: records)
+        let own = Launch(event: event, version: app.builtIn, folder: nil)
+        guard let event, let version = remembered(records: records, event: event),
+              version != app.builtIn
+        else { return own }
+        var launches = readLaunches(root: root, build: app.builtIn)
+        if launches.failed.contains(version) { return own }
+        if launches.tries[version, default: 0] >= maxTries {
+            launches.fail(version)
+            // Counted still, and failed again at the next start.
+            try? save(launches, root: root)
+            return own
+        }
+        let folder = root.appendingPathComponent(version, isDirectory: true)
+        guard let said = kept(folder, version: version, app: app), judge(said, version, app) == nil
+        else { return own }
+        launches.tries[version, default: 0] += 1
+        do {
+            try save(launches, root: root)
+        } catch {
+            // A start that can't be counted couldn't be gone back on.
+            return own
+        }
+        return Launch(event: event, version: version, folder: folder)
+    }
+
+    /// Where to serve `version` from once the page reloads, for a switch
+    /// while the app runs: its folder, checked again, or nil for the app's
+    /// own screens. The start that follows is counted, as at a launch.
+    /// Refused when this build won't run them.
+    static func use(root: URL, app: App, version: String) throws -> URL? {
+        if version == app.builtIn { return nil }
+        guard isVersion(version) else { throw Refused("\(version) is no version of the screens") }
+        var launches = readLaunches(root: root, build: app.builtIn)
+        if launches.refuses(version) { throw Refused("\(version) didn't start on this phone") }
+        let folder = root.appendingPathComponent(version, isDirectory: true)
+        guard let said = kept(folder, version: version, app: app) else {
+            throw Refused("\(version) isn't kept whole on this phone")
+        }
+        if judge(said, version, app) != nil { throw Refused("\(version) doesn't run in this app") }
+        launches.tries[version, default: 0] += 1
+        try save(launches, root: root)
+        return folder
+    }
+
+    /// Screens that said they started: their starts no longer count against
+    /// them, and `event`, when a switch was for one, starts with them from
+    /// now on.
+    static func started(root: URL, app: App, version: String, event: String?) throws {
+        if version != app.builtIn {
+            var launches = readLaunches(root: root, build: app.builtIn)
+            if launches.tries.removeValue(forKey: version) != nil { try save(launches, root: root) }
+        }
+        if let event { try RecordsPlugin.keep(version, event: event, slot: eventSlot) }
+    }
+
+    /// Screens that didn't say they started in time: this build runs them no more.
+    static func failed(root: URL, app: App, version: String) throws {
+        var launches = readLaunches(root: root, build: app.builtIn)
+        launches.fail(version)
+        try save(launches, root: root)
+    }
+
+    /// The event the page opens at a start: the one this phone opened last,
+    /// by the openedAt the page keeps in each event's record (lastOpened in
+    /// web/src/lib/appCopy.ts). Nil when no record says.
+    static func lastOpened(records: URL) -> String? {
+        guard let events = try? FileManager.default.contentsOfDirectory(atPath: records.path) else {
+            return nil
+        }
+        var last: String?
+        var latest = 0.0
+        for event in events where RecordsPlugin.isEvent(event) {
+            let file = records.appendingPathComponent(event, isDirectory: true)
+                .appendingPathComponent(record, isDirectory: false)
+            // No record, or none that reads: no event the page opens.
+            guard let data = try? readSmall(file, cap: maxRecordBytes),
+                  let said = try? object(data, "a record")
+            else { continue }
+            let opened = number(said["openedAt"])
+            if opened > latest {
+                latest = opened
+                last = event
+            }
+        }
+        return last
+    }
+
+    /// The version of the screens `event` last started with, or nil.
+    static func remembered(records: URL, event: String) -> String? {
+        let file = records.appendingPathComponent(event, isDirectory: true)
+            .appendingPathComponent(eventSlot, isDirectory: false)
+        guard let kept = try? readSmall(file, cap: 2 * maxVersionLength) else { return nil }
+        let version = String(decoding: kept, as: UTF8.self)
+        return isVersion(version) ? version : nil
+    }
+
+    /// This build's count of starts: nothing counted when the file is
+    /// missing, unreadable, or another build's.
+    static func readLaunches(root: URL, build: String?) -> Launches {
+        var launches = Launches(build: build ?? "")
+        guard let data = try? readSmall(root.appendingPathComponent(Screens.launches), cap: maxLaunchesBytes),
+              let kept = try? object(data, Screens.launches),
+              kept["build"] as? String == launches.build
+        else { return launches }
+        for (version, count) in kept["tries"] as? [String: Any] ?? [:] where isVersion(version) {
+            let times = whole(count)
+            if times > 0 { launches.tries[version] = Int(min(times, Double(maxTries))) }
+        }
+        for version in kept["failed"] as? [Any] ?? [] {
+            if let version = version as? String, isVersion(version) { launches.failed.insert(version) }
+        }
+        return launches
+    }
+
+    /// Keep the count of starts, written beside its file and moved over it.
+    static func save(_ launches: Launches, root: URL) throws {
+        let json: [String: Any] = [
+            "build": launches.build,
+            "tries": launches.tries,
+            "failed": launches.failed.sorted(),
+        ]
+        var data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        data.append(UInt8(ascii: "\n"))
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try data.write(to: root.appendingPathComponent(Screens.launches), options: [.atomic])
     }
 
     private static func marked(_ folder: URL) -> Bool {
@@ -694,6 +1105,15 @@ enum Screens {
         }
         guard let object = parsed as? [String: Any] else { throw Refused("\(what) isn't a JSON object") }
         return object
+    }
+
+    /// A JSON number, or 0 for anything else. JSONSerialization hands back
+    /// true and false as numbers.
+    private static func number(_ value: Any?) -> Double {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
+            return 0
+        }
+        return number.doubleValue.isFinite ? number.doubleValue : 0
     }
 
     /// A whole number of 1 or more, as Number.isInteger takes one, or 0 for

@@ -241,8 +241,9 @@ export interface RecordsPlugin {
  * and this app runs them. `unsigned`: nothing a release signed, so the app
  * keeps its own. `incompatible`: signed screens this app won't run, until the
  * app or the box (`update`) is updated. `failed`: the network or the phone's
- * storage let the check down, and asking again may work. `reason` is for the
- * log.
+ * storage let the check down, and asking again may work; or the screens
+ * didn't start on this phone, and this build of the app runs them no more.
+ * `reason` is for the log.
  */
 export interface ScreensAnswer {
   result: 'same' | 'ready' | 'unsigned' | 'incompatible' | 'failed'
@@ -254,6 +255,20 @@ export interface ScreensAnswer {
 export interface ScreensPlugin {
   /** Ask the box at `origin` for its screens, and have them on the phone if the app runs them. */
   prepare(options: { origin: string }): Promise<ScreensAnswer>
+  /**
+   * Run `version` for `event` from the next load: the app's own screens when
+   * they are that version, or ones `prepare` answered `ready` for, checked
+   * again. The page reloads itself as soon as this resolves, which keeps its
+   * address, and the event starts with them from then on once they say they
+   * started. Rejects, and changes nothing, when the app won't run them.
+   */
+  use(options: { event: string; version: string }): Promise<void>
+  /**
+   * These screens, `version`, have drawn. Screens from a box that don't say
+   * so within 20 seconds of loading, with the app in front, have failed, and
+   * the app goes back to its own (lib/appScreens.ts).
+   */
+  ready(options: { version: string }): Promise<void>
 }
 
 declare global {

@@ -24,6 +24,9 @@ public class MainActivity extends BridgeActivity {
     registerPlugin(SessionsPlugin.class);
     registerPlugin(RecordsPlugin.class);
     registerPlugin(ScreensPlugin.class);
+    // Which screens the page loads, before it loads anything: those its
+    // event last started with, when this build still runs them.
+    bridgeBuilder.setServerPath(ScreensPlugin.choose(this));
     AlertsService.forgetOldToken(this);
     forgetLinkFromRecents(getIntent());
     super.onCreate(savedInstanceState);

@@ -28,6 +28,7 @@ import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import FeedbackDialog from './components/FeedbackDialog.tsx'
 import { APP_VERSION } from './lib/pwa.ts'
+import { screensStarted } from './lib/appScreens.ts'
 import { flushDeviceOutbox, sendCrash } from './lib/reports.ts'
 import { sessionToken } from './store.ts'
 import { registerShortcut } from './shell/keys.ts'
@@ -58,6 +59,12 @@ export default function App() {
   // throwing away the running app — mid-shift, with unsent messages still in
   // the outbox. Missing a drop target should do nothing at all.
   useEffect(() => guardStrayFileDrops(), [])
+
+  // In the apps, these screens have started once the first screen past the
+  // blank one has drawn, the join form or the shell (lib/appScreens.ts).
+  useEffect(() => {
+    if (phase !== 'boot') screensStarted()
+  }, [phase])
 
   /*
    * `?admin` opens the panel.

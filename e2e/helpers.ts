@@ -199,6 +199,40 @@ export function keepRecordsInTheApp(): void {
   }
 }
 
+/**
+ * The apps' running of screens from a box (ScreensPlugin, web/src/lib/appScreens.ts),
+ * for an init script added after the one that stands the app in: what the
+ * page tells it is kept for `screensCalls`, on the page as loaded.
+ */
+export function keepScreensInTheApp(): void {
+  const w = window as unknown as {
+    Capacitor?: { Plugins?: Record<string, unknown> }
+    __screensCalls?: string[]
+  }
+  const plugins = w.Capacitor?.Plugins
+  if (!plugins) return
+  const calls: string[] = []
+  w.__screensCalls = calls
+  plugins.CrewboxScreens = {
+    prepare: async () => {
+      calls.push('prepare')
+      return { result: 'unsigned', reason: 'stood in' }
+    },
+    use: async ({ event, version }: { event: string; version: string }) => {
+      calls.push(`use ${event} ${version}`)
+    },
+    ready: async ({ version }: { version: string }) => {
+      // Said while the blank screen boot shows is said too early.
+      const blank = document.querySelector('.boot-screen') ? ' on the blank screen' : ''
+      calls.push(`ready ${version}${blank}`)
+    },
+  }
+}
+
+/** What the stood-in app has been told about its screens, on the page as loaded. */
+export const screensCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __screensCalls: string[] }).__screensCalls)
+
 /** What the stood-in app's files hold, by event and slot. */
 export const recordsOf = (page: Page) =>
   page.evaluate(

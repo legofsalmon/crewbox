@@ -60,7 +60,7 @@ public class ScreensTest {
   }
 
   private Screens.Answer prepare(Box box) {
-    return Screens.prepare(box, root(), app("1.0.0"), () -> Long.MAX_VALUE);
+    return Screens.prepare(box, root(), app("1.0.0"), () -> Long.MAX_VALUE, null);
   }
 
   /** A box, with what it serves at each path, and what it was asked for. */
@@ -351,7 +351,7 @@ public class ScreensTest {
   @Test
   public void fetchesNoMoreForScreensBelowTheFloor() {
     Box box = box(VERSION, screens(VERSION, 1), KEY);
-    Screens.Answer answer = Screens.prepare(box, root(), app("1.3.0"), () -> Long.MAX_VALUE);
+    Screens.Answer answer = Screens.prepare(box, root(), app("1.3.0"), () -> Long.MAX_VALUE, null);
     assertEquals("incompatible", answer.result);
     assertEquals("box", answer.update);
     assertEquals(Arrays.asList(Screens.OFFER, Screens.INFO), box.asked);
@@ -363,7 +363,7 @@ public class ScreensTest {
     prepare(box);
     box.asked.clear();
     // An app update that raised the floor over screens already on the phone.
-    Screens.Answer answer = Screens.prepare(box, root(), app("1.3.0"), () -> Long.MAX_VALUE);
+    Screens.Answer answer = Screens.prepare(box, root(), app("1.3.0"), () -> Long.MAX_VALUE, null);
     assertEquals("incompatible", answer.result);
     assertEquals("box", answer.update);
     assertEquals(Collections.singletonList(Screens.OFFER), box.asked);
@@ -392,7 +392,7 @@ public class ScreensTest {
   public void asksForRoomBeforeDownloading() {
     Box box = box(VERSION, screens(VERSION, 1), KEY);
     Screens.Answer answer =
-        Screens.prepare(box, root(), app("1.0.0"), () -> 10L * 1024 * 1024);
+        Screens.prepare(box, root(), app("1.0.0"), () -> 10L * 1024 * 1024, null);
     assertEquals("failed", answer.result);
     assertEquals(Arrays.asList(Screens.OFFER, Screens.INFO), box.asked);
     assertFalse(new File(root(), VERSION).exists());
@@ -460,14 +460,333 @@ public class ScreensTest {
     File named = new File(root(), "1.1.5+abc1234");
     write(named, utf8("a file, not a folder\n"));
 
-    Screens.sweep(root());
+    Screens.sweep(root(), null);
     assertEquals(Collections.singletonList(VERSION), Arrays.asList(root().list()));
   }
 
   @Test
   public void sweepsNothingBeforeAnythingIsKept() {
-    Screens.sweep(root());
+    Screens.sweep(root(), Collections.emptySet());
     assertFalse(root().exists());
+  }
+
+  // Which screens a start runs, and what a switch and a start that never
+  // says it started do to that, over folders of the test's own where the
+  // app keeps its screens and each event's records.
+
+  private static final String OTHER = "1.3.0+fed4321";
+
+  private File records() {
+    return new File(files.getRoot(), Records.FOLDER);
+  }
+
+  /** An event's record as the page keeps it (appCopy.ts), opened at `openedAt`. */
+  private void record(String event, long openedAt) throws IOException {
+    JsonObject known = new JsonObject();
+    known.addProperty("id", event);
+    known.addProperty("name", "Event " + event);
+    known.addProperty("origin", "http://192.168.1.20:8080");
+    JsonObject record = new JsonObject();
+    record.add("known", known);
+    record.addProperty("openedAt", openedAt);
+    Records.write(records(), event, Screens.RECORD, record.toString());
+  }
+
+  /** An event that last started with `version`. */
+  private void ran(String event, long openedAt, String version) throws IOException {
+    record(event, openedAt);
+    Records.write(records(), event, Screens.EVENT_SLOT, version);
+  }
+
+  /** Signed screens of `version`, kept on the phone as a download leaves them. */
+  private void keep(String version) {
+    assertEquals("ready", prepare(box(version, screens(version, 1), KEY)).result);
+  }
+
+  private Screens.Launch launch() {
+    return Screens.launch(root(), records(), app("1.0.0"));
+  }
+
+  private Screens.Launches launches() {
+    return Screens.launches(root(), BUILT_IN);
+  }
+
+  @Test
+  public void startsWithItsOwnScreensUntilAnEventHasStartedOthers() throws IOException {
+    Screens.Launch nothing = launch();
+    assertNull(nothing.event);
+    assertEquals(BUILT_IN, nothing.version);
+    assertNull(nothing.folder);
+
+    keep(VERSION);
+    record("abc", 100);
+    Screens.Launch opened = launch();
+    assertEquals("abc", opened.event);
+    assertNull(opened.folder);
+
+    ran("abc", 100, BUILT_IN);
+    assertNull(launch().folder);
+    // Nothing was started that needs counting.
+    assertFalse(new File(root(), Screens.LAUNCHES).exists());
+  }
+
+  @Test
+  public void startsWithTheScreensTheEventOpenedLastStartedWith() throws IOException {
+    keep(VERSION);
+    keep(OTHER);
+    ran("first", 100, VERSION);
+    ran("second", 200, OTHER);
+    ran("older", 50, BUILT_IN);
+
+    Screens.Launch launch = launch();
+    assertEquals("second", launch.event);
+    assertEquals(OTHER, launch.version);
+    assertEquals(new File(root(), OTHER), launch.folder);
+    // Counted before the page loads, in case it never says it started.
+    assertEquals(1, launches().tries(OTHER));
+
+    ran("first", 300, VERSION);
+    assertEquals(VERSION, launch().version);
+  }
+
+  @Test
+  public void readsWhichEventOpensAsThePageDoes() throws IOException {
+    keep(VERSION);
+    ran("opened", 100, VERSION);
+    // Nothing that says it was opened later counts: a record that isn't
+    // JSON, one with no openedAt, and a folder with no event's name.
+    write(new File(new File(records(), "garbled"), Screens.RECORD), utf8("{\"openedAt\": 900"));
+    write(new File(new File(records(), "garbled"), Screens.EVENT_SLOT), utf8(OTHER));
+    write(new File(new File(records(), "unopened"), Screens.RECORD), utf8("{\"known\":{}}"));
+    write(new File(new File(records(), "not.an.event"), Screens.RECORD), utf8("{\"openedAt\":900}"));
+    assertEquals("opened", launch().event);
+    assertEquals(VERSION, launch().version);
+  }
+
+  @Test
+  public void startsWithItsOwnWhenTheEventsScreensWontDo() throws IOException {
+    keep(VERSION);
+    ran("abc", 100, "../../" + VERSION);
+    assertNull(launch().folder);
+
+    ran("abc", 100, OTHER);
+    assertNull("not kept", launch().folder);
+
+    ran("abc", 100, VERSION);
+    write(new File(new File(root(), VERSION), SCRIPT), utf8("console.log('changed')\n"));
+    assertNull("changed since they were checked", launch().folder);
+
+    keep(OTHER);
+    ran("abc", 100, OTHER);
+    Screens.Launch floored = Screens.launch(root(), records(), app("1.4.0"));
+    assertNull("below this build's floor", floored.folder);
+    assertEquals(0, launches().tries(OTHER));
+  }
+
+  @Test
+  public void failsScreensThatStartTwiceWithoutSayingTheyStarted() throws IOException {
+    keep(VERSION);
+    ran("abc", 100, VERSION);
+    assertEquals(VERSION, launch().version);
+    assertEquals(VERSION, launch().version);
+    assertEquals(Screens.MAX_TRIES, launches().tries(VERSION));
+
+    Screens.Launch third = launch();
+    assertEquals(BUILT_IN, third.version);
+    assertNull(third.folder);
+    assertTrue(launches().failed.contains(VERSION));
+    assertNull(launch().folder);
+
+    // Nor are they fetched again, or switched to, on this build.
+    Box box = box(VERSION, screens(VERSION, 1), KEY);
+    Screens.Answer answer = prepare(box);
+    assertEquals("failed", answer.result);
+    assertEquals("these screens didn't start on this phone", answer.reason);
+    assertEquals(Collections.singletonList(Screens.OFFER), box.asked);
+    assertThrows(Screens.Refused.class, () -> Screens.use(root(), app("1.0.0"), VERSION));
+  }
+
+  @Test
+  public void refusesScreensOnTheirLastStartBeforeTheyAreFailed() throws IOException {
+    keep(VERSION);
+    ran("abc", 100, VERSION);
+    // As many starts counted as a version gets, and the start that would
+    // fail them not yet come, or unable to keep what it found.
+    Screens.Launches counted = launches();
+    counted.tries.put(VERSION, Screens.MAX_TRIES);
+    Screens.save(root(), counted);
+
+    assertThrows(Screens.Refused.class, () -> Screens.use(root(), app("1.0.0"), VERSION));
+    assertEquals("failed", prepare(box(VERSION, screens(VERSION, 1), KEY)).result);
+    assertEquals(Collections.emptySet(), Screens.inUse(root(), records(), app("1.0.0"), null));
+    assertEquals(Screens.MAX_TRIES, launches().tries(VERSION));
+  }
+
+  @Test
+  public void forgetsTheStartsOfScreensThatSayTheyStarted() throws IOException {
+    keep(VERSION);
+    ran("abc", 100, VERSION);
+    for (int i = 0; i < 2 * Screens.MAX_TRIES; i++) {
+      assertEquals(VERSION, launch().version);
+      Screens.started(root(), records(), app("1.0.0"), VERSION, null);
+      assertEquals(0, launches().tries(VERSION));
+    }
+    assertTrue(launches().failed.isEmpty());
+  }
+
+  @Test
+  public void countsAfreshForANewBuildOfTheApp() throws IOException {
+    keep(VERSION);
+    ran("abc", 100, VERSION);
+    Screens.failed(root(), app("1.0.0"), VERSION);
+    assertNull(launch().folder);
+
+    Screens.App newer =
+        new Screens.App(new byte[][] {KEY.getPublicKey()}, 1, 1, "1.0.0", "1.1.1+0123abc");
+    Screens.Launch launch = Screens.launch(root(), records(), newer);
+    assertEquals(VERSION, launch.version);
+    assertEquals(1, Screens.launches(root(), newer.builtIn).tries(VERSION));
+    assertTrue(Screens.launches(root(), newer.builtIn).failed.isEmpty());
+  }
+
+  @Test
+  public void startsWithItsOwnWhenAStartCantBeCounted() throws IOException {
+    keep(VERSION);
+    ran("abc", 100, VERSION);
+    assertTrue(new File(root(), Screens.LAUNCHES).mkdir());
+    assertNull(launch().folder);
+  }
+
+  @Test
+  public void readsTheCountOfStartsForThisBuildAndNothingElse() throws IOException {
+    File file = new File(root(), Screens.LAUNCHES);
+    write(
+        file,
+        utf8(
+            "{\"build\":\""
+                + BUILT_IN
+                + "\",\"tries\":{\""
+                + VERSION
+                + "\":1,\"../x\":1,\""
+                + OTHER
+                + "\":1e9},\"failed\":[\""
+                + OTHER
+                + "\",7,\"x\"]}"));
+    Screens.Launches read = launches();
+    assertEquals(1, read.tries(VERSION));
+    assertEquals(Screens.MAX_TRIES, read.tries(OTHER));
+    assertEquals(new HashSet<>(Arrays.asList(VERSION, OTHER)), read.tries.keySet());
+    assertEquals(Collections.singleton(OTHER), read.failed);
+
+    Screens.save(root(), read);
+    assertEquals(read.tries, launches().tries);
+    assertEquals(read.failed, launches().failed);
+    assertTrue(Screens.launches(root(), "1.1.1+0123abc").tries.isEmpty());
+
+    write(file, utf8("not json"));
+    assertTrue(launches().tries.isEmpty());
+    // These names reach phones: a change forgets every count on them.
+    assertEquals(".launches", Screens.LAUNCHES);
+    assertEquals("screens", Screens.EVENT_SLOT);
+    assertEquals("event", Screens.RECORD);
+  }
+
+  @Test
+  public void switchesOnlyToScreensThisBuildRuns() throws IOException, Screens.Refused {
+    Screens.App app = app("1.0.0");
+    assertNull("its own", Screens.use(root(), app, BUILT_IN));
+    assertFalse(new File(root(), Screens.LAUNCHES).exists());
+    assertThrows(Screens.Refused.class, () -> Screens.use(root(), app, VERSION));
+    assertThrows(Screens.Refused.class, () -> Screens.use(root(), app, "../" + BUILT_IN));
+
+    keep(VERSION);
+    assertEquals(new File(root(), VERSION), Screens.use(root(), app, VERSION));
+    assertEquals(1, launches().tries(VERSION));
+    assertThrows(
+        Screens.Refused.class, () -> Screens.use(root(), app("1.3.0"), VERSION));
+
+    write(new File(new File(root(), VERSION), SCRIPT), utf8("console.log('changed')\n"));
+    assertThrows(Screens.Refused.class, () -> Screens.use(root(), app, VERSION));
+    // A switch doesn't say what the event starts with: only a start does.
+    assertFalse(records().exists());
+  }
+
+  @Test
+  public void remembersTheScreensASwitchStartedWithForItsEvent()
+      throws IOException, Screens.Refused {
+    keep(VERSION);
+    record("abc", 100);
+    Screens.App app = app("1.0.0");
+    Screens.use(root(), app, VERSION);
+    assertNull("not started yet", launch().folder);
+
+    Screens.use(root(), app, VERSION);
+    Screens.started(root(), records(), app, VERSION, "abc");
+    assertEquals(VERSION, text(new File(new File(records(), "abc"), Screens.EVENT_SLOT)));
+    assertEquals(0, launches().tries(VERSION));
+    assertEquals(VERSION, launch().version);
+
+    Screens.started(root(), records(), app, BUILT_IN, "abc");
+    assertNull(launch().folder);
+  }
+
+  @Test
+  public void goesBackForGoodOnScreensThatDidNotStartInTime() throws IOException {
+    keep(VERSION);
+    ran("abc", 100, VERSION);
+    assertEquals(VERSION, launch().version);
+    Screens.failed(root(), app("1.0.0"), VERSION);
+    assertEquals(0, launches().tries(VERSION));
+    assertTrue(launches().failed.contains(VERSION));
+    assertNull(launch().folder);
+    assertEquals("failed", prepare(box(VERSION, screens(VERSION, 1), KEY)).result);
+  }
+
+  @Test
+  public void leavesTheFolderOfTheScreensRunningAsItIs() throws IOException {
+    keep(VERSION);
+    File script = new File(new File(root(), VERSION), SCRIPT);
+    write(script, utf8("console.log('changed')\n"));
+    Box box = box(VERSION, screens(VERSION, 1), KEY);
+    Screens.Answer answer =
+        Screens.prepare(box, root(), app("1.0.0"), () -> Long.MAX_VALUE, VERSION);
+    assertEquals("failed", answer.result);
+    assertFalse(box.asked.contains(SCRIPT));
+    assertEquals("console.log('changed')\n", text(script));
+  }
+
+  @Test
+  public void keepsTheScreensItsEventsUseAndClearsTheRest() throws IOException {
+    String unused = "1.1.2+abc1234";
+    String orphaned = "1.1.3+abc1234";
+    String failed = "1.1.4+abc1234";
+    String running = "1.1.5+abc1234";
+    for (String version : Arrays.asList(VERSION, OTHER, unused, orphaned, failed, running)) {
+      keep(version);
+    }
+    ran("first", 100, VERSION);
+    ran("second", 200, OTHER);
+    ran("third", 300, BUILT_IN);
+    // Screens remembered for an event whose record has gone.
+    Records.write(records(), "gone", Screens.EVENT_SLOT, orphaned);
+    ran("fourth", 400, failed);
+    Screens.failed(root(), app("1.0.0"), failed);
+
+    Set<String> keep = Screens.inUse(root(), records(), app("1.0.0"), running);
+    assertEquals(new HashSet<>(Arrays.asList(VERSION, OTHER, running)), keep);
+    Screens.sweep(root(), keep);
+    Set<String> left = new HashSet<>(Arrays.asList(root().list()));
+    assertEquals(new HashSet<>(Arrays.asList(VERSION, OTHER, running, Screens.LAUNCHES)), left);
+  }
+
+  @Test
+  public void keepsEveryWholeSetWhenTheRecordsWontRead() throws IOException {
+    keep(VERSION);
+    keep(OTHER);
+    write(records(), utf8("a file where the folder should be\n"));
+    assertNull(Screens.inUse(root(), records(), app("1.0.0"), null));
+    Screens.sweep(root(), null);
+    assertEquals(new HashSet<>(Arrays.asList(VERSION, OTHER)), new HashSet<>(Arrays.asList(root().list())));
   }
 
   @Test
