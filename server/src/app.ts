@@ -89,6 +89,7 @@ import {
   Tally,
   TIMETABLE_ROOM,
 } from './control.ts'
+import { StageCalls } from './alertCalls.ts'
 import { AlertsHub } from './alerts.ts'
 import { DELETION_REPLAY_MS, Hub, isPrivateIp, isRemoteConnection } from './hub.ts'
 import type { VideoService } from './video/service.ts'
@@ -773,6 +774,9 @@ export function buildApp({
     warn: (message) => fastify.log.warn(message),
   })
   fastify.addHook('onClose', () => docs.close())
+  // Changeover calls and the countdown, off the running order the relay
+  // carries, on the festival's clock (docs/ALERTS.md).
+  alerts.setStages(new StageCalls(docs, alerts, clock, timeZone))
 
   // The network audit's collector: strictly a reader over the state the
   // passive listeners already keep — it opens no sockets and sends nothing.

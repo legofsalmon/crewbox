@@ -66,6 +66,8 @@ export interface StageSource {
   recentCalls(since: number): Alert[]
   /** The countdown for somebody's followed stages, in their zone. */
   countdown(stages: string[], timeZone: string | undefined): StageCountdown[]
+  start?(): void
+  close?(): void
 }
 
 interface AlertsConn {
@@ -124,11 +126,13 @@ export class AlertsHub {
     if (this.beats) return
     this.beats = setInterval(() => this.beat(), this.beatMs)
     this.beats.unref()
+    this.stageSource?.start?.()
   }
 
   close(): void {
     if (this.beats) clearInterval(this.beats)
     this.beats = null
+    this.stageSource?.close?.()
     for (const conn of this.conns) conn.ws.terminate()
   }
 
