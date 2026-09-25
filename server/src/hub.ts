@@ -17,6 +17,7 @@ import {
 } from '@crewbox/shared'
 import type { DmxListener } from './dmx/listener.ts'
 import type { UniverseHealth } from './dmx/state.ts'
+import type { AlertsHub } from './alerts.ts'
 import type { Store } from './store.ts'
 import { APP_VERSION } from './version.ts'
 
@@ -222,6 +223,9 @@ export class Hub {
   /** Pending "they really have gone" timers, per user. See markOffline. */
   private tallyGrace = new Map<string, NodeJS.Timeout>()
 
+  /** What buzzes whom, when this box decides (server/src/alerts.ts). */
+  private alerts: AlertsHub | undefined
+
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
@@ -237,6 +241,21 @@ export class Hub {
   /** Hand the audit collector what the crew's devices report. Off by default. */
   setCollector(collector: CollectorSink | undefined): void {
     this.collector = collector
+  }
+
+  /**
+   * The alerts socket: told of every message, read, deletion, show-log entry
+   * and settings change, and given presence and the page's copy of each
+   * alert in return.
+   */
+  setAlerts(alerts: AlertsHub): void {
+    this.alerts = alerts
+    alerts.link({
+      addPresence: (userId, remote) => this.markOnline(userId, remote),
+      dropPresence: (userId, remote) => this.markOffline(userId, remote),
+      onlineUserIds: () => [...this.online.keys()],
+      alertPage: (userId, alert) => this.sendToUser(userId, { type: 'alert', alert }),
+    })
   }
 
   /** Where the on-air state lives, so a late joiner is told with the rest. */
@@ -282,6 +301,7 @@ export class Hub {
   }
 
   close(): void {
+    this.alerts?.close()
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.dmxTimer) clearInterval(this.dmxTimer)
     this.dmxTimer = null
@@ -668,6 +688,7 @@ export class Hub {
     this.send(conn.ws, { type: 'ack', clientMsgId: msg.clientMsgId, message })
     if (!deduped) {
       this.broadcastToChannel(channel.id, { type: 'msg', message }, conn.ws)
+      this.alerts?.onMessage(message)
     }
   }
 
@@ -713,7 +734,10 @@ export class Hub {
     // Acked to the author either way, so a retry after a dropped
     // acknowledgement clears their outbox rather than filing a second copy.
     this.send(conn.ws, { type: 'incident', incident })
-    if (!deduped) this.broadcastAll({ type: 'incident', incident }, conn.ws)
+    if (!deduped) {
+      this.broadcastAll({ type: 'incident', incident }, conn.ws)
+      this.alerts?.onIncident(incident)
+    }
   }
 
   /** True (and records the attempt) once a socket is over its action limit. */
@@ -741,6 +765,7 @@ export class Hub {
     this.store.setReadState(user.id, channelId, seq)
     // Sync unread state to the same user's other devices.
     this.sendToUser(user.id, { type: 'readState', channelId, seq }, conn.ws)
+    this.alerts?.onRead(user.id, channelId, seq)
   }
 
   /**
@@ -782,6 +807,7 @@ export class Hub {
       type: 'alertSettings',
       settings: this.store.getAlertSettings(userId),
     })
+    this.alerts?.onSettings(userId)
   }
 
   private onCreateChannel(conn: Conn, user: User, name: string, topic: string): void {
@@ -834,6 +860,7 @@ export class Hub {
   /** Tell a channel's audience a message was deleted (e.g. file removed). */
   announceDeleted(channelId: string, messageId: string): void {
     this.broadcastToChannel(channelId, { type: 'deleted', channelId, messageId })
+    this.alerts?.onDeleted(channelId, messageId)
   }
 
   /** Close every socket for a user (their session tokens are now invalid). */
@@ -842,6 +869,7 @@ export class Hub {
     // goes now rather than waiting out the grace period below.
     this.clearTallyGrace(userId)
     if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
+    this.alerts?.disconnectUser(userId)
     for (const conn of this.conns) {
       if (conn.user?.id === userId) {
         this.send(conn.ws, { type: 'error', code: 'auth', message: 'account deleted' })
@@ -864,6 +892,7 @@ export class Hub {
       ...(origin ? { origin } : {}),
     })
     this.broadcastToChannel(channelId, { type: 'msg', message })
+    this.alerts?.onMessage(message)
     return message
   }
 

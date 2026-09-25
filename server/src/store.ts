@@ -580,6 +580,20 @@ export class Store {
     })
   }
 
+  /**
+   * Messages posted after `sinceMs`, in every channel, oldest first: what an
+   * alerts catch-up reads through (server/src/alerts.ts). The newest `limit`
+   * of them when there are more.
+   */
+  listMessagesSince(sinceMs: number, limit: number): Message[] {
+    const rows = this.db
+      .prepare(
+        `${MSG_SELECT} WHERE m.created_at > ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
+      )
+      .all(sinceMs, limit) as unknown as MessageRow[]
+    return rows.reverse().map(toMessage)
+  }
+
   /** Up to `limit` messages with seq > afterSeq, ascending. */
   listAfter(channelId: string, afterSeq: number, limit: number): Message[] {
     const rows = this.db
@@ -854,6 +868,22 @@ export class Store {
       .run(channelId, userId, stored)
   }
 
+  /** Everyone's read position and level for one channel, where they have a row. */
+  channelAlertState(channelId: string): Map<string, { readSeq: number; level: ChannelAlertLevel }> {
+    const rows = this.db
+      .prepare('SELECT user_id, last_read_seq, alerts FROM channel_members WHERE channel_id = ?')
+      .all(channelId) as { user_id: string; last_read_seq: number; alerts: string | null }[]
+    return new Map(
+      rows.map((row) => [
+        row.user_id,
+        {
+          readSeq: row.last_read_seq,
+          level: isChannelAlertLevel(row.alerts) ? row.alerts : DEFAULT_CHANNEL_ALERTS,
+        },
+      ])
+    )
+  }
+
   /** Follow a stage, or stop. Returns false when nothing changed. */
   followStage(userId: string, stage: string, follow: boolean): boolean {
     const result = follow
@@ -1005,6 +1035,14 @@ export class Store {
     const rows = this.db
       .prepare('SELECT * FROM incidents WHERE at >= ? AND at <= ? ORDER BY seq')
       .all(from, to) as unknown as IncidentRow[]
+    return rows.map(toIncident)
+  }
+
+  /** Entries written down after `sinceMs`, oldest first: for an alerts catch-up. */
+  listIncidentsLoggedSince(sinceMs: number): Incident[] {
+    const rows = this.db
+      .prepare('SELECT * FROM incidents WHERE logged_at > ? ORDER BY seq')
+      .all(sinceMs) as unknown as IncidentRow[]
     return rows.map(toIncident)
   }
 

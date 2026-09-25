@@ -15,6 +15,7 @@
  * socket. Everything a rule needs is passed in, so every rule is a row in a
  * table test, and the JVM tests read the same fixtures as the Node ones.
  */
+import { z } from 'zod'
 import { agenda, toAgendaAct, wallClock, type Act, type AgendaEntry } from './timetable.js'
 import type { Incident } from './incident.js'
 
@@ -25,7 +26,10 @@ import type { Incident } from './incident.js'
  */
 export const ALERTS_VERSION = 1
 
-/** The path of the alerts socket, beside `/ws`. An older box answers 404. */
+/**
+ * The path of the alerts socket, beside `/ws`. An older box drops the
+ * upgrade, so a phone looks for `alerts` in `GET /api/config` first.
+ */
 export const ALERTS_PATH = '/ws/alerts'
 
 /**
@@ -675,7 +679,18 @@ export type AlertsServerFrame =
   | AlertsStagesFrame
   | AlertsBeatFrame
 
-export type AlertsClientFrame = AlertsHelloFrame | { type: 'beat'; t: number }
+/** What a phone may send, checked on the box. Anything else on the socket is ignored. */
+export const alertsClientFrameSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('hello'),
+    token: z.string().min(1).max(512),
+    since: z.number().int().nonnegative().nullable(),
+    timeZone: z.string().max(64).optional(),
+  }),
+  z.object({ type: z.literal('beat'), t: z.number() }),
+])
+
+export type AlertsClientFrame = z.infer<typeof alertsClientFrameSchema>
 
 // ---------------------------------------------------------------------------
 // Catch-up

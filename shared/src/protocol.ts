@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Channel, Message, User } from './types.js'
-import { CHANNEL_ALERT_LEVELS, type AlertSettings } from './alerts.js'
+import { CHANNEL_ALERT_LEVELS, type Alert, type AlertSettings } from './alerts.js'
 import {
   INCIDENT_KINDS,
   INCIDENT_SEVERITIES,
@@ -281,6 +281,13 @@ export interface PublicConfig {
    * that marks nothing, or an older server; all three look the same.
    */
   unlicensed?: boolean
+  /**
+   * The alerts contract's version when this box decides what buzzes a phone
+   * and serves `/ws/alerts` (docs/ALERTS.md). Absent from an older box, which
+   * has no such socket: the page then keeps its own rules, and Android its
+   * own chat parsing.
+   */
+  alerts?: number
 }
 
 export interface WelcomeMessage {
@@ -538,7 +545,18 @@ export interface AlertSettingsMessage {
   settings: AlertSettings
 }
 
+/**
+ * Something this person should be told about, decided by the box's rules
+ * (docs/ALERTS.md). The page's banner and chirp follow it, so the page and
+ * the phones' lock screens agree.
+ */
+export interface AlertMessage {
+  type: 'alert'
+  alert: Alert
+}
+
 export type ServerMessage =
+  | AlertMessage
   | AlertSettingsMessage
   | IncidentMessage
   | TallyMessage

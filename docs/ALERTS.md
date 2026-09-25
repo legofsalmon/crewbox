@@ -94,8 +94,13 @@ loses nothing.
 
 ## The socket
 
-`/ws/alerts`, beside the chat socket. An older box answers **404**, so a
-phone knows at once. `GET /api/config` says `alerts: 1` on a box that has it.
+`/ws/alerts`, beside the chat socket. A box that has it says so in
+`GET /api/config`, as `alerts: 1`, and a phone checks that before it opens the
+socket. An older box doesn't answer 404 as the design assumed: it has no such
+path and drops the upgrade without a word, which looks the same as a network
+fault. So the config is the signal, and a phone that finds no `alerts` there
+keeps its own rules for that box: Android its chat parsing, the page its own
+banner rules.
 
 ### 1. The box proves itself first
 

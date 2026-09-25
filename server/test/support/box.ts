@@ -54,11 +54,11 @@ export class Client<Frame extends { type: string } = { type: string }> {
   }
 
   /** The next frame (after any already held) that matches, or a timeout. */
-  waitFor<T extends Frame>(predicate: (m: Frame) => boolean, timeoutMs = 2000): Promise<T> {
+  waitFor<T = Frame>(predicate: (m: Frame) => boolean, timeoutMs = 2000): Promise<T> {
     const existing = this.received.find(predicate)
     if (existing) {
       this.received.splice(this.received.indexOf(existing), 1)
-      return Promise.resolve(existing as T)
+      return Promise.resolve(existing as unknown as T)
     }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('waitFor timed out')), timeoutMs)
@@ -67,7 +67,7 @@ export class Client<Frame extends { type: string } = { type: string }> {
         resolve: (m) => {
           clearTimeout(timer)
           this.received.splice(this.received.indexOf(m), 1)
-          resolve(m as T)
+          resolve(m as unknown as T)
         },
       })
     })
