@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { plotStore } from '../modules/lighting/store/docManager.ts'
 import { sheetStore } from '../modules/patch/store/docManager.ts'
 import { screensStore } from '../modules/video/store/screensStore.ts'
+import { DEVICE_PREF_KEYS, EVENT_PREF_KEYS } from './eventScope.ts'
 
 /**
  * The names that reach phones in the field.
@@ -64,6 +65,17 @@ describe('the relay rooms and document names', () => {
     expect(screensStore.docName('abc123')).toBe('screens-abc123')
   })
 
+  it('is the same for every event, because it is the box’s name and not the device’s', () => {
+    // Each box is one event. A second event's sheets live under names of
+    // their own on the phone, and in the same rooms on their own box.
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    expect(sheetStore.storageOf('saturday').database('abc123')).not.toBe(
+      sheetStore.storageOf('friday').database('abc123')
+    )
+    expect(sheetStore.room('abc123')).toBe('patch/sheet-abc123')
+    localStorage.clear()
+  })
+
   it('gives each module one index, in its own namespace', () => {
     // The index is what makes a sheet appear in somebody else's selector.
     // Rename it and every device lists only what it made itself. `room()`
@@ -79,9 +91,13 @@ describe('the relay rooms and document names', () => {
 describe('the browser storage names', () => {
   it('holds chat in a Dexie database called crewbox, with three tables', () => {
     // Read from the source rather than the instance: importing lib/db.ts
-    // opens the database, and the name is what matters, not the handle.
+    // opens the database, and the name is what matters, not the handle. It
+    // is `crewbox` for the first event a device held; eventScope.test.ts
+    // pins what that name is for any other.
     const db = readFileSync(join(SRC, 'lib/db.ts'), 'utf8')
-    expect(db).toContain("new Dexie('crewbox')")
+    expect(db).toContain("const DB_NAME = 'crewbox'")
+    expect(db).toContain('storageNameFor(event, DB_NAME)')
+    expect(db).toContain('new Dexie(chatDatabaseName(event))')
     expect(db).toContain("messages: 'id, [channelId+seq]'")
     expect(db).toContain("outbox: 'clientMsgId, createdAt'")
     expect(db).toContain("kv: 'key'")
@@ -93,6 +109,46 @@ describe('the browser storage names', () => {
     expect(store).toContain('const dbPrefix = `crewbox-${config.moduleId}-`')
     expect(store).toContain('config.registryKey ?? `crewbox:${config.moduleId}-docs`')
     expect(store).toContain('`${config.moduleId}/${docName}`')
+  })
+
+  it('keeps the first event’s documents where they always were, and a second event’s apart', () => {
+    // The first event a device held is the one every phone in the field is
+    // carrying: its names cannot move. Any other event's are its own.
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const first = sheetStore.storageOf('friday')
+    expect(first.database('abc123')).toBe('crewbox-patch-sheet-abc123')
+    expect(first.indexDatabase).toBe('crewbox-patch-index')
+    expect(first.registryKey).toBe('crewbox:patch-sheets')
+    expect(plotStore.storageOf('friday').database('abc123')).toBe('crewbox-lighting-plot-abc123')
+    expect(plotStore.storageOf('friday').registryKey).toBe('crewbox:lighting-docs')
+    expect(screensStore.storageOf('friday').registryKey).toBe('crewbox:video-docs')
+
+    const second = sheetStore.storageOf('saturday')
+    expect(second.database('abc123')).toBe('crewbox@saturday-patch-sheet-abc123')
+    expect(second.indexDatabase).toBe('crewbox@saturday-patch-index')
+    expect(second.registryKey).toBe('crewbox@saturday:patch-sheets')
+    localStorage.clear()
+  })
+
+  it('knows which keys are an event’s and which are the device’s', () => {
+    // Forgetting the first event deletes its settings by name, because they
+    // share today's names with the device's own. A key in neither list is
+    // left behind when its event is forgotten; one in the wrong list takes a
+    // device setting with it — the list of events, or where the box is.
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const registries = [sheetStore, plotStore, screensStore].map(
+      (store) => store.storageOf('friday').registryKey
+    )
+    localStorage.clear()
+    const found = new Set<string>()
+    for (const text of sources(SRC)) {
+      for (const m of text.matchAll(/'(crewbox:[A-Za-z0-9:_-]+)'/g)) found.add(m[1])
+    }
+    expect(found.size).toBeGreaterThan(10)
+    for (const key of found) {
+      const events = EVENT_PREF_KEYS.includes(key) || registries.includes(key)
+      expect(events !== DEVICE_PREF_KEYS.includes(key), key).toBe(true)
+    }
   })
 
   it('keeps the patch registry under the key it shipped with', () => {
@@ -114,8 +170,21 @@ describe('the browser storage names', () => {
         // Chat, identity and the shell.
         'crewbox:audio-in',
         'crewbox:audio-out',
+        // Every event this device holds (the Boxes screen), and which one it
+        // opens once there is more than one. Device-wide, like the theme.
+        'crewbox:boxes',
+        // Which sign-ins the app moved out of the page's storage and hasn't
+        // yet had its box renew, by name (lib/sessions.ts). Device-wide: it
+        // names any event's.
+        'crewbox:carried-sign-ins',
+        // Which event has the names in this list: the first one the device
+        // held. See lib/eventScope.ts; every other event's are its own.
         'crewbox:db-epoch',
+        'crewbox:event',
         'crewbox:event-name',
+        // The iPhone app has asked iOS about the local network once, so its
+        // search for boxes starts by itself from then on (lib/discovery.ts).
+        'crewbox:find-boxes-asked',
         'crewbox:ios-tip-dismissed',
         'crewbox:lighting-seen',
         'crewbox:modules',
@@ -136,6 +205,10 @@ describe('the browser storage names', () => {
         // timetable's own database and edit origin. Same rule applies — they
         // are on the device too.
         'crewbox-msg',
+        // Nor this: what every statement a box signs starts with
+        // (lib/identity.ts). Stored nowhere, and boxes in the field sign it,
+        // so it can't change either.
+        'crewbox-identity-v1',
         'crewbox-timetable-event',
         'crewbox-timetable-local',
         'crewbox:incident-outbox',

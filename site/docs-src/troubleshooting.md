@@ -33,8 +33,25 @@ Symptom-first. Crew problems first, box problems at the end.
   runs the box, because
   [there's a proper fix](/docs/phones-and-platforms#the-no-internet-problem).
 
+  On Android in a browser, or with crewbox added to the home screen from
+  one, the sign is an **exclamation mark** on the Wi-Fi symbol: Android
+  decided this network has no internet and is sending the browser's traffic
+  over mobile data. Turn mobile data off and it comes straight back. The
+  Android app doesn't need that: it stays on the crew Wi-Fi by itself.
+
   Nothing is lost while this lasts. Everything you can see is on your device,
   and anything you send is queued and delivers the moment the box is back.
+
+## "The box at … has changed"
+
+The box at that address is running another event than the one your device
+has open: a spare box that started afresh, or the next event's box. Your
+device keeps the event you had, sends the new box nothing of it, and waits
+for you to tap **Open it**. After you join, it offers to bring your work
+across when whoever runs the box has said it carries your event on, and
+otherwise **Bring its work here**, beside the old event in **Your boxes**,
+does it. More in
+[Getting connected](/docs/getting-connected#more-than-one-event).
 
 ## "I can hear voice but nobody hears me"
 
@@ -72,6 +89,15 @@ If the filter bar is open, close it — a filter narrows the view to what's
 loaded on your device, and it clears itself when you switch channels
 precisely so this state can't linger. For history beyond what's loaded, use
 search (`⌘K`), which asks the box for everything.
+
+## "Sheet not found" or "Plot not found"
+
+The box saves every sheet, plot and screen map that passes through it, so
+this usually means it has been deleted, or the link you followed came from a
+different box. It can also be one this box has never had: one made on a
+phone that hasn't reached the box since, or one from before the box was
+started again with a fresh database. Ask whoever made it to open it with the
+app connected: it appears on your screen as soon as they do.
 
 ## "The reload pill does nothing"
 
@@ -130,12 +156,28 @@ app.
   rule. **Admin → This box → Download port 80 config** has it, filled in for
   this machine. Don't test the rule with `curl` from the box itself — macOS
   won't redirect a machine's traffic to itself, so it fails while working.
-- **iPhones show the app but never connect; Androids are fine** — iOS has
-  judged the crew network internet-less and fallen back to mobile data. This
-  is the single most confusing failure in the product because the phone
-  still shows as joined. **Admin → This box** has a _Phones stay on this
-  Wi-Fi_ row; see
+- **iPhones show the app but never connect** — iOS has judged the crew
+  network internet-less and fallen back to mobile data. This is the single
+  most confusing failure in the product because the phone still shows as
+  joined. **Admin → This box** has a _Phones stay on this Wi-Fi_ row; see
   [the full explanation and fix](/docs/phones-and-platforms#the-no-internet-problem).
+- **Androids in a browser never connect, and the Android app does** — the
+  same judgement: with mobile data on, Android keeps the crew Wi-Fi joined
+  but sends a browser's traffic over mobile data, and the box answering the
+  phones' tests doesn't change that for Android. Mobile data off fixes it,
+  and so does the Android app, which keeps its traffic for the box on the
+  crew Wi-Fi ([on Android](/docs/phones-and-platforms#on-android)).
+- **An Android phone doesn't rejoin the crew Wi-Fi by itself** — Android may
+  stop joining a network by itself once it has found no internet there, or
+  once somebody has answered No to its question about it. Join it again from
+  Settings → Wi-Fi, or scan the Wi-Fi code on the join poster. On a Samsung,
+  **Switch to mobile data** (Settings → Connections → Wi-Fi → ⋮ → Intelligent
+  Wi-Fi) takes a phone off a Wi-Fi it judges unstable; turn it off on crew
+  phones that keep leaving.
+- **An Android phone reaches the box by its address, but not by its name** —
+  Private DNS set to a provider's name, in the phone's network settings,
+  sends every lookup to that provider, over an internet the crew Wi-Fi
+  hasn't got. Set it to **Automatic** at the venue, or use the box's address.
 - **Setup page gone** — `/setup` closes forever once the first person
   joins. Everything on it lives on in the admin panel; the admin password,
   if lost, can be overridden with the `ADMIN_PASSWORD` environment variable

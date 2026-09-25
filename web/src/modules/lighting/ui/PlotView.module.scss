@@ -188,6 +188,26 @@
   cursor: progress;
 }
 
+/* Undo and redo sit tight against each other, one control in two halves,
+   as they do on a patch sheet. */
+.undoGroup {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.undoButton {
+  min-width: 34px;
+  padding-inline: 8px;
+  font-size: 15px;
+  line-height: 1;
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+    background: var(--bg-raised);
+  }
+}
+
 // The Import control is a <label> wrapping a hidden file input.
 .fileInput {
   position: absolute;

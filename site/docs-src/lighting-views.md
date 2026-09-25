@@ -20,7 +20,11 @@ Top-down, in metres, with the centre line and the downstage edge marked.
 
 - **Drag a position to move it** — it snaps to 0.25 m and syncs live to
   everyone.
-- Zoom with the −/+ buttons; unit numbers appear once you're in past 120%.
+- Zoom with the −/+ buttons, which keep the middle of the view where it is;
+  unit numbers appear once you're in past 120%.
+- On a phone or tablet, drag anywhere off a position to move around the
+  plan, and pinch to zoom. A drag or pinch that starts on a fixture doesn't
+  select it.
 - Click any fixture to select it — the app flips to the Fixtures tab with
   that unit highlighted.
 
@@ -30,7 +34,7 @@ Top-down, in metres, with the centre line and the downstage edge marked.
 
 The audience's view: width across, height up, everything drawn at its
 position's trim. Upstage positions draw dimmer and slightly smaller so
-depth stays readable in 2D.
+depth stays readable in 2D. On a phone it pans and pinches like the plan.
 
 ## 3D
 

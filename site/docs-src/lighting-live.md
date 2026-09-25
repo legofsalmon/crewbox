@@ -10,7 +10,9 @@ blurb: The live bar, the Levels toggle, and reading what the desk is actually se
 When the box is listening on the lighting network, the plot stops being
 paperwork alone: every fixture's row shows whether data is reaching its
 address, and the drawings can dim and colour by what the desk is sending.
-The box only ever **listens** — it never transmits on a lighting network.
+The box **listens**, and never sends DMX. The only packet crewbox itself
+sends on a lighting network is one Art-Net poll, when an admin runs the
+Network audit's [deep probe](/docs/network#the-deep-probe).
 
 ## The live bar
 

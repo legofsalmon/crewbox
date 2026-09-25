@@ -3,7 +3,7 @@ import type * as Y from 'yjs'
 
 const EVENTS = ['stack-item-added', 'stack-item-popped', 'stack-cleared'] as const
 
-/** Live undo/redo state and actions for a sheet's UndoManager. */
+/** Live undo/redo state and actions for a document's UndoManager: a sheet's or a plot's. */
 export function useUndoRedo(undoManager: Y.UndoManager | undefined | null): {
   canUndo: boolean
   canRedo: boolean

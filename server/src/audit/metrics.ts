@@ -297,19 +297,27 @@ export class MetricsStore {
    * a real complaint disappears into a healthy-looking figure. `count` says
    * how many readings the window holds, which is what lets the caller tell
    * "clean" from "nobody has been on voice".
+   *
+   * `devices` is phones, not readings: the most that reported in any one
+   * minute of the window. Each sends four readings a minute, so `samples`
+   * is no count of anything a person would recognise. A minute written
+   * before devices were counted has no row, and at least one device sent
+   * what it holds.
    */
   worstVoice(
     from: number,
     to: number
-  ): { concealedPct: number; lossPct: number; samples: number } | null {
+  ): { concealedPct: number; lossPct: number; samples: number; devices: number } | null {
     const concealed = this.series('voice.concealedPct', '', from, to)
     if (concealed.length === 0) return null
     const loss = this.series('voice.lossPct', '', from, to)
+    const devices = this.series('voice.devices', '', from, to)
     const peak = (rows: RollupRow[]) => rows.reduce((worst, row) => Math.max(worst, row.max), 0)
     return {
       concealedPct: peak(concealed),
       lossPct: peak(loss),
       samples: concealed.reduce((total, row) => total + row.count, 0),
+      devices: Math.max(1, peak(devices)),
     }
   }
 

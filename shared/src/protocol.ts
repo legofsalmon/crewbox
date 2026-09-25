@@ -212,6 +212,46 @@ export interface PublicConfig {
   /** Module ids this box enables; clients hide modules not listed here. */
   modules: string[]
   /**
+   * Which event this box is running: its database's ID, the one the welcome
+   * carries as `dbEpoch`.
+   *
+   * Public, because a phone needs it before sign-in. The app talks to every
+   * box from one origin, so this is what tells it which of the events it
+   * already holds a box is, and where to keep what that box is about to give
+   * it. Without it one event's sheets and running order synced into the
+   * next box a phone joined.
+   *
+   * Optional: a box that predates it does not send it, and a phone that
+   * sees none carries on as it always has.
+   */
+  eventId?: string
+  /**
+   * The event's public key: the box's P-256 signing key, as the uncompressed
+   * point, base64url (server/src/identity.ts).
+   *
+   * A phone keeps the key it was given when it first joined, and from then
+   * on holds the event's box to it: before following the event to a new
+   * address, it has the box there sign a challenge (`GET /api/identity`) and
+   * checks the signature against the key it kept, never against the one
+   * that box presents (docs/DISCOVERY.md).
+   *
+   * Optional, as `eventId` is: a box that predates it has no key.
+   */
+  eventKey?: string
+  /**
+   * The event this box carries on, by its ID, when an admin has said so
+   * (Admin → This box): a spare with no backup, or a bigger box, taking over
+   * from that event's box.
+   *
+   * A phone that holds that event offers, once it has joined this box, to
+   * bring its work across. The admin's word rather than a proof, since only
+   * the old event's database could sign for it, so the phone asks and
+   * never moves anything by itself (server/src/continues.ts).
+   *
+   * Absent when no admin has said so, and from a box that predates it.
+   */
+  continues?: string
+  /**
    * The box has no usable licence and its policy marks that. The drawer shows
    * a small "Unlicensed" line and nothing else changes — crew comms are never
    * blocked or degraded over a licence. Absent means licensed, or a policy

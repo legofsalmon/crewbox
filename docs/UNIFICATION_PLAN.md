@@ -164,7 +164,7 @@ and offers them as services future modules choose between:
 | Primitive       | Model                                                                         | Source     | Right for                                                                                                                      |
 | --------------- | ----------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | **Ordered log** | Server-authoritative per-channel seq, client outbox, ack/resume, exactly-once | inter      | Messages, events, anything append-only where order and delivery guarantees matter (chat; later: cues called, camera tally log) |
-| **Shared doc**  | Yjs CRDT, client-durable (IndexedDB), relay in-memory, offline merge          | Live Patch | Collaboratively edited state (patch sheets; later: lighting plots, camera assignments, run sheets)                             |
+| **Shared doc**  | Yjs CRDT, client-durable (IndexedDB), relay saves a copy, offline merge       | Live Patch | Collaboratively edited state (patch sheets; later: lighting plots, camera assignments, run sheets)                             |
 
 They stay on **separate WebSocket endpoints** — the chat protocol is a JSON
 discriminated union on `/ws`; Yjs speaks its own binary protocol on `/ws/docs/:room`.
@@ -359,8 +359,11 @@ crewbox sessions.
   crewbox server — feasible: `node:sqlite` is stdlib; needs an esbuild step replacing
   runtime tsx). Download, double-click, scan the QR: the smallest events get the full
   stack.
-- Optional relay-side doc persistence (y-websocket's LevelDB hook) if a box-holds-state
-  story is ever wanted; **not** default.
+- ~~Optional relay-side doc persistence (y-websocket's LevelDB hook) if a box-holds-state
+  story is ever wanted; **not** default.~~ Done differently, and on by default
+  (September 2026): the box saves every shared document in its own database
+  (`doc_updates`, `server/src/docs.ts`), because crew who opened a sheet after a
+  restart were being told it had been deleted.
 - Next modules (cameras / lighting / video) on the established contracts; department
   visibility/roles when a real module needs it.
 

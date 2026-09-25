@@ -144,7 +144,7 @@ const networkSection = (network: SetupValues['network']): string => {
         'dmxIface',
         'Lighting network adapter',
         network.dmxIface,
-        'The adapter plugged into the lighting network. Only read from — the box never transmits there.',
+        'The adapter plugged into the lighting network. Only listened to: the box never sends DMX there, and sends one Art-Net poll only when an admin runs the deep probe.',
         adapterOptions(adapters, 'Let the OS choose')
       )
   const universes = fromEnv.dmxUniverses

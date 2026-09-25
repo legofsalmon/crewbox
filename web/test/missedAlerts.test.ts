@@ -61,7 +61,7 @@ describe('what a reconnect should announce', () => {
       ...base,
       missed: [message({ channelId: 'dm-sam', seq: 4, authorId: 'sam', body: 'where are you' })],
     })
-    expect(alert).toEqual({ title: 'Sam', body: 'where are you', count: 1 })
+    expect(alert).toEqual({ title: 'Sam', body: 'where are you', count: 1, channelId: 'dm-sam' })
   })
 
   it('names the channel for a single mention', () => {
@@ -71,7 +71,12 @@ describe('what a reconnect should announce', () => {
         message({ channelId: 'stage-2', seq: 9, authorId: 'alex', body: '@Jo can you look' }),
       ],
     })
-    expect(alert).toEqual({ title: 'Alex in #stage-2', body: '@Jo can you look', count: 1 })
+    expect(alert).toEqual({
+      title: 'Alex in #stage-2',
+      body: '@Jo can you look',
+      count: 1,
+      channelId: 'stage-2',
+    })
   })
 
   it('is one alert for a backlog, not one per message', () => {
@@ -87,6 +92,19 @@ describe('what a reconnect should announce', () => {
     })
     expect(alert).toMatchObject({ title: '3 messages need you', count: 3 })
     expect(alert?.body).toBe('Sam, Alex in #stage-2')
+    // Two channels, so it takes you to neither: the list says where.
+    expect(alert?.channelId).toBeUndefined()
+  })
+
+  it('takes you to the one channel a backlog is all in', () => {
+    const alert = summariseMissed({
+      ...base,
+      missed: [
+        message({ channelId: 'dm-sam', seq: 1, authorId: 'sam', body: 'where are you' }),
+        message({ channelId: 'dm-sam', seq: 2, authorId: 'sam', body: 'gate 3' }),
+      ],
+    })
+    expect(alert).toMatchObject({ title: '2 messages need you', body: 'Sam', channelId: 'dm-sam' })
   })
 
   it('names who, because a count alone is only a reason to open the app', () => {
@@ -125,7 +143,7 @@ describe('what a reconnect should announce', () => {
         message({ channelId: 'dm-sam', seq: 5, authorId: 'sam', body: 'not this' }),
       ],
     })
-    expect(alert).toEqual({ title: 'Sam', body: 'not this', count: 1 })
+    expect(alert).toEqual({ title: 'Sam', body: 'not this', count: 1, channelId: 'dm-sam' })
   })
 
   it('never announces your own messages', () => {
@@ -162,7 +180,7 @@ describe('what a reconnect should announce', () => {
       focusedChannelId: 'general',
       missed: [message({ channelId: 'dm-sam', seq: 2, authorId: 'sam', body: 'gate 3' })],
     })
-    expect(alert).toEqual({ title: 'Sam', body: 'gate 3', count: 1 })
+    expect(alert).toEqual({ title: 'Sam', body: 'gate 3', count: 1, channelId: 'dm-sam' })
   })
 
   it('falls back rather than inventing a name it does not have', () => {
@@ -171,6 +189,6 @@ describe('what a reconnect should announce', () => {
       ...base,
       missed: [message({ channelId: 'dm-sam', seq: 2, authorId: 'ghost', body: 'hello' })],
     })
-    expect(alert).toEqual({ title: 'Someone', body: 'hello', count: 1 })
+    expect(alert).toEqual({ title: 'Someone', body: 'hello', count: 1, channelId: 'dm-sam' })
   })
 })

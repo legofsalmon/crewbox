@@ -97,7 +97,17 @@ function LedWallsPane() {
     const timer = window.setInterval(() => {
       if (!document.hidden) void load()
     }, POLL_MS)
-    return () => window.clearInterval(timer)
+    // The poll skips a hidden page, so a phone coming back from the lock
+    // screen shows the walls as they were when it was locked. Ask the
+    // moment somebody looks, as the network pane does.
+    const onVisible = () => {
+      if (!document.hidden) void load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [load])
 
   /** Half one: ask the box what this would send. Transmits nothing. */

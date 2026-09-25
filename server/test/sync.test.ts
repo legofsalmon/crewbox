@@ -15,6 +15,7 @@ import {
 } from '@crewbox/shared'
 import { openDb, runMigrations } from '../src/db.ts'
 import { Store } from '../src/store.ts'
+import { boxIdentity } from '../src/identity.ts'
 import { isPrivateIp, isRemoteConnection } from '../src/hub.ts'
 import type { IncomingMessage } from 'node:http'
 import { attachWs, buildApp, type App } from '../src/app.ts'
@@ -1161,6 +1162,22 @@ describe('voice', () => {
     expect(denied.statusCode).toBe(404)
   })
 
+  it('leaves the ICE servers to an SFU somebody else runs', async () => {
+    // This box is pointed at an SFU by url, not running its own. That SFU
+    // may need its STUN or TURN servers to get a phone through a NAT, so
+    // the box sends no list of its own and the SFU's stands.
+    const token = await join('Remote Sfu')
+    const general = store.getChannelByName('general')!
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/voice/token',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { channelId: general.id },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).not.toHaveProperty('iceServers')
+  })
+
   it('gives one person on two devices two identities', async () => {
     // LiveKit disconnects the older participant when a second joins with
     // the same identity, and the identity was the user id — so "one
@@ -1403,6 +1420,9 @@ describe('settings & config', () => {
       wifiSsid: '',
       voiceEnabled: true,
       modules: ['chat'],
+      eventId: store.dbEpoch(),
+      // The key the box minted at startup, read back from the same database.
+      eventKey: boxIdentity(store).publicKey,
     })
 
     // A member cannot change settings.
@@ -1535,8 +1555,10 @@ describe('onboarding & runtime settings', () => {
     expect(html).toContain('<svg')
     expect(html).toContain(`Event PIN: <strong>${EVENT_PIN}</strong>`)
     // The URL under the QR is the join link itself, PIN prefilled — on a
-    // phone this page was shared to, tapping it is scanning it.
-    expect(html).toMatch(new RegExp(`<a href="https?://[^"]+/\\?pin=${EVENT_PIN}">`))
+    // phone this page was shared to, tapping it is scanning it. It names the
+    // event and its key too, for the apps' scanner (test/joinCode.test.ts).
+    const href = /<p class="url"><a href="(https?:\/\/[^"]+)">/.exec(html)?.[1] ?? ''
+    expect(new URL(href.replaceAll('&amp;', '&')).searchParams.get('pin')).toBe(EVENT_PIN)
     // No APK installed in this test — the download link must not appear.
     expect(html).not.toContain('crewbox.apk')
   })
@@ -1732,6 +1754,52 @@ describe('when the box cannot write session bookkeeping', () => {
   })
 })
 
+/**
+ * A renewed sign-in (renewSession.test.ts has the rest): a hello is a use
+ * like any other, and a socket that said hello before goes on as it was.
+ */
+describe('a renewed sign-in', () => {
+  const renew = async (token: string) => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/session/renew',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(200)
+    return (res.json() as { token: string }).token
+  }
+
+  it('says hello with the new one, after which the old one is refused', async () => {
+    const token = await join('Renewed')
+    const { welcome } = await connect(await renew(token))
+    expect(welcome.me.name).toBe('Renewed')
+    const client = new TestClient(wsUrl)
+    await client.open()
+    client.send({ type: 'hello', token, cursors: {} })
+    const error = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'error' }> => m.type === 'error'
+    )
+    expect(error.code).toBe('auth')
+  })
+
+  it('leaves a socket that said hello with the old one open until it closes', async () => {
+    // The app's own alerts service, on Android, until the page hands it the
+    // new one at its next welcome.
+    const token = await join('Still Open')
+    const { client, welcome } = await connect(token)
+    await connect(await renew(token))
+    const clientMsgId = newId()
+    client.send({
+      type: 'send',
+      clientMsgId,
+      channelId: welcome.channels[0]!.id,
+      body: 'still here',
+    })
+    const ack = await client.waitFor((m): m is ServerMessage => m.type === 'ack')
+    expect(ack).toMatchObject({ clientMsgId })
+  })
+})
+
 describe('a socket that has not said hello', () => {
   it('is told about the socket, not about the session', async () => {
     // `auth` is the only code that ends somebody's session, so this must not
@@ -1803,6 +1871,32 @@ describe('a box whose database went backwards', () => {
     const token = await join('Epoch')
     const { welcome } = await connect(token)
     expect(welcome.dbEpoch).toBeTruthy()
+  })
+
+  it('says which event it is before sign-in, and with a sign-in, as the same ID', async () => {
+    // A phone keeps each event's data apart, and has to know which event a
+    // box is before it holds anything of that box's: the join screen, and
+    // the sign-in it is about to file, come first.
+    const config = (await (await fetch(`${baseUrl}/api/config`)).json()) as { eventId?: string }
+    const joined = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Early', eventPin: EVENT_PIN, personalPin: '4321' },
+    })
+    const { token, eventId } = joined.json() as { token: string; eventId?: string }
+    const { welcome } = await connect(token)
+    expect(config.eventId).toBeTruthy()
+    expect(eventId).toBe(config.eventId)
+    expect(welcome.dbEpoch).toBe(config.eventId)
+    expect(welcome.config.eventId).toBe(config.eventId)
+
+    // And signing back in to an existing name says it too.
+    const again = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Early', eventPin: '', personalPin: '4321' },
+    })
+    expect((again.json() as { eventId?: string }).eventId).toBe(config.eventId)
   })
 
   it('keeps the same epoch across reconnects, so a phone is not reset for nothing', async () => {

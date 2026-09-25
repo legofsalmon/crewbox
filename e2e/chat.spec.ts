@@ -149,3 +149,52 @@ test('the filter bar narrows a channel by kind and by person, and links are tapp
   await deviceA.getByRole('button', { name: 'Hide message filter' }).click()
   await expect(deviceA.getByText(plain)).toBeVisible()
 })
+
+/**
+ * Somebody needs you while the app is open.
+ *
+ * The chirp and the buzz said so, and nothing said who or where: on a phone
+ * the channel list, whose badge would have, is in the drawer. The banner says
+ * who and what, and takes you there.
+ */
+test('a direct message while the app is open says who, and opens the conversation', async ({
+  browser,
+}) => {
+  const jo = uniqueName('Jo')
+  const alex = uniqueName('Alex')
+  const joPage = await newDevice(browser, jo)
+  const alexPage = await newDevice(browser, alex)
+
+  await alexPage.getByRole('button', { name: `Message ${jo}` }).click()
+  // The conversation opens once the box has made it; until then the composer
+  // on screen is #general's.
+  const toJo = alexPage.getByPlaceholder(`Message ${jo}`)
+  await toJo.fill('Can you come to FOH?')
+  await toJo.press('Enter')
+
+  // Jo is in #general, with the conversation nowhere on screen.
+  const banner = joPage.locator('.alert-banner')
+  await expect(banner).toContainText(alex)
+  await expect(banner).toContainText('Can you come to FOH?')
+  await banner.getByRole('button', { name: /Can you come to FOH/ }).click()
+  await expect(banner).toBeHidden()
+  await expect(joPage.locator('.msg', { hasText: 'Can you come to FOH?' })).toBeVisible()
+  await expect(joPage.getByPlaceholder(new RegExp(`Message ${alex}`))).toBeVisible()
+
+  // Put away without going anywhere, and gone by itself after a while.
+  await toJo.fill('Never mind')
+  await toJo.press('Enter')
+  await joPage.getByRole('button', { name: '#general' }).click()
+  await toJo.fill('Actually, please do')
+  await toJo.press('Enter')
+  await expect(banner).toContainText('Actually, please do')
+  await banner.getByRole('button', { name: 'Dismiss' }).click()
+  await expect(banner).toBeHidden()
+  await expect(joPage.getByPlaceholder('Message #general')).toBeVisible()
+  // Off the banner: one with a pointer on it stays until the pointer goes.
+  await joPage.mouse.move(10, 600)
+  await toJo.fill('Still there?')
+  await toJo.press('Enter')
+  await expect(banner).toContainText('Still there?')
+  await expect(banner).toBeHidden({ timeout: 10_000 })
+})

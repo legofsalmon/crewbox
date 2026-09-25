@@ -63,6 +63,22 @@ export const snapshotTimetable = (doc: Y.Doc): TimetableSnapshot => ({
     .map((m) => withDefaults(m.toJSON() as Partial<Act>)),
 })
 
+/**
+ * Whether another copy of a running order can merge into this one without
+ * listing acts twice.
+ *
+ * Copies of one running order merge cleanly, as they do whenever phones
+ * reconnect. Two typed up apart, say one moved from the last box and one
+ * imported again on its replacement, would merge into every act twice. So
+ * only into an empty one, or one with an act in common, which makes it the
+ * same running order, brought here already by another phone.
+ */
+export const sameRunningOrder = (ours: readonly Act[], theirs: readonly Act[]): boolean => {
+  if (ours.length === 0) return true
+  const theirIds = new Set(theirs.map((act) => act.id))
+  return ours.some((act) => theirIds.has(act.id))
+}
+
 const toYMap = (act: Act): Y.Map<unknown> => {
   const map = new Y.Map<unknown>()
   for (const [key, value] of Object.entries(act)) map.set(key, value)

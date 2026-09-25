@@ -46,12 +46,14 @@ public class AlertsPlugin extends Plugin {
   private void startService(PluginCall call) {
     String serverUrl = call.getString("serverUrl", "");
     String token = call.getString("token", "");
+    // The name the app keeps the token under (Sessions), for a restart.
+    String session = call.getString("session", "");
     String myName = call.getString("myName", "");
     if (serverUrl == null || serverUrl.isEmpty() || token == null || token.isEmpty()) {
       call.reject("serverUrl and token are required");
       return;
     }
-    AlertsService.start(getContext(), serverUrl, token, myName);
+    AlertsService.start(getContext(), serverUrl, token, session, myName);
     requestBatteryExemptionOnce();
     call.resolve();
   }

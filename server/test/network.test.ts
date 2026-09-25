@@ -80,7 +80,10 @@ describe('which address the crew are pointed at', () => {
     const original = console.log
     console.log = (msg: string) => void lines.push(String(msg))
     try {
-      printBoxBanner(8787, '1234', true, { hostname: 'chat.example.com' })
+      printBoxBanner(8787, '1234', true, {
+        hostname: 'chat.example.com',
+        event: { id: 'friday', key: 'k' },
+      })
     } finally {
       console.log = original
     }

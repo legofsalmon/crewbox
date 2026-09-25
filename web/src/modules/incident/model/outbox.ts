@@ -1,4 +1,5 @@
 import { MAX_INCIDENT_LENGTH, type IncidentKind, type IncidentSeverity } from '@crewbox/shared'
+import { storageName, storageNameFor } from '../../../lib/eventScope.ts'
 
 /**
  * Entries typed with no signal, kept until the box has them.
@@ -11,6 +12,10 @@ import { MAX_INCIDENT_LENGTH, type IncidentKind, type IncidentSeverity } from '@
  * screen goes dark.
  *
  * The box dedupes on clientMsgId, so a flush that runs twice is harmless.
+ *
+ * One queue per event (see lib/eventScope.ts), because an entry belongs in
+ * the log of the event it was written at: a queue that followed the phone
+ * filed the last event's entries in the next one's log.
  */
 
 const KEY = 'crewbox:incident-outbox'
@@ -48,8 +53,26 @@ const isQueued = (value: unknown): value is QueuedIncident => {
 
 /** Everything still waiting. Junk in the slot reads as empty, never throws. */
 export function queuedIncidents(): QueuedIncident[] {
+  return read(storageName(KEY))
+}
+
+/** What another event's queue holds, for moving it or forgetting the event. */
+export function queuedIncidentsOf(event: string | null): QueuedIncident[] {
+  return read(storageNameFor(event, KEY))
+}
+
+/** Take entries out of another event's queue, once they are somewhere else. */
+export function unqueueIncidentsOf(event: string | null, clientMsgIds: ReadonlySet<string>): void {
+  const key = storageNameFor(event, KEY)
+  write(
+    read(key).filter((e) => !clientMsgIds.has(e.clientMsgId)),
+    key
+  )
+}
+
+function read(key: string): QueuedIncident[] {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(key)
     const parsed: unknown = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed.filter(isQueued) : []
   } catch {
@@ -80,9 +103,9 @@ export function clearQueuedIncidents(): void {
   write([])
 }
 
-function write(entries: QueuedIncident[]): void {
+function write(entries: QueuedIncident[], key = storageName(KEY)): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(entries))
+    localStorage.setItem(key, JSON.stringify(entries))
   } catch {
     // A full or blocked localStorage must not stop the entry going out over
     // the socket — the queue is the backstop, not the path.

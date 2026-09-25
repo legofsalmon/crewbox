@@ -138,9 +138,33 @@ relay room      <moduleId>/<docName>
 registry key    crewbox:<moduleId>-docs
 ```
 
-Changing any of them after a module has shipped strands data. Pick
-`moduleId` once and leave it alone. `registryKey` exists as an override only
+Changing any of them after a module has shipped strands data. The box
+saves each document under its relay room name as well (`doc_updates`, see
+`server/src/docs.ts`), so a renamed room strands the box's copy along with
+the phones'. Pick `moduleId` once and leave it alone. `registryKey` exists as an override only
 because the patch module shipped before this store did.
+
+A phone that has been at more than one event keeps each event's apart
+(`web/src/lib/eventScope.ts`). The event it held first keeps exactly the
+names above, so a phone from before there was more than one keeps all it
+had. Any other event's are the same names with `crewbox` swapped for
+`crewbox@<event>`: `crewbox@<event>-<moduleId>-<docName>` and
+`crewbox@<event>:<moduleId>-docs`. The relay room is unchanged, because a
+box is one event. The store does this for you; anything else a module keeps
+in `localStorage` or IndexedDB goes through `storageName()` from the same
+file, or one event's data turns up in the next event's box.
+
+A sign-in's token is the one thing in those names a page doesn't read back
+from storage. In the apps the page's storage keeps `(kept by the app)` under
+`crewbox:token` or `crewbox@<event>:token`, and the token is the app's
+(`web/src/lib/sessions.ts`), under names that reach phones just the same:
+the Keychain service `com.colmhewson.crewbox.sessions` on an iPhone, and on
+Android a preferences file and a Keystore key, both `crewbox-sessions`. Each
+keeps its tokens by the storage name. `crewbox:carried-sign-ins` lists, by
+the same names, the sign-ins the app moved out of the page's storage, where
+the apps kept them before, until each one's box has renewed it
+(`POST /api/session/renew`). It holds names, never tokens, and reaches
+phones like the rest.
 
 ## The five steps
 
@@ -220,6 +244,10 @@ always on.
 - **Shortcuts** — `shell/keys.ts`. Register with a `when` guard so your
   binding doesn't fire while someone is typing in a composer.
 - **Unread** — `unreadCount` on the module contributes to the tab title.
+- **Calling the box as the crew member** — `openSession()` from
+  `web/src/lib/sessions.ts` is the open event's session token. Don't read it
+  from storage by name: in the apps that holds a placeholder, and a module
+  that sends it is refused by the box.
 
 ## Offline is the default, not a mode
 

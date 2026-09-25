@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react'
+import { storageName } from '../eventScope.ts'
 
 /**
  * Which docs this device has seen, by last-viewed time — a sidebar shows an
  * "updated" dot when a doc's index lastModified is newer. Purely local
- * (localStorage): "seen" is a per-device notion, not shared state.
+ * (localStorage): "seen" is a per-device notion, not shared state. Each event
+ * has its own, like its documents (see eventScope.ts).
  */
 export interface SeenRegistry {
   markSeen: (id: string) => void
@@ -18,7 +20,7 @@ export function createSeenRegistry(storageKey: string): SeenRegistry {
   function read(): Record<string, string> {
     if (cache) return cache
     try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '{}')
+      const parsed: unknown = JSON.parse(localStorage.getItem(storageName(storageKey)) ?? '{}')
       cache = parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {}
     } catch {
       cache = {}
@@ -36,7 +38,7 @@ export function createSeenRegistry(storageKey: string): SeenRegistry {
       const next = { ...read(), [id]: new Date().toISOString() }
       cache = next
       try {
-        localStorage.setItem(storageKey, JSON.stringify(next))
+        localStorage.setItem(storageName(storageKey), JSON.stringify(next))
       } catch {
         // Best-effort; the dot is a hint, not state that can be wrong.
       }

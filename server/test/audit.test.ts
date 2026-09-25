@@ -4,8 +4,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
-import { MetricsStore } from '../src/audit/metrics.ts'
+import { BUCKET_MS, MetricsStore } from '../src/audit/metrics.ts'
 import { buildApp, type App } from '../src/app.ts'
+import { controlKey } from '../src/control.ts'
 
 /**
  * The audit endpoints belong to the whole crew — session-authed, never
@@ -260,6 +261,122 @@ describe('POST /api/audit/probe', () => {
     }
     throw new Error('probe run never finished')
   }, 20_000)
+
+  it('sends nothing off-site from a box told to make no outbound connections', async () => {
+    // The wiring rather than the probe: CREWBOX_UPDATE_CHECK=0 reaches the
+    // app as `outbound`, and has to reach the sweep from there.
+    await app.close()
+    const asked: string[] = []
+    const db = openDb(':memory:')
+    const store = new Store(db)
+    store.createChannel('general', 'public', 'Everyone')
+    app = buildApp({
+      store,
+      eventPin: EVENT_PIN,
+      filesDir,
+      dataDir: filesDir,
+      metrics: new MetricsStore(db),
+      adminPassword: ADMIN_PASSWORD,
+      modules: ['chat', 'network'],
+      logger: false,
+      outbound: false,
+      probes: {
+        tcpReachable: async (host) => {
+          asked.push(host)
+          return true
+        },
+        noContentOk: async () => {
+          asked.push('generate_204')
+          return true
+        },
+        resolve4: async () => [],
+        localAddresses: () => ['192.168.200.50'],
+        certPem: () => null,
+        now: () => Date.now(),
+      },
+    })
+    const token = await join_('Boss')
+    const unlock = await app.inject({
+      method: 'POST',
+      url: '/api/admin/unlock',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { password: ADMIN_PASSWORD },
+    })
+    const { adminToken } = unlock.json() as { adminToken: string }
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/audit/probe',
+      headers: { authorization: `Bearer ${token}`, 'x-admin-token': adminToken },
+    })
+    expect(res.statusCode).toBe(202)
+
+    for (let i = 0; i < 100; i++) {
+      const audit = await app.inject({
+        method: 'GET',
+        url: '/api/audit',
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const body = audit.json() as {
+        probe: {
+          finishedAt: number | null
+          report: { probes: Array<{ id: string; state: string; sent: string }> }
+        } | null
+      }
+      if (body.probe?.finishedAt) {
+        const uplink = body.probe.report.probes.find((p) => p.id === 'crew-uplink')
+        expect(uplink).toMatchObject({ state: 'skipped', sent: 'nothing' })
+        expect(asked).toEqual([])
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    throw new Error('probe run never finished')
+  })
+})
+
+describe('how comms sounded, as a desk reads it', () => {
+  it('counts phones on comms, not their reports', async () => {
+    // One phone on comms for a minute sends four readings. The desk API and
+    // the readiness line were handed the four and called them devices.
+    await app.close()
+    const db = openDb(':memory:')
+    const store = new Store(db)
+    const recorded = new MetricsStore(db)
+    app = buildApp({
+      store,
+      eventPin: EVENT_PIN,
+      filesDir,
+      dataDir: filesDir,
+      metrics: recorded,
+      adminPassword: ADMIN_PASSWORD,
+      logger: false,
+    })
+    const minute = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS - BUCKET_MS
+    const row = (metric: string, max: number, count: number) => ({
+      ts: minute,
+      metric,
+      key: '',
+      min: 0,
+      avg: max,
+      max,
+      count,
+    })
+    recorded.flush([
+      row('voice.concealedPct', 2, 4),
+      row('voice.lossPct', 1, 4),
+      row('voice.devices', 1, 1),
+    ])
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/control/state',
+      headers: { 'x-api-key': controlKey(store, {}) },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { voice: { quality: { devices: number } | null } }
+    expect(body.voice.quality).toMatchObject({ devices: 1, concealedPct: 2 })
+  })
 })
 
 describe('module gating', () => {

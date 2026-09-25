@@ -18,10 +18,13 @@
 // in. It is committed, and a server test fails when it no longer matches the
 // lockfile.
 //
-// Four things are not npm packages and are described by hand at the end: the
-// Node.js runtime inside the box binary, the LiveKit server inside it, and the
-// AndroidX libraries and OkHttp (with Okio and the Kotlin standard library) in
-// the APK.
+// The rest are not npm packages and are described by hand at the end: the
+// Node.js runtime inside the box binary, the LiveKit server inside it, and in
+// the APK the AndroidX libraries, OkHttp (with Okio and the Kotlin standard
+// library), ZXing, and what AndroidX CameraX brings with it. CameraX's own
+// dependencies are listed as Maven Central and Google's Maven publish them for
+// the version in native/android/variables.gradle; a CameraX upgrade is the time
+// to look again.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -156,6 +159,98 @@ Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
 Licensed under the Apache License, Version 2.0; you may obtain a copy at
 https://www.apache.org/licenses/LICENSE-2.0. The Android app uses OkHttp for
 the background alerts connection to the box.
+
+${RULE}
+ZXing (in the Android app)
+Licence: Apache-2.0
+${RULE}
+Copyright ZXing authors. Licensed under the Apache License, Version 2.0; you
+may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0. Source:
+https://github.com/zxing/zxing. The Android app uses its core library to read
+the join poster's QR code, on the phone.
+
+${RULE}
+What AndroidX CameraX brings with it (in the Android app)
+Licence: Apache-2.0
+${RULE}
+The Android app scans the join poster with CameraX, which is part of AndroidX
+(above), as is the Media3 muxer it brings. It also brings the libraries
+below, each licensed under the Apache License, Version 2.0; you may obtain a
+copy at https://www.apache.org/licenses/LICENSE-2.0.
+
+Guava, with failureaccess and listenablefuture: Copyright The Guava Authors.
+Dagger: Copyright The Dagger Authors. javax.inject: Copyright The JSR-330
+Expert Group. JSpecify: Copyright The JSpecify Authors. AutoValue annotations:
+Copyright Google LLC. Error Prone annotations: Copyright The Error Prone
+Authors. J2ObjC annotations: Copyright Google Inc. The JSR-305 annotations, as
+published by FindBugs. kotlinx.coroutines and kotlinx-atomicfu: Copyright
+JetBrains s.r.o. and contributors.
+
+Jakarta Dependency Injection: produced and maintained by the Eclipse Jakarta
+Dependency Injection project (https://projects.eclipse.org/projects/cdi.batch).
+All content is the property of the respective authors or their employers.
+Jakarta Dependency Injection is a trademark of the Eclipse Foundation.
+
+${RULE}
+Checker Framework qualifiers (in the Android app, brought by Guava)
+Licence: MIT
+${RULE}
+Checker Framework qualifiers
+Copyright 2004-present by the Checker Framework developers
+
+MIT License:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+${RULE}
+libyuv (in the Android app, built into AndroidX CameraX)
+Licence: BSD-3-Clause
+${RULE}
+Copyright 2011 The LibYuv Project Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+  * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+
+  * Neither the name of Google nor the names of its contributors may
+    be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 `
 
 export function renderNotices(
@@ -169,7 +264,8 @@ their licences. Each entry gives the package, its version, its licence and
 the licence text and notices it ships with. Generated from package-lock.json
 by scripts/third-party-notices.mjs; do not edit by hand.
 
-${shipped.length} npm packages, then the Node.js runtime, the LiveKit server, AndroidX and OkHttp.
+${shipped.length} npm packages, then the Node.js runtime, the LiveKit server, AndroidX, OkHttp,
+ZXing and what CameraX brings with it.
 `
   const blocks = shipped.map(({ at, name, info }) => {
     const dir = join(ROOT, at)

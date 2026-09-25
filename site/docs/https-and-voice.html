@@ -29,7 +29,7 @@
       <main class="content">
         <h1 id="https-names-and-certificates"><a class="anchor" href="#https-names-and-certificates">HTTPS, names and certificates</a></h1>
 <p>The box works over plain HTTP. Two things need more: <strong>browser microphones</strong> (voice beyond listen-only) and <strong>installing the web app to a home screen</strong>. Both are browser security rules tied to HTTPS — so if you want them, the box needs a certificate, and a certificate needs a name.</p>
-<p>If your crew uses the Android/iOS apps for voice and nobody installs the web app, you can skip this whole page.</p>
+<p>If your crew uses the Android/iOS apps for voice and nobody installs the web app, you can skip this whole page. iPhones then join by the box's IP address, which is what a box without a certificate advertises anyway: the iPhone app won't use a name over plain HTTP (<a href="/docs/phones-and-platforms#the-ios-app">why</a>).</p>
 <h2 id="the-two-names-idea"><a class="anchor" href="#the-two-names-idea">The two-names idea</a></h2>
 <p>One hostname can't serve both worlds, so crewbox's reference setup uses two:</p>
 <div class="table-scroll"><table><thead><tr><th>Name</th><th>Points at</th><th>Job</th></tr></thead><tbody><tr><td>A public name (like <code>crewbox.example.com</code>)</td><td>the internet</td><td>the download page — where you got the box</td></tr><tr><td>A box name (like <code>chat.example.com</code>)</td><td>the box's LAN IP</td><td>what crew type; what the certificate is issued for</td></tr></tbody></table></div>

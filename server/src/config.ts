@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { parseUniverseList, type DmxMode } from './dmx/listener.ts'
+import { parseAnnounceSetting } from './announce/index.ts'
 
 /** `CREWBOX_DMX`, defaulting to off — a box never listens unless asked. */
 export function dmxMode(value: string | undefined): DmxMode {
@@ -138,6 +139,14 @@ export const config = {
      */
     interfaceIp: process.env.CREWBOX_WATCH_IFACE?.trim() || undefined,
   },
+  /**
+   * Announcing the box on the crew network, so the apps list it without
+   * anybody typing an address (server/src/announce). `CREWBOX_ANNOUNCE` is
+   * `auto`, `on` or `off`, and outranks the admin panel's choice. Unset and
+   * never chosen, a packaged box is automatic and a source run is off: the
+   * captive responder's rule, and for the same reason.
+   */
+  announce: parseAnnounceSetting(process.env.CREWBOX_ANNOUNCE),
   /**
    * Asking whether a newer crewbox exists (server/src/update.ts).
    *

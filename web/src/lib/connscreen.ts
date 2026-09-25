@@ -1,4 +1,4 @@
-import type { Connection } from '../store.ts'
+import type { Connection, Elsewhere } from '../store.ts'
 
 /** Which full-screen state the chat phase should show before content is ready. */
 export type ConnScreen = 'ok' | 'connecting' | 'unreachable'
@@ -58,18 +58,37 @@ export interface ConnCause {
  * for a while.
  *
  * Ordered by how often each one is actually the answer, not by how
- * interesting it is. The iOS entry leads on that platform because it is the
- * only cause that is completely invisible from inside the app — the phone
- * reports a healthy Wi-Fi connection while routing everything past it — and
- * because it cost a real event an hour before anyone thought to look at the
- * status bar. It is omitted elsewhere: Android does not do this, and a cause
- * that cannot apply is a cause that wastes the reader's time.
+ * interesting it is. The status-bar entry leads on an iPhone, and on Android
+ * in a browser, because it is the only cause that is completely invisible
+ * from inside the app — the phone reports a healthy Wi-Fi connection while
+ * routing everything past it — and because it cost a real event an hour
+ * before anyone thought to look at the status bar. iOS moves a Wi-Fi with no
+ * internet off to mobile data; Android keeps it joined and sends apps'
+ * traffic over mobile data, when that is on. The Android app keeps its own
+ * traffic for the box on the Wi-Fi (native SiteWifi), so the entry is
+ * omitted there, and on a computer: a cause that cannot apply is a cause
+ * that wastes the reader's time.
  *
  * Pure so the copy is guarded by tests: this text is read by someone under
  * pressure, and a reordering that buries the invisible cause would quietly
  * undo the point of the screen.
  */
-export function connectionCauses(input: { ssid?: string; isIos: boolean }): ConnCause[] {
+export function connectionCauses(input: {
+  ssid?: string
+  isIos: boolean
+  /** Android, in a browser or the app. */
+  isAndroid?: boolean
+  /**
+   * The phone app, not a browser: it can be told another address from its
+   * Boxes screen, and on Android keeps its own traffic on the crew Wi-Fi.
+   */
+  inApp?: boolean
+  /**
+   * The app is looking for the box on the Wi-Fi as this is read, to follow it
+   * to wherever it proves itself (lib/follow.ts).
+   */
+  looksForBox?: boolean
+}): ConnCause[] {
   const network = input.ssid ? `“${input.ssid}”` : 'the crew Wi-Fi'
   const causes: ConnCause[] = []
 
@@ -81,6 +100,15 @@ export function connectionCauses(input: { ssid?: string; isIos: boolean }): Conn
         'data — which cannot reach the crew box, even though the Wi-Fi still shows as joined. ' +
         'Turn mobile data off for a minute and it comes straight back. Tell whoever runs the ' +
         'box: there is a proper fix for this at their end.',
+    })
+  } else if (input.isAndroid && !input.inApp) {
+    causes.push({
+      heading: 'Check the Wi-Fi symbol in your status bar',
+      body:
+        `If it has an exclamation mark, Android decided ${network} has no internet and is ` +
+        'sending this browser’s traffic over mobile data, which cannot reach the crew box, ' +
+        'even though the Wi-Fi still shows as joined. Turn mobile data off and it comes ' +
+        'straight back. The Crewbox app for Android stays on the crew Wi-Fi by itself.',
     })
   }
 
@@ -96,6 +124,153 @@ export function connectionCauses(input: { ssid?: string; isIos: boolean }): Conn
     heading: 'The box may be restarting',
     body: 'An update or a restart takes under a minute, and this clears by itself when it comes back.',
   })
+  if (input.inApp) {
+    // Last: rarer than any of the above, and the only one that may not clear
+    // by itself. The app keeps trying the address it has, and where it can
+    // look for the box on the Wi-Fi, it is looking.
+    causes.push({
+      heading: 'The box may have a new address',
+      body: input.looksForBox
+        ? 'This phone is looking for it on this Wi-Fi, and goes on there by itself once the ' +
+          'box shows it is the same one. If it isn’t found, tap Your boxes and type the ' +
+          'address on its join poster.'
+        : 'If it has been moved or set up somewhere else, tap Your boxes to look for it on ' +
+          'this Wi-Fi, or type the address on its join poster.',
+    })
+  }
 
   return causes
+}
+
+/**
+ * What to say when the box at this address is running another event than
+ * the one this device has open — a spare with a fresh database, or the next
+ * event's box — and so has been given nothing of this one's.
+ *
+ * Its admin's word first, where there is one: a spare they say carries on
+ * the event. Otherwise its name is all there is to go on. A spare set up
+ * under the event's own name is the same name starting over, and one not
+ * set up has none.
+ */
+export function elsewhereCopy(input: {
+  address: string
+  open: string
+  here: string
+  /** Its admin says it carries on the open event (server/src/continues.ts). */
+  carriesOpen?: boolean
+}): string {
+  if (input.carriesOpen) {
+    const open = input.open.trim()
+    return open
+      ? `The box at ${input.address} has changed, and carries on “${open}”.`
+      : `The box at ${input.address} has changed, and carries on this event.`
+  }
+  const here = input.here.trim()
+  if (!here) return `The box at ${input.address} has changed, and is starting afresh.`
+  if (here === input.open.trim()) {
+    return `The box at ${input.address} has changed, and is starting “${here}” afresh.`
+  }
+  return `The box at ${input.address} is running “${here}” now.`
+}
+
+const eventNamed = (name: string): string => (name.trim() ? `“${name.trim()}”` : 'an event')
+
+/**
+ * What to say when a box says it runs an event this phone holds at another
+ * address, answers the check, and fails it (lib/identity.ts): anything that
+ * took an address can say which event it runs.
+ */
+export function refusedCopy(input: { address: string; name: string }): string {
+  return (
+    `The box at ${input.address} says it is running ${eventNamed(input.name)}, but it can’t ` +
+    'show that it is that event’s box, so nothing has gone to it.'
+  )
+}
+
+/**
+ * What to say when the box at the address a scanned poster gave isn't the
+ * poster's (lib/identity.ts, checkPoster): found out `before` anything went
+ * to it, or `after` it answered the join as another event, which it can only
+ * do when it couldn't be checked first. Most often the phone is on another
+ * Wi-Fi, where something else has that address, or the poster is from a box
+ * that has since been replaced.
+ */
+export function notThePostersCopy(address: string, when: 'before' | 'after'): string {
+  return (
+    `The box at ${address} isn’t the one on this poster, so ` +
+    (when === 'before' ? 'nothing has gone to it. ' : 'the app hasn’t kept its sign-in. ') +
+    'Check the phone is on the event’s Wi-Fi, then try again, or ask whether the poster is ' +
+    'current.'
+  )
+}
+
+/**
+ * What to say when a scanned poster names an event this phone holds, with
+ * another key than the one it kept: nothing goes to the box, and Your boxes
+ * is where a box that can't show it is the event's is opened anyway.
+ */
+export function posterDisagreesCopy(input: { address: string; name: string }): string {
+  const event = input.name.trim() ? `“${input.name.trim()}”` : 'the event it names'
+  return (
+    `This poster doesn’t match ${event} as this phone knows it, so nothing has gone to the ` +
+    `box at ${input.address}. If you are sure it is the event’s box, open it from Your boxes.`
+  )
+}
+
+/**
+ * What to say while the box at this address, running an event this phone
+ * holds at another address, has not shown it is that event's box: being
+ * checked, failing, or unable to be checked. Nothing goes to it meanwhile.
+ */
+export function unprovenCopy(input: {
+  address: string
+  name: string
+  heldAt: string
+  proof: 'checking' | 'refused' | 'unchecked'
+}): string {
+  const says = `The box at ${input.address} says it is running ${eventNamed(input.name)}`
+  switch (input.proof) {
+    case 'checking':
+      return `${says}, which this phone knows at ${input.heldAt}. Checking that it is…`
+    case 'refused':
+      return refusedCopy(input)
+    case 'unchecked':
+      return (
+        `${says}, which this phone knows at ${input.heldAt}. It can’t be checked, so nothing ` +
+        'has gone to it. If that box has moved here, type this address in Your boxes.'
+      )
+  }
+}
+
+/**
+ * What the screens say about the event at this address, and whether they
+ * offer to open it: not while it is an event this phone holds elsewhere
+ * whose box has not shown it is that event's.
+ */
+export function elsewhereView(input: { address: string; open: string; here: Elsewhere }): {
+  copy: string
+  opens: boolean
+} {
+  const { held, name, carriesOpen } = input.here
+  if (!held) {
+    return {
+      copy: elsewhereCopy({ address: input.address, open: input.open, here: name, carriesOpen }),
+      opens: true,
+    }
+  }
+  const heldAt = held.origin.replace(/^https?:\/\//i, '')
+  if (held.proof === 'proven') {
+    // Not a new event, and not starting afresh: the one this phone had
+    // somewhere else, whose box is here now.
+    return {
+      copy: name.trim()
+        ? `The box at ${input.address} is running “${name.trim()}”, which this phone knew at ${heldAt}.`
+        : `The box at ${input.address} is running the event this phone knew at ${heldAt}.`,
+      opens: true,
+    }
+  }
+  return {
+    copy: unprovenCopy({ address: input.address, name, heldAt, proof: held.proof }),
+    opens: false,
+  }
 }

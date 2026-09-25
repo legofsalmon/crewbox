@@ -67,6 +67,29 @@ Below the list, the settings:
   restarts**, and a banner reminds you while saved settings differ from
   what the box started with. There's no restart button — stop and start
   the box ([how](/docs/run-the-box#day-to-day)).
+- **Let the apps find this box on the crew network** — the box announces
+  itself on the crew network the way printers and sound desks do (Bonjour),
+  so a phone app there can find it without being given the address.
+  **Automatic** announces on the crew network only, and stays quiet when a
+  lighting or media listener is on that network too, because the box does
+  not transmit on a show network unless told to. **Always** announces there
+  anyway, for a rig whose crew and show share one network on purpose, and
+  **Never** stops it. It takes effect at once, and the line underneath says
+  what the box is doing, or why it is quiet. On a Mac that has not allowed
+  Crewbox on the local network, it says so and where to allow it. A box
+  run from source starts with it off.
+- **Carries on another event** — for a spare with no backup, or a bigger
+  box, taking over from an event's box. A box started without a backup is
+  a new event to every phone, and they send it nothing of the one they had.
+  Pick that event here and save, and each phone that has it offers, once
+  its crew member has joined this box, to bring its documents, running
+  order and unsent messages across
+  ([what crew see](/docs/getting-connected#more-than-one-event)). The chat
+  history comes back only from a backup. The list is the events the device
+  you are using has been on, so use one that was on the old event: a phone
+  app, or a browser that joined the old box at the address this box has
+  now. It stays open on an unlicensed box, since it is how a spare takes
+  over mid-show.
 - **Admin password** — changeable here; doing so locks every other device
   that had the panel open.
 

@@ -1,8 +1,21 @@
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { newId } from '@crewbox/shared'
-import { deletedIds, removeIndexEntry, upsertIndexEntry } from './indexDoc.ts'
-import { whenPersisted } from './persistence.ts'
+import { openEvent, storageName, storageNameFor } from '../eventScope.ts'
+import {
+  deletedIds,
+  hasIndexEntry,
+  removeIndexEntry,
+  snapshotIndex,
+  upsertIndexEntry,
+} from './indexDoc.ts'
+import {
+  deleteLocalDatabase,
+  holdsAllOf,
+  MOVED_ORIGIN,
+  readLocalCopy,
+  whenPersisted,
+} from './persistence.ts'
 import { syncManager } from './sync.ts'
 
 /**
@@ -19,6 +32,10 @@ import { syncManager } from './sync.ts'
  *   IndexedDB db   `crewbox-<moduleId>-<docName>`
  *   relay room     `<moduleId>/<docName>`   (the server's namespace check)
  *   registry key   `crewbox:<moduleId>-docs`
+ *
+ * The two on the device are the first event's. Any other event a device
+ * holds has its own, from eventScope.ts; the relay room is the box's and is
+ * the same for every event.
  */
 
 export interface DocHandle {
@@ -95,6 +112,34 @@ export interface DocStore {
   reconcileDeletions: () => string[]
   /** Ids the index records as deleted, so a listing can skip them. */
   deleted: () => Set<string>
+  /**
+   * Where an event's copies of this module's documents are on this device,
+   * for moving them to another event or forgetting them. Any event, open or
+   * not: nothing here opens a database.
+   */
+  storageOf: (event: string | null) => ModuleStorage
+  /**
+   * Bring another event's copies of this module's documents to the open
+   * event: merged into its own the way two phones' copies merge, listed in
+   * its index, and deleted from the other event once this one is known to
+   * hold them. What was deleted at either event stays deleted.
+   *
+   * `left` is how many are still the other event's: this device could not
+   * show they had been saved here, and a later move can try them again.
+   */
+  moveFrom: (event: string) => Promise<{ moved: number; left: number }>
+}
+
+/** One event's copies of one module's documents, by name. */
+export interface ModuleStorage {
+  /** The localStorage key listing the documents held. */
+  registryKey: string
+  /** The documents held, from that list. */
+  ids: () => string[]
+  /** The IndexedDB database holding one of them. */
+  database: (id: string) => string
+  /** The IndexedDB database holding the module's index. */
+  indexDatabase: string
 }
 
 /**
@@ -122,14 +167,23 @@ const INDEX_DOC_NAME = 'index'
 
 const hasIndexedDb = typeof indexedDB !== 'undefined'
 
+const made: DocStore[] = []
+
+/**
+ * Every document store the app has, for the Boxes screen to count, move and
+ * forget an event's documents by. A module's store is made when the module is
+ * loaded, and the shell loads every module at start.
+ */
+export const allDocStores = (): readonly DocStore[] => made
+
 export function createDocStore(config: DocStoreConfig): DocStore {
   const dbPrefix = `crewbox-${config.moduleId}-`
   const registryKey = config.registryKey ?? `crewbox:${config.moduleId}-docs`
   const room = (docName: string) => `${config.moduleId}/${docName}`
 
-  function readRegistry(): string[] {
+  function readRegistry(key = storageName(registryKey)): string[] {
     try {
-      const raw = localStorage.getItem(registryKey)
+      const raw = localStorage.getItem(key)
       const parsed: unknown = raw ? JSON.parse(raw) : []
       return Array.isArray(parsed)
         ? parsed.filter((id): id is string => typeof id === 'string')
@@ -139,9 +193,9 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     }
   }
 
-  function writeRegistry(ids: string[]): void {
+  function writeRegistry(ids: string[], key = storageName(registryKey)): void {
     try {
-      localStorage.setItem(registryKey, JSON.stringify(ids))
+      localStorage.setItem(key, JSON.stringify(ids))
     } catch {
       // Registry is best-effort; the synced index is the primary listing.
     }
@@ -157,7 +211,9 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     // nobody else's reached them, silently, with the sheet looking exactly
     // as it should. Persistence is an accelerator; the relay is where the
     // document actually lives, and that is true in both directions.
-    const persistence = hasIndexedDb ? new IndexeddbPersistence(dbPrefix + docName, doc) : null
+    const persistence = hasIndexedDb
+      ? new IndexeddbPersistence(storageName(dbPrefix + docName), doc)
+      : null
     // `typeof indexedDB !== 'undefined'` covers a browser with no IndexedDB
     // at all; it does not cover one that has it and refuses to open it. See
     // `whenPersisted`, which is where that is answered.
@@ -186,7 +242,7 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     writeRegistry(readRegistry().filter((known) => known !== id))
     if (!hasIndexedDb) return
     await new Promise<void>((resolve) => {
-      const req = indexedDB.deleteDatabase(dbPrefix + config.docName(id))
+      const req = indexedDB.deleteDatabase(storageName(dbPrefix + config.docName(id)))
       req.onsuccess = req.onerror = req.onblocked = () => resolve()
     })
   }
@@ -333,7 +389,7 @@ export function createDocStore(config: DocStoreConfig): DocStore {
     }
   }
 
-  return {
+  const store: DocStore = {
     indexDocName: INDEX_DOC_NAME,
     defaultTitle: config.defaultTitle,
     docName: config.docName,
@@ -380,6 +436,71 @@ export function createDocStore(config: DocStoreConfig): DocStore {
      * enumerates the whole origin (every module's databases) and doesn't
      * exist in Firefox.
      */
-    listLocalIds: readRegistry,
+    listLocalIds: () => readRegistry(),
+
+    storageOf: (event) => {
+      const key = storageNameFor(event, registryKey)
+      return {
+        registryKey: key,
+        ids: () => readRegistry(key),
+        database: (id) => storageNameFor(event, dbPrefix + config.docName(id)),
+        indexDatabase: storageNameFor(event, dbPrefix + INDEX_DOC_NAME),
+      }
+    },
+
+    moveFrom: async (event) => {
+      const from = store.storageOf(event)
+      const here = store.storageOf(openEvent())
+      // The open event's own would be read, merged into itself, and deleted.
+      if (from.registryKey === here.registryKey) throw new Error('That is the open event.')
+      const ids = from.ids()
+      if (!ids.length || !hasIndexedDb) return { moved: 0, left: ids.length }
+      const theirIndex = await readLocalCopy(from.indexDatabase)
+      // This event's deletions are in its index, which may still be loading.
+      await openIndex().whenLoaded
+      const listed = new Map(
+        (theirIndex ? snapshotIndex(theirIndex, config.defaultTitle) : []).map((e) => [e.id, e])
+      )
+      const index = openIndex().doc
+      const gone = new Set([...(theirIndex ? deletedIds(theirIndex) : []), ...deletedIds(index)])
+      const left: string[] = []
+      let moved = 0
+      for (const id of ids) {
+        const theirs = gone.has(id) ? null : await readLocalCopy(from.database(id))
+        if (theirs && docHasContent(theirs)) {
+          const handle = open(id, { present: false })
+          await handle.whenLoaded
+          Y.applyUpdate(handle.doc, Y.encodeStateAsUpdate(theirs), MOVED_ORIGIN)
+          // Listed as the other event listed it. Another phone may have
+          // brought it here already, and its entry is as good as this one.
+          if (!hasIndexEntry(index, id)) {
+            const entry = listed.get(id)
+            upsertIndexEntry(
+              index,
+              id,
+              entry
+                ? { ...entry.meta, title: entry.title, lastModified: entry.lastModified }
+                : { ...config.indexFields(handle.doc), lastModified: new Date().toISOString() },
+              config.localOrigin
+            )
+          }
+          handle.destroy()
+          // Read back from this device's storage, not the open document: the
+          // other event's copy is deleted next, and only a saved one counts.
+          const landed = await readLocalCopy(here.database(id))
+          if (!landed || !holdsAllOf(landed, theirs)) {
+            left.push(id)
+            continue
+          }
+          moved++
+        }
+        // Here now, deleted, or empty: none of it is the other event's to keep.
+        await deleteLocalDatabase(from.database(id))
+      }
+      writeRegistry(left, from.registryKey)
+      return { moved, left: left.length }
+    },
   }
+  made.push(store)
+  return store
 }

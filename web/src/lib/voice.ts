@@ -17,7 +17,13 @@ import {
   type AudioKind,
   type DeviceInfo,
 } from './devices.ts'
-import { isSafari, shouldMixThroughWebAudio } from './voice-playback.ts'
+import { nativeVoice } from './server.ts'
+import {
+  holdCallAudio,
+  isSafari,
+  releaseCallAudio,
+  shouldMixThroughWebAudio,
+} from './voice-playback.ts'
 import { qosBetween, worstQos, type ReceiverSample, type VoiceQos } from './voice-qos.ts'
 
 import {
@@ -142,10 +148,32 @@ export class VoiceManager {
     })
   }
 
-  async join(channelId: string, token: string, url: string): Promise<void> {
+  /**
+   * `iceServers` is the box's list, when it sent one, and replaces the SFU's.
+   * Empty means ask no STUN server at all, which is what a box sends for its
+   * own SFU (see /api/voice/token). Absent, the SFU's list stands.
+   */
+  async join(
+    channelId: string,
+    token: string,
+    url: string,
+    iceServers?: RTCIceServer[]
+  ): Promise<void> {
     await this.leave()
     this.channelId = channelId
     this.publish({ channelId, status: 'joining', error: null, participants: [] })
+    // Before anything below opens audio. The Android web view reads the
+    // Bluetooth permission once, when its audio first starts, so this is the
+    // moment asking about a headset can still count (VoicePlugin.java). A
+    // bridge that fails is a headset that doesn't follow, never a failed join.
+    await nativeVoice()
+      ?.prepare()
+      .catch(() => {})
+    // Left, or joined somewhere else, while Android was asking.
+    if (this.channelId !== channelId) return
+    // The iPhone's side, and also before any audio: WebKit applies the
+    // session type when audio next starts. `reset` hands it back.
+    holdCallAudio({ ios: isIOS() })
 
     const savedIn = savedDeviceId('audioinput')
     const savedOut = savedDeviceId('audiooutput')
@@ -236,7 +264,10 @@ export class VoiceManager {
 
     try {
       await Promise.race([
-        room.connect(url, token),
+        // An empty list has to reach the SDK as a list: it applies the SFU's
+        // servers whenever `rtcConfig.iceServers` is missing, and an empty
+        // array is not missing (makeRTCConfiguration, in livekit-client).
+        room.connect(url, token, iceServers ? { rtcConfig: { iceServers } } : undefined),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS)
         ),
@@ -626,6 +657,7 @@ export class VoiceManager {
     this.room = null
     this.channelId = null
     if (room) void room.disconnect().catch(() => {})
+    releaseCallAudio()
     this.publish({ ...initialVoiceState, devices: initialVoiceState.devices, error })
   }
 }

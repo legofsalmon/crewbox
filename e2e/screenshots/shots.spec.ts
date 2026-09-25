@@ -167,7 +167,7 @@ test('shots: patch sheets', async () => {
   // Dialogs close via their own × — not every one binds Escape.
   const closeDialog = () => maya.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
 
-  await maya.getByRole('button', { name: 'Boxes' }).click()
+  await maya.getByRole('button', { name: 'Boxes', exact: true }).click()
   await shoot(maya, 'patch-subbox')
   await closeDialog()
 
@@ -374,11 +374,16 @@ test('shots: extras — file detail, share, probe, phone modules', async ({ brow
   await maya.getByRole('heading', { name: 'Deep probe' }).scrollIntoViewIfNeeded()
   await shoot(maya, 'network-probe')
 
-  // Phone-sized module views: the grid and the plan.
+  // Phone-sized module views: the grid and the plan. The phone has never had
+  // either document and gets it through the box from a device that has it
+  // open, so Maya opens the sheet first, as Lena already has the plot open.
+  await maya.getByRole('button', { name: /Open sheet Riverside Weekender/ }).click()
+  await expect(maya.getByLabel('Sheet title')).toHaveValue(/^Riverside Weekender/)
   const phone = await phoneDevice(browser, CREW.prod)
   await phone.getByRole('button', { name: 'Open channels' }).first().click()
   await phone.getByRole('button', { name: /Open sheet Riverside Weekender/ }).click()
-  await expect(phone.getByLabel('Sheet title')).toBeVisible()
+  // It opens empty and fills in when it syncs.
+  await expect(phone.getByLabel('Sheet title')).toHaveValue(/^Riverside Weekender/)
   await shoot(phone, 'patch-grid-phone')
 
   await phone.getByRole('button', { name: 'Open channels' }).first().click()

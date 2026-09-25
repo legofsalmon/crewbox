@@ -12,6 +12,20 @@ listener's `receiveOnly` — `send` is removed from every socket before first
 use, and the test suite asserts it throws. Everything below is learned from
 traffic that multicasts to the whole network anyway.
 
+The box does multicast one thing, and it is not a watcher: it announces
+itself on the **crew** network so the phone apps can find it
+(`server/src/announce`, [DISCOVERY.md](DISCOVERY.md)). Its own socket, its own
+adapter, and in its automatic setting it stays quiet whenever a watcher is on
+the crew adapter or was left to the operating system's choice, since then the
+crew network may be this one. Only an admin choosing **Always** puts it on a
+network a watcher shares, and the panel names that choice for what it is.
+
+The other is the Network audit's deep probe, which only an admin can start:
+one mDNS question for Dante and NDI devices, so the roster fills in without
+waiting for their next announcements. It leaves by the adapter
+`CREWBOX_WATCH_IFACE` names, and by whichever one the operating system picks
+for multicast when nothing does ([NETWORK_AUDIT.md](NETWORK_AUDIT.md)).
+
 ## What it watches
 
 | Watcher | Where                      | What it learns                                                                                            |
@@ -56,8 +70,11 @@ Off by default. When off, the panel section does not appear at all.
   daemons (Dante Virtual Soundcard) hold these same ports; the sockets open
   with address reuse, and where the OS still refuses, the panel names the
   watcher that is dark rather than the box failing to start. On Linux,
-  ports 319/320 need the box to run as root or with
-  `net.ipv4.ip_unprivileged_port_start` lowered — the panel says when they
+  ports 319/320 are below 1024, so binding them takes
+  `CAP_NET_BIND_SERVICE`, root, or `net.ipv4.ip_unprivileged_port_start`
+  lowered. The systemd rig's unit (`deploy/systemd/crewbox.service`)
+  already grants that capability; the packaged box, which `install.sh`
+  runs as a service of the user's own, does not. The panel says when they
   could not be opened.
 - **Like the DMX layer at its birth, all of this is spec-synthesised.**
   IEEE 1588-2008, RFC 6762/6763, RFC 2974 and SDP are well-trodden, but no

@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { Channel, Message, User } from '@crewbox/shared'
+import { openEvent, storageNameFor } from './eventScope.ts'
 
 /** A send waiting for a server ack. Survives reloads and battery death. */
 export interface OutboxEntry {
@@ -25,17 +26,39 @@ export interface Snapshot {
   savedAt: number
 }
 
-const db = new Dexie('crewbox') as Dexie & {
+type CrewboxDb = Dexie & {
   messages: EntityTable<Message, 'id'>
   outbox: EntityTable<OutboxEntry, 'clientMsgId'>
   kv: EntityTable<Snapshot, 'key'>
 }
 
-db.version(1).stores({
-  messages: 'id, [channelId+seq]',
-  outbox: 'clientMsgId, createdAt',
-  kv: 'key',
-})
+/**
+ * The chat cache is a database per event: this name for the first event a
+ * device held, and one of the event's own for any other (see eventScope.ts).
+ */
+const DB_NAME = 'crewbox'
+
+/** What an event's chat cache is called on this device. */
+export const chatDatabaseName = (event: string | null): string => storageNameFor(event, DB_NAME)
+
+/** An event's chat cache. Dexie opens it on the first thing asked of it. */
+export function chatDatabase(event: string | null): CrewboxDb {
+  const db = new Dexie(chatDatabaseName(event)) as CrewboxDb
+  db.version(1).stores({
+    messages: 'id, [channelId+seq]',
+    outbox: 'clientMsgId, createdAt',
+    kv: 'key',
+  })
+  return db
+}
+
+let open: CrewboxDb | null = null
+
+/**
+ * The open event's, made on first use rather than when this module loads, so
+ * that it is the open event's and not whichever was open when it loaded.
+ */
+const database = (): CrewboxDb => (open ??= chatDatabase(openEvent()))
 
 const KEEP_PER_CHANNEL = 300
 
@@ -89,11 +112,11 @@ const bestEffort = (work: () => Promise<unknown>): Promise<void> =>
 
 export const cache = {
   async saveMessages(messages: Message[]): Promise<void> {
-    if (messages.length) await bestEffort(() => db.messages.bulkPut(messages))
+    if (messages.length) await bestEffort(() => database().messages.bulkPut(messages))
   },
 
   loadMessages(): Promise<Message[]> {
-    return orEmpty(() => db.messages.orderBy('[channelId+seq]').toArray(), [])
+    return orEmpty(() => database().messages.orderBy('[channelId+seq]').toArray(), [])
   },
 
   /**
@@ -108,8 +131,8 @@ export const cache = {
   loadOlderInChannel(channelId: string, before: number, limit: number): Promise<Message[]> {
     return orEmpty(
       () =>
-        db.messages
-          .where('[channelId+seq]')
+        database()
+          .messages.where('[channelId+seq]')
           .between([channelId, 0], [channelId, before], true, false)
           .reverse()
           .limit(limit)
@@ -121,12 +144,15 @@ export const cache = {
 
   async clearChannel(channelId: string): Promise<void> {
     await bestEffort(() =>
-      db.messages.where('[channelId+seq]').between([channelId, 0], [channelId, Infinity]).delete()
+      database()
+        .messages.where('[channelId+seq]')
+        .between([channelId, 0], [channelId, Infinity])
+        .delete()
     )
   },
 
   async deleteMessages(ids: string[]): Promise<void> {
-    if (ids.length) await bestEffort(() => db.messages.bulkDelete(ids))
+    if (ids.length) await bestEffort(() => database().messages.bulkDelete(ids))
   },
 
   /**
@@ -149,53 +175,44 @@ export const cache = {
     lastPrune = now
     for (const channelId of channelIds) {
       await bestEffort(async () => {
-        const range = db.messages
-          .where('[channelId+seq]')
+        const range = database()
+          .messages.where('[channelId+seq]')
           .between([channelId, 0], [channelId, Infinity])
         const held = await range.count()
         if (held <= KEEP_PER_CHANNEL) return
         // The index is ordered by seq within the channel, so the first
         // `excess` keys are the oldest — which is what a cap means here.
         const stale = await range.limit(held - KEEP_PER_CHANNEL).primaryKeys()
-        if (stale.length) await db.messages.bulkDelete(stale)
+        if (stale.length) await database().messages.bulkDelete(stale)
       })
     }
   },
 
   async putOutbox(entry: OutboxEntry): Promise<void> {
-    await bestEffort(() => db.outbox.put(entry))
+    await bestEffort(() => database().outbox.put(entry))
   },
 
   async deleteOutbox(clientMsgId: string): Promise<void> {
-    await bestEffort(() => db.outbox.delete(clientMsgId))
+    await bestEffort(() => database().outbox.delete(clientMsgId))
   },
 
   loadOutbox(): Promise<OutboxEntry[]> {
-    return orEmpty(() => db.outbox.orderBy('createdAt').toArray(), [])
+    return orEmpty(() => database().outbox.orderBy('createdAt').toArray(), [])
   },
 
   async saveSnapshot(snapshot: Omit<Snapshot, 'key' | 'savedAt'>): Promise<void> {
-    await bestEffort(() => db.kv.put({ key: 'snapshot', savedAt: Date.now(), ...snapshot }))
+    await bestEffort(() => database().kv.put({ key: 'snapshot', savedAt: Date.now(), ...snapshot }))
   },
 
   loadSnapshot(): Promise<Snapshot | undefined> {
-    return orEmpty(() => db.kv.get('snapshot'), undefined)
+    return orEmpty(() => database().kv.get('snapshot'), undefined)
   },
 
   /** Everything, for a device being handed to somebody else. */
   async wipe(): Promise<void> {
-    await bestEffort(() => Promise.all([db.messages.clear(), db.outbox.clear(), db.kv.clear()]))
-  },
-
-  /**
-   * Just the cached messages, for a box whose database changed underneath.
-   *
-   * A restore or a spare-box swap brings different rows at the same sequence
-   * numbers, so what is held is not stale — it is somebody else's. The
-   * snapshot and the outbox are not numbered that way and stay.
-   */
-  async wipeMessagesOnly(): Promise<void> {
-    await bestEffort(() => db.messages.clear())
+    await bestEffort(() =>
+      Promise.all([database().messages.clear(), database().outbox.clear(), database().kv.clear()])
+    )
   },
 
   /**
@@ -207,6 +224,6 @@ export const cache = {
    * Wiping those was throwing away work because a credential expired.
    */
   async wipeExceptOutbox(): Promise<void> {
-    await bestEffort(() => Promise.all([db.messages.clear(), db.kv.clear()]))
+    await bestEffort(() => Promise.all([database().messages.clear(), database().kv.clear()]))
   },
 }

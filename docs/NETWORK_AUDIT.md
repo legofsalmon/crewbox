@@ -11,33 +11,47 @@ kept.
 The collector samples state the passive listeners already keep — it opens
 no sockets and sends nothing. Every five seconds it reads:
 
-| Series                                                    | Source                                      |
-| --------------------------------------------------------- | ------------------------------------------- |
-| `crew.connections`, `crew.onlineUsers`                    | the chat hub                                |
-| `crew.rtt`                                                | crew phones, reported (see below)           |
-| `dmx.rateHz`, `dmx.lossPct`, `dmx.sources` (per universe) | the DMX listener (`docs/DMX_MONITORING.md`) |
-| `media.ptpAnnouncers`, `media.ptpV1RateHz`                | the PTP watcher (`docs/NETWATCH.md`)        |
-| `media.mdnsDevices`, `media.sapStreams`                   | the mDNS/SAP watchers                       |
-| `watch.packets` (per watcher)                             | packet counters, as per-minute deltas       |
+| Series                                                    | Source                                       |
+| --------------------------------------------------------- | -------------------------------------------- |
+| `crew.connections`, `crew.onlineUsers`                    | the chat hub                                 |
+| `crew.rtt`                                                | crew phones, reported (see below)            |
+| `voice.lossPct`, `voice.jitterMs`, `voice.concealedPct`   | crew phones on voice, reported (see below)   |
+| `voice.devices`                                           | how many phones reported voice in the minute |
+| `dmx.rateHz`, `dmx.lossPct`, `dmx.sources` (per universe) | the DMX listener (`docs/DMX_MONITORING.md`)  |
+| `media.ptpAnnouncers`, `media.ptpV1RateHz`                | the PTP watcher (`docs/NETWATCH.md`)         |
+| `media.mdnsDevices`, `media.sapStreams`                   | the mDNS/SAP watchers                        |
+| `watch.packets` (per watcher)                             | packet counters, as per-minute deltas        |
 
 Samples roll up to **one row per minute** (min/avg/max/count). Discrete
 events — a grandmaster change, an outage, a conflict starting or ending, a
 device saying goodbye — are recorded as they transition, once each.
 
-### The one number the crew's phones supply
+### What the crew's phones supply
 
-`crew.rtt` is the exception to "the box reads its own state": the box
-cannot measure the crew's Wi-Fi from where it sits — server-side timings
-only ever prove the box is fast. So each connected device sends the median
-of the round trips it already measures for its own signal-bars indicator,
-**once a minute**, as `{ type: 'rttReport', ms }`.
+`crew.rtt` and the `voice.*` series are the exceptions to "the box reads
+its own state": the box cannot measure the crew's Wi-Fi, or how their
+comms sound, from where it sits — server-side timings only ever prove the
+box is fast. So the phones report what they already measure.
 
-That is the whole payload: one integer, 0–60000, no identity beyond the
-socket it arrived on and nothing stored per person. It is advisory — the
-box never answers it, never acts on it, and drops it entirely when the
-network module is off or a socket exceeds its action budget. Older clients
-that don't send it simply leave the "Wi-Fi round trip" finding absent
-rather than showing a wrong one.
+**The round trip.** Each connected device sends the median of the round
+trips it already measures for its own signal-bars indicator, **once a
+minute**, as `{ type: 'rttReport', ms }`. That is the whole payload: one
+integer, 0–60000, no identity beyond the socket it arrived on and nothing
+stored per person.
+
+**How comms sound.** A phone on voice sends, **every 15 seconds**,
+`{ type: 'voiceStats', lossPct, jitterMs, concealedPct }` for the worst of
+the calls it is hearing, as its own decoder measured them. The schema bounds
+them (0–100 %, 0–10 000 ms) because they come from a device the box does
+not own. The readings are pooled with no key; the socket they arrived on
+is kept for the minute only to count how many phones reported
+(`voice.devices`), and then dropped. The readiness list's "How comms sound"
+line and the control API read the worst of the last ten minutes.
+
+Both are advisory — the box never answers them, never acts on them, and
+drops them entirely when the network module is off or a socket exceeds its
+action budget. Older clients that don't send them simply leave the findings
+absent rather than showing wrong ones.
 
 **Retention: 7 days**, pruned hourly. Bounds are structural: one small
 write transaction a minute, at most 64 keys per metric, at most 500 events
@@ -67,12 +81,12 @@ unlocked admin can start one. Each probe records a `sent` line in the
 report — exactly what was transmitted, so a venue can verify it against a
 packet capture.
 
-| Probe             | Transmits                                                                                   | Where                                                                        | Why it's safe                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Uplink            | TCP connects to 1.1.1.1:443 / 8.8.8.8:443, one HTTP request to gstatic `generate_204`       | crew uplink                                                                  | identical to the existing admin environment check                                                                                  |
-| Venue DNS         | one A query for the certificate hostname                                                    | system resolver                                                              | one DNS packet                                                                                                                     |
-| Art-Net inventory | **one** ArtPoll (14 bytes, opcode 0x2000, no diagnostics requested) broadcast to :6454      | **only** the explicitly configured lighting interface; **skipped otherwise** | ArtPoll is the discovery packet every console already broadcasts every ~3 s; one more per manual push is less than ambient traffic |
-| mDNS roster       | one one-shot query (PTR `_netaudio-arc._udp.local` + `_ndi._tcp.local`) to 224.0.0.251:5353 | media-watch interface                                                        | the same query every phone on the network performs continuously (RFC 6762 §5.1)                                                    |
+| Probe             | Transmits                                                                                   | Where                                                                                                                 | Why it's safe                                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Uplink            | TCP connects to 1.1.1.1:443 / 8.8.8.8:443, one HTTP request to gstatic `generate_204`       | crew uplink                                                                                                           | identical to the existing admin environment check; skipped, sending nothing, when `CREWBOX_UPDATE_CHECK=0` says no outbound connections |
+| Venue DNS         | one A query for the certificate hostname                                                    | system resolver                                                                                                       | one DNS packet                                                                                                                          |
+| Art-Net inventory | **one** ArtPoll (14 bytes, opcode 0x2000, no diagnostics requested) broadcast to :6454      | **only** the explicitly configured lighting interface; **skipped otherwise**                                          | ArtPoll is the discovery packet every console already broadcasts every ~3 s; one more per manual push is less than ambient traffic      |
+| mDNS roster       | one one-shot query (PTR `_netaudio-arc._udp.local` + `_ndi._tcp.local`) to 224.0.0.251:5353 | the media-watch interface when `CREWBOX_WATCH_IFACE` sets one; otherwise whichever adapter the OS picks for multicast | the same query every phone on the network performs continuously (RFC 6762 §5.1)                                                         |
 
 Probe sockets are created inside the sweep and closed when it ends; the
 replies they solicit arrive on the existing **receive-only** listeners,
@@ -80,17 +94,22 @@ which keeps that guarantee structurally intact.
 
 ### What the probe will never do, and why
 
-- **No IGMP, in either direction.** Receiving it is impossible without
-  root (IGMP is IP protocol 2, not UDP). Sending general queries is
-  actively dangerous: crewbox could win the querier election and then
-  stop querying when the sweep ends — at which point snooping switches
-  age out every multicast group, and the whole network drops audio on a
-  cycle. That is precisely the fault the audit exists to find, so it is
-  diagnosed from symptoms instead.
+- **No IGMP, in either direction.** Receiving it takes a raw socket (IGMP
+  is IP protocol 2, not UDP), which needs `CAP_NET_RAW` on Linux (root or
+  an administrator elsewhere) and which the shipped services do not grant.
+  On Linux, `/proc/net/igmp` does say with no privilege whether an IGMPv1
+  or v2 querier has been heard recently; the audit does not read it yet.
+  Sending general queries is actively dangerous: crewbox could win the
+  querier election and then stop querying when the sweep ends — at which
+  point snooping switches age out every multicast group, and the whole
+  network drops audio on a cycle. That is precisely the fault the audit
+  exists to find, so it is diagnosed from symptoms instead.
 - **Nothing on the PTP ports.** Transmitting near a clock election risks
   disturbing it; the passive `ClockStatus` already tells the story.
-- **No ICMP sweeps, no port scans.** Root-required, and show-network
-  devices have watchdogs that treat scans as hostility.
+- **No ICMP sweeps, no port scans.** Show-network devices have watchdogs
+  that treat scans as hostility. (Not because they need root: a TCP
+  connect needs no privilege anywhere, and a ping needs none on macOS, on
+  Windows, or on Linux where systemd's default `ping_group_range` is kept.)
 - **No sACN of any kind.** E1.31 universe discovery is already broadcast
   by every source every 10 seconds and collected passively.
 

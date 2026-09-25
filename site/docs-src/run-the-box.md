@@ -17,7 +17,10 @@ internet at the venue.
 - **macOS** — download the `.dmg` from [the front page](/), open, drag to
   Applications, launch. Signed and notarised, so it opens without warnings
   — including with no internet. It keeps the Mac awake while running, lid
-  shut included.
+  shut included. When macOS asks whether Crewbox may find and connect to
+  devices on your local network, say **Allow**: it is how the phone apps
+  find the box on the Wi-Fi. Said no by mistake? **System Settings →
+  Privacy & Security → Local Network**, and turn Crewbox on.
 - **Windows** — download the `.exe`, double-click. SmartScreen will warn
   about an unsigned app: **More info → Run anyway**. That means Windows
   hasn't seen the file before, not that something is wrong.
@@ -60,6 +63,13 @@ the join URL as a tappable link, the PIN in print, and — once you've put
 the Android app on the box — a download link for it. Leave it on a spare
 screen, or print poster versions. Crew scan, pick a name, done.
 
+The QR also names the event and carries its key, so the phone apps check
+that the box at its address is this one before a PIN goes to it; a phone's
+own camera ignores them. That makes it a denser code than the address alone:
+print it from `/connect` at the size the page draws it or bigger. Posters
+printed before this version still work, without the check. Print them again
+when the event starts afresh on another box ([below](#data-backup-updates)).
+
 The box's own terminal prints the same thing, QR included, for headless
 machines.
 
@@ -95,6 +105,23 @@ shows a **Backup** row saying how long ago that last ran, so a regime that
 quietly stopped is visible rather than discovered. `deploy/restore.sh` goes
 the other way, onto the spare: it picks the newest backup that actually
 finished and whose database reads, and passes over — out loud — any that
-does not. Updating the box is: stop it, replace the binary (or app), start
-it. Crew phones notice the new version and offer a **Reload** pill; nothing
-they had queued is lost.
+does not. A spare restored from a backup is the same event to every phone,
+and they carry straight on: the backup carries the event's ID and the box's
+signing key with everything else. At another address, phones check that key
+before they follow the event there: put the spare on the old address, or
+tell crew the new one to type. A box behind a port forward can't be checked,
+and phones take its typed address at the crew member's word, and a QR shown
+at the forward's address names no event, so phones join from it the same
+way; one restored
+from a backup older than its key fails the check, and phones say so and send
+it nothing. One started with a fresh database is a new
+event: phones say the box has changed and send it nothing, and the phone
+apps refuse the old event's posters there, so print its own from `/connect`. When it takes
+over from the event's box, say so in **Admin → This box → Carries on
+another event**, and each phone that has the event, once it has joined,
+offers to bring its documents, running order and unsent messages across
+([what crew see](/docs/getting-connected#more-than-one-event)). The chat
+history is only in a backup. Updating
+the box is: stop it, replace the binary (or app), start it. Crew phones
+notice the new version and offer a **Reload** pill; nothing they had queued
+is lost.

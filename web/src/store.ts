@@ -23,7 +23,7 @@ import {
   type QueuedIncident,
 } from './modules/incident/model/outbox.ts'
 import { flushOrder, shouldDrop } from './lib/flush.ts'
-import { cacheable, databaseChanged, needsBackfill, pageFrom } from './lib/history.ts'
+import { cacheable, needsBackfill, pageFrom } from './lib/history.ts'
 import { WsClient } from './lib/ws.ts'
 import * as api from './lib/api.ts'
 import {
@@ -38,25 +38,57 @@ import {
 import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
 import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
-import { isNative, nativeAlerts, serverOrigin } from './lib/server.ts'
+import {
+  boxOrigin,
+  boxWifiSettled,
+  isIosApp,
+  isNative,
+  nativeAlerts,
+  nativeSystemBars,
+  serverLabel,
+  serverOrigin,
+  setServerOrigin,
+} from './lib/server.ts'
 import { measureImage } from './lib/files.ts'
-import { currentRoute, navigate, onRouteChange, type Route } from './shell/router.ts'
+import { currentRoute, navigate, onRouteChange, routePath, type Route } from './shell/router.ts'
 import { capTranscript } from './lib/transcript.ts'
-import { forgetPref, readPref, writePref } from './lib/prefs.ts'
+import { readPref, writePref } from './lib/prefs.ts'
+import {
+  acceptEvent,
+  carriedOn,
+  chooseEvent,
+  eventIdFrom,
+  eventMoved,
+  forgetEventPref,
+  keepEventKey,
+  knownEvent,
+  knownEvents,
+  openEvent,
+  readEventPref,
+  rememberEvent,
+  storageName,
+  storageNameFor,
+  writeEventPref,
+} from './lib/eventScope.ts'
+import { checkMove, checkPoster, eventKeyFrom, proveBox, type Proof } from './lib/identity.ts'
+import type { PosterEvent } from './lib/joinCode.ts'
+import {
+  forgetSession,
+  openSession,
+  readSession,
+  renewCarried,
+  saveSession,
+  TOKEN_KEY,
+} from './lib/sessions.ts'
+import { notThePostersCopy, posterDisagreesCopy, refusedCopy } from './lib/connscreen.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
-const TOKEN_KEY = 'crewbox:token'
-const THEME_KEY = 'crewbox:theme'
+/** The open event's; see lib/eventScope.ts. Its sign-in's is lib/sessions.ts's. */
 const SSID_KEY = 'crewbox:wifi-ssid'
 const EVENT_NAME_KEY = 'crewbox:event-name'
 const MODULES_KEY = 'crewbox:modules'
-/**
- * The database this phone's cached messages are numbered against.
- *
- * Reaches real devices — renaming it makes every phone on site drop its cache
- * once. See the epoch check in handleWelcome.
- */
-const DB_EPOCH_KEY = 'crewbox:db-epoch'
+/** The device's own, whichever event is open. */
+const THEME_KEY = 'crewbox:theme'
 /**
  * Live DMX levels, folded between paints. See levelBuffer.ts for why.
  *
@@ -100,10 +132,10 @@ const TYPING_THROTTLE_MS = 2500
  * shape has to survive a cold start.
  */
 function initialConfig(): PublicConfig {
-  const cachedModules = readPref(MODULES_KEY)
+  const cachedModules = readEventPref(MODULES_KEY)
   return {
-    eventName: readPref(EVENT_NAME_KEY) ?? '',
-    wifiSsid: readPref(SSID_KEY) ?? '',
+    eventName: readEventPref(EVENT_NAME_KEY) ?? '',
+    wifiSsid: readEventPref(SSID_KEY) ?? '',
     voiceEnabled: true,
     // Chat is always on; the cache carries whatever else this box last ran.
     modules: cachedModules ? cachedModules.split(',').filter(Boolean) : ['chat'],
@@ -111,8 +143,8 @@ function initialConfig(): PublicConfig {
 }
 
 function remember(key: string, value: string | undefined): void {
-  if (value) writePref(key, value)
-  else forgetPref(key)
+  if (value) writeEventPref(key, value)
+  else forgetEventPref(key)
 }
 
 function rememberConfig(config: PublicConfig): void {
@@ -170,6 +202,26 @@ export function applyTheme(theme: Theme): void {
    * both honour changes to this tag at runtime.
    */
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme])
+  /**
+   * And the iPhone app's status bar.
+   *
+   * The app's page runs under the bar (`viewport-fit=cover`, with `.app`
+   * padded down by the safe area), so the clock and battery sit on the page's
+   * own background. But iOS colours them from the phone's appearance, not the
+   * page's: anyone who switched the app to the other theme got white text on
+   * the cream page, or black on navy. `theme-color` is Safari's, not an app's.
+   *
+   * iPhone only. Below Android 15 the Android app's bar is a solid system
+   * colour, black when the phone is dark, and dark icons for a light page
+   * would vanish into it. Android 15 and later put the page under the bar
+   * too, but only with WebView 140 or later, so that is left for testing on
+   * real phones.
+   */
+  if (isIosApp()) {
+    void nativeSystemBars()
+      ?.setStyle({ style: theme === 'dark' ? 'DARK' : 'LIGHT' })
+      .catch(() => {})
+  }
 }
 
 function initialTheme(): Theme {
@@ -179,7 +231,40 @@ function initialTheme(): Theme {
 }
 
 export type Phase = 'boot' | 'join' | 'chat'
+
+/** An event a box is running, as it names itself. */
+export interface BoxEvent {
+  id: string
+  /** '' when the box has none set. */
+  name: string
+  /**
+   * The event it says it carries on, when its admin has said so
+   * (`PublicConfig.continues`).
+   */
+  continues?: string
+}
+
+/**
+ * The event the box at this address says it runs, when it is not the open
+ * one. `held` is set when it is an event this device holds at another
+ * address: nothing moves that event here on the box's word, and `proof`
+ * says whether the box has shown it is that event's box (lib/identity.ts).
+ * `carriesOpen` when it says it carries on the open event.
+ */
+export interface Elsewhere extends BoxEvent {
+  held?: { origin: string; proof: 'checking' | Proof['kind'] }
+  carriesOpen?: boolean
+}
 export type ToastKind = 'info' | 'warning' | 'error'
+
+/** A message that needs this crew member, shown over the app while it is open. */
+export interface AlertBanner {
+  id: number
+  title: string
+  body: string
+  /** Where it takes you. None when it covers more than one channel. */
+  channelId?: string
+}
 export type Connection = 'connecting' | 'online' | 'offline'
 
 export interface AppState {
@@ -195,6 +280,24 @@ export interface AppState {
    * `hasConnected` and takes the screen to 'ok' anyway.
    */
   hasFailed: boolean
+  /**
+   * The event the box at this address is running, when it is not the one
+   * this device has open: a spare box with a fresh database, or the next
+   * event's box on the same address. Nothing of the open event's is sent to
+   * it, and the crew member is offered to open it (see `switchEvent`), once
+   * it is known to be that event's box.
+   */
+  elsewhere: Elsewhere | null
+  /**
+   * The address whose box last let this page in, as an origin; null until
+   * one has.
+   *
+   * What documents wait for before they sync (lib/docs/sync.ts): after the
+   * page follows its event to a new address (`followBox`), a document still
+   * bound to the old one goes, and comes back once the box at the new one
+   * has welcomed this device too.
+   */
+  welcomedAt: string | null
   /** Live public settings (Wi-Fi SSID, voice availability). */
   config: PublicConfig
   me: User | null
@@ -299,6 +402,8 @@ export interface AppState {
   updateReady: boolean
   /** Transient notices; each auto-dismisses on its own timer. */
   toasts: { id: number; message: string; kind: ToastKind }[]
+  /** A mention or DM that arrived while the app was on screen; null when none. */
+  alertBanner: AlertBanner | null
   loadingOlder: boolean
   uploading: boolean
   theme: Theme
@@ -312,10 +417,20 @@ export interface AppState {
   toggleLatch: () => void
   /** Let blocked audio through. Must be called from a real user gesture. */
   resumeVoiceAudio: () => void
-  join: (name: string, eventPin: string, personalPin: string) => Promise<void>
+  /**
+   * `poster`: the event named by the join QR that gave this address, which
+   * the box here has to be before the PIN goes to it.
+   */
+  join: (name: string, eventPin: string, personalPin: string, poster?: PosterEvent) => Promise<void>
   sendMessage: (channelId: string, body: string) => void
   /** File a show-log entry. Queued locally first, so nothing is lost offline. */
   logIncident: (entry: Omit<QueuedIncident, 'clientMsgId'>) => void
+  /**
+   * Queue another event's unsent messages and show-log entries here, as if
+   * they had been written here, and send them. Resolves with the ones this
+   * device has saved, which are the ones the other event can let go of.
+   */
+  queueMoved: (messages: OutboxEntry[], entries: QueuedIncident[]) => Promise<Set<string>>
   /** Fetch the log's scrollback. Idempotent; the pane calls it on open. */
   loadIncidents: () => Promise<void>
   /** Fetch one page older than the earliest held. False when there was none. */
@@ -331,6 +446,10 @@ export interface AppState {
   applyRoute: (route: Route) => void
   /** Show a transient notice; auto-dismisses after a few seconds. */
   toast: (message: string, kind?: ToastKind) => void
+  /** Go to what the alert banner is about, out of whatever is open. */
+  openAlertBanner: () => void
+  /** Put the alert banner away; given an id, only while it is still that one. */
+  dismissAlertBanner: (id?: number) => void
   /** Open a channel scrolled to a specific message (search results). */
   jumpToMessage: (channelId: string, seq: number) => Promise<void>
   clearJumpTarget: () => void
@@ -384,6 +503,38 @@ export interface AppState {
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
   applyUpdate: () => void
   retryConnection: () => void
+  /**
+   * Open another event this device holds, or the one found at this address.
+   * The page reloads to open it (see lib/eventScope.ts). `pin` is an event
+   * PIN for its join form, from a crewbox://join link (lib/appLinks.ts).
+   */
+  switchEvent: (id: string, pin?: string) => void
+  /**
+   * Go to the event a box at a typed address is running: the open one, moved
+   * there; another this device holds; or a new one, to join. `key` replaces
+   * the one kept for the event, when somebody opens a box that failed the
+   * check anyway. `pin` goes to the join form, if that is where this lands.
+   */
+  openEventAt: (event: {
+    id: string
+    name: string
+    origin: string
+    key?: string
+    pin?: string
+  }) => void
+  /**
+   * The open event's box is at another address now: go on there, in place.
+   *
+   * Not a reload, as opening another event is. It is the same event, so
+   * whatever is in hand stays in hand: a message half typed, the sheet being
+   * read. `found` when the app found the box there by itself, which it does
+   * only once the box has proven it (lib/follow.ts): then it says so, and a
+   * page still reaching the box where it was stays there.
+   */
+  followBox: (origin: string, how?: { found?: boolean }) => void
+  /** The Boxes screen: the events this device holds, and a way to another box. */
+  boxesOpen: boolean
+  setBoxesOpen: (open: boolean) => void
   toggleTheme: () => void
   toggleSounds: () => void
   logout: () => Promise<void>
@@ -421,14 +572,42 @@ let updateSW: ((reload?: boolean) => Promise<void>) | null = null
 let pwaStarted = false
 const lastTypingSent = new Map<string, number>()
 let toastSeq = 0
+let bannerSeq = 0
 
 function getToken(): string | null {
-  return readPref(TOKEN_KEY)
+  return openSession()
+}
+
+/** How long a start waits for its box to renew a sign-in (renewCarried) before connecting anyway. */
+const RENEW_WAIT_MS = 4000
+
+/** Where this page reaches its box, as the list of known events records it. */
+const here = boxOrigin
+
+/**
+ * Load the app again with another event open, at its start.
+ *
+ * Not at the address the page is on: that is a channel or a document of the
+ * event being left, which the next one does not have, so a sheet opened as
+ * "Sheet not found" on a crew member who had done nothing but change boxes.
+ *
+ * An event PIN from a crewbox://join link rides along as the poster's QR
+ * carries it, `?pin=`, for the join form to fill in.
+ */
+function reopenOnAnotherEvent(pin?: string): void {
+  const search = pin ? `?pin=${encodeURIComponent(pin)}` : ''
+  history.replaceState(null, '', routePath({ kind: 'home' }) + search)
+  location.reload()
 }
 
 /** The crewbox session token, for modules that call platform services. */
 export function sessionToken(): string | null {
   return getToken()
+}
+
+/** Whether this device is signed in to an event, open or not. */
+export function signedInTo(event: string): boolean {
+  return readSession(storageNameFor(event, TOKEN_KEY)) !== null
 }
 
 function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Message[] {
@@ -443,6 +622,120 @@ function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Me
 }
 
 export const useStore = create<AppState>()((set, get) => {
+  /**
+   * The box at this address is running another event than the one open.
+   *
+   * A spare box with a fresh database, or the next event's box on the same
+   * address. Nothing of the open event's may reach it: not a queued message,
+   * not a show-log entry, not a document. So the socket stops here, before a
+   * welcome would flush the outboxes, and the documents never connect — they
+   * wait for a welcome, and this is one refused. What this device holds for
+   * the open event stays where it is and stays readable, and the crew member
+   * is told what is here now and offered it.
+   *
+   * The open event's record says it was here, and that the event now here
+   * took its place, which is what later offers to move its work across.
+   *
+   * Unless the event now here is one this device holds at another address.
+   * Then it moves here only once the box has signed for this address with
+   * the key kept for that event (lib/identity.ts): a box saying so is not
+   * enough, and anything that took this address could say it. Until then,
+   * and if it never does, neither record changes and there is nothing to
+   * open.
+   */
+  function otherEventHere(event: BoxEvent): void {
+    ws?.stop()
+    ws = null
+    const origin = here()
+    const held = knownEvent(event.id)
+    if (held?.origin && held.origin !== origin) {
+      const proof = held.key ? 'checking' : 'unchecked'
+      set({
+        elsewhere: { ...event, held: { origin: held.origin, proof } },
+        connection: 'offline',
+        hasFailed: true,
+      })
+      if (!held.key) return
+      void proveBox(origin, held).then((result) => {
+        const current = get().elsewhere
+        if (current?.id !== event.id || !current.held || here() !== origin) return
+        if (result.kind === 'proven') tookThePlace(event, origin)
+        set({ elsewhere: { ...current, held: { ...current.held, proof: result.kind } } })
+      })
+      return
+    }
+    const carriesOpen = !!event.continues && event.continues === openEvent()
+    tookThePlace(event, origin)
+    set({
+      elsewhere: carriesOpen ? { ...event, carriesOpen } : event,
+      connection: 'offline',
+      hasFailed: true,
+    })
+  }
+
+  /** The event at this address is there in the open one's place. */
+  function tookThePlace(event: BoxEvent, origin: string): void {
+    replacedAt(origin, event)
+    rememberEvent({ id: event.id, name: event.name, origin })
+  }
+
+  /**
+   * The open event's record says the event now at its address took its
+   * place, which lets its work be brought there (lib/moveWork.ts). Not when
+   * the box there says it carries on another event: that is its admin's
+   * word, against a guess from the address.
+   */
+  function replacedAt(origin: string, by: BoxEvent): void {
+    const open = openEvent()
+    if (!open || knownEvent(open)?.origin !== origin) return
+    if (by.continues && by.continues !== open) return
+    rememberEvent({ id: open, replacedBy: by.id })
+  }
+
+  /**
+   * The box running the open event says it carries on another, which this
+   * device may hold: its work there is offered here (lib/eventScope.ts).
+   */
+  function carriesOn(config: PublicConfig): void {
+    const open = openEvent()
+    const from = eventIdFrom(config.continues)
+    if (open && from) carriedOn(from, open)
+  }
+
+  /** Whether any event this device holds could be moved here, and checked first. */
+  function checkableMoveHere(): boolean {
+    const origin = here()
+    return knownEvents().some((event) => event.key && event.origin && event.origin !== origin)
+  }
+
+  /**
+   * Refuse to go on with a box that says it runs an event this device holds
+   * at another address, answers the check, and fails it (lib/identity.ts).
+   *
+   * For an address somebody typed, as the join form's is: one that can't be
+   * checked is taken at their word, as it always was.
+   */
+  async function refuseUnproven(value: unknown): Promise<void> {
+    const id = eventIdFrom(value)
+    if (!id) return
+    const proof = await checkMove(id, here())
+    if (proof?.kind !== 'refused') return
+    throw new api.ApiError(
+      `${refusedCopy({ address: serverLabel(), name: knownEvent(id)?.name ?? '' })} ` +
+        'If you are sure it is, open it from Your boxes.',
+      409
+    )
+  }
+
+  /** Whether the box here runs the open event; handles it when it does not. */
+  function openEventHere(event: unknown, name: string, continues?: unknown): boolean {
+    const id = eventIdFrom(event)
+    if (acceptEvent(id)) return true
+    const carried = eventIdFrom(continues)
+    otherEventHere({ id: id!, name, ...(carried ? { continues: carried } : {}) })
+    return false
+  }
+
   /** Merge messages into state, settle matching pending sends, update cache. */
   function ingestMessages(incoming: Message[]): void {
     if (!incoming.length) return
@@ -597,6 +890,22 @@ export const useStore = create<AppState>()((set, get) => {
     }, 1000)
   }
 
+  /**
+   * Somebody needs this crew member: chirp and buzz, and say who and where.
+   *
+   * Out of sight, saying so is the system's notification. On screen it was
+   * nothing: the chirp said somebody wanted you and not who, and on a phone
+   * the channel list whose badge would say is shut away in the drawer. So on
+   * screen it is the banner.
+   */
+  function announce(alert: { title: string; body: string; channelId?: string }): void {
+    playAlert()
+    notify(alert.title, alert.body)
+    if (document.visibilityState !== 'visible') return
+    const { title, body, channelId } = alert
+    set({ alertBanner: { id: ++bannerSeq, title, body, ...(channelId ? { channelId } : {}) } })
+  }
+
   function markRead(channelId: string, seq: number): void {
     const current = get().readState[channelId] ?? 0
     if (seq <= current) return
@@ -611,7 +920,51 @@ export const useStore = create<AppState>()((set, get) => {
     schedulePersistSnapshot()
   }
 
+  /**
+   * Send everything queued: everything unacked goes out again (server dedupes).
+   *
+   * Paced, because the box's flood guard counts frames per socket and does
+   * not care that these are a replay: a phone back from a dead spot with
+   * thirty-five queued messages sent all thirty-five at once and the box
+   * refused five of them. The gap comes from the guard's own numbers (see
+   * OUTBOX_FLUSH_GAP_MS) rather than a constant here that could drift away
+   * from it.
+   *
+   * `generation` is what stops two flushes overlapping. A reconnect during a
+   * flush would otherwise run a second one alongside the first, at twice the
+   * rate, which is the thing being avoided.
+   */
+  async function flushQueues(): Promise<void> {
+    const mine = ++flushGeneration
+    const paced = async (frames: ClientMessage[]): Promise<void> => {
+      for (let i = 0; i < frames.length; i++) {
+        // A drop mid-flush leaves the rest queued, which is where they
+        // belong: the next welcome starts again from the outbox.
+        if (mine !== flushGeneration || get().connection !== 'online') return
+        ws?.send(frames[i]!)
+        if (i < frames.length - 1) await sleep(OUTBOX_FLUSH_GAP_MS)
+      }
+    }
+
+    const outbox = await cache.loadOutbox()
+    // The show log's own queue goes through the same pacing, because it
+    // shares the same counter — see flushOrder.
+    void paced(flushOrder(outbox, queuedIncidents()))
+  }
+
   async function handleWelcome(msg: WelcomeMessage): Promise<void> {
+    // Before anything else is taken from it or sent to it. See otherEventHere.
+    const { config } = msg
+    if (!openEventHere(msg.dbEpoch ?? config.eventId, config.eventName, config.continues)) return
+    const open = openEvent()
+    if (open) {
+      rememberEvent({ id: open, name: config.eventName, origin: here(), seenAt: Date.now() })
+      // From before phones kept keys: this box is the one this device syncs
+      // the event with, at an address it had or was given.
+      keepEventKey(open, eventKeyFrom(config.eventKey))
+      carriesOn(config)
+    }
+
     const state = get()
     /** A welcome that is not this session's first — see the missed alert. */
     const reconnected = state.hasConnected
@@ -649,39 +1002,25 @@ export const useStore = create<AppState>()((set, get) => {
 
     // Channels where the replay was truncated have a gap between our cache
     // and the replayed batch — drop the stale cache, keep only the fresh tail.
-    let messages = { ...state.messages }
+    const messages = { ...state.messages }
     for (const channelId of msg.truncated) {
       messages[channelId] = []
       void cache.clearChannel(channelId)
     }
 
-    // Is this the same database it was?
-    //
-    // A resume cursor is a bare sequence number and sequence numbers come
-    // from `MAX(seq)` over live rows, so restoring a backup — or swapping to
-    // the spare box — starts the count below every phone's cursor. Every
-    // channel then looks like "nothing new" to the box and nothing to the
-    // crew, silently, for as long as it takes the counter to climb past a
-    // number nobody can see. The runbook promises phones "reconnect on their
-    // own and stay signed in", and they do; they just stop being told
-    // anything.
-    //
-    // Cached messages go with the cursors: they are numbered against a
-    // database that is not here any more, and two messages at the same seq
-    // are two different messages. The outbox stays — what somebody typed is
-    // theirs, and the box dedupes the replay by client id.
-    if (databaseChanged(readPref(DB_EPOCH_KEY), msg.dbEpoch)) {
-      messages = {}
-      void cache.wipeMessagesOnly()
-    }
-    remember(DB_EPOCH_KEY, msg.dbEpoch)
-
+    // A box running a different database is not reached here: it is a
+    // different event, refused at the top, whose data is kept apart. Its
+    // sequence numbers start below this event's cursors, and two messages at
+    // the same seq in two databases are two different messages, so nothing
+    // cached here would have been right for it anyway.
     rememberConfig(msg.config)
     set({
       phase: 'chat',
       connection: 'online',
       hasConnected: true,
       hasFailed: false,
+      elsewhere: null,
+      welcomedAt: here(),
       config: msg.config,
       me: msg.me,
       users: Object.fromEntries(msg.users.map((u) => [u.id, u])),
@@ -728,10 +1067,7 @@ export const useStore = create<AppState>()((set, get) => {
         readState,
         focusedChannelId: focused,
       })
-      if (alert) {
-        playAlert()
-        notify(alert.title, alert.body)
-      }
+      if (alert) announce(alert)
     }
 
     // Android wrapper: hand the session to the foreground service so the
@@ -739,7 +1075,12 @@ export const useStore = create<AppState>()((set, get) => {
     const alerts = nativeAlerts()
     if (alerts && serverOrigin()) {
       void alerts
-        .start({ serverUrl: serverOrigin(), token: getToken() ?? '', myName: msg.me.name })
+        .start({
+          serverUrl: serverOrigin(),
+          token: getToken() ?? '',
+          session: storageName(TOKEN_KEY),
+          myName: msg.me.name,
+        })
         .catch(() => {})
     }
 
@@ -799,33 +1140,7 @@ export const useStore = create<AppState>()((set, get) => {
       markRead(activeChannel.id, activeChannel.lastSeq)
     }
 
-    // Flush the outbox: everything unacked goes out again (server dedupes).
-    //
-    // Paced, because the box's flood guard counts frames per socket and does
-    // not care that these are a replay: a phone back from a dead spot with
-    // thirty-five queued messages sent all thirty-five at once and the box
-    // refused five of them. The gap comes from the guard's own numbers (see
-    // OUTBOX_FLUSH_GAP_MS) rather than a constant here that could drift away
-    // from it.
-    //
-    // `generation` is what stops two flushes overlapping. A reconnect during
-    // a flush would otherwise run a second one alongside the first, at twice
-    // the rate, which is the thing being avoided.
-    const mine = ++flushGeneration
-    const paced = async (frames: ClientMessage[]): Promise<void> => {
-      for (let i = 0; i < frames.length; i++) {
-        // A drop mid-flush leaves the rest queued, which is where they
-        // belong: the next welcome starts again from the outbox.
-        if (mine !== flushGeneration || get().connection !== 'online') return
-        ws?.send(frames[i]!)
-        if (i < frames.length - 1) await sleep(OUTBOX_FLUSH_GAP_MS)
-      }
-    }
-
-    const outbox = await cache.loadOutbox()
-    // The show log's own queue goes through the same pacing, because it
-    // shares the same counter — see flushOrder.
-    void paced(flushOrder(outbox, queuedIncidents()))
+    await flushQueues()
 
     persistSnapshot()
     void cache.prune(Object.keys(get().channels))
@@ -885,11 +1200,12 @@ export const useStore = create<AppState>()((set, get) => {
           const channel = channels[msg.message.channelId]
           const author = users[msg.message.authorId]?.name ?? 'Someone'
           if (channel?.kind === 'dm' || isMentioned(msg.message.body, me?.name)) {
-            playAlert()
-            notify(
-              channel?.kind === 'dm' ? author : `${author} in #${channel?.name ?? 'channel'}`,
-              msg.message.body || msg.message.file?.name || ''
-            )
+            announce({
+              title:
+                channel?.kind === 'dm' ? author : `${author} in #${channel?.name ?? 'channel'}`,
+              body: msg.message.body || msg.message.file?.name || '',
+              channelId: msg.message.channelId,
+            })
           }
         }
         break
@@ -989,6 +1305,7 @@ export const useStore = create<AppState>()((set, get) => {
         break
       case 'config':
         rememberConfig(msg.config)
+        carriesOn(msg.config)
         set({ config: msg.config })
         break
       case 'deleted':
@@ -1040,6 +1357,8 @@ export const useStore = create<AppState>()((set, get) => {
     connection: 'connecting',
     hasConnected: false,
     hasFailed: false,
+    elsewhere: null,
+    welcomedAt: null,
     config: initialConfig(),
     fileDetail: null,
     me: null,
@@ -1074,6 +1393,7 @@ export const useStore = create<AppState>()((set, get) => {
     latencyMs: null,
     updateReady: false,
     toasts: [],
+    alertBanner: null,
     loadingOlder: false,
     uploading: false,
     theme: initialTheme(),
@@ -1113,8 +1433,8 @@ export const useStore = create<AppState>()((set, get) => {
         )
       }
       try {
-        const { url, token } = await api.voiceToken(getToken() ?? '', channelId)
-        await voiceManager.join(channelId, token, url)
+        const { url, token, iceServers } = await api.voiceToken(getToken() ?? '', channelId)
+        await voiceManager.join(channelId, token, url, iceServers)
       } catch (err) {
         set({ voice: { ...initialVoiceState } })
         // Say what actually went wrong. This used to substitute a generic
@@ -1162,12 +1482,28 @@ export const useStore = create<AppState>()((set, get) => {
           // no service worker support (or dev without PWA) — updates via reload
         }
       }
+      // An event this device held before it kept a list of them: it was
+      // here, which is what the list needs to know to show it.
+      const open = openEvent()
+      if (open && !knownEvent(open)) {
+        rememberEvent({ id: open, name: get().config.eventName, origin: here() })
+      }
       // Public config (Wi-Fi SSID, voice availability) — works pre-auth so the
       // join and offline screens can show current guidance. Best-effort.
+      //
+      // And which event the box here is running. Signed in, a different one
+      // is found out now rather than after the socket has been refused; at
+      // the join screen the box is shown as it is, and joining it sorts out
+      // which event it belongs to.
       void api
         .getConfig()
         .then((config) => {
-          rememberConfig(config)
+          if (getToken() && !openEventHere(config.eventId, config.eventName, config.continues)) {
+            return
+          }
+          const event = eventIdFrom(config.eventId)
+          if (!event || event === openEvent()) rememberConfig(config)
+          if (event && event === openEvent()) carriesOn(config)
           set({ config })
         })
         .catch(() => {})
@@ -1214,14 +1550,82 @@ export const useStore = create<AppState>()((set, get) => {
       if (route.kind === 'module') {
         set({ activeModuleId: route.moduleId, activeModuleSubpath: route.subpath })
       }
-      startWs()
+      // A sign-in the app moved out of the page's storage, which backups
+      // carry, is renewed by its box before this phone says hello, and that
+      // hello, with the new one, ends the old one (lib/sessions.ts). Waiting
+      // only as long as a box on the Wi-Fi takes to answer: one that doesn't
+      // is asked at the next start, and the old one works until then.
+      await renewCarried(storageName(TOKEN_KEY), async (token) => {
+        await boxWifiSettled()
+        return (await api.renewSession(token, AbortSignal.timeout(RENEW_WAIT_MS))).token
+      })
+      // Unless the box's config has already said it is running another
+      // event, in which case there is nothing here for it.
+      if (!get().elsewhere) startWs()
     },
 
-    async join(name, eventPin, personalPin) {
-      const { token } = await api.join({ name, eventPin, personalPin })
-      writePref(TOKEN_KEY, token)
+    async join(name, eventPin, personalPin, poster) {
+      // On Android, until the app has put its traffic for this box on the
+      // Wi-Fi, a request to it can go out over mobile data and fail.
+      await boxWifiSettled()
+      // Before a PIN goes to it: a box that says it runs an event this
+      // device holds at another address has to pass the check, which would
+      // otherwise move the event here, the open one included.
+      let checked: string | undefined
+      if (poster) {
+        // Scanned from a poster naming its event and key: the box here has
+        // to be that one, whatever else this device holds.
+        const verdict = await checkPoster(here(), poster)
+        // Said as a box that can't be reached, which it is.
+        if (verdict === 'unreachable') throw new TypeError('The box did not answer the check')
+        if (verdict === 'kept-another') {
+          const held = knownEvent(poster.id)?.name ?? ''
+          throw new api.ApiError(posterDisagreesCopy({ address: serverLabel(), name: held }), 409)
+        }
+        if (verdict === 'refused') {
+          throw new api.ApiError(notThePostersCopy(serverLabel(), 'before'), 409)
+        }
+        checked = poster.id
+      } else if (checkableMoveHere()) {
+        const config = await api.getConfig(AbortSignal.timeout(6000)).catch(() => null)
+        checked = eventIdFrom(config?.eventId)
+        await refuseUnproven(checked)
+      }
+      const joined = await api.join({ name, eventPin, personalPin })
+      const { token } = joined
+      const eventId = eventIdFrom(joined.eventId)
+      if (poster) {
+        // The sign-in has to name the poster's event and key: a box that
+        // proved them does, and one that couldn't be checked is taken as the
+        // poster's box only if it does too.
+        if (eventId !== poster.id || eventKeyFrom(joined.eventKey) !== poster.key) {
+          throw new api.ApiError(notThePostersCopy(serverLabel(), 'after'), 409)
+        }
+      } else if (eventId !== checked) {
+        // A box that told the join another event than it said a moment ago.
+        await refuseUnproven(eventId)
+      }
+      // From the poster where there was one: the key this device holds the
+      // event's boxes to from now on came from the wall, not the network.
+      const key = poster?.key ?? eventKeyFrom(joined.eventKey)
+      if (eventId && !acceptEvent(eventId)) {
+        // A box running another event than the one open: the sign-in is
+        // that event's, and so is everything the box is about to send. File
+        // it there and open that event, leaving this one's data as it is.
+        await saveSession(storageNameFor(eventId, TOKEN_KEY), token)
+        const continues = eventIdFrom(joined.continues)
+        replacedAt(here(), { id: eventId, name: '', ...(continues ? { continues } : {}) })
+        rememberEvent({ id: eventId, origin: here() })
+        keepEventKey(eventId, key)
+        chooseEvent(eventId)
+        reopenOnAnotherEvent()
+        return
+      }
+      await saveSession(storageName(TOKEN_KEY), token)
       requestNotificationPermission()
       await get().boot()
+      // After boot, which lists an event a new phone has only just been told of.
+      if (eventId) keepEventKey(eventId, key)
     },
 
     sendMessage(channelId, body) {
@@ -1248,6 +1652,31 @@ export const useStore = create<AppState>()((set, get) => {
       // has to survive the screen going dark a moment later.
       queueIncident(queued)
       ws?.send({ type: 'logIncident', ...queued })
+    },
+
+    async queueMoved(messages, entries) {
+      for (const entry of messages) await cache.putOutbox(entry)
+      for (const entry of entries) queueIncident(entry)
+      // Read back rather than trusted: the cache swallows a failed write, and
+      // the other event's copy is deleted on the strength of this answer.
+      const saved = new Set([
+        ...(await cache.loadOutbox()).map((entry) => entry.clientMsgId),
+        ...queuedIncidents().map((entry) => entry.clientMsgId),
+      ])
+      const landed = messages.filter((entry) => saved.has(entry.clientMsgId))
+      if (landed.length) {
+        const pending = { ...get().pending }
+        for (const entry of landed) {
+          pending[entry.channelId] = [
+            ...(pending[entry.channelId] ?? []).filter((p) => p.clientMsgId !== entry.clientMsgId),
+            entry,
+          ]
+        }
+        set({ pending })
+      }
+      if (get().connection === 'online') void flushQueues()
+      const moving = new Set([...messages, ...entries].map((entry) => entry.clientMsgId))
+      return new Set([...saved].filter((id) => moving.has(id)))
     },
 
     async loadIncidents() {
@@ -1393,6 +1822,30 @@ export const useStore = create<AppState>()((set, get) => {
       setTimeout(() => {
         set({ toasts: get().toasts.filter((toast) => toast.id !== id) })
       }, 5000)
+    },
+
+    openAlertBanner() {
+      const banner = get().alertBanner
+      if (!banner) return
+      set({ alertBanner: null })
+      // Out of whatever is over the chat, the way a phone's own notification
+      // takes you out of what you were doing.
+      const state = get()
+      if (state.searchOpen) state.setSearchOpen(false)
+      if (state.adminOpen) state.setAdminOpen(false)
+      if (state.audioSettingsOpen) state.setAudioSettingsOpen(false)
+      if (state.fileDetail) state.closeFileDetail()
+      if (state.boxesOpen) state.setBoxesOpen(false)
+      if (banner.channelId && state.channels[banner.channelId]) {
+        state.setActiveChannel(banner.channelId)
+      } else {
+        // More than one channel: the list, whose badges say which.
+        state.setSidebarOpen(true)
+      }
+    },
+
+    dismissAlertBanner(id) {
+      if (id === undefined || get().alertBanner?.id === id) set({ alertBanner: null })
     },
 
     async jumpToMessage(channelId, seq) {
@@ -1643,6 +2096,73 @@ export const useStore = create<AppState>()((set, get) => {
       else startWs()
     },
 
+    switchEvent(id, pin) {
+      // In the app the event's box is wherever it was last reached. A
+      // browser is at its box's address and stays there.
+      const origin = knownEvent(id)?.origin
+      if (isNative() && origin) setServerOrigin(origin)
+      chooseEvent(id)
+      reopenOnAnotherEvent(pin)
+    },
+
+    openEventAt({ id, name, origin, key, pin }) {
+      // An address somebody typed, and checked first where this device holds
+      // the event somewhere else (lib/identity.ts). A box that failed the
+      // check comes here only when they opened it anyway, and the key it
+      // offered is then the one kept.
+      rememberEvent({ id, name, origin, ...(key ? { key } : {}) })
+      // On a phone not told an event yet, the first it is told of has
+      // today's names, whether by joining or from here.
+      if (!acceptEvent(id)) {
+        get().switchEvent(id, pin)
+        return
+      }
+      if (origin !== here()) {
+        // The open event's own box, at an address of its own now. Signed in,
+        // the app goes on there as it is; at the join form, it starts again
+        // at the new address.
+        if (get().phase === 'chat') {
+          get().followBox(origin)
+          return
+        }
+        setServerOrigin(origin)
+        if (pin) {
+          history.replaceState(null, '', `${location.pathname}?pin=${encodeURIComponent(pin)}`)
+        }
+        location.reload()
+        return
+      }
+      set({ boxesOpen: false })
+      get().retryConnection()
+    },
+
+    followBox(origin, { found = false } = {}) {
+      const open = openEvent()
+      if (!open || origin === here()) return
+      if (found && get().connection === 'online') return
+      // Its record first: the old address is not where it is, and whatever
+      // took that address did not take its place.
+      eventMoved(open, origin)
+      setServerOrigin(origin)
+      set({ elsewhere: null, connection: 'connecting', boxesOpen: false })
+      // A socket to the new address, and the welcome that brings the rest:
+      // anything missed, the outboxes, and the documents (see welcomedAt).
+      // Not a reload, which would lose what is in hand and bring nothing.
+      if (ws) ws.restart()
+      else startWs()
+      if (found) {
+        get().toast(
+          `Your box is at a new address, ${serverLabel()}. This phone found it and carried on there.`,
+          'info'
+        )
+      }
+    },
+
+    boxesOpen: false,
+    setBoxesOpen(open) {
+      set({ boxesOpen: open })
+    },
+
     toggleTheme() {
       const theme: Theme = get().theme === 'dark' ? 'light' : 'dark'
       writePref(THEME_KEY, theme)
@@ -1671,7 +2191,7 @@ export const useStore = create<AppState>()((set, get) => {
         .catch(() => {})
       ws?.stop()
       ws = null
-      forgetPref(TOKEN_KEY)
+      await forgetSession(storageName(TOKEN_KEY))
       clearQueuedIncidents()
       await cache.wipe()
       location.reload()
@@ -1691,13 +2211,20 @@ export const useStore = create<AppState>()((set, get) => {
      * there the next person is somebody else.
      */
     async sessionEnded() {
+      // First, whose box is this now? One that came back with a new database
+      // refuses every session it did not issue, and this is the old event's:
+      // it has not ended, a different box has been put where its box was. Its
+      // messages and sign-in stay, for when its box is back or for reading.
+      const config = await api.getConfig(AbortSignal.timeout(5000)).catch(() => null)
+      if (config && !openEventHere(config.eventId, config.eventName, config.continues)) return
+
       await voiceManager?.leave()
       void nativeAlerts()
         ?.stop()
         .catch(() => {})
       ws?.stop()
       ws = null
-      forgetPref(TOKEN_KEY)
+      await forgetSession(storageName(TOKEN_KEY))
       // The cached messages are somebody's session and go; the outbox is
       // theirs to finish sending once they are back in.
       await cache.wipeExceptOutbox()

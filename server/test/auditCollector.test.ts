@@ -295,3 +295,65 @@ describe('when the database will not take another row', () => {
     expect(() => collector.stop()).not.toThrow()
   })
 })
+
+describe('phones on comms', () => {
+  const reading = { lossPct: 0, jitterMs: 10, concealedPct: 0.5 }
+
+  it('counts the phones that reported in a minute, not their reports', () => {
+    // Four reports a minute from each phone, and a pass every five seconds
+    // that hears only some of them. The readiness line was handed the
+    // number of reports and called it devices.
+    const h = harness()
+    const [a, b] = [{}, {}]
+    h.tick(5_000)
+    h.collector.noteVoice(reading, a)
+    h.tick(5_000)
+    h.collector.noteVoice(reading, b)
+    h.tick(5_000)
+    h.collector.noteVoice(reading, a)
+    h.tick(5_000)
+    h.collector.noteVoice(reading, a)
+    h.collector.noteVoice(reading, b)
+    h.tick(5_000)
+    h.tick(BUCKET_MS)
+
+    const readings = h.metrics.series('voice.concealedPct', '', 0, 10 * BUCKET_MS)
+    expect(readings[0]).toMatchObject({ count: 5 })
+    const devices = h.metrics.series('voice.devices', '', 0, 10 * BUCKET_MS)
+    expect(devices).toHaveLength(1)
+    expect(devices[0]).toMatchObject({ max: 2, count: 1 })
+  })
+
+  it('starts every minute from nobody', () => {
+    const h = harness()
+    const [a, b] = [{}, {}]
+    h.tick(5_000)
+    h.collector.noteVoice(reading, a)
+    h.collector.noteVoice(reading, b)
+    h.tick(5_000)
+    h.tick(BUCKET_MS) // the next minute: only one of them is still on comms
+    h.collector.noteVoice(reading, a)
+    h.tick(5_000)
+    h.tick(BUCKET_MS)
+
+    const devices = h.metrics.series('voice.devices', '', 0, 10 * BUCKET_MS)
+    expect(devices.map((row) => row.max)).toEqual([2, 1])
+  })
+
+  it('writes no count for a minute nobody was on comms', () => {
+    const h = harness()
+    h.tick(5_000)
+    h.tick(BUCKET_MS)
+    expect(h.metrics.series('voice.devices', '', 0, 10 * BUCKET_MS)).toHaveLength(0)
+  })
+
+  it('keeps the count of a partial minute through a clean shutdown', () => {
+    const h = harness()
+    h.tick(5_000)
+    h.collector.noteVoice(reading, {})
+    h.tick(5_000)
+    h.collector.stop()
+    const devices = h.metrics.series('voice.devices', '', 0, 10 * BUCKET_MS)
+    expect(devices[0]).toMatchObject({ max: 1 })
+  })
+})

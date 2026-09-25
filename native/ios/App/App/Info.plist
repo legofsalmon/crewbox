@@ -21,6 +21,25 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- crewbox://join?server=…&pin=…, tapped in a message or on the join
+	     page in Safari: the join screen opens with the box and the event
+	     PIN filled in (web/src/lib/appLinks.ts). AppDelegate hands the link
+	     to Capacitor's App plugin. A scheme of the app's own rather than a
+	     universal link, which needs an https domain to verify, and a box on
+	     a crew network has none. Any app can claim a scheme and any page can
+	     send one, so the link only fills the form in: Join is still
+	     somebody's to press. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.colmhewson.crewbox</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>crewbox</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
@@ -34,31 +53,73 @@
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Crewbox uses the microphone for push-to-talk crew voice.</string>
+	<!-- The join screen's Scan the join poster reads the poster's QR with the
+	     camera (ScannerPlugin.swift). The web view's file picker offers Take
+	     Photo or Video wherever a file input takes images: the composer's
+	     attach button, lineup attachments. iOS terminates an app that opens
+	     the camera without this string, so without it a menu item crew use
+	     every day closed the app. Video from that picker records sound too,
+	     which the microphone string covers. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Crewbox uses the camera to scan the join poster, and when you take a photo or video to share with your crew.</string>
+	<!-- Long-pressing an image in the web view offers to save it to Photos,
+	     which needs add-only access, and is the same terminate-on-use if this
+	     is missing. Choosing a photo to send needs no string: the photo
+	     picker runs outside the app and hands back only what was picked. -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Crewbox saves pictures you choose to your photo library.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- The crew server speaks plain HTTP on the local network only, and
-		     `NSAllowsLocalNetworking` is exactly that exemption: private
-		     addresses and .local names, nothing else.
+		<!-- A box without a certificate speaks plain HTTP, and
+		     `NSAllowsLocalNetworking` is the exemption that lets the app
+		     reach it. Apple's documentation of the key says what it covers:
+		     IP addresses (IPv4 and IPv6), `.local` names, and names with no
+		     dot in them. Since iOS 17 it is also what lets the app use an IP
+		     address at all, which is how such a box is advertised. It needs
+		     no justification in App Review.
 
-		     `NSAllowsArbitraryLoads` was set beside it, which is not "local
-		     only" — it turns App Transport Security off for every request the
-		     app makes, to anywhere, and takes precedence over the comment
-		     above it. It also draws a review question the app does not need
-		     an answer to. If a plain-HTTP box on a public address ever becomes
-		     a supported deployment, that is a decision to write down in
-		     native/ios/APP-STORE-CHECKLIST.md, not a key to leave switched on. -->
+		     Plain HTTP to any other name (crewbox.lan, chat.crew.example) is
+		     refused inside the phone before a request is sent. The join
+		     screen says so rather than trying: iphoneRefusesPlainHttp in
+		     web/src/lib/server.ts mirrors the rule, so keep the two in step.
+		     A box only advertises a name when it has a certificate for it,
+		     and ATS allows HTTPS to a name whose certificate meets its rules,
+		     as a Let's Encrypt one does.
+
+		     `NSAllowsArbitraryLoads` used to sit beside it. On iOS 10 and
+		     later, ATS ignores that key when this one is present, so it did
+		     nothing on any phone this app installs on, while still asking
+		     App Review for a justification. `NSAllowsArbitraryLoadsInWebContent`
+		     would open plain HTTP to every name, and is left off on purpose:
+		     native/ios/APP-STORE-CHECKLIST.md has the reasons, and what to
+		     change if venues need it. server/test/iosInfoPlist.test.mjs pins
+		     all three. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Crewbox connects to the crew server on the event Wi-Fi.</string>
+	<string>Crewbox finds and connects to the crew box on the event Wi-Fi.</string>
+	<!-- The one Bonjour type the app looks for: a box announces itself as
+	     _crewbox._tcp on its crew network (docs/DISCOVERY.md), and the join
+	     and Boxes screens list what DiscoveryPlugin.swift finds. iOS refuses
+	     to browse for a type that is not listed here: the browser fails with
+	     NoAuth. One named type needs no multicast entitlement; browsing for
+	     every type would (TN3179). -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_crewbox._tcp</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- arm64, not the armv7 Capacitor's template ships. The app is built for
+	     arm64 only, as every iOS 11-and-later app is, and App Store Connect
+	     has rejected arm64-only uploads whose list lacks arm64 (ITMS-90502).
+	     Every iPhone that runs iOS 17 is arm64, so this filters no one. -->
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

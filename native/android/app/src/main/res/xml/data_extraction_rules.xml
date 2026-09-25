@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    What Android 12 and later copy to a new phone, from a cloud backup or in
+    a transfer from the old phone: everything but two files.
+
+    - crewbox-sessions.xml, the app's sign-ins (Sessions.java): tokens
+      sealed with a key that stays on the old phone.
+    - crewbox-alerts.xml, the alerts service's: which sign-in it was started
+      for, and whether this phone has been asked to let it run in the
+      background, which a new phone has to be asked again.
+
+    The page's storage goes, so a new phone keeps its boxes, events,
+    settings and unsent work, and the name of each sign-in, which tells the
+    page to start signed out rather than as the old phone.
+    backup_rules.xml is the same for Android 11 and older.
+
+    No <cross-platform-transfer>, Android 16's move to an iPhone, which
+    would need the iPhone app's bundle and team ID. Whatever it carries, a
+    sealed sign-in is no use without the key, which stays on this phone.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="crewbox-sessions.xml" />
+        <exclude domain="sharedpref" path="crewbox-alerts.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="crewbox-sessions.xml" />
+        <exclude domain="sharedpref" path="crewbox-alerts.xml" />
+    </device-transfer>
+</data-extraction-rules>

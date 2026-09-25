@@ -4,11 +4,15 @@
 // Give it the address crew will actually reach, PORT AND ALL. A box on 8787
 // with no 443 redirect wants https://chat.example.com:8787 — a poster is the
 // one thing on site that cannot be corrected once it is cable-tied to a pole.
+// Run it where that address reaches the box: the join QR then names the
+// event, and the phone apps check the box is the poster's before a PIN goes
+// to it (posterEvent, below). It says so either way.
 // Includes a second QR for the Android APK (served from the crew box as
 // /crewbox.apk per the RUNBOOK) so phones that need lock-screen alerts can
 // grab the app with no internet. The APK box only helps once an apk is
 // actually deployed into the data directory — the RUNBOOK step, not this one.
 import { writeFile } from 'node:fs/promises'
+import { isIP } from 'node:net'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import QRCode from 'qrcode'
@@ -29,20 +33,121 @@ import QRCode from 'qrcode'
  * `https://chat.example.com:8787` here, or both QRs point at a port nothing
  * is on — which is the one failure a printed poster cannot be talked out of.
  */
-export function posterUrls(url, pin) {
+export function posterUrls(url, pin, event) {
   const base = url.replace(/\/+$/, '')
+  // The event and its key, when the box proved them, as the box's own QR
+  // carries them (server/src/joinCode.ts).
+  const named = event
+    ? `&event=${encodeURIComponent(event.id)}&key=${encodeURIComponent(event.key)}`
+    : ''
   return {
     // The join QR carries ?pin= so scanning prefills the form — the PIN is
     // printed on this same poster anyway.
-    join: `${base}/?pin=${encodeURIComponent(pin)}`,
+    join: `${base}/?pin=${encodeURIComponent(pin)}${named}`,
     apk: `${base}/crewbox.apk`,
+  }
+}
+
+/** What every statement a box signs starts with (server/src/identity.ts). */
+const CONTEXT = 'crewbox-identity-v1'
+
+/**
+ * The event the join QR names, so the phone apps check the box at the
+ * poster's address before a PIN goes to it (docs/DISCOVERY.md, "The join
+ * QR"), or why it names none.
+ *
+ * Asked of the box at that address as the apps will ask it: its event and key
+ * from /api/config, then a signature for the address over a fresh challenge.
+ * The event goes on the poster only where the apps won't refuse the box for
+ * it: it signed (`signed`), or it won't sign by a name, which a box does
+ * without a certificate for that name, and the apps check the sign-in instead.
+ * At an IP address a box won't sign for, as a port forward's, the apps refuse
+ * a poster naming its event, so the poster names none, and joins as posters
+ * printed before the QR named the event do: unchecked.
+ */
+export async function posterEvent(url, { fetch = globalThis.fetch } = {}) {
+  const base = url.replace(/\/+$/, '')
+  const { host, hostname } = new URL(base)
+  const ask = async (path) => {
+    const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(6000) })
+    return {
+      status: res.status,
+      body: res.ok ? await res.json().catch(() => undefined) : undefined,
+    }
+  }
+  let config
+  try {
+    config = await ask('/api/config')
+  } catch (err) {
+    return { why: `nothing answered at ${base} (${err?.cause?.message ?? err?.message ?? err})` }
+  }
+  const id = config.body?.eventId
+  const key = config.body?.eventKey
+  if (
+    typeof id !== 'string' ||
+    !/^[0-9A-Za-z_]{1,64}$/.test(id) ||
+    typeof key !== 'string' ||
+    !/^[A-Za-z0-9_-]{87}$/.test(key)
+  ) {
+    return {
+      why: `what answered at ${host} gives no event key: a box from before this version, or not a box`,
+    }
+  }
+  const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url')
+  let proof
+  try {
+    proof = await ask(`/api/identity?nonce=${nonce}`)
+  } catch (err) {
+    return { why: `nothing answered at ${base} (${err?.cause?.message ?? err?.message ?? err})` }
+  }
+  if (proof.status === 421 && !isIP(hostname.replace(/^\[(.*)\]$/, '$1'))) {
+    return { event: { id, key }, signed: false }
+  }
+  if (proof.status === 421) {
+    return {
+      why:
+        `the box won't sign for ${host}, which isn't its own address, as a port forward's is, ` +
+        'and the phone apps refuse a poster naming its event at an address its box won’t sign for',
+    }
+  }
+  if (proof.status !== 200) {
+    return { why: `the box at ${host} didn't answer the check (HTTP ${proof.status})` }
+  }
+  // Over the event /api/config named, so a signature for any other fails.
+  const statement = `${CONTEXT}\n${id}\n${host}\n${nonce}`
+  if (!(await verifies(key, statement, proof.body?.signature))) {
+    return { why: `what answered at ${host} didn't prove it runs the event it names` }
+  }
+  return { event: { id, key }, signed: true }
+}
+
+/** Whether `signature` is `key`'s over `statement`, as the apps check it. */
+async function verifies(key, statement, signature) {
+  if (typeof signature !== 'string') return false
+  try {
+    const publicKey = await crypto.subtle.importKey(
+      'raw',
+      Buffer.from(key, 'base64url'),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify']
+    )
+    return await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      publicKey,
+      Buffer.from(signature, 'base64url'),
+      new TextEncoder().encode(statement)
+    )
+  } catch {
+    return false
   }
 }
 
 async function main() {
   const url = process.argv[2] ?? 'https://chat.example.com'
   const pin = process.argv[3] ?? 'SET-EVENT-PIN'
-  const { join: joinUrl, apk: apkUrl } = posterUrls(url, pin)
+  const { event, signed, why } = await posterEvent(url)
+  const { join: joinUrl, apk: apkUrl } = posterUrls(url, pin, event)
   const qr = await QRCode.toDataURL(joinUrl, { width: 480, margin: 1 })
   const apkQr = await QRCode.toDataURL(apkUrl, { width: 240, margin: 1 })
 
@@ -83,6 +188,25 @@ async function main() {
   const out = join(dirname(fileURLToPath(import.meta.url)), 'poster.html')
   await writeFile(out, html)
   console.log(`wrote ${out} for ${url} (PIN ${pin}, APK ${apkUrl})`)
+  const at = new URL(url).host
+  if (signed) {
+    console.log(
+      `The join QR names the event, so the phone apps check the box at ${at} is its box` +
+        ' before a PIN goes to it.'
+    )
+  } else if (event) {
+    console.log(
+      `The join QR names the event. The box won't sign for ${at} without a certificate for` +
+        ' that name, so the phone apps check the event it signs them in to instead, once the' +
+        ' PINs have gone.'
+    )
+  } else {
+    console.log(
+      `note: the join QR names no event: ${why}. The phone apps join from it without` +
+        ` checking the box first, as from an address typed in. Run this where ${url} reaches` +
+        ' the box for a poster they check.'
+    )
+  }
   if (!/:\d+(\/|$)/.test(url)) {
     console.log(
       `note: ${url} carries no port, so both QRs point at ${url.startsWith('https:') ? 443 : 80}.` +

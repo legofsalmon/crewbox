@@ -48,10 +48,45 @@ export interface AdminNetwork {
   advertised: string
   /** Saved settings differ from what this process booted with. */
   restartNeeded: boolean
+  /**
+   * Whether the apps can find this box on the crew network without being
+   * given its address. Optional so an older box still parses.
+   */
+  announce?: AnnounceStatus
+}
+
+/** The box announcing itself on the crew network (server/src/announce). */
+export interface AnnounceStatus {
+  state: 'announcing' | 'starting' | 'quiet' | 'off' | 'failed'
+  setting: AnnounceSetting
+  /** CREWBOX_ANNOUNCE decides it, so the panel cannot. */
+  fromEnv: boolean
+  /** Why it is quiet, off or failed, in words meant for the panel. */
+  reason?: string
+  address?: string
+  adapter?: string
+  /** The name the apps list it under. */
+  name?: string
+}
+
+export type AnnounceSetting = 'auto' | 'on' | 'off'
+
+/**
+ * The event a box carries on, as its admin said (server/src/continues.ts):
+ * its ID, and its name as the admin's device knew it.
+ */
+export interface Continues {
+  id: string
+  name: string
 }
 
 export interface AdminSettings {
-  settings: { eventName: string; wifiSsid: string }
+  settings: {
+    eventName: string
+    wifiSsid: string
+    /** Null when it carries on no other event; absent from a box that predates it. */
+    continues?: Continues | null
+  }
   network: AdminNetwork
   serverInfo: {
     version: string
@@ -135,15 +170,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data
 }
 
-export function join(input: {
-  name: string
-  eventPin: string
-  personalPin: string
-}): Promise<{ token: string; user: User; created: boolean }> {
+export function join(input: { name: string; eventPin: string; personalPin: string }): Promise<{
+  token: string
+  user: User
+  created: boolean
+  /** Which event the sign-in is for; absent from a box that predates it. */
+  eventId?: string
+  /** That event's public key (PublicConfig.eventKey); absent from a box that predates it. */
+  eventKey?: string
+  /** The event its admin says it carries on (PublicConfig.continues), if any. */
+  continues?: string
+}> {
   return request('/api/join', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
+  })
+}
+
+/**
+ * A new sign-in from the box in place of this one, which stops working the
+ * first time the new one is used (lib/sessions.ts, renewCarried).
+ */
+export function renewSession(token: string, signal?: AbortSignal): Promise<{ token: string }> {
+  return request('/api/session/renew', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    ...(signal ? { signal } : {}),
   })
 }
 
@@ -167,10 +220,17 @@ export function uploadFile(
   })
 }
 
+/**
+ * A room token, and where to use it.
+ *
+ * `iceServers`, when the box sends it, replaces the list the SFU would hand
+ * the phone. The box sends an empty one for its own SFU, so a phone on comms
+ * asks no STUN server on the internet for its address (see the route).
+ */
 export function voiceToken(
   token: string,
   channelId: string
-): Promise<{ url: string; token: string }> {
+): Promise<{ url: string; token: string; iceServers?: RTCIceServer[] }> {
   return request('/api/voice/token', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -241,8 +301,15 @@ export function adminUpdateChannel(
   })
 }
 
-export function getConfig(): Promise<PublicConfig> {
-  return request('/api/config')
+export function getConfig(signal?: AbortSignal): Promise<PublicConfig> {
+  return request('/api/config', signal ? { signal } : undefined)
+}
+
+/** The same, from a box at an address this app is not using yet. */
+export async function getConfigAt(origin: string, signal?: AbortSignal): Promise<PublicConfig> {
+  const res = await fetch(`${origin}/api/config`, signal ? { signal } : undefined)
+  if (!res.ok) throw new ApiError(`request failed (${res.status})`, res.status)
+  return (await res.json()) as PublicConfig
 }
 
 /**
@@ -312,9 +379,12 @@ export function adminUpdateSettings(
     dmxMode?: 'off' | 'artnet' | 'sacn' | 'both'
     dmxIface?: string
     dmxUniverses?: string
+    announce?: AnnounceSetting
+    /** The event this box carries on; null for none. */
+    continues?: Continues | null
   }
 ): Promise<{
-  settings: { eventName: string; wifiSsid: string; eventPin: string }
+  settings: { eventName: string; wifiSsid: string; eventPin: string; continues?: Continues | null }
   network: AdminNetwork
   /**
    * Present only when the admin password changed. Changing it revokes every

@@ -21,10 +21,12 @@ import type { MetricsStore } from './metrics.ts'
  *   on their wire and they can verify it against a capture.
  * - What is deliberately absent is as designed as what is present: nothing
  *   on the PTP ports (transmitting near a clock election risks the fault
- *   the audit exists to find), no IGMP (impossible without root, and
- *   winning the querier election only to vanish would *cause* cyclic
- *   outages), no ICMP sweeps or port scans (root-required; show-network
- *   device watchdogs). sACN needs no probe at all — E1.31 universe
+ *   the audit exists to find), no IGMP (receiving it needs a raw socket
+ *   the box is not granted, and winning the querier election only to
+ *   vanish would *cause* cyclic outages), no ICMP sweeps or port scans
+ *   (show-network devices' watchdogs treat them as attacks; privilege is
+ *   not the reason, since a connect needs none and on most systems a ping
+ *   needs none either). sACN needs no probe at all — E1.31 universe
  *   discovery is already broadcast every 10 s and collected passively.
  *
  * The Art-Net probe is one ArtPoll — the discovery packet every console on
@@ -85,6 +87,11 @@ export interface ProberDeps {
   certHostname: () => string | undefined
   /** Whether the media watchers are running (mDNS replies need a listener). */
   watching: () => boolean
+  /**
+   * Whether this box may go off-site at all. CREWBOX_UPDATE_CHECK=0 says it
+   * may not, and the uplink probe then sends nothing. Omitted, it may.
+   */
+  outbound?: () => boolean
 }
 
 /**
@@ -267,6 +274,20 @@ export class Prober {
   // -- the probes -------------------------------------------------------------
 
   private async probeUplink(): Promise<ProbeResult> {
+    // The switch the startup check already honours (environment.ts). The
+    // probe ignored it and connected to Cloudflare and Google on a box whose
+    // operator had asked for no outbound connections at all, and pressing a
+    // button labelled for the show's networks is not asking for one.
+    if (this.deps.outbound?.() === false) {
+      return {
+        id: 'crew-uplink',
+        network: 'crew',
+        state: 'skipped',
+        sent: 'nothing',
+        detail: 'Not checked — this box is configured to make no outbound connections.',
+        fix: 'Nothing here needs it. Unset CREWBOX_UPDATE_CHECK=0 if you want the box to look.',
+      }
+    }
     const sent =
       'TCP connections to 1.1.1.1:443 and 8.8.8.8:443, and one HTTP request to gstatic generate_204'
     try {

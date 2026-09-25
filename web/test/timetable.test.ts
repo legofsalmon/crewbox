@@ -4,6 +4,7 @@ import {
   actsForStage,
   addAct,
   removeAct,
+  sameRunningOrder,
   snapshotTimetable,
   stagesIn,
   updateAct,
@@ -142,6 +143,40 @@ describe('importing a running order that is already here', () => {
     upsertAct(d, { stage: 'Main', date: '2026-08-09' })
     upsertAct(d, { stage: 'Main', date: '2026-08-09' })
     expect(snapshotTimetable(d).acts).toHaveLength(2)
+  })
+})
+
+describe('bringing another box’s running order across', () => {
+  // The phone's copy from the old box, and the one on the box that took its
+  // place, which may be empty, the same one, or one typed up again.
+  const acts = (d: Y.Doc) => snapshotTimetable(d).acts
+
+  it('merges into an empty one', () => {
+    const theirs = doc()
+    addAct(theirs, { name: 'The Harbour Lights', stage: 'Main' })
+    expect(sameRunningOrder(acts(doc()), acts(theirs))).toBe(true)
+  })
+
+  it('merges into the same one, brought here by another phone, listing each act once', () => {
+    const theirs = doc()
+    addAct(theirs, { name: 'The Harbour Lights', stage: 'Main' })
+    addAct(theirs, { name: 'Quay Street', stage: 'Main' })
+    const ours = doc()
+    Y.applyUpdate(ours, Y.encodeStateAsUpdate(theirs))
+    expect(sameRunningOrder(acts(ours), acts(theirs))).toBe(true)
+    Y.applyUpdate(ours, Y.encodeStateAsUpdate(theirs))
+    expect(acts(ours).map((a) => a.name)).toEqual(['The Harbour Lights', 'Quay Street'])
+  })
+
+  it('leaves one typed up apart alone, which would list every act twice', () => {
+    const theirs = doc()
+    addAct(theirs, { name: 'The Harbour Lights', stage: 'Main' })
+    const ours = doc()
+    addAct(ours, { name: 'The Harbour Lights', stage: 'Main' })
+    expect(sameRunningOrder(acts(ours), acts(theirs))).toBe(false)
+    // What merging them anyway would do.
+    Y.applyUpdate(ours, Y.encodeStateAsUpdate(theirs))
+    expect(acts(ours)).toHaveLength(2)
   })
 })
 

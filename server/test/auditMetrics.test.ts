@@ -126,3 +126,47 @@ describe('MetricsStore', () => {
     expect(store.latestProbeRun()).toBeNull()
   })
 })
+
+describe('how comms sounded, over a window', () => {
+  const row = (ts: number, metric: string, max: number, count: number) => ({
+    ts,
+    metric,
+    key: '',
+    min: 0,
+    avg: max / 2,
+    max,
+    count,
+  })
+
+  it('counts phones as the most on comms in any one minute', () => {
+    const store = new MetricsStore(openDb(':memory:'))
+    store.flush([
+      row(0, 'voice.concealedPct', 3, 8),
+      row(0, 'voice.lossPct', 1, 8),
+      row(0, 'voice.devices', 2, 1),
+      row(BUCKET_MS, 'voice.concealedPct', 6, 12),
+      row(BUCKET_MS, 'voice.lossPct', 2, 12),
+      row(BUCKET_MS, 'voice.devices', 3, 1),
+    ])
+    expect(store.worstVoice(0, 10 * BUCKET_MS)).toEqual({
+      concealedPct: 6,
+      lossPct: 2,
+      samples: 20,
+      devices: 3,
+    })
+  })
+
+  it('says one device for minutes written before phones were counted', () => {
+    // Readings with no count beside them came from somebody. One is the
+    // most that can be said, and is what the readiness line reads as a
+    // single phone rather than "of 40".
+    const store = new MetricsStore(openDb(':memory:'))
+    store.flush([row(0, 'voice.concealedPct', 3, 40), row(0, 'voice.lossPct', 1, 40)])
+    expect(store.worstVoice(0, 10 * BUCKET_MS)?.devices).toBe(1)
+  })
+
+  it('is nothing at all when nobody has been on comms', () => {
+    const store = new MetricsStore(openDb(':memory:'))
+    expect(store.worstVoice(0, 10 * BUCKET_MS)).toBeNull()
+  })
+})

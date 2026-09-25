@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import type { WebSocket, WebSocketServer } from 'ws'
 import {
   clientMessageSchema,
+  INCIDENT_CLOCK_SLACK_MS,
   PROTOCOL_VERSION,
   SEND_LIMIT,
   SEND_WINDOW_MS,
@@ -60,17 +61,6 @@ interface Conn {
   /** Cheap fingerprint of the last state message, to avoid resending it. */
   dmxSummary?: string
 }
-
-/**
- * How far from the box's clock a show-log entry's time may be.
- *
- * A day either side. Back-dating by hours is ordinary — an entry written at
- * the end of a shift about something at the start of it — and a phone that
- * never reached NTP on an offline site is off by minutes, not months. What
- * this stops is the wrong-by-years clock putting the headliner's show stop
- * in 1970, where nobody would ever find it again.
- */
-const INCIDENT_CLOCK_SLACK_MS = 24 * 60 * 60_000
 
 /**
  * Second, looser limit for the other state-changing / fan-out message types.
@@ -167,7 +157,11 @@ interface TallySource {
 
 interface CollectorSink {
   noteRtt: (ms: number) => void
-  noteVoice: (stats: { lossPct: number; jitterMs: number; concealedPct: number }) => void
+  /** `from` tells one device's reports from another's, and is only ever counted. */
+  noteVoice: (
+    stats: { lossPct: number; jitterMs: number; concealedPct: number },
+    from: object
+  ) => void
 }
 
 interface Logger {
@@ -469,11 +463,13 @@ export class Hub {
         // are computed on a device the box does not own, so the schema has
         // already bounded them before they reach here.
         if (this.overActionLimit(conn)) break
-        this.collector?.noteVoice({
-          lossPct: msg.lossPct,
-          jitterMs: msg.jitterMs,
-          concealedPct: msg.concealedPct,
-        })
+        this.collector?.noteVoice(
+          { lossPct: msg.lossPct, jitterMs: msg.jitterMs, concealedPct: msg.concealedPct },
+          // The connection itself, so the collector can count phones rather
+          // than reports. It keeps the reference for the minute and writes
+          // down only how many there were.
+          conn
+        )
         break
       case 'logIncident': {
         // The same flood guard as `send`, and rejected the same way, because

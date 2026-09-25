@@ -33,7 +33,19 @@ export default function ConfirmTransmit({
     intent.action === 'scan' ? 'Sweep for LED processors?' : `Start watching ${intent.target}?`
 
   return (
-    <div className={styles.backdrop} role="dialog" aria-modal="true" aria-label={heading}>
+    <div
+      className={styles.backdrop}
+      role="dialog"
+      aria-modal="true"
+      aria-label={heading}
+      // Escape, and Android's back button, answer "Cancel": the choice that
+      // sends nothing. Not while sending, when Cancel is disabled too.
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return
+        e.stopPropagation()
+        if (!busy) onCancel()
+      }}
+    >
       <div className={styles.panel}>
         <h2 className={styles.heading}>{heading}</h2>
         <p className={styles.lead}>

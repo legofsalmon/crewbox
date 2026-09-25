@@ -72,3 +72,57 @@ export function mixConflictsWithOutputPicker({
 }): boolean {
   return shouldMixThroughWebAudio({ ios, safari }) && canSelectOutput
 }
+
+/**
+ * WebKit's audio session: iOS 16.4 and later, in Safari and in the app's web
+ * view alike. Not in TypeScript's DOM types yet.
+ */
+interface WebKitAudioSession {
+  type: string
+}
+
+function webKitAudioSession(): WebKitAudioSession | undefined {
+  if (typeof navigator === 'undefined') return undefined
+  return (navigator as Navigator & { audioSession?: WebKitAudioSession }).audioSession
+}
+
+/**
+ * Keep the Ring/Silent switch off the intercom for as long as the call lasts.
+ *
+ * WebKit picks the iPhone's audio session from what the page is doing. A
+ * live microphone gets "play and record", which the Silent switch leaves
+ * alone. Audio that is only Web Audio gets "ambient", which the switch mutes,
+ * and with `webAudioMix` all of remote voice is Web Audio, because the
+ * elements are kept muted. So crew with a microphone heard the intercom with
+ * the switch on silent (a muted track is still a live capture), and crew
+ * listening without one heard nothing.
+ *
+ * Naming the session puts everyone where the talkers already were: the
+ * loudspeaker unless a headset is connected, Bluetooth allowed, the switch
+ * ignored, and other audio on the phone stopped for the call. WebKit applies
+ * it the next time the page's audio starts, not at once, so this has to run
+ * before the room opens any.
+ *
+ * iOS only, which is where the switch is. Everywhere else stays WebKit's
+ * choice.
+ */
+export function holdCallAudio({ ios }: { ios: boolean }): void {
+  const session = webKitAudioSession()
+  if (!ios || !session) return
+  try {
+    session.type = 'play-and-record'
+  } catch {
+    // A page on its way out can refuse. The call goes ahead either way.
+  }
+}
+
+/** Back to WebKit's own choice once the call is over. */
+export function releaseCallAudio(): void {
+  const session = webKitAudioSession()
+  if (session?.type !== 'play-and-record') return
+  try {
+    session.type = 'auto'
+  } catch {
+    // As above.
+  }
+}

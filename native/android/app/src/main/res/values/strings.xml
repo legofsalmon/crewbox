@@ -4,4 +4,10 @@
     <string name="title_activity_main">Crewbox</string>
     <string name="package_name">com.colmhewson.crewbox</string>
     <string name="custom_url_scheme">com.colmhewson.crewbox</string>
+    <!-- Scan the join poster (ScannerActivity). -->
+    <string name="scanner_title">Scan the join poster</string>
+    <string name="scanner_hint">Point the camera at the QR code on the join poster.</string>
+    <string name="scanner_cancel">Cancel</string>
+    <string name="scanner_torch_on">Turn on the torch</string>
+    <string name="scanner_torch_off">Turn off the torch</string>
 </resources>

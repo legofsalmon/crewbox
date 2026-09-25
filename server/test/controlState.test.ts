@@ -17,7 +17,7 @@ import { Store } from '../src/store.ts'
  * than another unit one: the box does not keep a timetable of its own. It
  * reads the document the crew's phones are already syncing through it, which
  * means a real client, a real relay room, and a box that honestly knows
- * nothing when nobody is connected.
+ * nothing until a phone has brought it the running order.
  *
  * The clock is injected, so "what is on the main stage at half nine" is a
  * question CI can ask at four in the morning.
@@ -248,15 +248,67 @@ describe('posting a message from the desk', () => {
 })
 
 describe('a box nobody has the app open on', () => {
-  it('says it does not know the running order, rather than that there is none', async () => {
-    // The relay holds documents for connected clients and nothing else. "I am
-    // not holding a copy" and "the running order is empty" are different
-    // answers, and a desk showing a blank stage all night because the last
-    // phone went home would be the wrong one.
+  it('still reads the last running order a phone brought it', async () => {
+    // A desk showing a blank stage all night because the last phone went
+    // home would be the wrong answer, and the box keeps the last copy it
+    // relayed.
     phone.disconnect()
-    await waitFor(() => app.docs.peek(TIMETABLE_ROOM) === null)
+    await waitFor(() => app.docs.stats().connections === 0)
     const body = await state()
-    expect(body.runningOrder.known).toBe(false)
-    expect(body.runningOrder.stages).toEqual([])
+    expect(body.runningOrder.known).toBe(true)
+    const main = body.runningOrder.stages.find((s) => s.stage === 'Main Stage')
+    expect(main?.onNow?.name).toBe('The Fixture')
+  })
+
+  it('still reads it after a restart, from what the box saved', async () => {
+    // The box saves what it relays, so a restart does not blank the desk
+    // until the first phone reconnects.
+    const restarted = buildApp({
+      store,
+      eventPin: EVENT_PIN,
+      dataDir: dir,
+      logger: false,
+      clock: () => NOW,
+    })
+    try {
+      const res = await restarted.inject({
+        method: 'GET',
+        url: '/api/control/state',
+        headers: { 'x-api-key': key },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as StateBody
+      expect(body.runningOrder.known).toBe(true)
+      const main = body.runningOrder.stages.find((s) => s.stage === 'Main Stage')
+      expect(main?.onNow?.name).toBe('The Fixture')
+    } finally {
+      await restarted.close()
+    }
+  })
+
+  it('says it does not know the running order when no phone has brought one, rather than that there is none', async () => {
+    // A box on a database no phone has synced a running order to. "I am not
+    // holding a copy" and "the running order is empty" are different answers.
+    const other = new Store(openDb(':memory:'))
+    const fresh = buildApp({
+      store: other,
+      eventPin: EVENT_PIN,
+      dataDir: dir,
+      logger: false,
+      clock: () => NOW,
+    })
+    try {
+      const res = await fresh.inject({
+        method: 'GET',
+        url: '/api/control/state',
+        headers: { 'x-api-key': controlKey(other, {}) },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as StateBody
+      expect(body.runningOrder.known).toBe(false)
+      expect(body.runningOrder.stages).toEqual([])
+    } finally {
+      await fresh.close()
+    }
   })
 })

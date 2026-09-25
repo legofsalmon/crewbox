@@ -54,6 +54,21 @@ export function isIOS(): boolean {
 }
 
 /**
+ * Pure Android check (testable). Every Android browser names Android in its
+ * user-agent, reduced ones included; a browser asked for the desktop site
+ * doesn't, and is then taken at its word.
+ */
+export function isAndroidFrom(ua: string): boolean {
+  return /\bAndroid\b/.test(ua)
+}
+
+/** True on an Android phone or tablet, in a browser or the app. */
+export function isAndroid(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return isAndroidFrom(navigator.userAgent)
+}
+
+/**
  * Whether to offer an in-app speaker picker. Needs setSinkId, but even where
  * newer iOS Safari exposes it the only "devices" are Earpiece/Speaker, which
  * don't route the way users expect — iOS owns output routing (Control Centre,

@@ -159,7 +159,7 @@ export function mediaReadiness(
           )
           .join(', ') +
         (of.length > 6 ? `, and ${of.length - 6} more` : '') +
-        '. Heard from their own announcements; crewbox never queries.',
+        '. Heard from their own announcements; crewbox asks only when an admin runs the deep probe.',
       fix:
         gone.length > 0
           ? `${plural(gone.length, 'device has', 'devices have')} dropped off the network — check their power and cable before their settings.`

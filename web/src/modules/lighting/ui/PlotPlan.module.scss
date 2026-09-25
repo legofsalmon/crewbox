@@ -42,18 +42,23 @@
 }
 
 // The plan can outgrow the pane in both directions; scroll it, not the page.
+// Fingers pan and pinch it through usePanZoom, which is why the browser is
+// told to do neither itself.
 .canvas {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-raised);
   touch-action: none;
-  // A small rig in a wide pane looks stranded pinned to the corner.
   display: flex;
-  justify-content: center;
 
+  // A small rig in a wide pane looks stranded pinned to the corner, so it
+  // is centred. By its margins, not `justify-content: center`, which
+  // centred a zoomed-in rig too: half the overflow went off the left edge,
+  // where no scrollbar reaches, so the left of the rig could not be seen.
   svg {
     flex: none;
+    margin-inline: auto;
   }
 }
 

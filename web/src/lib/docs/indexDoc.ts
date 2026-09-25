@@ -44,6 +44,9 @@ export const upsertIndexEntry = (
   }, origin)
 }
 
+/** Whether the index lists a document, whatever it says about it. */
+export const hasIndexEntry = (doc: Y.Doc, id: string): boolean => getEntries(doc).has(id)
+
 /**
  * Documents that have been deleted, id → when.
  *

@@ -1,8 +1,9 @@
 import { useStore } from '../store.ts'
 import { connectionCauses } from '../lib/connscreen.ts'
-import { isIOS } from '../lib/devices.ts'
+import { isAndroid, isIOS } from '../lib/devices.ts'
+import { useBoxSearch } from '../lib/discovery.ts'
 import { effectiveSsid } from '../lib/settings.ts'
-import { serverLabel } from '../lib/server.ts'
+import { isNative, serverLabel } from '../lib/server.ts'
 
 /**
  * Why the box has been unreachable for a while — opened from the connection
@@ -18,8 +19,18 @@ export default function ConnectionHelp({ onClose }: { onClose: () => void }) {
   const retryConnection = useStore((s) => s.retryConnection)
   const connection = useStore((s) => s.connection)
   const wifiSsid = useStore((s) => effectiveSsid(s.config.wifiSsid))
+  const setBoxesOpen = useStore((s) => s.setBoxesOpen)
   const retrying = connection === 'connecting'
-  const causes = connectionCauses({ ...(wifiSsid ? { ssid: wifiSsid } : {}), isIos: isIOS() })
+  const inApp = isNative()
+  // The shell's own search, while its box is lost (lib/follow.ts); read, not started.
+  const search = useBoxSearch(false)
+  const causes = connectionCauses({
+    ...(wifiSsid ? { ssid: wifiSsid } : {}),
+    isIos: isIOS(),
+    isAndroid: isAndroid(),
+    inApp,
+    looksForBox: search.state === 'searching',
+  })
 
   return (
     <div
@@ -49,6 +60,17 @@ export default function ConnectionHelp({ onClose }: { onClose: () => void }) {
           <button className="center-retry" onClick={retryConnection} disabled={retrying}>
             {retrying ? 'Retrying…' : 'Retry now'}
           </button>
+          {inApp && (
+            <button
+              className="admin-btn"
+              onClick={() => {
+                onClose()
+                setBoxesOpen(true)
+              }}
+            >
+              Your boxes
+            </button>
+          )}
           <button className="admin-btn" onClick={onClose}>
             Close
           </button>

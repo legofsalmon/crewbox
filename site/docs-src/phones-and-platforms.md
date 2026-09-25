@@ -13,23 +13,32 @@ it to a stage manager.
 
 ## The capability table
 
-|                                   | Browser / installed web app | Android app     | iOS app             |
-| --------------------------------- | --------------------------- | --------------- | ------------------- |
-| Chat, patch, lighting, network    | yes                         | yes             | yes                 |
-| Works offline                     | yes                         | yes             | yes                 |
-| Voice: listen                     | yes                         | yes             | yes                 |
-| Voice: talk on plain HTTP         | no — needs HTTPS            | **yes**         | **yes**             |
-| Alerts, app open                  | yes                         | yes             | yes                 |
-| Alerts, phone locked, no internet | no                          | **yes**         | **no — impossible** |
-| Exports (CSV, reports, archives)  | downloads to the device     | the share sheet | the share sheet     |
+|                                   | Browser / installed web app | Android app           | iOS app             |
+| --------------------------------- | --------------------------- | --------------------- | ------------------- |
+| Chat, patch, lighting, network    | yes                         | yes                   | yes                 |
+| Works offline                     | yes                         | yes                   | yes                 |
+| Voice: listen                     | yes                         | yes                   | yes                 |
+| Voice: talk on plain HTTP         | no — needs HTTPS            | **yes**               | **yes**             |
+| Alerts, app open                  | yes                         | yes                   | yes                 |
+| Alerts, phone locked, no internet | no                          | **yes**               | **no — impossible** |
+| Exports and file downloads        | downloads to the device     | Downloads, then Share | the share sheet     |
 
-The exports row is worth a sentence. A WebView has no download handler, so
+The last row is worth a paragraph. A WebView has no download handler, so
 the ordinary "save this file" path does nothing at all inside either app —
-it used to do nothing _and say it had worked_. Both apps hand the file to
-the system share sheet instead, which is the better answer anyway: what
-somebody does with a network audit at a venue is send it to the venue's IT,
-and that is one tap from the share sheet and several from a downloads
-folder. If a device refuses to share the file, the app says so rather than
+it used to do nothing _and say it had worked_. Now each app does what its
+phone expects:
+
+- **Android** saves the file to the phone's Downloads folder, then offers
+  **Share** at the foot of the screen for a few seconds, for sending it on.
+  Android 9 and older have no shared Downloads an app may write to without a
+  permission, so there the phone asks where to save it.
+- **iPhone** opens the share sheet. **Save to Files** keeps it on the phone,
+  and the rest send it on: what somebody does with a network audit at a
+  venue is send it to the venue's IT. An iPhone only shares within a few
+  seconds of the tap, so if a report took longer than that to build, it
+  waits at the foot of the screen with a **Share** button for a fresh tap.
+
+If a device cannot take the file at all, the app says so rather than
 claiming a save.
 
 ## The Android app
@@ -46,6 +55,20 @@ box's data directory and `/connect` offers it
 notification permission and to be excused from battery optimisation — say
 yes to both, that's the superpower asking.
 
+A crew Wi-Fi usually has no internet, and with mobile data on, Android
+sends apps' traffic over mobile data instead, where the box can't be
+reached. The app keeps its own traffic for the box on the crew Wi-Fi, so
+leave mobile data on, and leave Android's notices about the Wi-Fi alone
+([what they do](#on-android)). A VPN on the phone may still keep the app
+from the box: turn it off at the venue.
+
+Scanning the join poster asks to use the camera the first time, and **Take
+a photo** in the attach menu needs the same yes. Say no and both stop, and
+each says so with an **Open Settings** button, which goes to Crewbox's page
+in Settings: allow it again under Permissions → Camera. Android stops
+asking once somebody has said no twice, so Settings is then the only way
+back.
+
 Sideloading means Android warns about "unknown apps" once; that's the
 price of installing from your own box instead of a store.
 
@@ -57,9 +80,19 @@ the main reason it exists. But read the last row of the table again:
 > [!WARNING]
 > **A locked iPhone on an offline network cannot be alerted.** Apple
 > notifications go through Apple's servers, which an offline event network
-> can't reach — no app can work around this. In-app sounds work while the
-> app is open. Don't promise lock-screen alerts on iOS; hand the on-call
-> radio roles an Android.
+> can't reach — no app can work around this. Alerts sound and show a banner
+> while the app is open. Don't promise lock-screen alerts on iOS; hand the
+> on-call radio roles an Android.
+
+One rule about addresses, which iOS enforces inside the phone: **the iPhone
+app uses plain HTTP only with an IP address** like `192.168.8.1`, a `.local`
+name, or a one-word name like `crewbox`. A box without a certificate
+advertises its IP address, so its poster and QR already work. What doesn't
+is a name the network knows the box by, like `crewbox.lan`, typed without
+`https://`: iOS refuses to send anything to it, and the join screen says so
+rather than trying. A name needs the box to have a certificate for it (see
+[HTTPS, names and certificates](/docs/https-and-voice)), and `https://` in
+front.
 
 ## The "no internet" problem
 
@@ -67,8 +100,11 @@ Every phone tests a Wi-Fi network the moment it joins: it fetches one fixed
 web address and checks the answer. An event network with no uplink fails
 that test, and each platform reacts differently.
 
-- **Android** shows an exclamation mark on the Wi-Fi icon and carries on.
-  Annoying, harmless.
+- **Android** keeps the Wi-Fi joined, with an exclamation mark on its icon,
+  but with mobile data on it **sends apps' traffic over mobile data**, where
+  the box can't be reached. The Android app keeps its own traffic for the
+  box on the crew Wi-Fi, so it carries on. In a browser on Android, crewbox
+  sits on **Connecting** until mobile data is off ([more](#on-android)).
 - **iOS** does not carry on. It drops the Wi-Fi symbol from the status bar
   and **moves traffic to mobile data**. The box is on a private address
   reachable only over the Wi-Fi the phone has just walked away from, so
@@ -105,10 +141,11 @@ this Wi-Fi_) tells you which half is missing:
    clearly-marked optional block onto the router alongside the first.
 
 > [!NOTE]
-> Once both halves are in, phones stop warning that this network has no
+> Once both halves are in, iPhones stop warning that this network has no
 > internet — because as far as they can tell, it now has one. That's the
 > intent: crew on this network are talking to the box, not browsing. Nobody
-> should be relying on the crew Wi-Fi for internet anyway.
+> should be relying on the crew Wi-Fi for internet anyway. Android is
+> another matter, below.
 
 One gotcha worth knowing if you go the `pf` route on macOS: it doesn't
 redirect traffic the Mac sends to itself, so testing with `curl` on the box
@@ -119,11 +156,85 @@ half it does nothing regardless, except one small courtesy: typing the box's
 name into Safari without `https://` lands on the app instead of a
 connection error.
 
+### On Android
+
+The box answering the tests doesn't settle it for Android. Android also
+checks a secure address the box can't answer, so it decides the crew
+network has **limited connectivity** rather than none, and with mobile data
+on, it still sends apps' traffic over mobile data. The Android app stays on
+the crew Wi-Fi regardless. What else a crew member may see, and what each
+answer does:
+
+- **A notice about the Wi-Fi**: "limited connectivity" when the box answers
+  the tests, or, for a network somebody picked in Settings, "no internet
+  access" and a question whether to stay connected. Ignoring it is fine:
+  the phone stays on the Wi-Fi.
+- **Yes**, or **connect anyway**, makes the crew Wi-Fi the phone's way to
+  everything, so a browser reaches the box and other apps get no internet
+  while the phone is on it. **Don't ask again** makes Android remember that
+  for this network.
+- **No**, or backing out of that question, **disconnects** the phone from
+  the crew Wi-Fi, and it won't go back by itself.
+- Android may **stop joining a network by itself** once it has found no
+  internet there. On a later day, join it again from Settings → Wi-Fi, or
+  scan the Wi-Fi code on the join poster.
+
 ## Native join: the server field
 
 Both phone apps show one extra field on the join screen — **Crew server** —
 because unlike a browser, the app doesn't know which box it belongs to.
-It's on the join poster, or baked into the QR so scanning fills it in.
+It's on the join poster, and **Scan the join poster** reads the poster's QR
+with the phone's camera and fills in the field and the event PIN. The QR
+names the event and its key too, and **Join** checks the box at that address
+against them before the PIN goes to it
+([what that checks](/docs/getting-connected#when-it-wont-connect)). The phone
+asks whether Crewbox may use the camera the first time. The scan happens on
+the phone, which sends what it read nowhere, and a QR that isn't a box's
+join code fills in nothing. On an iPhone, a name in the field needs
+`https://` in front; an IP address doesn't ([why](#the-ios-app)).
+
+The same button reads a Wi-Fi network's QR code, the kind printed on a
+router's label or shown by a phone sharing its Wi-Fi, and asks the phone to
+join that network. The phone asks you first: an iPhone asks whether Crewbox
+may join it, and Android 11 and later show their own screen asking whether
+to save it, naming the app. Once saved it is one of the phone's own
+networks, as if typed into its Wi-Fi settings, and the phone goes back to it
+by itself, though an iPhone forgets it if the app is deleted, and Android
+may stop once it has found no internet there ([more](#on-android)). The
+iPhone app then checks that the phone got on it, which iOS lets an app see
+only for a network that app added. WEP networks, ones where each person
+signs in with their own username, and codes that give the password as a
+64-digit key are left to the phone's Wi-Fi settings, and so is Android 10
+and older, which can't add a network for an app without a permission
+Crewbox doesn't ask for.
+
+Set the crew Wi-Fi to WPA2/WPA3 rather than WPA3 alone. A phone without
+WPA3 can't join a WPA3-only network at all, and Apple doesn't say whether an
+app can join one on an iPhone.
+
+Above the field, the apps list the boxes on this Wi-Fi, which announce
+themselves ([Admin → This box](/docs/admin)), and picking one fills the field
+in after asking that box which event it runs. The apps look only while that
+screen or **Your boxes** is open, and while they can't reach their box, to
+find it if it has moved. An iPhone asks once whether Crewbox may find
+devices on your local network: the list needs a yes, and the field works
+either way. A browser can't look for boxes, so the join page there is
+unchanged.
+
+A `crewbox://join` link fills in the same two fields, and opens the app to
+do it: `crewbox://join?server=192.168.8.1&pin=4821`. Join is still yours to
+press. A link for another box, while the app is signed in to one, opens
+**Your boxes** with that box's address ready to **Connect**, and its join
+form then has the PIN. The app asks nothing of any box until you press one
+of those.
+
+On a phone, the join page in the browser offers **Open in the Crewbox app**:
+the same link, for that box and the PIN in its field. That is the way in from
+a message. Most messaging apps leave a `crewbox://` link as plain text but
+make a web address tappable, so send the address under the QR on `/connect`,
+which opens the join page. A phone without the app can't follow the link: an
+iPhone says Safari can't open the address, and an Android phone goes to the
+box's `/connect` page, which offers the app when the box has it.
 
 ## Desktop helpers
 

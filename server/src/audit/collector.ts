@@ -85,6 +85,12 @@ export class Collector {
   /** RTT samples reported by clients since the last flush (phase 6 hook). */
   private rttSamples: number[] = []
   private voiceSamples: Array<{ lossPct: number; jitterMs: number; concealedPct: number }> = []
+  /**
+   * Who sent those: since the last pass, and in this minute. One handle per
+   * connection, only ever counted, and gone with the minute.
+   */
+  private voiceFrom = new Set<object>()
+  private voiceDevices = new Set<object>()
 
   constructor(
     private readonly metrics: MetricsStore | undefined,
@@ -106,11 +112,11 @@ export class Collector {
   stop(): void {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
-    // Flush the partial bucket so a clean shutdown loses nothing. `flush`
+    // Close the partial minute so a clean shutdown loses nothing. `flush`
     // guards its own write, which matters more here than anywhere: this runs
     // on the way out, and a throw would take the database close and the SFU
     // stop with it.
-    this.flush(this.bucketStart)
+    this.closeMinute(this.bucketStart)
   }
 
   /** A client-reported WS round trip (crowd Wi-Fi quality, phase 6). */
@@ -125,8 +131,12 @@ export class Collector {
    * phone behind a truck having a bad minute is the thing worth seeing, and
    * an average taken here would flatten it before the rollup ever saw it.
    */
-  noteVoice(stats: { lossPct: number; jitterMs: number; concealedPct: number }): void {
+  noteVoice(
+    stats: { lossPct: number; jitterMs: number; concealedPct: number },
+    from?: object
+  ): void {
     this.voiceSamples.push(stats)
+    if (from) this.voiceFrom.add(from)
   }
 
   /**
@@ -189,7 +199,7 @@ export class Collector {
     const now = this.now()
     const bucket = bucketOf(now)
     if (bucket !== this.bucketStart) {
-      this.flush(this.bucketStart)
+      this.closeMinute(this.bucketStart)
       this.bucketStart = bucket
     }
 
@@ -219,6 +229,8 @@ export class Collector {
         this.add('voice.concealedPct', '', sample.concealedPct)
       }
       this.voiceSamples = []
+      for (const from of this.voiceFrom) this.voiceDevices.add(from)
+      this.voiceFrom.clear()
     }
 
     if (this.sources.dmxHealth) this.sampleDmx(this.sources.dmxHealth(), next, now)
@@ -422,6 +434,23 @@ export class Collector {
       if (keys >= MAX_KEYS_PER_METRIC) return
     }
     this.accumulators.set(id, accumulate(existing, value))
+  }
+
+  /**
+   * End a minute: how many devices reported on comms in it, then the rollup.
+   *
+   * Counted per minute rather than per pass because a phone reports every
+   * fifteen seconds and a pass runs every five, so one pass hears from about
+   * a third of them. The readiness line and the desk API used to be handed
+   * the number of reports and call it devices, which made one phone on comms
+   * for ten minutes "the worst-affected device of 40".
+   */
+  private closeMinute(bucket: number): void {
+    if (this.voiceDevices.size > 0) {
+      this.add('voice.devices', '', this.voiceDevices.size)
+      this.voiceDevices.clear()
+    }
+    this.flush(bucket)
   }
 
   private flush(bucket: number): void {

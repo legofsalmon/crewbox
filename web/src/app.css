@@ -228,10 +228,58 @@ ul {
   cursor: default;
 }
 
+.join-boxes {
+  align-self: center;
+  min-height: 40px;
+  padding: 0 12px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.join-boxes:hover {
+  text-decoration: underline;
+}
+
+/* In a phone's browser: the same form in the app, when the app is on the phone. */
+.join-app {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* In the apps: the join poster's QR fills in the address and event PIN. */
+.join-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.join-scan > .admin-btn {
+  height: 44px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.join-scan-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.join-settings {
+  align-self: flex-start;
+  height: 36px;
+}
+
 .join-error {
   background: rgba(239, 106, 90, 0.12);
   border: 1px solid rgba(239, 106, 90, 0.4);
-  color: var(--danger);
+  /* --danger-strong, not --danger: on this red tint over a raised card,
+     --danger reached 4.48 in the light theme, under AA, for the line that
+     tells somebody stuck outside the event why. */
+  color: var(--danger-strong);
   padding: 10px 14px;
   border-radius: var(--radius);
   font-size: 14px;
@@ -288,6 +336,19 @@ ul {
 .center-retry:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* The quieter way out beside Retry: to the Boxes screen. */
+.center-other {
+  height: 44px;
+  min-width: 180px;
+  padding: 0 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 15px;
 }
 
 .center-meta {
@@ -372,14 +433,148 @@ ul {
   bottom: calc(84px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 60;
+  /* Over the admin panel and the file view too: exports start from both,
+     and what became of the file has to be seen where it was asked for. */
+  z-index: 80;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   /* Still transient: never let one eat a tap on the controls underneath. */
   pointer-events: none;
+  /* As wide as the widest toast. Left to itself a box that starts halfway
+     across the screen is only offered the half to its right, and a long
+     toast wrapped into a column. */
+  width: max-content;
   max-width: min(92vw, 420px);
+}
+
+/*
+ * A mention or DM while the app is open (components/AlertBanner.tsx). At the
+ * top, where a phone's own notifications arrive, rather than down with the
+ * toasts: those answer something you just did, and this interrupts. Over
+ * every panel, as the toasts are, because it is somebody wanting you now
+ * whatever is open.
+ */
+.alert-banner {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: stretch;
+  width: min(92vw, 440px);
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.alert-banner-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 4px 10px 14px;
+  text-align: left;
+}
+
+.alert-banner-title {
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* Two lines of the message: enough to know whether to go now. */
+.alert-banner-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.alert-banner-close {
+  flex-shrink: 0;
+  width: 44px;
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.alert-banner-close:hover {
+  color: var(--text);
+}
+
+/*
+ * A file with one more step (components/FileOfferBar.tsx). In the stack, so
+ * a toast and an offer never overlap, but it takes taps where the toasts
+ * don't: its button is the point of it.
+ */
+.file-offer {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* The full width of the stack, so it does not jump about with the name. */
+  width: min(92vw, 420px);
+  padding: 6px 6px 6px 16px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.file-offer-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.file-offer-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  /* Names are long and have no spaces to break at. */
+  overflow-wrap: anywhere;
+}
+
+.file-offer-act {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+.file-offer-act:hover {
+  background: var(--accent-strong);
+}
+
+.file-offer-close {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.file-offer-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .updated-dot {
@@ -542,6 +737,9 @@ a.app-version:hover {
 /* -------------------------------------------------- confirm dialog */
 .confirm-panel {
   width: min(420px, 100%);
+  /* In the full-height overlay: without it, a short question stretched down
+     to the bottom of a phone's screen. */
+  align-self: flex-start;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -645,6 +843,33 @@ a.app-version:hover {
 .sidebar-brand h1 {
   font-size: 19px;
   letter-spacing: 0.05em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The way to the Boxes screen, beside the event it would switch away from. */
+.sidebar-boxes {
+  flex: none;
+  margin-left: auto;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sidebar-boxes:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+@media (pointer: coarse) {
+  .sidebar-boxes {
+    min-height: 40px;
+  }
 }
 
 .conn-dot {
@@ -1351,6 +1576,90 @@ a.app-version:hover {
   font-size: 11px;
   color: var(--text-faint);
   padding: 4px 10px 2px;
+}
+
+/* The attach button's menu, in the Android app only (see AttachMenu.tsx). */
+.attach-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 14px;
+  margin-bottom: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  min-width: 230px;
+}
+
+.attach-menu button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+}
+
+.attach-menu button:hover,
+.attach-menu button:focus-visible {
+  background: var(--bg-hover);
+}
+
+.attach-menu svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/*
+ * Why "Take a photo" didn't open, in the Android app (see Composer.tsx):
+ * just above the message box, where the eye already is, until it's put away.
+ */
+.camera-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 14px 8px;
+  padding: 10px 6px 10px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.camera-note-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.camera-note-body > .admin-btn {
+  height: 36px;
+}
+
+.camera-note-close {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  margin-top: -6px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.camera-note-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 /* ---------------------------------------------------------------- voice */
@@ -2091,7 +2400,10 @@ a.app-version:hover {
   color: var(--danger);
 }
 
-.admin-btn-primary {
+/* With .admin-btn, which comes later in this file and would otherwise paint
+   its own --bg-hover under this --accent-contrast label: the Unlock button
+   read at under 1.2:1 in both themes. */
+.admin-btn.admin-btn-primary {
   height: 42px;
   background: var(--accent);
   color: var(--accent-contrast);
@@ -2099,7 +2411,7 @@ a.app-version:hover {
   font-weight: 600;
 }
 
-.admin-btn-primary:hover:not(:disabled) {
+.admin-btn.admin-btn-primary:hover:not(:disabled) {
   background: var(--accent-strong);
 }
 
@@ -2142,6 +2454,15 @@ a.app-version:hover {
 .admin-muted {
   font-size: 12.5px;
   color: var(--text-faint);
+}
+
+/* What a setting that acts at once is doing now, and what one with
+   consequences for every phone does: something to read, not a footnote, so
+   it is not faint. */
+.admin-status,
+.admin-help {
+  font-size: 13.5px;
+  color: var(--text-muted);
 }
 
 .admin-topic {
@@ -2265,6 +2586,11 @@ a.app-version:hover {
   gap: 8px;
 }
 
+.admin-setting-row select {
+  flex: 1;
+  min-width: 0;
+}
+
 .admin-setting-row input {
   flex: 1;
   height: 40px;
@@ -2291,7 +2617,8 @@ a.app-version:hover {
 }
 
 .admin-networks select,
-.admin-networks input {
+.admin-networks input,
+.admin-setting select {
   height: 40px;
   padding: 0 12px;
   border-radius: 9px;
@@ -2598,17 +2925,25 @@ a.app-version:hover {
     height: var(--app-height, 100dvh);
     z-index: 50;
     transform: translateX(-100%);
-    transition: transform 0.22s ease;
+    transition:
+      transform 0.22s ease,
+      box-shadow 0.22s ease;
     width: min(var(--sidebar-w), 85vw);
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
     /* Fixed drawer escapes .app's safe-area padding — re-apply both ends, or
        the bottom row sits under the home indicator. */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /*
+   * The shadow only while open. Closed, the drawer waits just off the left
+   * edge, and a 40px shadow reached back onto the screen from there: a grey
+   * band down the left of every phone screen, plain to see in the light
+   * theme.
+   */
   .sidebar-open .sidebar {
     transform: translateX(0);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
   }
 
   .backdrop {
@@ -2831,6 +3166,241 @@ a.app-version:hover {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+/* The Boxes screen: every event this device holds, and the way to another
+   box. The same overlay as connection help, which it is reached from. */
+.boxes-panel {
+  width: min(480px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  align-self: flex-start;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.boxes-panel h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.boxes-lede {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.boxes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.boxes-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.boxes-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 2px 0;
+  text-align: left;
+  color: var(--text);
+}
+
+button.boxes-pick:hover .boxes-name {
+  text-decoration: underline;
+}
+
+.boxes-name {
+  font-weight: 700;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.boxes-detail {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.boxes-unsent {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.boxes-badge {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 99px;
+  color: var(--ok);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.boxes-address {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* After a typed box fails the check: why it might, and the way past it. */
+.boxes-refused {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.boxes-refused .hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.boxes-address label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.boxes-address-row {
+  display: flex;
+  gap: 10px;
+}
+
+.boxes-address input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+  outline: none;
+}
+
+.boxes-address input:focus {
+  border-color: var(--accent);
+}
+
+.boxes-address .hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.confirm-panel .boxes-lost {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.boxes-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* A row whose box came back as the open one: its work can come here. */
+.boxes-move {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.boxes-move .admin-btn-primary {
+  height: 36px;
+}
+
+/* Boxes on this Wi-Fi, in the apps (components/NearbyBoxes.tsx): on the join
+   screen above the address field, and on the Boxes screen above its own. */
+.nearby {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nearby-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.nearby-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.nearby > .admin-btn {
+  align-self: flex-start;
+}
+
+.nearby-row .admin-btn-primary {
+  height: 36px;
+}
+
+.nearby-warn {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.confirm-go {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 14px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.confirm-go:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.confirm-go:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.confirm-panel .move-items {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
 }
 
 /* ------------------------------------------- feedback and crash screens */

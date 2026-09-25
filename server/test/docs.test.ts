@@ -14,7 +14,8 @@ import { parseRoomName } from '../src/docs.ts'
  * Shared-docs relay integration: the real server, the real y-websocket v3
  * client (the one the web app will use), real sockets. Proves session-token
  * auth on the upgrade, module-namespace enforcement, two-client convergence,
- * presence, and room teardown.
+ * presence, and a document outliving its last client (what is kept, and for
+ * how long, is docsKeep.test.ts).
  */
 
 let dir: string
@@ -68,6 +69,42 @@ afterAll(async () => {
 })
 
 describe('docs relay auth', () => {
+  /** The status a raw upgrade gets, or 101 when it is let in. */
+  const upgradeStatus = (path: string) =>
+    new Promise<number>((resolve) => {
+      const ws = new WebSocket(`${wsBase}${path}`)
+      ws.on('unexpected-response', (_req, res) => {
+        resolve(res.statusCode ?? 0)
+        ws.terminate()
+      })
+      ws.on('open', () => {
+        resolve(101)
+        ws.terminate()
+      })
+      ws.on('error', () => {})
+    })
+
+  it('refuses a phone that has another event open, and lets in one naming this event', async () => {
+    // A spare box with a fresh database, at the address a phone knows: the
+    // phone's documents belong to the old event and must not reach it. The
+    // phone names the event it has open, and the box turns away one that
+    // is not its own, before anything is relayed.
+    const res = await app.inject({ method: 'GET', url: '/api/config' })
+    const { eventId } = res.json() as { eventId: string }
+    expect(eventId).toBeTruthy()
+    const room = `/ws/docs/patch/sheet-x?token=${encodeURIComponent(token)}`
+    expect(await upgradeStatus(`${room}&event=${encodeURIComponent('another-event')}`)).toBe(409)
+    expect(await upgradeStatus(`${room}&event=${encodeURIComponent(eventId)}`)).toBe(101)
+    // One that names none predates the check, and is let in as before.
+    expect(await upgradeStatus(room)).toBe(101)
+  })
+
+  it('asks for the session before it says anything about the event', async () => {
+    // Otherwise a stranger could learn whether a guess was this box's event.
+    const status = await upgradeStatus(`/ws/docs/patch/sheet-x?token=nope&event=another-event`)
+    expect(status).toBe(401)
+  })
+
   it('rejects an upgrade without a valid session token', async () => {
     const status = await new Promise<number>((resolve, reject) => {
       const ws = new WebSocket(`${wsBase}/ws/docs/patch/sheet-x?token=not-a-session`)
@@ -172,21 +209,19 @@ describe('docs relay sync', () => {
     }
   })
 
-  it('frees a room when the last client leaves (clients hold the durable copy)', async () => {
+  it('keeps a document after the last client leaves, for one that joins later', async () => {
     const doc = new Y.Doc()
-    doc.getMap('meta').set('title', 'Ephemeral')
-    const prov = provider('patch/sheet-ephemeral', doc, token)
-    await waitFor(() => prov.synced)
+    doc.getMap('meta').set('title', 'Kept')
+    const prov = provider('patch/sheet-kept', doc, token)
+    await waitFor(() => app.docs.peek('patch/sheet-kept')?.getMap('meta').get('title') === 'Kept')
     prov.destroy()
-    await waitFor(() => {
-      const { rooms } = app.docs.stats()
-      return rooms === 0
-    })
-    // Same room, fresh doc: server has nothing (the client would re-seed).
+    await waitFor(() => app.docs.stats().rooms === 0)
+
+    // Same room, fresh doc: the box hands over what the first client left,
+    // with nobody else there to send it.
     const doc2 = new Y.Doc()
-    const prov2 = provider('patch/sheet-ephemeral', doc2, token)
-    await waitFor(() => prov2.synced)
-    expect(doc2.getMap('meta').get('title')).toBeUndefined()
+    const prov2 = provider('patch/sheet-kept', doc2, token)
+    await waitFor(() => doc2.getMap('meta').get('title') === 'Kept')
     prov2.destroy()
   })
 })

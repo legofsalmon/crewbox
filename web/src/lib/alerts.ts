@@ -1,4 +1,5 @@
 import { readPref, writePref } from './prefs.ts'
+import { nativeHaptics } from './server.ts'
 
 const SOUNDS_KEY = 'crewbox:sounds'
 
@@ -41,7 +42,34 @@ export function playAlert(): void {
   } catch {
     // no audio available; vibration may still land
   }
-  if ('vibrate' in navigator) navigator.vibrate([120, 60, 120])
+  buzz()
+}
+
+/**
+ * The buzz that goes with the chirp, for a phone that is muted or a site too
+ * loud to hear it.
+ *
+ * In the apps it is the platform's own haptic, because `navigator.vibrate`
+ * never reached a phone from either of them. The iPhone's web view has no
+ * vibration API at all. Android's has one, but it vibrates only for an app
+ * holding VIBRATE, which crewbox did not, and only once somebody has tapped
+ * the page since it loaded. `WARNING` is the haptic each platform means for
+ * "this needs you": a firm buzz on Android, the system's warning tap on an
+ * iPhone, each following the phone's own vibration settings.
+ *
+ * Only while the app is on screen, which is also the web API's own rule.
+ * Once it is out of sight, Android's alerts service posts the notification
+ * and that buzzes by itself; a second buzz from here would make one message
+ * feel like two.
+ */
+function buzz(): void {
+  if (document.visibilityState !== 'visible') return
+  const haptics = nativeHaptics()
+  if (haptics) {
+    void haptics.notification({ type: 'WARNING' }).catch(() => {})
+  } else if ('vibrate' in navigator) {
+    navigator.vibrate([120, 60, 120])
+  }
 }
 
 /** Local notification when the app is backgrounded (works fully offline). */
@@ -79,6 +107,8 @@ export interface MissedAlert {
   body: string
   /** How many messages it covers, so a caller can say "and 4 more". */
   count: number
+  /** The channel they are all in, when there is one: where it takes you. */
+  channelId?: string
 }
 
 /**
@@ -143,16 +173,18 @@ export function summariseMissed(input: {
   // having roamed.
   const first = wanted[0]!
   if (wanted.length === 1) {
-    return { title: describe(first), body: first.body, count: 1 }
+    return { title: describe(first), body: first.body, count: 1, channelId: first.channelId }
   }
 
   // Several: say how many and who, because "3 messages" without a name is a
   // reason to open the app rather than an answer.
   const sources = [...new Set(wanted.map(describe))]
   const shown = sources.slice(0, 3).join(', ')
+  const channels = new Set(wanted.map((m) => m.channelId))
   return {
     title: `${wanted.length} messages need you`,
     body: sources.length > 3 ? `${shown} and ${sources.length - 3} more` : shown,
     count: wanted.length,
+    ...(channels.size === 1 ? { channelId: first.channelId } : {}),
   }
 }

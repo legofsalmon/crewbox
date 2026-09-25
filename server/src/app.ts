@@ -42,6 +42,10 @@ import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
 import { mediaReadiness } from './netwatch/readiness.ts'
 import type { NetWatch } from './netwatch/listener.ts'
+import { ANNOUNCE_KEY, ANNOUNCE_SETTINGS, type AnnounceStatus } from './announce/index.ts'
+import { boxIdentity, hostToSign, NONCE_RE } from './identity.ts'
+import { joinCode, namesEventAt } from './joinCode.ts'
+import { continuesOf, EVENT_ID, saveContinues } from './continues.ts'
 import { createSocket as createDgramSocket } from 'node:dgram'
 import { Collector } from './audit/collector.ts'
 import { AUDIT_METRICS, BUNDLE_PAGE, type MetricsStore } from './audit/metrics.ts'
@@ -92,6 +96,13 @@ import { LicenceProblem, type LicenceService } from './licence/service.ts'
 import type { ReportService } from './reports/service.ts'
 import { FEEDBACK_TYPES, OSES } from './reports/payload.ts'
 import type { Store } from './store.ts'
+
+/**
+ * Every method a route here takes, for the apps' requests from their own
+ * origin (see the CORS registration). test/cors.test.ts fails on a route
+ * or a page using one that isn't here.
+ */
+export const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
@@ -219,6 +230,16 @@ const settingsPatchSchema = z.object({
    * floor and is never shown to anyone who hasn't already unlocked.
    */
   adminPassword: z.string().min(8).max(128).optional(),
+  /** Whether the box announces itself on the crew network (server/src/announce). */
+  announce: z.enum(ANNOUNCE_SETTINGS).optional(),
+  /**
+   * The event this box carries on (server/src/continues.ts), or null for
+   * none: its ID as phones hold it, and its name as the admin's device knew it.
+   */
+  continues: z
+    .object({ id: z.string().regex(EVENT_ID, 'not an event ID'), name: z.string().trim().max(64) })
+    .nullable()
+    .optional(),
 })
 
 /**
@@ -454,8 +475,9 @@ export interface AppDeps {
    * The same switch as the update check — `CREWBOX_UPDATE_CHECK=0`, whose
    * own documentation says "on a box whose network must make no outbound
    * connections at all". The environment sweep ignored it and made three
-   * off-site connections at every startup regardless, so the promise was
-   * only ever true of the update check itself.
+   * off-site connections at every startup regardless, and the deep probe
+   * made the same three whenever an admin ran it, so the promise was only
+   * ever true of the update check itself. Both honour it now.
    */
   outbound?: boolean
   /**
@@ -497,6 +519,18 @@ export interface AppDeps {
    */
   onSettingsChanged?: () => void
   /**
+   * The box saying where it is on the crew network, so the apps can list it
+   * (server/src/announce). Omit and the panel says nothing about it, which
+   * is right for the unit tests, whose apps are not boxes on any network.
+   */
+  announce?: {
+    status: () => AnnounceStatus
+    /** Something it says changed; resolves once that has been acted on. */
+    refresh: () => Promise<void> | void
+    /** CREWBOX_ANNOUNCE decides it, so the panel cannot. */
+    settingFromEnv: boolean
+  }
+  /**
    * The box's licence (server/src/licence/). Omit and the box behaves as if
    * licensing did not exist: no Licence section, no marks, nothing locked —
    * which is what every test that is not about licensing wants.
@@ -518,6 +552,8 @@ export type App = FastifyInstance & {
   authSession: (token: string) => User | undefined
   /** Module ids this box enables (docs room namespaces are checked against it). */
   enabledModules: string[]
+  /** Which event this box is running (its database's ID; see PublicConfig.eventId). */
+  eventId: () => string
   /** SFU port to proxy voice signalling to, when the box runs its own. */
   voiceProxyPort?: number
 }
@@ -559,6 +595,7 @@ export function buildApp({
   clock = () => new Date(),
   timeZone,
   onSettingsChanged = () => {},
+  announce,
   licence,
   reports,
   logger = true,
@@ -637,6 +674,14 @@ export function buildApp({
   // while someone is still looking at it.
   adminPasswordHash()
 
+  // The key a phone checks this box against before following its event to a
+  // new address (identity.ts). Also minted at startup, so it is in the
+  // database, and in the next backup, from the first boot that has it.
+  const identity = boxIdentity(store, fastify.log)
+  // The names it answers for over TLS. A new certificate means a restart
+  // (deploy/cert-renew.sh), so they are read once.
+  const identityNames = tls ? certNames(tls.cert.toString()) : []
+
   /**
    * What the crew's own devices said about comms over the window a show moves
    * in. Null when nobody has been on voice, which is a different thing from
@@ -651,7 +696,13 @@ export function buildApp({
     const now = Date.now()
     const worst = metrics.worstVoice(now - VOICE_QUALITY_WINDOW_MS, now)
     if (!worst) return null
-    return { concealedPct: worst.concealedPct, lossPct: worst.lossPct, devices: worst.samples }
+    return { concealedPct: worst.concealedPct, lossPct: worst.lossPct, devices: worst.devices }
+  }
+
+  /** The event an admin said this box carries on, as phones are told it: its ID. */
+  const continuesField = (): { continues?: string } => {
+    const continued = continuesOf(store)
+    return continued ? { continues: continued.id } : {}
   }
 
   const publicConfig = (): PublicConfig => ({
@@ -659,6 +710,9 @@ export function buildApp({
     wifiSsid: store.getSetting('wifiSsid') ?? wifiSsid,
     voiceEnabled: voiceAvailable,
     modules,
+    eventId: store.dbEpoch(),
+    eventKey: identity.publicKey,
+    ...continuesField(),
     // Only ever a mark. Nothing the crew use reads this to decide anything.
     ...(licence?.effects().watermark ? { unlicensed: true } : {}),
   })
@@ -686,7 +740,10 @@ export function buildApp({
   licence?.onChange(() => hub.announceConfig())
   const tally = new Tally()
   hub.setTally(tally)
-  const docs = new DocsRelay(relayLimits)
+  const docs = new DocsRelay(relayLimits, {
+    disk: store,
+    warn: (message) => fastify.log.warn(message),
+  })
   fastify.addHook('onClose', () => docs.close())
 
   // The network audit's collector: strictly a reader over the state the
@@ -736,6 +793,7 @@ export function buildApp({
         ...(netwatch ? { mdnsCount: () => netwatch.mdns.roster().length } : {}),
         certHostname: () => (tls ? certNames(tls.cert.toString())[0] : undefined),
         watching: () => Boolean(netwatch),
+        outbound: () => outbound,
       },
       metrics
     )
@@ -846,8 +904,11 @@ export function buildApp({
   }
   // Native wrappers load the bundle from the app package, so their requests
   // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
-  // no CSRF surface on the crew LAN.
-  void fastify.register(cors, { origin: true })
+  // no CSRF surface on the crew LAN. The methods have to be named: left to
+  // itself @fastify/cors allows GET, HEAD and POST only, and a web view asks
+  // first and then refuses anything else, so deleting an account or a
+  // message and saving admin settings all failed in both apps.
+  void fastify.register(cors, { origin: true, methods: CORS_METHODS })
   // `fields`, `fieldSize` and `parts` as well as the file caps: the handler
   // reads exactly `width`, `height` and `thumb`, and busboy was otherwise
   // happy to buffer as many form fields as a client cared to send, each
@@ -900,6 +961,43 @@ export function buildApp({
 
   // Public settings the pre-auth join screen and offline screen need.
   fastify.get('/api/config', () => publicConfig())
+
+  /**
+   * The box proving it is the event it says it is, at the address it was
+   * asked at, by signing a phone's challenge with its key (identity.ts,
+   * docs/DISCOVERY.md).
+   *
+   * Public, like /api/config, because a phone asks before it sends anything
+   * to an address. The event's ID and key are in /api/config already, and
+   * the signature is over a challenge the asker chose, which is no use to
+   * anyone else: a phone's challenge is fresh every time. The key signs
+   * nothing else, so answering whoever asks gives nothing away.
+   *
+   * The address is the raw Host header, never one a proxy forwarded
+   * (`req.host` is `X-Forwarded-Host` when trustProxy is on), checked
+   * against where the connection itself arrived.
+   */
+  fastify.get('/api/identity', (req, reply) => {
+    const nonce = (req.query as { nonce?: unknown } | undefined)?.nonce
+    if (typeof nonce !== 'string' || !NONCE_RE.test(nonce)) {
+      return reply.code(400).send({ error: 'nonce must be 16 to 64 random bytes, base64url' })
+    }
+    const asked = hostToSign(
+      req.headers.host,
+      {
+        localAddress: req.socket.localAddress,
+        tls: (req.socket as { encrypted?: boolean }).encrypted === true,
+      },
+      identityNames
+    )
+    if ('status' in asked) return reply.code(asked.status).send({ error: asked.error })
+    const eventId = store.dbEpoch()
+    return {
+      eventId,
+      key: identity.publicKey,
+      signature: identity.sign(eventId, asked.host, nonce),
+    }
+  })
 
   // Any crewbox*.apk in the data directory, newest first — release assets
   // carry the version in the filename, so the file works as downloaded.
@@ -987,6 +1085,9 @@ export function buildApp({
     effective: nextBootNetwork(),
     advertised: lanIps(effectiveIface())[0] ?? '',
     restartNeeded: networkRestartNeeded(),
+    // Whether phones can find the box without being told its address, and
+    // if not, why. Live: adapters come and go, and so does the answer.
+    ...(announce ? { announce: announce.status() } : {}),
   })
 
   /** Best routable IPv4 — the crew adapter when configured — for DNS entries. */
@@ -1216,8 +1317,30 @@ export function buildApp({
     // so before this the helper beside the box showed a blank name and the
     // random boot PIN for the entire event.
     onSettingsChanged()
+    // And where phones listing the box stop seeing "not set up yet".
+    void announce?.refresh()
     return reply.redirect('/connect')
   })
+
+  /**
+   * The join QR as an SVG that CSS sizes: one unit per module, so every edge
+   * falls on a whole unit, drawn as one shape, which has no seams between
+   * its squares at any size. The key makes the code about three times as
+   * dense as the address and PIN alone, so the page draws it bigger.
+   */
+  const joinQrSvg = (content: string): string => {
+    const padding = 2
+    const size = new QRCode({ content }).qrcode.getModuleCount() + 2 * padding
+    return new QRCode({
+      content,
+      padding,
+      width: size,
+      height: size,
+      container: 'svg-viewbox',
+      join: true,
+      xmlDeclaration: false,
+    }).svg()
+  }
 
   // Live onboarding page: big QR of the join URL (PIN prefilled), the PIN in
   // print, Wi-Fi guidance, and the APK when installed. Always current — a
@@ -1243,13 +1366,19 @@ export function buildApp({
      * something you have to already know.
      */
     const local = isPrivateIp(req.socket.remoteAddress ?? '') && isPrivateIp(req.ip)
-    const joinUrl = local ? `${base}/?pin=${encodeURIComponent(pin)}` : `${base}/`
-    const qr = new QRCode({ content: joinUrl, padding: 2, width: 260, height: 260 }).svg()
+    // The event's ID and key go on and off the LAN, since /api/config gives
+    // them to anyone, but not at an address this box doesn't sign for.
+    const joinUrl = joinCode(base, {
+      ...(local ? { pin } : {}),
+      ...(namesEventAt(base) ? { event: { id: store.dbEpoch(), key: identity.publicKey } } : {}),
+    })
+    const qr = joinQrSvg(joinUrl)
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Join ${escapeHtml(config.eventName || 'Crewbox')}</title>
 <style>${PAGE_CSS}
-  .qr { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin: 20px 0; }
+  .qr { background: #fff; padding: 12px; border-radius: 16px; margin: 20px auto; box-sizing: border-box; }
+  .qr svg { display: block; width: 100%; height: auto; }
   .url { font-size: 20px; font-weight: 700; word-break: break-all; }
   .pin { font-size: 17px; margin-top: 10px; color: #f5b73e; }
 </style></head><body><div class="card">
@@ -1313,7 +1442,17 @@ export function buildApp({
       const token = newToken()
       store.createSession(token, existing.id)
       const { pinHash: _, ...user } = existing
-      return { token, user, created: false }
+      // The event with the token, so a phone files the sign-in under the
+      // event it belongs to (see PublicConfig.eventId), the key it will hold
+      // that event's box to from then on, and any event it carries on.
+      return {
+        token,
+        user,
+        created: false,
+        eventId: store.dbEpoch(),
+        eventKey: identity.publicKey,
+        ...continuesField(),
+      }
     }
 
     if (suppliedEventPin !== effectiveEventPin()) {
@@ -1334,13 +1473,40 @@ export function buildApp({
     const general = store.getChannelByName(HOME_CHANNEL)
     if (general) hub.systemMessage(general.id, `${user.name} joined`)
 
-    return { token, user, created: true }
+    return {
+      token,
+      user,
+      created: true,
+      eventId: store.dbEpoch(),
+      eventKey: identity.publicKey,
+      ...continuesField(),
+    }
   })
 
   fastify.get('/api/me', (req, reply) => {
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
     return { user }
+  })
+
+  /**
+   * A new sign-in in place of this one, for the same person.
+   *
+   * The apps ask once for each sign-in they moved out of the web view's
+   * storage, where it was until they kept sign-ins themselves: backups and
+   * phone-to-phone transfers carry that storage, so a copy may be on another
+   * phone (web/src/lib/sessions.ts). The first time the new token is used,
+   * the old one stops working, so the copy signs nothing in; until then it
+   * still works, so a phone that never heard this answer isn't signed out
+   * (Store.renewSession). A socket already open stays so until it closes.
+   */
+  fastify.post('/api/session/renew', (req, reply) => {
+    const header = req.headers.authorization ?? ''
+    const next = newToken()
+    if (!authUser(req) || !store.renewSession(header.slice('Bearer '.length), next)) {
+      return reply.code(401).send({ error: 'unauthenticated' })
+    }
+    return { token: next }
   })
 
   // Delete your own account and personal data (App Store requirement).
@@ -1617,7 +1783,20 @@ export function buildApp({
       ttl: '12h',
     })
     at.addGrant({ room: channel.id, roomJoin: true, canPublish: true, canSubscribe: true })
-    return { url: voiceUrl(req), token: await at.toJwt() }
+    return {
+      url: voiceUrl(req),
+      token: await at.toJwt(),
+      // No ICE servers, for this box's own SFU. LiveKit hands every
+      // participant Twilio's and Google's public STUN servers when it has
+      // none configured (iceServersForParticipant, in its roommanager.go), and
+      // the phone then asks all three for its public address: from a crew
+      // network, a phone telling two companies it is on comms, for an answer
+      // no one here can use, because the SFU is on the same network and
+      // answers on its own address. An empty list tells the phone to ask
+      // nobody. An SFU somebody else runs (LIVEKIT_URL) keeps its own list,
+      // which it may need to get through a NAT.
+      ...(livekit?.embedded ? { iceServers: [] } : {}),
+    }
   })
 
   fastify.get('/api/search', (req, reply) => {
@@ -2220,9 +2399,9 @@ export function buildApp({
     const stats = hub.stats()
     const onAir = tally.current()
 
-    // Only while a phone on site has the app open: the relay holds documents
-    // for connected clients and nothing else, so an empty box genuinely does
-    // not know the running order rather than knowing it is empty.
+    // The last copy the relay saw. A box that has restarted and not heard
+    // from a phone since has none, and genuinely does not know the running
+    // order rather than knowing it is empty.
     const timetable = docs.peek(TIMETABLE_ROOM)
     const board = stageBoard(readRunningOrder(timetable), clock(), timeZone)
 
@@ -2658,7 +2837,11 @@ export function buildApp({
       ...(voiceQuality ? { voiceQuality } : {}),
     })
     return {
-      settings: { eventName: publicConfig().eventName, wifiSsid: publicConfig().wifiSsid },
+      settings: {
+        eventName: publicConfig().eventName,
+        wifiSsid: publicConfig().wifiSsid,
+        continues: continuesOf(store),
+      },
       serverInfo: {
         version: APP_VERSION,
         // Null when this box was told not to check, which the panel shows as
@@ -2731,7 +2914,7 @@ export function buildApp({
     }
   })
 
-  fastify.patch('/api/admin/settings', (req, reply) => {
+  fastify.patch('/api/admin/settings', async (req, reply) => {
     if (!authAdmin(req, reply)) return reply
     const parsed = settingsPatchSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -2746,6 +2929,30 @@ export function buildApp({
         ['eventName', 'wifiSsid', 'crewIface', 'dmxMode', 'dmxIface', 'dmxUniverses'] as const
       ).filter((key) => parsed.data[key] !== undefined)
       if (touched.length > 0) return reply.code(423).send({ error: LOCKED_MESSAGE })
+    }
+    // Refused before anything is saved, the same as the admin password
+    // below: the panel does not offer it, so this was sent by hand, and
+    // saying "saved" while the environment goes on deciding would be a lie.
+    if (parsed.data.announce !== undefined && announce?.settingFromEnv) {
+      return reply.code(409).send({
+        error:
+          'This box takes its announcement setting from CREWBOX_ANNOUNCE in its service file. Change it there and restart, or unset it to choose here.',
+      })
+    }
+    // Refused before anything is saved, like the two above. An event can't
+    // take over from itself, and a phone told so would offer to move its
+    // work into the event it is already in.
+    if (parsed.data.continues?.id === store.dbEpoch()) {
+      return reply.code(400).send({ error: 'This box is running that event already.' })
+    }
+    if (parsed.data.announce !== undefined) {
+      store.setSetting(ANNOUNCE_KEY, parsed.data.announce)
+    }
+    // Not withheld for want of a licence, as the event PIN is not. It is
+    // said mid-show, when an event's box has died and its spare had no
+    // backup, and all it does is let crew bring their own work across.
+    if (parsed.data.continues !== undefined) {
+      saveContinues(store, parsed.data.continues)
     }
     if (parsed.data.eventName !== undefined) {
       store.setSetting('eventName', parsed.data.eventName)
@@ -2781,12 +2988,16 @@ export function buildApp({
     }
     hub.announceConfig()
     onSettingsChanged()
+    // A renamed event, or the setting itself: said on the network before the
+    // panel is told, so the status it shows is the new one.
+    await announce?.refresh()
     const config = publicConfig()
     return {
       settings: {
         eventName: config.eventName,
         wifiSsid: config.wifiSsid,
         eventPin: effectiveEventPin(),
+        continues: continuesOf(store),
       },
       network: networkPayload(),
       ...(reissued ? { adminToken: reissued } : {}),
@@ -2812,6 +3023,7 @@ export function buildApp({
     docs,
     authSession: (token: string) => store.getSessionUser(token, sessionTtlMs),
     enabledModules: modules,
+    eventId: () => store.dbEpoch(),
     voiceProxyPort: livekit?.embedded ? (livekit.port ?? LIVEKIT_PORT) : undefined,
   })
 }
@@ -2890,6 +3102,18 @@ export function attachWs(app: App): WsHandles {
       const user = token ? app.authSession(token) : undefined
       if (!user) {
         reject(socket, 401, 'Unauthorized')
+        return
+      }
+      // The event the phone has open, when it says. A phone keeps each
+      // event's documents apart, and a box that is running a different one —
+      // a spare with a fresh database, at the address the phone knows — must
+      // not be handed the old event's sheets and running order however the
+      // socket got here. Nothing else stops them: a y-websocket provider
+      // reconnects by itself, and the old token is only usually refused. A
+      // phone that does not say is one that predates this, and is let in.
+      const event = url.searchParams.get('event')
+      if (event && event !== app.eventId()) {
+        reject(socket, 409, 'Conflict')
         return
       }
       let rawRoom: string

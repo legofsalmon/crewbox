@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+        Backed up, and carried to a new phone, but for the app's sign-ins:
+        res/xml/data_extraction_rules.xml says what goes on Android 12 and
+        later, and backup_rules.xml on Android 11 and older, which have no
+        dataExtractionRules (hence tools:targetApi).
+    -->
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        tools:targetApi="31"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -20,6 +30,24 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                crewbox://join?server=…&pin=…, tapped in a message or on the
+                join page in a phone's browser: the join screen opens with the
+                box and the event PIN filled in (web/src/lib/appLinks.ts).
+                BROWSABLE is what lets a browser or a messaging app open it.
+                A scheme of the app's own rather than an App Link, which needs
+                an https domain to verify, and a box on a crew network has
+                none. Any app can claim a scheme and any page can send one, so
+                the link only fills the form in: Join is still somebody's to
+                press. singleTask above hands a link to the running app.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="crewbox" android:host="join" />
             </intent-filter>
 
         </activity>
@@ -42,6 +70,13 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Continuous crew-communications link to an offline event-site server: message alerts must arrive for the full length of a 14+ hour show day." />
         </service>
+
+        <!-- Scan the join poster: the camera, full screen, until it reads the
+             QR. Only this app starts it (ScannerPlugin). -->
+        <activity
+            android:name=".ScannerActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -78,7 +113,105 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
+        Bluetooth headsets in voice. The web view chooses the call's audio
+        device itself, and checks for Bluetooth permission once, when its
+        audio first starts:
+
+        - Android 11 and older check BLUETOOTH, and without it the web view
+          never moves a call onto a Bluetooth headset. A normal permission:
+          granted at install, no prompt, and gone from the list on newer
+          Android.
+        - Android 12 and later use a headset that is connected when voice
+          starts either way. BLUETOOTH_CONNECT is what lets the web view
+          notice one that connects during a call, or comes back after
+          dropping out of range, and move the call onto it. A runtime
+          permission, asked for once by VoicePlugin, and only of someone who
+          joins voice with a Bluetooth headset connected.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!--
+        The buzz that goes with an alert, through @capacitor/haptics. The
+        plugin's manifest asks for this as well and merges in; it is declared
+        here too so everything the app asks a phone for is in one place and in
+        the permission check. The web view's navigator.vibrate needed it just
+        the same and was never given it, so alerts in the app never vibrated.
+        A normal permission: granted at install, no prompt.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+        Finding the box on the Wi-Fi (DiscoveryPlugin). Android 12 and older,
+        and Android 13 before its T extensions 7 update, filter out the mDNS
+        a box answers with unless an app holds a multicast lock, and taking
+        one needs this. The plugin takes it only on those phones and only
+        while the join or Boxes screen is looking. A normal permission:
+        granted at install, no prompt. Newer phones hold the lock themselves
+        for an app in the foreground that is searching.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <!--
+        Reaching the box over a crew Wi-Fi with no internet (SiteWifi). With
+        mobile data on, Android sends an app's traffic over mobile data, not
+        over a Wi-Fi that failed its internet check, so the app asks for the
+        Wi-Fi and binds itself to it while its box is there. Asking for a
+        network needs this. A normal permission: granted at install, no
+        prompt.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+        The camera, for scanning the join poster (ScannerPlugin): the app
+        shows the picture and reads the QR itself, which needs CAMERA. A
+        runtime permission, asked for the first time somebody scans.
+
+        It changes "Take a photo" in the attach menu, which opens the camera
+        app and needed no permission of its own: with CAMERA declared,
+        Android refuses that to an app that has not been granted it, so
+        Capacitor's web view asks for CAMERA first. Whoever says yes to one
+        has said yes to both. A no leaves the page a cancelled photo, and
+        the message box says why (web/src/components/Composer.tsx).
+
+        No camera is required: a phone without one installs the app and
+        types the poster's address, and the scanner uses a camera on the
+        screen side when there is no other. A store reads CAMERA as needing
+        a back camera with autofocus unless told otherwise, and would hide
+        the app from phones and tablets without one, so both are said here.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!--
+        Not asked for: the network's state. CameraX's preview comes with its
+        video half, which brings Media3, and Media3 asks for this for a video
+        player's bandwidth estimate. Nothing here plays or records video, and
+        the app never asks Android which networks there are: it asks for the
+        Wi-Fi (CHANGE_NETWORK_STATE, above), and hears about that one only.
+        So it is taken out rather than shown to crew on the install screen.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
+    <!--
+        "Take a photo" in the attach menu. Capacitor's web view looks for a
+        camera app before it opens one, and since Android 11 an app only sees
+        the other apps it has declared an interest in. Without this the look
+        comes back empty on some phones (a Pixel 7a on Android 14 is on
+        record, in Capacitor issue 7411) and the camera option opens the file
+        picker instead. Not a permission: nothing on the install screen.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
 </manifest>

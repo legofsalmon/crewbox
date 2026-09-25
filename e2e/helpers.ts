@@ -65,6 +65,245 @@ export const newDevice = async (browser: Browser, crewName?: string): Promise<Pa
   return page
 }
 
+/**
+ * The apps' keeping of sign-ins (SessionsPlugin), for an init script added
+ * after the one that stands the app in: the iPhone's Keychain or Android's
+ * Keystore, stood in for by the tab's sessionStorage, which a reload keeps
+ * and the page itself never touches, so the page's storage and the app's are
+ * apart as on a phone. Each call is kept for `keychainCalls`.
+ */
+export function keepSignInsInTheApp(): void {
+  const w = window as unknown as {
+    Capacitor?: { Plugins?: Record<string, unknown> }
+    __keychainCalls?: string[]
+  }
+  const plugins = w.Capacitor?.Plugins
+  if (!plugins) return
+  const calls: string[] = []
+  w.__keychainCalls = calls
+  const kept = (): Record<string, string> =>
+    JSON.parse(sessionStorage.getItem('__keychain') ?? '{}') as Record<string, string>
+  const keep = (sessions: Record<string, string>) =>
+    sessionStorage.setItem('__keychain', JSON.stringify(sessions))
+  // Each answers a little later, as a call across the bridge to the
+  // Keychain does, so a page that doesn't wait for one goes on without it.
+  const answered = () => new Promise((resolve) => setTimeout(resolve, 150))
+  plugins.CrewboxSessions = {
+    load: async () => {
+      calls.push('load')
+      await answered()
+      return { sessions: kept() }
+    },
+    save: async ({ name, token }: { name: string; token: string }) => {
+      calls.push(`save ${name}`)
+      await answered()
+      keep({ ...kept(), [name]: token })
+    },
+    forget: async ({ name }: { name: string }) => {
+      calls.push(`forget ${name}`)
+      await answered()
+      const sessions = kept()
+      delete sessions[name]
+      keep(sessions)
+    },
+  }
+}
+
+/** The sign-ins the stood-in app keeps, by name. */
+export const keychainOf = (page: Page) =>
+  page.evaluate(
+    () => JSON.parse(sessionStorage.getItem('__keychain') ?? '{}') as Record<string, string>
+  )
+
+/** What the stood-in app's keeping of sign-ins has been asked, on the page as loaded. */
+export const keychainCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __keychainCalls: string[] }).__keychainCalls)
+
+/** A box as the apps' search reports one: `FoundService` in web/src/lib/server.ts. */
+export interface FoundService {
+  name: string
+  addresses: string[]
+  port: number
+  txt: Record<string, string>
+}
+
+/** What the apps' scanner hands the page: `ScanOutcome` in web/src/lib/server.ts. */
+export type ScanOutcome =
+  | { result: 'scanned'; text: string }
+  | { result: 'cancelled' }
+  | { result: 'denied' }
+  | { result: 'unavailable' }
+
+/** What the apps' Wi-Fi join hands the page: `WifiOutcome` in web/src/lib/server.ts. */
+export interface WifiOutcome {
+  result: 'joined' | 'saved' | 'known' | 'declined' | 'failed' | 'invalid' | 'unavailable'
+}
+
+/** A box the Android app was told of (NetworkPlugin), and when it answered. */
+export interface BoxWifiCall {
+  origin: string
+  answered: boolean
+}
+
+/**
+ * One of the phone apps, with its search for boxes (DiscoveryPlugin), its QR
+ * scanner (ScannerPlugin) and its Wi-Fi join (WifiPlugin) stood in for. Each
+ * start "finds" `boxes`, what it was asked is kept for `discoveryCalls`, and
+ * `announce` changes what it has found. Each scan hands back what
+ * `scanWillGive` queued, or is backed out of, and each network asked for is
+ * kept for `wifiCalls` and answered as `wifiWillGive` queued, or turned down.
+ * The Android one also has its hold on the Wi-Fi (NetworkPlugin): each box
+ * it is told of is kept for `boxWifiCalls`, and answered after
+ * `boxWifiTakes`, at once unless told otherwise.
+ */
+export const appWithDiscovery = async (
+  browser: Browser,
+  platform: 'android' | 'ios',
+  boxes: FoundService[],
+  options: Parameters<Browser['newContext']>[0] = {}
+): Promise<Page> => {
+  const context = await browser.newContext(options)
+  openContexts.push(context)
+  await context.addInitScript(
+    ({ platform, boxes }) => {
+      const calls: string[] = []
+      const listeners: Record<string, ((event: unknown) => void)[]> = {}
+      const emit = (event: string, data: unknown) => {
+        for (const listener of listeners[event] ?? []) listener(data)
+      }
+      let found = boxes
+      const w = window as unknown as Record<string, unknown>
+      w.__discovery = calls
+      const scans: unknown[] = []
+      const scanner: string[] = []
+      w.__scans = scans
+      w.__scanner = scanner
+      const wifiAnswers: unknown[] = []
+      const networks: unknown[] = []
+      w.__wifiAnswers = wifiAnswers
+      w.__networks = networks
+      const boxWifi: { origin: string; answered: boolean }[] = []
+      w.__boxWifi = boxWifi
+      w.__boxWifiTakes = 0
+      w.__announce = (next: typeof boxes) => {
+        found = next
+        emit('boxes', { boxes: found })
+      }
+      w.Capacitor = {
+        isNativePlatform: () => true,
+        getPlatform: () => platform,
+        Plugins: {
+          CrewboxDiscovery: {
+            start: async () => {
+              calls.push('start')
+              setTimeout(() => {
+                emit('state', { state: 'searching' })
+                emit('boxes', { boxes: found })
+              }, 0)
+            },
+            stop: async () => {
+              calls.push('stop')
+            },
+            openSettings: async () => {
+              calls.push('openSettings')
+            },
+            addListener: (event: string, listener: (event: unknown) => void) => {
+              ;(listeners[event] ??= []).push(listener)
+              return {
+                remove: async () => {
+                  listeners[event] = (listeners[event] ?? []).filter((l) => l !== listener)
+                },
+              }
+            },
+          },
+          CrewboxScanner: {
+            scan: async () => {
+              scanner.push('scan')
+              return scans.shift() ?? { result: 'cancelled' }
+            },
+            openSettings: async () => {
+              scanner.push('openSettings')
+            },
+          },
+          CrewboxWifi: {
+            join: async (network: unknown) => {
+              networks.push(network)
+              return wifiAnswers.shift() ?? { result: 'declined' }
+            },
+          },
+          ...(platform === 'android'
+            ? {
+                CrewboxNetwork: {
+                  useBox: ({ origin }: { origin: string }) => {
+                    const call = { origin, answered: false }
+                    boxWifi.push(call)
+                    return new Promise((resolve) =>
+                      setTimeout(() => {
+                        call.answered = true
+                        resolve({ onWifi: true })
+                      }, w.__boxWifiTakes as number)
+                    )
+                  },
+                },
+              }
+            : {}),
+        },
+      }
+    },
+    { platform, boxes }
+  )
+  await context.addInitScript(keepSignInsInTheApp)
+  const page = await context.newPage()
+  page.on('pageerror', (error) => {
+    throw new Error(`Page error: ${error.message}`)
+  })
+  return page
+}
+
+/** What the stood-in search has found from now on. */
+export const announce = (page: Page, boxes: FoundService[]) =>
+  page.evaluate(
+    (boxes) => (window as unknown as { __announce: (b: unknown[]) => void }).__announce(boxes),
+    boxes
+  )
+
+/** What the stood-in search has been asked to do, in order. */
+export const discoveryCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __discovery: string[] }).__discovery)
+
+/** What the stood-in scanner hands back, one outcome per scan, on the page as loaded. */
+export const scanWillGive = (page: Page, ...outcomes: ScanOutcome[]) =>
+  page.evaluate(
+    (outcomes) => (window as unknown as { __scans: unknown[] }).__scans.push(...outcomes),
+    outcomes
+  )
+
+/** What the stood-in scanner has been asked to do, in order. */
+export const scannerCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __scanner: string[] }).__scanner)
+
+/** What the stood-in Wi-Fi join answers, one outcome per network, on the page as loaded. */
+export const wifiWillGive = (page: Page, ...outcomes: WifiOutcome[]) =>
+  page.evaluate(
+    (outcomes) =>
+      (window as unknown as { __wifiAnswers: unknown[] }).__wifiAnswers.push(...outcomes),
+    outcomes
+  )
+
+/** The networks the stood-in Wi-Fi join has been asked to join, in order. */
+export const wifiCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __networks: unknown[] }).__networks)
+
+/** How long the stood-in Android app takes to answer each box it is told of from now on. */
+export const boxWifiTakes = (page: Page, ms: number) =>
+  page.evaluate((ms) => ((window as unknown as { __boxWifiTakes: number }).__boxWifiTakes = ms), ms)
+
+/** The boxes the stood-in Android app has been told of, in order, and whether it has answered. */
+export const boxWifiCalls = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as { __boxWifi: BoxWifiCall[] }).__boxWifi.map((call) => ({ ...call }))
+  )
+
 /** Open the patch module's sheet selector from the sidebar. */
 export const openPatch = async (page: Page) => {
   await page.getByRole('button', { name: 'All sheets…' }).click()

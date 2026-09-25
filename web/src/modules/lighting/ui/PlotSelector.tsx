@@ -5,6 +5,7 @@ import { createPlot, deletePlot } from '../store/docManager'
 import { usePlotIndex } from '../store/hooks'
 import { importPlotFile, stashImportFlash } from '../store/importFile'
 import styles from './PlotSelector.module.scss'
+import { isRigFile, rigFileAccept, rigFileProblem } from './rigFile.ts'
 
 /** The lighting module's landing view: every plot this crew knows about. */
 export default function PlotSelector({
@@ -43,6 +44,9 @@ export default function PlotSelector({
   // opens it; the summary rides into PlotView via stashImportFlash.
   const importFile = async (file: File | undefined) => {
     if (!file || importing) return
+    const problem = rigFileProblem(file)
+    setImportError(problem)
+    if (problem) return
     setImporting(true)
     // Yield so the "Reading…" label paints before a big MVR blocks the thread.
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -61,7 +65,6 @@ export default function PlotSelector({
     }
   }
 
-  const isRigFile = useCallback((file: File) => /\.(csv|mvr)$/i.test(file.name), [])
   const onDropFiles = useCallback(
     (files: File[]) => {
       // One plot per drop — importing five files at once would leave someone
@@ -108,7 +111,7 @@ export default function PlotSelector({
         <input
           ref={importRef}
           type="file"
-          accept=".csv,.mvr,text/csv"
+          accept={rigFileAccept()}
           className={styles.hiddenFile}
           aria-label="Import CSV or MVR file"
           onChange={(e) => {

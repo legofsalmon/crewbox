@@ -29,6 +29,11 @@ own, only when an admin pushes the button, and it records the bytes it sent
 so venue IT can check them against a capture. See `docs/NETWORK_AUDIT.md`.
 Nothing in the monitoring path sends anything, ever.
 
+The box's announcement of itself to the phone apps is not DMX and not this
+module, and it keeps off the lighting network too: it speaks only on the crew
+adapter, and stays quiet when the lighting listener shares that adapter or has
+none set, unless an admin chooses **Always** for it. See `docs/DISCOVERY.md`.
+
 That is not a nicety. A festival lighting network carries the show, and an
 app that can transmit on it is a way to black out a stage from a phone in
 somebody's pocket. Every crew phone on the box would inherit whatever the box

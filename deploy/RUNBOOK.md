@@ -17,7 +17,11 @@ The one document to print and keep in the production office.
   travel router covers a production office, not a site.
 - USB stick for backups, gaffer-taped to the server
 - Printed QR join posters (`node deploy/make-poster.mjs https://chat.<yourdomain>:8787 <EVENT_PIN>`
-  — the port matters: it goes on the poster exactly as typed here)
+  — the port matters: it goes on the poster exactly as typed here). Run it
+  where that address reaches the box: the QR then names the event, and the
+  phone apps check the box is the poster's before a PIN goes to it. It says
+  when it couldn't, and why. Print them again if the event starts afresh on
+  a spare without its backup.
 - This runbook
 
 ## A laptop box — trials, small rooms, and the spare in the car
@@ -44,7 +48,11 @@ router of its own, and that costs exactly two things (below).
    QR already scanned points at nothing.
 5. **macOS will ask to allow incoming connections** the first time. Say
    Allow. If you clicked past it: System Settings → Network → Firewall →
-   Options.
+   Options. It may also ask whether Crewbox can find and connect to devices
+   on your local network: say Allow, since that is how the phone apps find
+   the box on the Wi-Fi. If you said no: System Settings → Privacy &
+   Security → Local Network. **Admin → This box** says when this is what
+   is stopping the announcement.
 6. **Sleep is already handled** — the box holds a `caffeinate` assertion for
    as long as it runs, lid included. One exception it cannot beat: a MacBook
    on **battery** with the lid shut still sleeps. Keep it on mains.
@@ -210,9 +218,11 @@ which address is in play, and flags the coin flip if you forgot to set this
 on a two-network machine.
 
 What crewbox puts on the lighting network, in full: the IGMP membership
-reports the OS must send to receive sACN multicast — nothing else. The DMX
-sockets structurally cannot transmit (their `send` is removed; a test
-asserts it throws). One honest residual: the voice server's _media_ ports
+reports the OS must send to receive sACN multicast, and one ArtPoll
+broadcast each time an admin runs the Network audit's deep probe — nothing
+else. The box announces itself for the phone apps only on the crew adapter.
+The DMX sockets structurally cannot transmit (their `send` is removed; a
+test asserts it throws). One honest residual: the voice server's _media_ ports
 (TCP 7881/UDP 7882) still bind every adapter — they only ever speak to
 crew phones that have joined a channel, but a probe of those two ports
 would get an answer where everything else stays silent.
@@ -374,15 +384,15 @@ licence is reinstated, the next check-in with the kept key restores it.
 
 ## When things go wrong
 
-| Symptom                    | Fix                                                                                                                                                                                                                                                                                    |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.                                                                                                                                                                      |
-| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online.                                                                                                                                                             |
-| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                                                                                |
-| Voice drops but chat works | `systemctl restart crewbox` — the SFU is inside the box, so it restarts with it. Check UDP **7882** and TCP **7881** aren't firewalled: the SFU pins one UDP port rather than a range, so there is exactly one hole to open.                                                           |
-| Server box dies            | Swap in the spare, `deploy/restore.sh` (takes the newest backup by default), same static IP. Crew phones reconnect on their own and stay signed in — sessions are in the database. Patch sheets and plots are unaffected either way: every device holds its own copy and they re-sync. |
-| Locked out of Admin        | Set `ADMIN_PASSWORD=…` in `/etc/systemd/system/crewbox.service`, `systemctl daemon-reload && systemctl restart crewbox`. It overrides the stored password. Nobody loses their session; only the panel re-locks.                                                                        |
-| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                                                                         |
+| Symptom                    | Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phones can't reach the app | Check phone got router DNS (forget/rejoin Wi-Fi). `dig chat.<yourdomain> @router-ip` should return the server IP.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Certificate warning        | Cert expired — you missed the renewal. Fall back: crew taps through the warning (app still works); renew when back online.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| App down                   | `systemctl restart crewbox` — it restores all state from disk; clients reconnect and resend queued messages themselves.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Voice drops but chat works | `systemctl restart crewbox` — the SFU is inside the box, so it restarts with it. Check UDP **7882** and TCP **7881** aren't firewalled: the SFU pins one UDP port rather than a range, so there is exactly one hole to open.                                                                                                                                                                                                                                                                                                                            |
+| Server box dies            | Swap in the spare, `deploy/restore.sh` (takes the newest backup by default), same static IP. Crew phones reconnect on their own and stay signed in — sessions are in the database, and so are the sheets, plots and chat. No backup: start the spare fresh and set it up, then in **Admin → This box** set **Carries on another event** to the old event, from a phone app that was on it. Crew join it as a new event, and each phone offers to bring its sheets, running order and unsent messages across. The chat history is gone without a backup. |
+| Locked out of Admin        | Set `ADMIN_PASSWORD=…` in `/etc/systemd/system/crewbox.service`, `systemctl daemon-reload && systemctl restart crewbox`. It overrides the stored password. Nobody loses their session; only the panel re-locks.                                                                                                                                                                                                                                                                                                                                         |
+| Full reset mid-event       | Power-cycle everything in the power order above. The system needs no human input to come back.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 ## Teardown
 

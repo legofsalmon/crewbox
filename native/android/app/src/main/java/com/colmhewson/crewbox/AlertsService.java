@@ -38,6 +38,7 @@ import okhttp3.WebSocketListener;
 public class AlertsService extends Service {
   public static final String EXTRA_SERVER = "serverUrl";
   public static final String EXTRA_TOKEN = "token";
+  public static final String EXTRA_SESSION = "session";
   public static final String EXTRA_MY_NAME = "myName";
 
   private static final String CH_SERVICE = "service";
@@ -62,11 +63,16 @@ public class AlertsService extends Service {
    * notification, found no server address, and sat on "Connecting to crew
    * server…" for the rest of the shift — connected to nothing, alerting
    * nobody, and looking exactly like a service that is working.
+   *
+   * Not the token itself: the name of the sign-in, which Sessions keeps
+   * sealed, so the phone holds one copy of it at rest and not two.
    */
   private static final String PREFS = "crewbox-alerts";
   private static final String PREF_SERVER = "serverUrl";
-  private static final String PREF_TOKEN = "token";
+  private static final String PREF_SESSION = "session";
   private static final String PREF_NAME = "myName";
+  /** Where the token itself was, before Sessions kept it. Only ever removed now. */
+  private static final String PREF_OLD_TOKEN = "token";
 
   /** Set by AlertsPlugin from activity lifecycle — no alerts while visible. */
   public static volatile boolean appVisible = false;
@@ -104,8 +110,31 @@ public class AlertsService extends Service {
   /** Current gap before the next reconnect attempt; doubles on each failure. */
   private long retryMs = RETRY_MS;
 
+  /** Whether the live socket has had its welcome, the one proof it works. */
+  private boolean welcomed = false;
+
+  /**
+   * The app's traffic has moved onto the crew Wi-Fi or off it (SiteWifi).
+   * An attempt made the old way would wait out a connect timeout or its
+   * backoff, up to a minute, so try again now. A socket that works is left
+   * alone: it keeps the network it opened on.
+   */
+  private final Runnable moved = () -> handler.post(() -> {
+    if (stopped || welcomed) return;
+    retryMs = RETRY_MS;
+    connect();
+  });
+
+  /**
+   * A read of the token waiting on the Keystore, held so a start can cancel
+   * it (see `reconnect` on why it is a field).
+   */
+  private final Runnable readAgain = this::readToken;
+
   private String serverUrl = "";
   private String token = "";
+  /** The name the app keeps the token under (Sessions). */
+  private String session = "";
   private String myName = "";
   private String myId = "";
   private Pattern mentionPattern;
@@ -125,36 +154,56 @@ public class AlertsService extends Service {
     super.onCreate();
     http = new OkHttpClient.Builder().pingInterval(15, TimeUnit.SECONDS).build();
     createChannels();
+    SiteWifi.get(this).hear(moved);
   }
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
     SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    // A start brings what a read still waiting on the Keystore was for.
+    handler.removeCallbacks(readAgain);
     if (intent != null) {
       serverUrl = stringExtra(intent, EXTRA_SERVER);
       token = stringExtra(intent, EXTRA_TOKEN);
+      session = stringExtra(intent, EXTRA_SESSION);
       myName = stringExtra(intent, EXTRA_MY_NAME);
       prefs.edit()
           .putString(PREF_SERVER, serverUrl)
-          .putString(PREF_TOKEN, token)
+          .putString(PREF_SESSION, session)
           .putString(PREF_NAME, myName)
           .apply();
     } else {
       // A restart the OS asked for. Everything this service needs came in on
-      // an intent it no longer has.
+      // an intent it no longer has, and the token is where the app keeps it.
       serverUrl = prefs.getString(PREF_SERVER, "");
-      token = prefs.getString(PREF_TOKEN, "");
+      session = prefs.getString(PREF_SESSION, "");
       myName = prefs.getString(PREF_NAME, "");
+      try {
+        String kept = serverUrl.isEmpty() ? null : Sessions.get(this, session);
+        token = kept == null ? "" : kept;
+      } catch (KeystoreCalls.NotNow e) {
+        // The Keystore didn't answer, which says nothing about the sign-in.
+        // Forgetting it here left alerts off until somebody opened the app.
+        waitForToken();
+        return START_STICKY;
+      }
     }
     if (serverUrl.isEmpty() || token.isEmpty()) {
       // Nothing to connect to: a restart before anybody has ever signed in,
-      // or after a sign-out cleared the credentials. Stop, rather than
-      // holding a foreground notification that says "Connecting" for ever.
-      // The app starts the service again with a fresh token when somebody
-      // signs in.
+      // after a sign-out cleared the credentials, or after the page forgot
+      // the event. Stop, rather than holding a foreground notification that
+      // says "Connecting" for ever. The app starts the service again with a
+      // fresh token when somebody signs in.
+      forgetCredentials(this);
       stopSelf();
       return START_NOT_STICKY;
     }
+    begin();
+    return START_STICKY;
+  }
+
+  /** Connect with the credentials in hand. */
+  private void begin() {
     mentionPattern = Pattern.compile(
         "@(" + Pattern.quote(myName) + "|all|everyone|channel)", Pattern.CASE_INSENSITIVE);
     stopped = false;
@@ -162,22 +211,73 @@ public class AlertsService extends Service {
     startForeground(NOTIF_FOREGROUND, serviceNotification("Connecting to crew server…"));
     // Every start is a fresh attempt, including the redeliveries START_STICKY
     // brings after the OS has killed us, and the plugin's own restart when
-    // the crew member signs in again with a new token.
-    connect();
-    return START_STICKY;
+    // the crew member signs in again with a new token. Once the app's traffic
+    // for the box is on its Wi-Fi: a restart Android makes on its own has no
+    // page to say so, and a first attempt over mobile data would only fail
+    // and wait out a retry.
+    SiteWifi siteWifi = SiteWifi.get(this);
+    siteWifi.start(serverUrl);
+    siteWifi.whenSettled(onWifi -> handler.post(this::connect));
+  }
+
+  /**
+   * A restart found the Keystore not answering. The service says it is
+   * connecting, which it will be, and reads the token again, backing off as
+   * a reconnect does.
+   */
+  private void waitForToken() {
+    token = "";
+    stopped = false;
+    retryMs = RETRY_MS;
+    startForeground(NOTIF_FOREGROUND, serviceNotification("Connecting to crew server…"));
+    handler.postDelayed(readAgain, retryMs);
+  }
+
+  private void readToken() {
+    if (stopped) return;
+    String kept;
+    try {
+      kept = Sessions.get(this, session);
+    } catch (KeystoreCalls.NotNow e) {
+      retryMs = Math.min(MAX_RETRY_MS, retryMs * 2);
+      handler.postDelayed(readAgain, retryMs);
+      return;
+    }
+    if (kept == null) {
+      // Gone while it waited: the page forgot the event, or the Keystore
+      // lost its key. The app starts the service again at the next sign-in.
+      forgetCredentials(this);
+      stopForeground(STOP_FOREGROUND_REMOVE);
+      stopSelf();
+      return;
+    }
+    token = kept;
+    begin();
   }
 
   /** Forget the credentials, so a sticky restart does not use a dead token. */
   private static void forgetCredentials(Context ctx) {
     ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         .remove(PREF_SERVER)
-        .remove(PREF_TOKEN)
+        .remove(PREF_SESSION)
         .remove(PREF_NAME)
+        .remove(PREF_OLD_TOKEN)
         .apply();
+  }
+
+  /**
+   * The token as this service kept it before Sessions did, from a version of
+   * the app before this. MainActivity drops it at every start: the page's
+   * first start in this version moves its sign-ins across, and starts this
+   * service again with the name.
+   */
+  static void forgetOldToken(Context ctx) {
+    ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(PREF_OLD_TOKEN).apply();
   }
 
   @Override
   public void onDestroy() {
+    SiteWifi.get(this).stopHearing(moved);
     stopped = true;
     generation++;
     closeCurrent("service stopped");
@@ -228,7 +328,10 @@ public class AlertsService extends Service {
   }
 
   private void connect() {
-    if (stopped || serverUrl.isEmpty()) return;
+    // No token while it waits on the Keystore (waitForToken), when a move to
+    // or from the Wi-Fi can still call this: a hello without one would have
+    // the box refuse it, and the service forget the sign-in it waits for.
+    if (stopped || serverUrl.isEmpty() || token.isEmpty()) return;
     // Anything already open, and any reconnect already queued, belongs to a
     // previous attempt and is abandoned here — one socket at a time is the
     // whole invariant.
@@ -236,6 +339,7 @@ public class AlertsService extends Service {
     generation++;
     final int mine = generation;
     closeCurrent("replaced");
+    welcomed = false;
 
     String wsBase = serverUrl.replaceFirst("^http", "ws");
     Request request = new Request.Builder().url(wsBase + "/ws").build();
@@ -305,6 +409,7 @@ public class AlertsService extends Service {
     // older one closing is the expected end of its life, not a fault.
     if (stopped || from != generation) return;
     ws = null;
+    welcomed = false;
     updateServiceNotification("Reconnecting to crew server…");
     handler.removeCallbacks(reconnect);
     handler.postDelayed(reconnect, retryMs);
@@ -340,6 +445,7 @@ public class AlertsService extends Service {
         // A welcome is the only proof the socket works, so it is the only
         // thing that gets to say the backoff has done its job.
         retryMs = RETRY_MS;
+        welcomed = true;
       } else if ("error".equals(type) && "auth".equals(msg.optString("code"))) {
         // The box refusing the token, said as a frame rather than a close.
         authRejected();
@@ -448,10 +554,11 @@ public class AlertsService extends Service {
     return v == null ? "" : v;
   }
 
-  static void start(Context ctx, String serverUrl, String token, String myName) {
+  static void start(Context ctx, String serverUrl, String token, String session, String myName) {
     Intent intent = new Intent(ctx, AlertsService.class);
     intent.putExtra(EXTRA_SERVER, serverUrl);
     intent.putExtra(EXTRA_TOKEN, token);
+    intent.putExtra(EXTRA_SESSION, session);
     intent.putExtra(EXTRA_MY_NAME, myName);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent);
     else ctx.startService(intent);

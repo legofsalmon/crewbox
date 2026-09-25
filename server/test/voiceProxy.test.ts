@@ -178,6 +178,31 @@ describe('signalling reaches the SFU', () => {
   })
 })
 
+describe('the ICE servers a phone is told to use', () => {
+  it('is none at all, for the SFU this box runs', async () => {
+    // LiveKit gives every participant Twilio's and Google's STUN servers
+    // when it has none configured, and this box's SFU never has. The empty
+    // list is what stops a phone on comms asking all three for its address.
+    const general = store.createChannel('general', 'public', 'Everyone')
+    const joined = await app.inject({
+      method: 'POST',
+      url: '/api/join',
+      payload: { name: 'Ice', eventPin: '9999', personalPin: '1234' },
+    })
+    const { token } = joined.json() as { token: string }
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/voice/token',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { channelId: general.id },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ iceServers: [] })
+  })
+})
+
 describe('when the SFU is not there', () => {
   it('closes the client rather than leaving it hanging', async () => {
     // What the MacBook saw. Worth pinning the *shape* of the failure: the

@@ -6,6 +6,7 @@ import { fixturesOnPosition, updatePosition } from '../model/plotDoc'
 import type { Fixture, PlotSnapshot, Position } from '../model/types'
 import type { PlotIssues } from '../store/hooks'
 import styles from './PlotPlan.module.scss'
+import { usePanZoom } from './usePanZoom.ts'
 
 /**
  * A schematic plan of the rig, not a CAD drawing.
@@ -62,8 +63,8 @@ export default function PlotPlan({
   // first and a monitor second.
   const look = useLiveLook(snapshot)
   const svgRef = useRef<SVGSVGElement>(null)
-  const [zoom, setZoom] = useState(1)
   const [drag, setDrag] = useState<Drag | null>(null)
+  const { zoom, step, busy, boxProps } = usePanZoom(svgRef, drag !== null)
   // A ref, not state: it is read and written inside one pointermove and must
   // not schedule a render of its own.
   const committed = useRef<Committed | null>(null)
@@ -108,8 +109,13 @@ export default function PlotPlan({
   }
 
   const startDrag = (e: React.PointerEvent, position: Position) => {
+    // A second finger landing on a truss mid-pan is the start of a pinch,
+    // not a drag: let it through to the box.
+    if (busy()) return
     const point = toMetres(e.clientX, e.clientY)
     if (!point) return
+    // The drag's, not the box's: a finger on a truss moves the truss.
+    e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
     committed.current = { x: position.x, y: position.y }
     setDrag({
@@ -157,7 +163,7 @@ export default function PlotPlan({
         <button
           type="button"
           className={styles.zoomButton}
-          onClick={() => setZoom((z) => Math.max(0.4, Math.round((z - 0.2) * 10) / 10))}
+          onClick={() => step(-0.2)}
           aria-label="Zoom out"
         >
           −
@@ -166,7 +172,7 @@ export default function PlotPlan({
         <button
           type="button"
           className={styles.zoomButton}
-          onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.2) * 10) / 10))}
+          onClick={() => step(0.2)}
           aria-label="Zoom in"
         >
           +
@@ -174,7 +180,7 @@ export default function PlotPlan({
         <span className={styles.hint}>Drag a position to move it</span>
       </div>
 
-      <div className={styles.canvas}>
+      <div className={styles.canvas} {...boxProps}>
         <svg
           ref={svgRef}
           width={width}

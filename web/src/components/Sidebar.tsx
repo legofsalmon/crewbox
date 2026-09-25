@@ -6,6 +6,7 @@ import { displayName } from '../lib/settings.ts'
 import { allModules } from '../shell/registry.ts'
 import { enabledModules } from '../shell/modules.ts'
 import Avatar from './Avatar.tsx'
+import { useBoxesOffered } from '../lib/useBoxesOffered.ts'
 import DeleteAccountDialog from './DeleteAccountDialog.tsx'
 
 /** Stroke icon in the same style as the channel-header buttons — emoji
@@ -65,6 +66,8 @@ export default function Sidebar() {
   const latencyMs = useStore((s) => s.latencyMs)
   const configModules = useStore((s) => s.config.modules)
   const eventName = useStore((s) => displayName(s.config.eventName))
+  const setBoxesOpen = useStore((s) => s.setBoxesOpen)
+  const boxesOffered = useBoxesOffered()
   const unlicensed = useStore((s) => s.config.unlicensed === true)
 
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -79,6 +82,11 @@ export default function Sidebar() {
           title={connection}
         />
         <h1>{eventName}</h1>
+        {boxesOffered && (
+          <button className="sidebar-boxes" onClick={() => setBoxesOpen(true)}>
+            Your boxes
+          </button>
+        )}
       </div>
 
       <nav className="sidebar-scroll">

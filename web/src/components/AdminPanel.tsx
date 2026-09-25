@@ -1,16 +1,21 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { Channel, User } from '@crewbox/shared'
-import { useStore } from '../store.ts'
+import { sessionToken, useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 import { deliveredNote, deliverFile, NO_DOWNLOADS } from '../lib/download.ts'
 import { adminError } from '../lib/adminerror.ts'
-import { adapterMissing, listeningMode } from '../lib/adminnetwork.ts'
+import { adapterMissing, describeAnnounce, listeningMode } from '../lib/adminnetwork.ts'
 import UpdateSection from './UpdateSection.tsx'
 import LicenceSection from './LicenceSection.tsx'
 import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
+import { addressOf } from '../lib/discovery.ts'
+import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
 
 const PIN_RE = /^\d{4,8}$/
+
+/** How soon the panel asks again while the box is still claiming its name. */
+const ANNOUNCE_RECHECK_MS = 1000
 
 /**
  * Session plus unlock. Read from the store rather than passed down, because
@@ -20,7 +25,7 @@ const PIN_RE = /^\d{4,8}$/
  */
 function auth(): api.AdminAuth {
   return {
-    token: localStorage.getItem('crewbox:token') ?? '',
+    token: sessionToken() ?? '',
     adminToken: useStore.getState().adminToken ?? '',
   }
 }
@@ -319,11 +324,12 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
     try {
       const blob = await api.adminDnsConfig(auth())
       const result = await deliverFile('crewbox-dns.conf', blob)
-      onNote(
-        result === 'unavailable'
-          ? NO_DOWNLOADS
-          : `${deliveredNote(result, 'DNS config')} — put it on the venue router`
-      )
+      if (result === 'unavailable') onNote(NO_DOWNLOADS)
+      else if (result !== 'cancelled') {
+        onNote(
+          `${deliveredNote(result, 'DNS config') ?? 'DNS config ready'} — put it on the venue router`
+        )
+      }
     } catch (err) {
       onNote(adminError(err, 'Could not build the DNS config'))
     }
@@ -436,6 +442,33 @@ function ServerSection({
     }
   }, [onNote])
 
+  /**
+   * Follows the announcement until it has claimed its name. A change comes
+   * back while the box is still probing, which takes about a second, and the
+   * line under the setting would otherwise say "Starting" until the panel was
+   * next opened. Each answer is a new object, so this asks again while the
+   * box is still starting and stops once it says anything else.
+   */
+  const announce = data?.network.announce
+  useEffect(() => {
+    if (announce?.state !== 'starting') return
+    let live = true
+    const timer = window.setTimeout(() => {
+      api
+        .adminGetSettings(auth())
+        .then((d) => {
+          if (live) setData((cur) => (cur ? { ...cur, network: d.network } : cur))
+        })
+        .catch(() => {
+          // Left as it was: the next change, or opening the panel, reads it again.
+        })
+    }, ANNOUNCE_RECHECK_MS)
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+    }
+  }, [announce])
+
   /** Patch one setting, then refresh local state from what the server kept. */
   function save(
     patch: Parameters<typeof api.adminUpdateSettings>[1],
@@ -446,7 +479,7 @@ function ServerSection({
       setSaving(true)
       void api
         .adminUpdateSettings(auth(), patch)
-        .then(({ settings }) => {
+        .then(({ settings, network }) => {
           setEventName(settings.eventName)
           setSsid(settings.wifiSsid)
           setPin(settings.eventPin)
@@ -454,8 +487,15 @@ function ServerSection({
             d
               ? {
                   ...d,
-                  settings: { eventName: settings.eventName, wifiSsid: settings.wifiSsid },
+                  settings: {
+                    ...d.settings,
+                    eventName: settings.eventName,
+                    wifiSsid: settings.wifiSsid,
+                  },
                   serverInfo: { ...d.serverInfo, eventPin: settings.eventPin },
+                  // A renamed event is announced under its new name, and the
+                  // line under the setting should say so.
+                  ...(network ? { network } : {}),
                 }
               : d
           )
@@ -466,17 +506,49 @@ function ServerSection({
     }
   }
 
-  /** The rule that gets port 80 to this box's probe responder. */
+  /** Say which event this box carries on, then show what the box kept. */
+  function saveContinues(continues: api.Continues | null, note: string) {
+    setSaving(true)
+    void api
+      .adminUpdateSettings(auth(), { continues })
+      .then(({ settings }) => {
+        setData((d) =>
+          d ? { ...d, settings: { ...d.settings, continues: settings.continues ?? null } } : d
+        )
+        onNote(note)
+      })
+      .catch((err) => onNote(adminError(err, 'Save failed')))
+      .finally(() => setSaving(false))
+  }
+
+  /** Patch network settings, then show what the box now reports. */
+  function saveNetwork(patch: Parameters<typeof api.adminUpdateSettings>[1], note: string) {
+    setSaving(true)
+    void api
+      .adminUpdateSettings(auth(), patch)
+      .then(({ network: fresh }) => {
+        setData((d) => (d && fresh ? { ...d, network: fresh } : d))
+        onNote(note)
+      })
+      .catch((err) => onNote(adminError(err, 'Save failed')))
+      .finally(() => setSaving(false))
+  }
+
+  /**
+   * The rule that gets port 80 to this box's probe responder.
+   *
+   * Through the same path as every other export: this one was a bare anchor
+   * click, which in the apps saved nothing and still said "downloaded".
+   */
   async function downloadPort80() {
     try {
       const blob = await api.adminPort80Config(auth())
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'crewbox-port80.conf'
-      a.click()
-      URL.revokeObjectURL(url)
-      onNote('Port 80 config downloaded — one rule, run it on this machine')
+      const result = await deliverFile('crewbox-port80.conf', blob)
+      if (result === 'unavailable') onNote(NO_DOWNLOADS)
+      else if (result !== 'cancelled') {
+        const done = deliveredNote(result, 'Port 80 config') ?? 'Port 80 config ready'
+        onNote(`${done} — one rule, run it on this machine`)
+      }
     } catch (err) {
       onNote(adminError(err, 'Could not build the port 80 config'))
     }
@@ -550,23 +622,19 @@ function ServerSection({
         onChange={setSsid}
         onSave={save({ wifiSsid: ssid.trim() }, 'Wi-Fi network saved')}
       />
+      {data && (
+        <ContinuesField saved={data.settings.continues} saving={saving} onSave={saveContinues} />
+      )}
       {data?.network && (
         <NetworksSection
           network={data.network}
           saving={saving}
           disabled={locked}
-          onSave={(patch, note) => {
-            setSaving(true)
-            void api
-              .adminUpdateSettings(auth(), patch)
-              .then(({ network: fresh }) => {
-                setData((d) => (d && fresh ? { ...d, network: fresh } : d))
-                onNote(note)
-              })
-              .catch((err) => onNote(adminError(err, 'Save failed')))
-              .finally(() => setSaving(false))
-          }}
+          onSave={saveNetwork}
         />
+      )}
+      {data?.network.announce && (
+        <AnnounceSection status={data.network.announce} saving={saving} onSave={saveNetwork} />
       )}
       {info && <AdminPasswordField fromEnv={info.adminPasswordFromEnv} onNote={onNote} />}
       {/*
@@ -783,6 +851,134 @@ function NetworksSection({
         {saving ? 'Saving…' : 'Save networks'}
       </button>
     </form>
+  )
+}
+
+const eventNamed = (event: { name: string }): string => event.name.trim() || 'No name yet'
+
+/**
+ * Which event this box carries on: a spare with no backup, or a bigger box,
+ * taking over from an event's box (server/src/continues.ts). Phones holding
+ * that event offer to bring their work here once they have joined.
+ *
+ * The events offered are the ones this device holds, other than this box's
+ * own. An event's ID is nothing anybody types, and a device can only name an
+ * event it has been on. The box's own answer shows whichever device reads it.
+ */
+export function ContinuesField({
+  saved,
+  saving,
+  onSave,
+}: {
+  /** What the box holds now; undefined from a box that predates it. */
+  saved: api.Continues | null | undefined
+  saving: boolean
+  onSave: (continues: api.Continues | null, note: string) => void
+}) {
+  const events = useSyncExternalStore(subscribeKnownEvents, knownEvents)
+  const open = openEvent()
+  const others: KnownEvent[] = events
+    .filter((event) => event.id !== open)
+    .sort((a, b) => b.seenAt - a.seenAt)
+  const [picked, setPicked] = useState(saved?.id ?? '')
+  useEffect(() => setPicked(saved?.id ?? ''), [saved?.id])
+  if (saved === undefined) return null
+  // The box's answer, for a device that was never on that event.
+  const notHeld = saved && !others.some((event) => event.id === saved.id) ? saved : null
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!picked) {
+      onSave(null, 'Saved: this box carries on no other event')
+      return
+    }
+    const event = others.find((known) => known.id === picked)
+    if (!event) return
+    onSave(
+      { id: event.id, name: event.name.trim() },
+      `Saved: phones that have ${eventNamed(event)} will offer to bring its work here`
+    )
+  }
+
+  return (
+    <form className="admin-setting" onSubmit={submit}>
+      <label htmlFor="admin-continues">Carries on another event</label>
+      <div className="admin-setting-row">
+        <select
+          id="admin-continues"
+          value={picked}
+          disabled={saving}
+          onChange={(e) => setPicked(e.target.value)}
+        >
+          <option value="">No, it’s a new event</option>
+          {notHeld && <option value={notHeld.id}>{eventNamed(notHeld)}</option>}
+          {others.map((event) => (
+            <option key={event.id} value={event.id}>
+              {event.origin
+                ? `${eventNamed(event)} · ${addressOf(event.origin)}`
+                : eventNamed(event)}
+            </option>
+          ))}
+        </select>
+        <button className="admin-btn" disabled={saving || picked === (saved?.id ?? '')}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      <p className="admin-help">
+        For a spare with no backup, or a bigger box, taking over from an event’s box. Phones that
+        have that event offer to bring its documents, running order and unsent messages here. Chat
+        history comes back only from a backup. The events listed are the ones this device has been
+        on.
+      </p>
+    </form>
+  )
+}
+
+/**
+ * Whether the apps can find this box on the crew network by themselves.
+ *
+ * Its own control rather than a field of the Networks form: it takes effect
+ * the moment it changes, where the form's settings wait for a restart, and
+ * a note saying "restart to apply" beside it would be wrong.
+ */
+function AnnounceSection({
+  status,
+  saving,
+  onSave,
+}: {
+  status: api.AnnounceStatus
+  saving: boolean
+  onSave: (patch: Parameters<typeof api.adminUpdateSettings>[1], note: string) => void
+}) {
+  return (
+    <div className="admin-setting">
+      <label htmlFor="admin-announce">Let the apps find this box on the crew network</label>
+      {status.fromEnv ? (
+        <p className="admin-note">Set by CREWBOX_ANNOUNCE in the environment; change it there.</p>
+      ) : (
+        <select
+          id="admin-announce"
+          value={status.setting}
+          disabled={saving}
+          onChange={(e) => {
+            const announce = e.target.value as api.AnnounceSetting
+            onSave(
+              { announce },
+              announce === 'off'
+                ? 'The box has stopped announcing itself'
+                : 'Announcement setting saved'
+            )
+          }}
+        >
+          <option value="auto">Automatic: not on a show network</option>
+          <option value="on">Always, even on a show network</option>
+          <option value="off">Never</option>
+        </select>
+      )}
+      <p className="admin-status" role="status">
+        {describeAnnounce(status)}
+      </p>
+    </div>
   )
 }
 

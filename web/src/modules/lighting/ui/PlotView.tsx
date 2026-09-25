@@ -1,18 +1,11 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { deliveredNote, deliverText, type Delivered } from '../../../lib/download.ts'
 import { useFileDrop } from '../../../lib/useFileDrop.ts'
 import { documentUndoTarget, registerShortcut } from '../../../shell/keys.ts'
 import { useStore } from '../../../store.ts'
 import { useDraft } from '../../_shared/ui/useDraft'
+import { useUndoRedo } from '../../_shared/useUndo'
 import { plotCsvFilename, plotSummary, plotToCsv } from '../model/csv'
 import { addFixture, setPlotMeta } from '../model/plotDoc'
 import { DMX_UNIVERSE_SIZE } from '../model/types'
@@ -33,6 +26,7 @@ import PlotElevation from './PlotElevation'
 import PlotPlan from './PlotPlan'
 import PositionManager from './PositionManager'
 import styles from './PlotView.module.scss'
+import { isRigFile, rigFileAccept, rigFileProblem } from './rigFile.ts'
 
 /**
  * The four ways to look at a plot.
@@ -116,10 +110,9 @@ function PlotDropZone({
   rootRef: RefObject<HTMLDivElement | null>
   children: ReactNode
 }) {
-  const accept = useCallback((file: File) => /\.(csv|mvr)$/i.test(file.name), [])
   // Disabled mid-import so a second drop can't interleave with a parse
   // already chewing through a 40 MB venue file.
-  const drop = useFileDrop(onFiles, { disabled: importing, accept, onReject })
+  const drop = useFileDrop(onFiles, { disabled: importing, accept: isRigFile, onReject })
   return (
     <div
       ref={rootRef}
@@ -161,6 +154,8 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   const title = useDraft(snapshot?.meta.title ?? '', (next) => {
     if (doc) setPlotMeta(doc, 'title', next)
   })
+  // Buttons as well as the shortcuts: a phone has no Cmd+Z.
+  const history = useUndoRedo(undoManager)
 
   useEffect(() => {
     if (!undoManager) return
@@ -214,6 +209,11 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
   }
 
   const importFile = async (file: File) => {
+    const problem = rigFileProblem(file)
+    if (problem) {
+      setFlash(problem)
+      return
+    }
     // A festival MVR is tens of megabytes and takes seconds to inflate and
     // parse, all of it on the main thread. Say so rather than looking hung.
     setImporting(true)
@@ -269,6 +269,31 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
           ))}
         </div>
 
+        {/* Beside the tabs rather than with the actions, so on a phone they
+            share the tabs' row instead of pushing Share onto a third. */}
+        <span className={styles.undoGroup}>
+          <button
+            type="button"
+            className={`${styles.action} ${styles.undoButton}`}
+            onClick={history.undo}
+            disabled={!history.canUndo}
+            title="Undo (Ctrl/Cmd+Z)"
+            aria-label="Undo"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            className={`${styles.action} ${styles.undoButton}`}
+            onClick={history.redo}
+            disabled={!history.canRedo}
+            title="Redo (Ctrl/Cmd+Shift+Z)"
+            aria-label="Redo"
+          >
+            ↷
+          </button>
+        </span>
+
         <div className={styles.actions}>
           <button type="button" className={styles.action} onClick={() => setShowPositions(true)}>
             Positions
@@ -280,7 +305,7 @@ export default function PlotView({ plotId, onClose }: { plotId: string; onClose:
             {importing ? 'Reading…' : 'Import'}
             <input
               type="file"
-              accept=".csv,.mvr,text/csv"
+              accept={rigFileAccept()}
               className={styles.fileInput}
               disabled={importing}
               onChange={(e) => {
@@ -408,7 +433,11 @@ function ShareMenu({
     .sort((a, b) => a.createdAt - b.createdAt)
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
+    <div
+      className={styles.overlay}
+      onClick={onClose}
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
+    >
       <div
         className={styles.shareMenu}
         role="dialog"

@@ -2,7 +2,7 @@
 //
 // The manager reads saved device ids out of localStorage on every join.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { saveDeviceId, savedDeviceId } from './devices.ts'
 
 /**
@@ -26,6 +26,8 @@ class FakeRoom {
   /** Whether the browser lets this page make a noise without a gesture. */
   static playbackBehaviour: 'allowed' | 'blocked' = 'allowed'
   static disconnectCalls = 0
+  /** What each connect was given: url, token and the options, if any. */
+  static connectCalls: unknown[][] = []
   handlers = new Map<string, Handler[]>()
   state = 'disconnected'
   canPlaybackAudio = true
@@ -50,7 +52,8 @@ class FakeRoom {
     for (const handler of this.handlers.get(event) ?? []) handler(...args)
   }
 
-  async connect(): Promise<void> {
+  async connect(...args: unknown[]): Promise<void> {
+    FakeRoom.connectCalls.push(args)
     if (FakeRoom.connectBehaviour === 'fail') {
       // A real Room fires this on the way out of a failed connect, which is
       // the whole point of the test below.
@@ -382,5 +385,224 @@ describe('a room nobody is holding any more', () => {
     // leave() nulls the room before disconnecting, so reset() finds nothing
     // left to close — one hang-up, not two.
     expect(FakeRoom.disconnectCalls).toBe(1)
+  })
+})
+
+describe('the STUN servers a phone asks', () => {
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    FakeRoom.playbackBehaviour = 'allowed'
+    FakeRoom.connectCalls = []
+  })
+
+  it('asks none when the box says so, because the empty list reaches the SDK', async () => {
+    // LiveKit hands every participant Twilio's and Google's STUN servers when
+    // it has none of its own, and the SDK applies them unless
+    // `rtcConfig.iceServers` is set. So the box's empty list has to arrive as
+    // a list: dropped for being empty, it would put all three back.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box', [])
+
+    expect(FakeRoom.connectCalls.at(-1)).toEqual([
+      'ws://box',
+      'token',
+      { rtcConfig: { iceServers: [] } },
+    ])
+  })
+
+  it('leaves the list to an SFU the box does not run', async () => {
+    // Somebody else's SFU may need its STUN or TURN servers to get through a
+    // NAT, and only it knows which, so the box sends no list and the phone
+    // passes no options at all.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'wss://sfu.example')
+
+    expect(FakeRoom.connectCalls.at(-1)).toEqual(['wss://sfu.example', 'token', undefined])
+  })
+})
+
+describe('asking Android about a Bluetooth headset', () => {
+  // The Android web view reads the Bluetooth permission once, when its audio
+  // first starts. Asked after the join has opened audio, a yes would change
+  // nothing until the app next starts afresh (VoicePlugin.java).
+
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete window.Capacitor
+  })
+
+  /** A bridge whose answer the test gives, when it chooses to. */
+  const askingBridge = () => {
+    const pending = { answer: undefined as (() => void) | undefined }
+    const prepare = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          pending.answer = resolve
+        })
+    )
+    window.Capacitor = { Plugins: { CrewboxVoice: { prepare } } }
+    return { prepare, pending }
+  }
+
+  it('happens before the join opens any audio, and waits for the answer', async () => {
+    const { prepare, pending } = askingBridge()
+    const connect = vi.spyOn(FakeRoom.prototype, 'connect')
+    const manager = new VoiceManager(() => {})
+
+    const joined = manager.join('chan-1', 'token', 'ws://box')
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce())
+    expect(connect).not.toHaveBeenCalled()
+
+    pending.answer?.()
+    await joined
+    expect(connect).toHaveBeenCalledOnce()
+  })
+
+  it('never costs the join, whatever the bridge does', async () => {
+    // A headset that doesn't follow the call is a nuisance. A crew member
+    // who can't get on comms because of it is a failure.
+    window.Capacitor = {
+      Plugins: { CrewboxVoice: { prepare: vi.fn(async () => Promise.reject(new Error('gone'))) } },
+    }
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+
+    await manager.join('chan-1', 'token', 'ws://box')
+    expect(states).toContainEqual(expect.objectContaining({ status: 'connected' }))
+  })
+
+  it('does not carry on into a channel that was left while Android asked', async () => {
+    const { pending } = askingBridge()
+    const connect = vi.spyOn(FakeRoom.prototype, 'connect')
+    const manager = new VoiceManager(() => {})
+
+    const joined = manager.join('chan-1', 'token', 'ws://box')
+    await vi.waitFor(() => expect(pending.answer).toBeTypeOf('function'))
+    await manager.leave()
+    pending.answer?.()
+    await joined
+
+    expect(connect).not.toHaveBeenCalled()
+  })
+
+  it('is not a step at all without the bridge: a browser, or the iPhone app', async () => {
+    const connect = vi.spyOn(FakeRoom.prototype, 'connect')
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    expect(connect).toHaveBeenCalledOnce()
+  })
+})
+
+describe('the Silent switch on an iPhone', () => {
+  // WebKit mutes audio that is only Web Audio when the switch is on silent,
+  // and on iOS all remote voice is Web Audio. Crew with a microphone got away
+  // with it because their live capture made the phone a call; crew without
+  // one heard nothing. The join names the call itself (voice-playback.ts).
+
+  const IPHONE =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+  const MAC_SAFARI =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+
+  let session: { type: string }
+
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    FakeRoom.playbackBehaviour = 'allowed'
+    session = { type: 'auto' }
+    Object.defineProperty(navigator, 'audioSession', { value: session, configurable: true })
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    Reflect.deleteProperty(navigator, 'audioSession')
+  })
+
+  it('is a call before the room opens any audio', async () => {
+    // WebKit applies the type when audio next starts, so it has to be in
+    // place before the room connects.
+    const seen: string[] = []
+    const connect = FakeRoom.prototype.connect
+    vi.spyOn(FakeRoom.prototype, 'connect').mockImplementation(function (this: FakeRoom) {
+      seen.push(session.type)
+      return connect.call(this)
+    })
+    const manager = new VoiceManager(() => {})
+
+    await manager.join('chan-1', 'token', 'ws://box')
+
+    expect(seen).toEqual(['play-and-record'])
+  })
+
+  it('stays a call for crew listening without a microphone', async () => {
+    // The crew this is for: with no capture, nothing else keeps the phone
+    // out of the session the switch mutes.
+    const connect = FakeRoom.prototype.connect
+    vi.spyOn(FakeRoom.prototype, 'connect').mockImplementation(function (this: FakeRoom) {
+      this.localParticipant.setMicrophoneEnabled = vi.fn(() =>
+        Promise.reject(new Error('NotAllowedError'))
+      )
+      return connect.call(this)
+    })
+    const states: Array<Record<string, unknown>> = []
+    const manager = new VoiceManager((partial) => states.push({ ...partial }))
+
+    await manager.join('chan-1', 'token', 'ws://box')
+    await vi.waitFor(() =>
+      expect(states).toContainEqual({ micReady: false, error: expect.any(String) })
+    )
+
+    expect(session.type).toBe('play-and-record')
+  })
+
+  it('stays a call across a change of channel', async () => {
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    await manager.join('chan-2', 'token', 'ws://box')
+    expect(session.type).toBe('play-and-record')
+  })
+
+  it('goes back to WebKit on leaving', async () => {
+    // Out of voice, an alert chirp is only an alert again, and the switch
+    // silences it like any other.
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    await manager.leave()
+    expect(session.type).toBe('auto')
+  })
+
+  it('goes back when the room drops', async () => {
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://box')
+    ;(manager as unknown as { room: FakeRoom }).room.emit('disconnected')
+    expect(session.type).toBe('auto')
+  })
+
+  it('goes back when the join fails', async () => {
+    FakeRoom.connectBehaviour = 'fail'
+    const manager = new VoiceManager(() => {})
+    await manager.join('chan-1', 'token', 'ws://nowhere').catch(() => {})
+    expect(session.type).toBe('auto')
+  })
+
+  it('is left to WebKit off iOS', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(MAC_SAFARI)
+    const connect = FakeRoom.prototype.connect
+    const seen: string[] = []
+    vi.spyOn(FakeRoom.prototype, 'connect').mockImplementation(function (this: FakeRoom) {
+      seen.push(session.type)
+      return connect.call(this)
+    })
+    const manager = new VoiceManager(() => {})
+
+    await manager.join('chan-1', 'token', 'ws://box')
+
+    expect(seen).toEqual(['auto'])
+    expect(session.type).toBe('auto')
   })
 })

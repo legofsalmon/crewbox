@@ -273,13 +273,68 @@ export class Store {
 
   getSessionUser(token: string, ttlMs?: number): User | undefined {
     const cutoff = ttlMs ? Date.now() - ttlMs : 0
+    const sha = hashToken(token)
     const row = this.db
       .prepare(
-        `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+        `SELECT u.*, s.renews AS renews FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_sha = ? AND s.last_seen >= ?`
       )
-      .get(hashToken(token), cutoff) as UserRow | undefined
-    return row ? toUser(row) : undefined
+      .get(sha, cutoff) as (UserRow & { renews: string | null }) | undefined
+    if (!row) return undefined
+    if (row.renews) this.settleRenewal(sha, row.renews)
+    return toUser(row)
+  }
+
+  /**
+   * A new session for the same person, standing in for this one: the first
+   * time the new token is used, this one is deleted (see migration v13).
+   * False, changing nothing, when this one isn't a session.
+   *
+   * For a sign-in a phone moved out of its web view's storage, which backups
+   * and phone-to-phone transfers carry (web/src/lib/sessions.ts): once the
+   * phone has used the new one, a copy of the old one that went to another
+   * phone signs nothing in there. Until then the old one works, so a phone
+   * that never heard the answer is still signed in.
+   *
+   * One stand-in at a time: asking again replaces one that was never used,
+   * so a phone that keeps missing the answer adds nothing, and of two phones
+   * holding the same sign-in, only one ends up with it.
+   */
+  renewSession(token: string, next: string): boolean {
+    const sha = hashToken(token)
+    return transaction(this.db, () => {
+      const row = this.db.prepare('SELECT user_id FROM sessions WHERE token_sha = ?').get(sha) as
+        { user_id: string } | undefined
+      if (!row) return false
+      this.db.prepare('DELETE FROM sessions WHERE renews = ?').run(sha)
+      const now = Date.now()
+      this.db
+        .prepare(
+          `INSERT INTO sessions (token_sha, user_id, created_at, last_seen, renews)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .run(hashToken(next), row.user_id, now, now, sha)
+      return true
+    })
+  }
+
+  /**
+   * A stand-in's first use: the session it stands in for goes, and it is a
+   * session like any other.
+   *
+   * Bookkeeping, and never a reason to refuse the sign-in in hand, which is
+   * what a throw here would do on a full disk (see the hub's onHello): both
+   * go on working, and the next use settles it.
+   */
+  private settleRenewal(sha: string, renews: string): void {
+    try {
+      transaction(this.db, () => {
+        this.db.prepare('DELETE FROM sessions WHERE token_sha = ?').run(renews)
+        this.db.prepare('UPDATE sessions SET renews = NULL WHERE token_sha = ?').run(sha)
+      })
+    } catch {
+      // Settled at the next use.
+    }
   }
 
   touchSession(token: string): void {
@@ -897,4 +952,123 @@ export class Store {
     }
     return row.seq
   }
+
+  // -- shared documents -----------------------------------------------------
+  //
+  // What the docs relay saves (docs.ts): each document's Yjs updates, by room
+  // name. The relay decides what to save and when; this only reads and
+  // writes rows.
+
+  /** Every saved document: its bytes and rows here, and when it was last saved. */
+  savedDocs(): SavedDoc[] {
+    return this.db
+      .prepare(
+        `SELECT room, SUM(LENGTH(data)) AS bytes, COUNT(*) AS rows, MAX(saved_at) AS savedAt
+         FROM doc_updates GROUP BY room`
+      )
+      .all() as unknown as SavedDoc[]
+  }
+
+  /**
+   * A document's saved updates, in the order they were saved, and the last
+   * row read, so that `compactDoc` replaces exactly these.
+   */
+  loadDoc(room: string): { rows: Uint8Array[]; upTo: number } {
+    const rows = this.db
+      .prepare('SELECT rowid AS id, data FROM doc_updates WHERE room = ? ORDER BY rowid')
+      .all(room) as unknown as { id: number; data: Uint8Array }[]
+    return { rows: rows.map((row) => row.data), upTo: rows.at(-1)?.id ?? 0 }
+  }
+
+  /**
+   * Save one update for each of several documents, all or none.
+   *
+   * Under `withSecureDelete` too, though it deletes nothing: an insert can
+   * move rows between pages, and what it leaves behind on the old ones would
+   * otherwise stay there after the document is deleted.
+   */
+  appendDocs(updates: { room: string; data: Uint8Array }[], at: number): void {
+    if (updates.length === 0) return
+    this.withSecureDelete(() =>
+      transaction(this.db, () => {
+        const insert = this.db.prepare(
+          'INSERT INTO doc_updates (room, data, saved_at) VALUES (?, ?, ?)'
+        )
+        for (const update of updates) insert.run(update.room, update.data, at)
+      })
+    )
+  }
+
+  /**
+   * Replace the rows `loadDoc` read, up to `upTo`, with `state`.
+   *
+   * A row saved after them, by anything else writing this database, stays
+   * rather than being lost. The rows replaced can hold what was typed and
+   * then deleted, which a document's own state no longer does, so they are
+   * overwritten rather than only let go (see `withSecureDelete`).
+   */
+  compactDoc(room: string, state: Uint8Array, upTo: number, at: number): void {
+    this.withSecureDelete(() =>
+      transaction(this.db, () => {
+        this.db.prepare('DELETE FROM doc_updates WHERE room = ? AND rowid <= ?').run(room, upTo)
+        this.db
+          .prepare('INSERT INTO doc_updates (room, data, saved_at) VALUES (?, ?, ?)')
+          .run(room, state, at)
+      })
+    )
+  }
+
+  /**
+   * Delete documents, overwriting what their rows held rather than only
+   * marking the space free (see `withSecureDelete`). The old pages can still
+   * be in the write-ahead log until `emptyDocLog`.
+   */
+  wipeDocs(rooms: string[]): void {
+    if (rooms.length === 0) return
+    this.withSecureDelete(() =>
+      transaction(this.db, () => {
+        const remove = this.db.prepare('DELETE FROM doc_updates WHERE room = ?')
+        for (const room of rooms) remove.run(room)
+      })
+    )
+  }
+
+  /**
+   * Copy the write-ahead log into the database file and empty it, so that
+   * pages a delete overwrote are not still in the log as they were.
+   *
+   * What the storage underneath does with blocks the log file lets go of is
+   * beyond any program: an SD card or an SSD can keep an old copy of a block
+   * it has remapped.
+   */
+  emptyDocLog(): void {
+    this.db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()
+  }
+
+  /**
+   * Run `fn` with SQLite overwriting what it deletes, then put the setting
+   * back. Scoped to shared documents, where a delete is somebody's decision
+   * that the paperwork should be gone.
+   */
+  private withSecureDelete<T>(fn: () => T): T {
+    const { secure_delete: was } = this.db.prepare('PRAGMA secure_delete').get() as {
+      secure_delete: number
+    }
+    this.db.exec('PRAGMA secure_delete = ON')
+    try {
+      return fn()
+    } finally {
+      this.db.exec(`PRAGMA secure_delete = ${was === 2 ? 'FAST' : was ? 'ON' : 'OFF'}`)
+    }
+  }
+}
+
+/** One saved document, as `savedDocs` lists it. */
+export interface SavedDoc {
+  room: string
+  /** Encoded bytes across its rows. */
+  bytes: number
+  rows: number
+  /** When its latest row was saved, in ms. */
+  savedAt: number
 }

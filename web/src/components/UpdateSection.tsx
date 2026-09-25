@@ -264,6 +264,14 @@ export default function UpdateSection({
           role="dialog"
           aria-modal="true"
           aria-label={`Install ${intent.version} and restart?`}
+          // Escape, and Android's back button, answer "Not now", and only
+          // this: the admin panel behind closes on Escape too, and must not
+          // close under an install that has already started.
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return
+            e.stopPropagation()
+            if (!busy) setIntent(null)
+          }}
         >
           <div className="admin-updater-confirm-panel">
             <h2>Install {intent.version} and restart?</h2>

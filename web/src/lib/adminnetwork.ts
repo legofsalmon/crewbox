@@ -1,4 +1,4 @@
-import type { AdminNetwork } from './api.ts'
+import type { AdminNetwork, AnnounceStatus } from './api.ts'
 
 /**
  * Two questions the Networks form got wrong by reading only what was saved.
@@ -36,4 +36,25 @@ export function listeningMode(network: AdminNetwork, chosen: string): string {
 export function adapterMissing(adapters: readonly { address: string }[], current: string): boolean {
   if (!current) return false
   return !adapters.some((a) => a.address === current)
+}
+
+/**
+ * One line on whether the apps can find this box, for under the setting.
+ *
+ * The box writes the reasons, because it is the one that knows which adapter
+ * and which listener; this adds the words for the states that need none.
+ */
+export function describeAnnounce(status: AnnounceStatus): string {
+  const where = status.address ? ` on ${status.address}` : ''
+  switch (status.state) {
+    case 'announcing':
+      return `Announcing as “${status.name ?? 'crewbox'}”${where}. The apps on the crew network list it without being given the address.`
+    case 'starting':
+      return `Starting to announce${where}.`
+    case 'off':
+      return 'Off. Phones need the address or the QR code to find this box.'
+    case 'quiet':
+    case 'failed':
+      return status.reason ?? 'Not announcing.'
+  }
 }

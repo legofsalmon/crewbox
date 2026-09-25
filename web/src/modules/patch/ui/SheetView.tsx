@@ -6,7 +6,7 @@ import { useStore } from '../../../store.ts'
 import { useToasts } from './toastContext.ts'
 import { useDocMissing, useSheet } from '../store/hooks'
 import { useSheetPeers, useSheetRemotePeers, useSyncStatus } from '../store/useSync'
-import { useUndoRedo } from '../store/useUndo'
+import { useUndoRedo } from '../../_shared/useUndo'
 import { useDraft } from '../../_shared/ui/useDraft'
 import { useTimetable } from '../../../shell/timetable/store.ts'
 import { setMetaField } from '../model/sheetDoc'
@@ -103,7 +103,11 @@ function ShareMenu({
     .sort((a, b) => a.createdAt - b.createdAt)
 
   return (
-    <div className={styles.shareOverlay} onClick={onClose}>
+    <div
+      className={styles.shareOverlay}
+      onClick={onClose}
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
+    >
       <div
         className={styles.shareMenu}
         role="dialog"

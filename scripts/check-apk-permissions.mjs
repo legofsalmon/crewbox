@@ -31,17 +31,31 @@ import { pathToFileURL } from 'node:url'
  *
  * Each one is load-bearing: INTERNET to reach the box at all,
  * POST_NOTIFICATIONS for the alert a rigger sees with the phone in a pocket,
- * RECORD_AUDIO and MODIFY_AUDIO_SETTINGS for talkback, the two
- * FOREGROUND_SERVICE permissions for the alerts service to survive a 14-hour
- * show day.
+ * RECORD_AUDIO and MODIFY_AUDIO_SETTINGS for talkback, BLUETOOTH and
+ * BLUETOOTH_CONNECT for a headset on it (the first on Android 11 and older,
+ * the second on 12 and later), VIBRATE for the buzz that goes with an alert,
+ * the two FOREGROUND_SERVICE permissions for the alerts service to survive a
+ * 14-hour show day, CHANGE_WIFI_MULTICAST_STATE for finding the box on the
+ * Wi-Fi on phones that hear mDNS only while an app holds a multicast lock
+ * (Android 12 and older, and 13 before its T extensions 7 update), CAMERA for
+ * scanning the join poster, which the app does itself (ScannerActivity), and
+ * which "Take a photo" then needs as well, and CHANGE_NETWORK_STATE for
+ * holding the crew Wi-Fi, so the box is reached over it when it has no
+ * internet and mobile data is on (SiteWifi).
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
   'android.permission.POST_NOTIFICATIONS',
   'android.permission.RECORD_AUDIO',
   'android.permission.MODIFY_AUDIO_SETTINGS',
+  'android.permission.BLUETOOTH',
+  'android.permission.BLUETOOTH_CONNECT',
+  'android.permission.VIBRATE',
   'android.permission.FOREGROUND_SERVICE',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
+  'android.permission.CHANGE_WIFI_MULTICAST_STATE',
+  'android.permission.CAMERA',
+  'android.permission.CHANGE_NETWORK_STATE',
 ]
 
 /**
@@ -161,7 +175,7 @@ function main(argv) {
   }
   for (const name of unexpected) {
     console.error(
-      `::error::${name} is in the built APK and was not asked for — most likely pulled in by a library's manifest. If it is meant to be there, add it to ALLOWED_EXTRA in scripts/check-apk-permissions.mjs and say why.`
+      `::error::${name} is in the built APK and was not asked for — most likely pulled in by a library's manifest. If the app does without it, take it out in the app's AndroidManifest.xml with tools:node="remove"; if it is meant to be there, add it to ALLOWED_EXTRA in scripts/check-apk-permissions.mjs and say why.`
     )
   }
   if (missing.length || unexpected.length) return 1
