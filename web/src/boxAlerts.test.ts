@@ -236,4 +236,15 @@ describe('on a box that decides alerts', () => {
       body: 'hazer is out',
     })
   })
+
+  it('opens what a tapped alert names, in this event only', async () => {
+    const store = await signedIn()
+    const { receiveLink } = await import('./lib/appLinks.ts')
+    receiveLink('crewbox://open?event=friday&to=showlog')
+    expect(store.getState().activeModuleId).toBe('incident')
+    receiveLink('crewbox://open?event=friday&channel=dm-alex')
+    expect(store.getState().activeChannelId).toBe('dm-alex')
+    receiveLink('crewbox://open?event=saturday&channel=stage-2')
+    expect(store.getState().activeChannelId).toBe('dm-alex')
+  })
 })

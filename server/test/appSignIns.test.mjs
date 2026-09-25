@@ -83,7 +83,7 @@ describe('the Android app’s sign-ins', () => {
     expect(service).not.toMatch(/putString\(PREF_(?:OLD_)?TOKEN/)
     expect(service.match(/\.remove\(PREF_OLD_TOKEN\)/g)).toHaveLength(2)
     expect(read(`${JAVA}/AlertsPlugin.java`)).toMatch(
-      /String session = call\.getString\("session", ""\);[\s\S]*AlertsService\.start\(getContext\(\), serverUrl, token, session, myName\);/
+      /String session = call\.getString\("session", ""\);[\s\S]*AlertsService\.start\(getContext\(\), serverUrl, token, session, myName, eventId, eventKey\);/
     )
     // And the page names it (web/src/store.ts).
     expect(read('web/src/store.ts')).toContain('session: storageName(TOKEN_KEY)')

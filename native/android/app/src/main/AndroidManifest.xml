@@ -53,9 +53,10 @@
         </activity>
 
         <!--
-            specialUse, not dataSync: Android 14+ hard-caps dataSync
-            foreground services at ~6 hours per day, then stops them — and a
-            show day is 14+. specialUse has no timeout, and is exactly what
+            specialUse, not dataSync: for an app targeting Android 15 (API 35)
+            or later, as this one does, Android caps dataSync foreground
+            services at 6 hours in 24, then stops them — and a show day is
+            14+. dataSync also may not be started at boot. specialUse has no timeout, and is exactly what
             it exists for: a legitimately long-running service in an app
             distributed outside the Play Store (this APK is sideloaded from
             the box, so there is no Play review in the loop — only the OS's

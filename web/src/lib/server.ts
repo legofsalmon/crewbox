@@ -20,6 +20,13 @@ interface AlertsPlugin {
     token: string
     session: string
     myName: string
+    /**
+     * The event it signs in to and the key kept for it: a box that decides
+     * alerts proves it is this event's before the service sends the token
+     * (docs/ALERTS.md). An older app ignores both.
+     */
+    eventId?: string
+    eventKey?: string
   }): Promise<void>
   stop(): Promise<void>
 }

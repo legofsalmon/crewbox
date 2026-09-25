@@ -49,11 +49,17 @@ public class AlertsPlugin extends Plugin {
     // The name the app keeps the token under (Sessions), for a restart.
     String session = call.getString("session", "");
     String myName = call.getString("myName", "");
+    // The event it signs in to, and the key its box proves itself with
+    // before it sees the token (docs/ALERTS.md). Absent from a page older
+    // than this build: the event is then whatever the box says it is not,
+    // so such a service stays on the chat socket's own rules.
+    String eventId = call.getString("eventId", "");
+    String eventKey = call.getString("eventKey", "");
     if (serverUrl == null || serverUrl.isEmpty() || token == null || token.isEmpty()) {
       call.reject("serverUrl and token are required");
       return;
     }
-    AlertsService.start(getContext(), serverUrl, token, session, myName);
+    AlertsService.start(getContext(), serverUrl, token, session, myName, eventId, eventKey);
     requestBatteryExemptionOnce();
     call.resolve();
   }

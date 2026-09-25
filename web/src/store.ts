@@ -60,6 +60,7 @@ import {
   serverOrigin,
   setServerOrigin,
 } from './lib/server.ts'
+import { handleOpenLinks, type OpenLink } from './lib/appLinks.ts'
 import { measureImage } from './lib/files.ts'
 import { currentRoute, navigate, onRouteChange, routePath, type Route } from './shell/router.ts'
 import { capTranscript } from './lib/transcript.ts'
@@ -949,6 +950,43 @@ export const useStore = create<AppState>()((set, get) => {
    * the channel list whose badge would say is shut away in the drawer. So on
    * screen it is the banner.
    */
+  /**
+   * Take the person to what an alert was about, out of whatever is over the
+   * chat, the way a phone's own notification takes you out of what you were
+   * doing: its channel, its module, or with neither (a banner for several
+   * channels) the channel list, whose badges say which.
+   */
+  function goTo(target: { channelId?: string; moduleId?: string }): void {
+    const state = get()
+    if (state.searchOpen) state.setSearchOpen(false)
+    if (state.adminOpen) state.setAdminOpen(false)
+    if (state.audioSettingsOpen) state.setAudioSettingsOpen(false)
+    if (state.fileDetail) state.closeFileDetail()
+    if (state.boxesOpen) state.setBoxesOpen(false)
+    if (target.channelId && state.channels[target.channelId]) {
+      state.setActiveChannel(target.channelId)
+    } else if (target.moduleId && state.config.modules.includes(target.moduleId)) {
+      state.setActiveModule(target.moduleId)
+    } else {
+      state.setSidebarOpen(true)
+    }
+  }
+
+  /**
+   * A tapped alert (lib/appLinks.ts). Only this event's: a notification left
+   * from another event names a channel this box doesn't have, and taking the
+   * person to another box is the Boxes screen's to offer, not a tap's.
+   */
+  function openLink(link: OpenLink): void {
+    if (link.event !== get().config.eventId) return
+    set({ alertBanner: null })
+    goTo(
+      link.to === 'channel'
+        ? { channelId: link.channelId }
+        : { moduleId: link.to === 'showlog' ? 'incident' : 'schedule' }
+    )
+  }
+
   function announce(alert: {
     title: string
     body: string
@@ -1219,6 +1257,10 @@ export const useStore = create<AppState>()((set, get) => {
       if (alert) announce(alert)
     }
 
+    // A tapped alert, once this event is known: one that started the app
+    // waited for it.
+    handleOpenLinks(openLink)
+
     // Android wrapper: hand the session to the foreground service so the
     // phone buzzes for messages while the app is backgrounded or locked.
     const alerts = nativeAlerts()
@@ -1229,6 +1271,9 @@ export const useStore = create<AppState>()((set, get) => {
           token: getToken() ?? '',
           session: storageName(TOKEN_KEY),
           myName: msg.me.name,
+          ...(msg.config.eventId
+            ? { eventId: msg.config.eventId, eventKey: knownEvent(msg.config.eventId)?.key ?? '' }
+            : {}),
         })
         .catch(() => {})
     }
@@ -2012,22 +2057,7 @@ export const useStore = create<AppState>()((set, get) => {
       const banner = get().alertBanner
       if (!banner) return
       set({ alertBanner: null })
-      // Out of whatever is over the chat, the way a phone's own notification
-      // takes you out of what you were doing.
-      const state = get()
-      if (state.searchOpen) state.setSearchOpen(false)
-      if (state.adminOpen) state.setAdminOpen(false)
-      if (state.audioSettingsOpen) state.setAudioSettingsOpen(false)
-      if (state.fileDetail) state.closeFileDetail()
-      if (state.boxesOpen) state.setBoxesOpen(false)
-      if (banner.channelId && state.channels[banner.channelId]) {
-        state.setActiveChannel(banner.channelId)
-      } else if (banner.moduleId && state.config.modules.includes(banner.moduleId)) {
-        state.setActiveModule(banner.moduleId)
-      } else {
-        // More than one channel: the list, whose badges say which.
-        state.setSidebarOpen(true)
-      }
+      goTo(banner)
     },
 
     dismissAlertBanner(id) {

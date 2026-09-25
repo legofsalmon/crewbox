@@ -1,6 +1,7 @@
 /**
  * Links that open the app: `crewbox://join?server=…&pin=…` (lib/joinCode.ts),
- * tapped in a message or on a phone's join page (Join.tsx's "Open in the app").
+ * tapped in a message or on a phone's join page (Join.tsx's "Open in the app"),
+ * and `crewbox://open?event=…`, which a tapped alert opens (readOpenLink).
  *
  * Each app claims the scheme, Info.plist's CFBundleURLTypes and the manifest's
  * VIEW intent filter, and Capacitor's App plugin hands the page the link,
@@ -42,8 +43,54 @@ export function clearJoinLink(): void {
   notify()
 }
 
-/** A link the app was handed. Anything but a join link is let go. */
+/**
+ * Where a tapped alert goes (docs/ALERTS.md): a channel, the show log or a
+ * stage, in one event. The Android service and the iPhone's delegate make
+ * these; the event is named so a tap is never taken to the same channel id
+ * in another event's box.
+ */
+export type OpenLink = { event: string } & (
+  { to: 'channel'; channelId: string } | { to: 'showlog' } | { to: 'stage'; stage: string }
+)
+
+export function readOpenLink(link: string): OpenLink | null {
+  const match = /^crewbox:\/\/open\/?\?([^#]*)$/i.exec(link.trim())
+  if (!match) return null
+  const params = new URLSearchParams(match[1])
+  const event = params.get('event') ?? ''
+  if (!event) return null
+  const channelId = params.get('channel')
+  if (channelId) return { event, to: 'channel', channelId }
+  if (params.get('to') === 'showlog') return { event, to: 'showlog' }
+  const stage = params.get('stage')
+  if (stage) return { event, to: 'stage', stage }
+  return null
+}
+
+let openHandler: ((link: OpenLink) => void) | null = null
+let pendingOpen: OpenLink | null = null
+
+/**
+ * Where tapped alerts are taken. One that started the app arrives before
+ * anything listens, so it waits here for the handler.
+ */
+export function handleOpenLinks(handler: (link: OpenLink) => void): void {
+  openHandler = handler
+  if (pendingOpen) {
+    const link = pendingOpen
+    pendingOpen = null
+    handler(link)
+  }
+}
+
+/** A link the app was handed. Anything but a join or an open link is let go. */
 export function receiveLink(url: string): void {
+  const open = readOpenLink(url)
+  if (open) {
+    if (openHandler) openHandler(open)
+    else pendingOpen = open
+    return
+  }
   const code = readJoinLink(url)
   if (code.kind !== 'join') return
   pending = { origin: code.origin, pin: code.pin }
