@@ -297,6 +297,17 @@ describe('a catch-up', () => {
     expect(more).toBe(5)
   })
 
+  it('keeps alerts from the same millisecond in the order the box stored them', () => {
+    // Message ids are random, so ordering by id sounded an older message
+    // about half the time (it failed CI once).
+    const zed = { ...alert(0), id: 'm:zed', at: 5000 }
+    const abe = { ...alert(0), id: 'm:abe', at: 5000 }
+    expect(shapeCatchUp([zed, abe]).catchUp.map((a) => [a.id, a.quiet])).toEqual([
+      ['m:zed', true],
+      ['m:abe', false],
+    ])
+  })
+
   it('is empty when nothing was missed', () => {
     expect(shapeCatchUp([])).toEqual({ catchUp: [], more: 0 })
   })

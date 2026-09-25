@@ -699,9 +699,13 @@ export type AlertsClientFrame = z.infer<typeof alertsClientFrameSchema>
 /**
  * A catch-up as it goes out: the newest `CATCH_UP_LIMIT`, oldest first, all
  * quiet but the newest, so a phone coming back to the Wi-Fi sounds once.
+ *
+ * Alerts from the same millisecond keep the order they are given in, which
+ * for messages is the order the box stored them: two sent together would
+ * otherwise be ordered by their random ids, and the older sound.
  */
 export function shapeCatchUp(alerts: Alert[]): { catchUp: Alert[]; more: number } {
-  const sorted = [...alerts].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+  const sorted = [...alerts].sort((a, b) => a.at - b.at)
   const kept = sorted.slice(-CATCH_UP_LIMIT)
   return {
     catchUp: kept.map((alert, i) => ({ ...alert, quiet: i !== kept.length - 1 })),
