@@ -81,6 +81,7 @@ describe.each(['reject', 'throw'] as const)('when IndexedDB %ss', (mode) => {
     // surviving a reload, not the thing that puts a message on the wire.
     mockBrokenDexie(mode)
     const cache = await loadCache()
+    // Saying it was kept nowhere, so that the screen can say so.
     await expect(
       cache.putOutbox({
         clientMsgId: 'm1',
@@ -88,7 +89,7 @@ describe.each(['reject', 'throw'] as const)('when IndexedDB %ss', (mode) => {
         body: 'gate 3 is clear',
         createdAt: 1,
       })
-    ).resolves.toBeUndefined()
+    ).resolves.toBe(false)
     await expect(cache.deleteOutbox('m1')).resolves.toBeUndefined()
     await expect(cache.saveMessages([{ id: 'x' } as never])).resolves.toBeUndefined()
     await expect(cache.deleteMessages(['x'])).resolves.toBeUndefined()

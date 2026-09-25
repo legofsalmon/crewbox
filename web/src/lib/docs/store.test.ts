@@ -4,6 +4,14 @@ import * as Y from 'yjs'
 import { createDocStore } from './store.ts'
 import { syncManager } from './sync.ts'
 import { removeIndexEntry } from './indexDoc.ts'
+import { forgetEdits } from './unsentEdits.ts'
+
+// What the apps keep of a document for its box (unsentEdits.ts), which
+// deleting it has to take too.
+vi.mock('./unsentEdits.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./unsentEdits.ts')>()),
+  forgetEdits: vi.fn(),
+}))
 
 /**
  * The lifecycle of an open document, which nothing was managing.
@@ -185,6 +193,15 @@ describe('a document deleted on another device', () => {
     expect(store.deleted().has('doomed')).toBe(true)
     expect(store.reconcileDeletions()).toEqual(['doomed'])
     expect(store.listLocalIds()).toEqual([])
+    // With what the apps kept of it for the box.
+    expect(forgetEdits).toHaveBeenLastCalledWith(expect.stringMatching(/^test\d+\/sheet-doomed$/))
+  })
+
+  it('takes what the apps kept of it for the box when it is deleted here, too', async () => {
+    const handle = store.open('binned')
+    write(handle.doc, 'Bin me')
+    await store.remove('binned')
+    expect(forgetEdits).toHaveBeenLastCalledWith(expect.stringMatching(/^test\d+\/sheet-binned$/))
   })
 
   it('leaves everything else alone', () => {

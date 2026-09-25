@@ -17,6 +17,7 @@ import {
   whenPersisted,
 } from './persistence.ts'
 import { syncManager } from './sync.ts'
+import { forgetEdits } from './unsentEdits.ts'
 
 /**
  * Doc lifecycle for a module: one Y.Doc per document plus a singleton index
@@ -240,6 +241,8 @@ export function createDocStore(config: DocStoreConfig): DocStore {
    */
   const forget = async (id: string): Promise<void> => {
     writeRegistry(readRegistry().filter((known) => known !== id))
+    // And what the app kept of it for the box, which nobody is to have now.
+    forgetEdits(room(config.docName(id)))
     if (!hasIndexedDb) return
     await new Promise<void>((resolve) => {
       const req = indexedDB.deleteDatabase(storageName(dbPrefix + config.docName(id)))

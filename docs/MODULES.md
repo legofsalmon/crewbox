@@ -166,6 +166,48 @@ the apps kept them before, until each one's box has renewed it
 (`POST /api/session/renew`). It holds names, never tokens, and reaches
 phones like the rest.
 
+The apps also keep a copy of what only the phone has, because the web view's
+storage can be wiped without anyone asking (`web/src/lib/appCopy.ts`). It is
+in files of the app's own, a folder per event and a file per slot:
+`crewbox-records/<event>/<slot>`, in Application Support on an iPhone and
+in `getNoBackupFilesDir()` on Android. Each event's list entry, whether it has
+today's names, and when the phone last opened it are in the slot `event`.
+`crewbox:copied-to-app` in the page's storage says nothing has wiped it since
+the copy was made; a start that finds it missing puts back what went.
+Beside it, the slots `outbox` and `incident-outbox` hold the event's
+messages and show-log entries not yet sent, each the whole queue as a JSON
+array (`web/src/lib/unsent.ts`). The page holds those queues in memory as
+well while it is open, and reads each as its own storage's plus whatever it
+holds that storage lacks, so neither a refused write nor a wipe loses what
+was typed. The slot `doc-edits` holds the edits to the event's documents
+that its box isn't known to have, as a JSON object by room, each a Yjs
+update with the state vector it was taken against, in base64
+(`web/src/lib/docs/unsentEdits.ts`). What the box has is read from what the
+relay sends: its handshake, and each change it sends to everybody in the
+room, the device that made it included. An edit made while its room isn't
+in step with the relay is kept, and let go once the relay is seen to have
+it, and a document is given what was kept of it as it opens, before it
+syncs. Every document the docs store or the running order opens gets this
+from the sync manager, so a module has nothing to do for it. The folder,
+the slots and the key all reach phones. A module that keeps something else
+the box can't give back adds a slot of its own rather than a new folder.
+
+The apps keep the screens a box serves as well, once a crewbox release is
+seen to have signed them (`CrewboxScreens` in `web/src/lib/server.ts`): a
+folder per version, `crewbox-screens/<version>/`, beside `crewbox-records`
+on both apps, holding the files the signed list names, the list
+(`WEBSUMS`), its signature (`WEBSUMS.sig`) and a `.checked` mark, the
+list's digest. A download goes into `crewbox-screens/.partial-<version>/`
+and is renamed into place only once every file has checked out. Beside the
+versions, `crewbox-screens/.launches` counts the starts of downloaded
+screens that haven't yet said they started (`ready` in
+`web/src/lib/server.ts`), and names the versions that never did, for one
+build of the app. Each event's folder in `crewbox-records` has one slot the
+app writes and the page doesn't: `screens`, the version of the screens the
+event last started with, which a start opening that event runs if this
+build of the app still does. Those names reach phones too. A module's code
+is in the screens, so a module needs nothing of its own for this.
+
 ## The five steps
 
 ### 1. Model

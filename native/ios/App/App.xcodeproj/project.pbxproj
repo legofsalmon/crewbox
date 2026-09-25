@@ -20,6 +20,8 @@
 		16B29860B1A886C16D1C9A04 /* ScannerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C99AFBD9FF80EB07BD9CDE /* ScannerPlugin.swift */; };
 		8BD57E6B8BD8BF39D6ABBEEA /* WifiPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E001E2C71877F37F9242F719 /* WifiPlugin.swift */; };
 		694B1514D173E3F4B388C5F8 /* SessionsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF266471CC19819E5EEB02EC /* SessionsPlugin.swift */; };
+		F27F1940030CEFF3A94FBB4D /* RecordsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C395D3749E3D06E06108D3CB /* RecordsPlugin.swift */; };
+		D6388DBA589F8E26B0345E84 /* ScreensPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC6CA96A8C35EA7F3996073 /* ScreensPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +40,8 @@
 		02C99AFBD9FF80EB07BD9CDE /* ScannerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerPlugin.swift; sourceTree = "<group>"; };
 		E001E2C71877F37F9242F719 /* WifiPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WifiPlugin.swift; sourceTree = "<group>"; };
 		DF266471CC19819E5EEB02EC /* SessionsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsPlugin.swift; sourceTree = "<group>"; };
+		C395D3749E3D06E06108D3CB /* RecordsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordsPlugin.swift; sourceTree = "<group>"; };
+		EAC6CA96A8C35EA7F3996073 /* ScreensPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreensPlugin.swift; sourceTree = "<group>"; };
 		0356F30CA7D1ADC308413E0B /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -80,6 +84,8 @@
 				02C99AFBD9FF80EB07BD9CDE /* ScannerPlugin.swift */,
 				E001E2C71877F37F9242F719 /* WifiPlugin.swift */,
 				DF266471CC19819E5EEB02EC /* SessionsPlugin.swift */,
+				C395D3749E3D06E06108D3CB /* RecordsPlugin.swift */,
+				EAC6CA96A8C35EA7F3996073 /* ScreensPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -178,6 +184,8 @@
 				16B29860B1A886C16D1C9A04 /* ScannerPlugin.swift in Sources */,
 				8BD57E6B8BD8BF39D6ABBEEA /* WifiPlugin.swift in Sources */,
 				694B1514D173E3F4B388C5F8 /* SessionsPlugin.swift in Sources */,
+				F27F1940030CEFF3A94FBB4D /* RecordsPlugin.swift in Sources */,
+				D6388DBA589F8E26B0345E84 /* ScreensPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

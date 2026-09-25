@@ -1,4 +1,4 @@
-import { forgetPref, readPref, writePref } from './prefs.ts'
+import { forgetPref, holdingWhileOpen, readPref, writePref } from './prefs.ts'
 
 /**
  * Which event this device's storage belongs to, so that two boxes never
@@ -90,6 +90,9 @@ export const DEVICE_PREF_KEYS: readonly string[] = [
   // Reports somebody pressed Send on, for the studio, handed to whichever box
   // the app is next online with (lib/reports.ts). Not the event's to delete.
   'crewbox:report-outbox',
+  // In the apps: the page's storage is the one the app's copy of it was made
+  // from, and nothing has wiped it since (lib/appCopy.ts).
+  'crewbox:copied-to-app',
   'crewbox:server-url',
   'crewbox:sounds',
   'crewbox:theme',
@@ -110,18 +113,60 @@ export function eventIdFrom(value: unknown): string | undefined {
 let opened: string | null | undefined
 
 /**
+ * `crewbox:db-epoch` and `crewbox:event`, as the apps' page holds them
+ * (`holdingWhileOpen`).
+ *
+ * The web view's storage can be wiped underneath a page that is open
+ * (lib/appCopy.ts). A page that read which event has today's names again
+ * after that would give the event it has open new names halfway through,
+ * and write its sheets and show-log entries where nothing looks for them.
+ */
+const held = new Map<string, string | null>()
+
+/** Told whenever something the app keeps a copy of changes (`subscribeEventRecords`). */
+const recordListeners = new Set<() => void>()
+
+function readHeld(key: string): string | null {
+  if (held.has(key)) return held.get(key)!
+  const value = readPref(key)
+  if (holdingWhileOpen()) held.set(key, value)
+  return value
+}
+
+function writeHeld(key: string, value: string | null): void {
+  if (value === null) forgetPref(key)
+  else writePref(key, value)
+  if (holdingWhileOpen()) held.set(key, value)
+  for (const listener of recordListeners) listener()
+}
+
+/**
+ * Read which event has today's names and which one opens, for the apps' page
+ * to hold on to, now, while the page's storage still has them.
+ */
+export function holdEvents(): void {
+  readHeld(FIRST_EVENT_KEY)
+  readHeld(OPEN_EVENT_KEY)
+}
+
+/**
  * The event whose data this page has open, or null on a device that has not
  * been told one yet: a new phone, or one whose data came from a box too old
  * to say.
  */
 export function openEvent(): string | null {
-  if (opened === undefined) opened = readPref(OPEN_EVENT_KEY) ?? readPref(FIRST_EVENT_KEY)
+  if (opened === undefined) opened = nextEvent()
   return opened
+}
+
+/** The event the next load of the page opens: the open one, unless another has been chosen. */
+export function nextEvent(): string | null {
+  return readHeld(OPEN_EVENT_KEY) ?? readHeld(FIRST_EVENT_KEY)
 }
 
 /** Whether this event's data is under today's names. */
 function hasTodaysNames(event: string | null): boolean {
-  return event === null || event === readPref(FIRST_EVENT_KEY)
+  return event === null || event === readHeld(FIRST_EVENT_KEY)
 }
 
 /**
@@ -197,8 +242,8 @@ export function acceptEvent(event: string | undefined): boolean {
   const open = openEvent()
   if (open === event) return true
   if (open !== null) return false
-  writePref(FIRST_EVENT_KEY, event)
-  writePref(OPEN_EVENT_KEY, event)
+  writeHeld(FIRST_EVENT_KEY, event)
+  writeHeld(OPEN_EVENT_KEY, event)
   opened = event
   return true
 }
@@ -212,7 +257,7 @@ export function acceptEvent(event: string | undefined): boolean {
 export function chooseEvent(event: string): void {
   // Settle this page's own first, in case nothing has asked yet.
   openEvent()
-  writePref(OPEN_EVENT_KEY, event)
+  writeHeld(OPEN_EVENT_KEY, event)
 }
 
 /**
@@ -222,8 +267,8 @@ export function chooseEvent(event: string): void {
  * unless it is back to having no event at all.
  */
 export function releaseEvent(event: string): void {
-  if (readPref(FIRST_EVENT_KEY) === event) forgetPref(FIRST_EVENT_KEY)
-  if (readPref(OPEN_EVENT_KEY) === event) forgetPref(OPEN_EVENT_KEY)
+  if (readHeld(FIRST_EVENT_KEY) === event) writeHeld(FIRST_EVENT_KEY, null)
+  if (readHeld(OPEN_EVENT_KEY) === event) writeHeld(OPEN_EVENT_KEY, null)
 }
 
 /** An event this device holds data for, as the Boxes screen lists it. */
@@ -294,6 +339,7 @@ function writeKnown(events: KnownEvent[]): void {
   knownCache = events
   writePref(KNOWN_EVENTS_KEY, JSON.stringify(events))
   for (const listener of listeners) listener()
+  for (const listener of recordListeners) listener()
 }
 
 /** Record what is known of an event, keeping whatever this does not say. */
@@ -392,4 +438,85 @@ export function forgetEventRecord(id: string): void {
 export function subscribeKnownEvents(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
+}
+
+/**
+ * What the apps keep of one event, beside the page's storage, so that a wipe
+ * of the web view's storage doesn't take it (lib/appCopy.ts).
+ */
+export interface EventRecord {
+  /** The event's entry in the list of events this device knows, key and all. */
+  known?: KnownEvent
+  /** Its data is under today's names: it is `crewbox:db-epoch`. */
+  todaysNames?: boolean
+}
+
+/**
+ * Every event this device has a record of, as the page's storage has it
+ * now: each one listed, and the ones with today's names or opened next,
+ * listed yet or not.
+ */
+export function eventRecords(): Map<string, EventRecord> {
+  const first = readHeld(FIRST_EVENT_KEY)
+  const records = new Map<string, EventRecord>()
+  for (const event of knownEvents()) records.set(event.id, { known: event })
+  for (const id of [first, nextEvent()]) {
+    if (id && !records.has(id)) records.set(id, {})
+  }
+  if (first) records.set(first, { ...records.get(first), todaysNames: true })
+  return records
+}
+
+/**
+ * Put back what the page's storage has lost of this device's events, from
+ * the app's records of them: an event it no longer lists, an event's key,
+ * which event has today's names, and which one opens. Whatever it still has
+ * stays as it is.
+ *
+ * Whether it put back either of the last two, and they stayed put: every
+ * storage name this page has opened already was named without them.
+ */
+export function putBackEvents(
+  records: ReadonlyMap<string, EventRecord>,
+  open: string | null
+): boolean {
+  const events = knownEvents()
+  const next = [...events]
+  for (const [id, record] of records) {
+    const known = record.known
+    if (!known || known.id !== id || !isKnownEvent(known)) continue
+    const at = next.findIndex((event) => event.id === id)
+    if (at === -1) next.push(known)
+    else if (!next[at]!.key && known.key) next[at] = { ...next[at]!, key: known.key }
+  }
+  if (next.length !== events.length || next.some((event, at) => event !== events[at])) {
+    writeKnown(next)
+  }
+  let names = false
+  const first = [...records].find(([, record]) => record.todaysNames)?.[0]
+  if (first && readPref(FIRST_EVENT_KEY) === null) names = putBack(FIRST_EVENT_KEY, first) || names
+  if (open && records.has(open) && readPref(OPEN_EVENT_KEY) === null) {
+    names = putBack(OPEN_EVENT_KEY, open) || names
+  }
+  if (names) opened = undefined
+  return names
+}
+
+/**
+ * Write a name back to the page's storage, if it stays put. One that doesn't
+ * leaves the page as it started, named as everything it has opened already
+ * was, for the next start to try again.
+ */
+function putBack(key: string, value: string): boolean {
+  writePref(key, value)
+  if (readPref(key) !== value) return false
+  if (holdingWhileOpen()) held.set(key, value)
+  for (const listener of recordListeners) listener()
+  return true
+}
+
+/** Told whenever an event's record changes: listed, forgotten, opened, or named. */
+export function subscribeEventRecords(listener: () => void): () => void {
+  recordListeners.add(listener)
+  return () => recordListeners.delete(listener)
 }

@@ -53,12 +53,25 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w web
+      # Signed the way a release signs them (release.yml, sign-web), but with a
+      # key made for this run, which no phone trusts. It rehearses everything
+      # else on every pull request: the screens are ones a phone would take,
+      # they were built as the version the package says, and the box embeds
+      # and serves them exactly as signed.
+      - name: Sign the screens with a key made for this run
+        run: |
+          set -euo pipefail
+          key="$(openssl genpkey -algorithm ed25519)"
+          version="v$(node -p "require('./package.json').version")"
+          RELEASE_SIGNING_KEY="$key" node scripts/sign-web.mjs web/dist "$version"
       - run: node scripts/fetch-livekit.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
           LIVEKIT_VERSION: ${{ vars.LIVEKIT_VERSION }}
       - run: node scripts/build-box.mjs
       - name: Smoke-test the box
+        env:
+          CREWBOX_SMOKE_SIGNED: '1'
         run: ./scripts/smoke-box.sh build/box/crewbox-*
 
   e2e:

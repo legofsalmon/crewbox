@@ -682,6 +682,39 @@ ul {
   font-weight: 800;
 }
 
+/*
+ * In the apps, what the app can't do about the box's build, and what to
+ * update (lib/appScreens.ts). Where the pill goes, but quieter: the phone
+ * carries on with the screens it has, and nothing here is anybody's fault.
+ */
+.screens-note {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  background: var(--bg-active);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.screens-note span {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 4px 8px 16px;
+  overflow-wrap: anywhere;
+}
+
+.screens-note-close {
+  flex-shrink: 0;
+  width: 44px;
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.screens-note-close:hover {
+  color: var(--text);
+}
+
 .sidebar-footer-links {
   display: flex;
   align-items: center;
@@ -1328,6 +1361,26 @@ a.app-version:hover {
 
 .msg.pending {
   opacity: 0.55;
+}
+
+/* A pending message the phone couldn't keep: faded as any unsent one, but
+   the line saying so is at full strength, since it is what somebody has to
+   read before they close the app. */
+.msg.pending.unsaved {
+  opacity: 1;
+}
+
+.msg.pending.unsaved > .msg-gutter,
+.msg.pending.unsaved .msg-head,
+.msg.pending.unsaved .msg-body {
+  opacity: 0.55;
+}
+
+.msg-unsaved {
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
 }
 
 .jump-pill {

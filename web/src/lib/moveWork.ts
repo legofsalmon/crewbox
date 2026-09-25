@@ -1,9 +1,10 @@
 import { INCIDENT_CLOCK_SLACK_MS, type Channel } from '@crewbox/shared'
 import { useStore } from '../store.ts'
-import { databaseNames, holdingsOf, list, plural, type Holdings } from './boxes.ts'
-import { chatDatabase, chatDatabaseName, type OutboxEntry } from './db.ts'
+import { holdingsOf, list, plural, type Holdings } from './boxes.ts'
+import { chatDatabase, chatDatabaseName, databaseNames, type OutboxEntry } from './db.ts'
 import { allDocStores } from './docs/store.ts'
 import { answerMove, type KnownEvent } from './eventScope.ts'
+import { heldUnsent, releaseUnsent, withHeld } from './unsent.ts'
 import { queuedIncidentsOf, unqueueIncidentsOf } from '../modules/incident/model/outbox.ts'
 import {
   moveRunningOrderFrom,
@@ -101,19 +102,27 @@ export function placeUnsent(
   return { moving, staying }
 }
 
-/** An event's unsent messages, and its channels as its box last said them. */
+/**
+ * An event's unsent messages, and its channels as its box last said them.
+ *
+ * The messages the page holds (lib/unsent.ts) as well as its chat cache's:
+ * after a wipe of the page's storage, those the app kept are all there are.
+ * The channels went with the wipe, so such a message stays with its event.
+ */
 async function readUnsent(event: string): Promise<{ outbox: OutboxEntry[]; channels: Channel[] }> {
   const names = await databaseNames()
-  if (names && !names.includes(chatDatabaseName(event))) return { outbox: [], channels: [] }
+  if (names && !names.includes(chatDatabaseName(event))) {
+    return { outbox: heldUnsent(event, 'messages'), channels: [] }
+  }
   const db = chatDatabase(event)
   try {
     const [outbox, snapshot] = await Promise.all([
       db.outbox.orderBy('createdAt').toArray(),
       db.kv.get('snapshot'),
     ])
-    return { outbox, channels: snapshot?.channels ?? [] }
+    return { outbox: withHeld(outbox, event, 'messages'), channels: snapshot?.channels ?? [] }
   } catch {
-    return { outbox: [], channels: [] }
+    return { outbox: heldUnsent(event, 'messages'), channels: [] }
   } finally {
     db.close()
   }
@@ -134,6 +143,7 @@ export const stillFiled = (at: number, now = Date.now()): boolean =>
 
 async function dropUnsent(event: string, clientMsgIds: string[]): Promise<void> {
   if (!clientMsgIds.length) return
+  await releaseUnsent(event, 'messages', clientMsgIds)
   const db = chatDatabase(event)
   try {
     await db.outbox.bulkDelete(clientMsgIds)

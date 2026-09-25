@@ -67,6 +67,9 @@ The app treats a dropped connection as expected weather, not an error:
 - Everything you've already loaded stays readable.
 - Anything you send while offline is queued on your device — marked
   "sending…" — and delivered, once, when the box is back in reach.
+- If your device refuses to keep a message, usually because it is out of
+  space, the message says **Not saved on this phone**. It still goes when
+  the box is back, but only if crewbox is still open then, so leave it open.
 - A banner says **Offline** or **Connecting…** so you always know which
   state you're in. When the connection is up but slow, signal bars appear in
   the channel header instead.
@@ -102,3 +105,13 @@ If the box has been updated, a pill appears: **New version available —
 Reload**. Tap it when convenient; anything unsent survives the reload. If
 the pill seems to do nothing for a moment, it's still fetching the new
 version — give it a few seconds and tap again.
+
+In the iPhone and Android apps the pill says **New version ready — Reload**,
+and it waits until the new version is on the phone and the app has checked
+that a Crewbox release made it, so one tap opens it. Each event runs its own
+box's version where the app can, so opening another event can take a few
+seconds while the app gets that box's version ready.
+
+When the app can't run the box's version, a note at the top says which to
+update, the app or the box, and the app carries on with the version it has.
+Tap **×** to put the note away.

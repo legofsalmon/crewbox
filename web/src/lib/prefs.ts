@@ -43,3 +43,24 @@ export function forgetPref(key: string): void {
     /* as above */
   }
 }
+
+/**
+ * Whether this page keeps what it has read of its box, its event's storage
+ * names and its sign-ins for as long as it is open, rather than reading them
+ * again (lib/appCopy.ts).
+ *
+ * On in the apps from the start of the page: there the web view's storage
+ * can be wiped underneath an open page, and a page that read them again
+ * would lose its box, rename its event's storage halfway through, and sign
+ * out. A browser reads them each time, as it always has, since another tab
+ * may change them.
+ */
+let holding = false
+
+export function holdWhileOpen(): void {
+  holding = true
+}
+
+export function holdingWhileOpen(): boolean {
+  return holding
+}

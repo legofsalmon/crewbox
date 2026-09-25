@@ -46,6 +46,15 @@ REPORTED=0
 # a release log long after the line was written, looking like a fault.
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
 
+# The SHA-256 of stdin, in hex. A Mac has shasum and no sha256sum.
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d ' ' -f 1
+  else
+    shasum -a 256 | cut -d ' ' -f 1
+  fi
+}
+
 pass() { echo "  ok    $1"; }
 fail() {
   REPORTED=1
@@ -136,11 +145,64 @@ pass "starts and listens on $PORT"
 
 health="$(curl -fsS "$BASE/api/health")"
 contains "$health" '"ok":true' || fail "health is not ok: $health"
-pass "health: $(echo "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+box_version="$(echo "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+pass "health: $box_version"
 
 index="$(curl -fsS "$BASE/")"
 contains "$index" '<div id="root"' || contains "$index" '<title' || fail "web app not served"
 pass "serves the web app"
+
+# The screens as an app will check them before it runs them
+# (scripts/web-sums.mjs): built as the version this box says it is, and every
+# file WEBSUMS lists served as the bytes that were signed, compressed or not.
+# A missing file is no 404 here, because a box answers any path it doesn't
+# know with the app shell, so each check is of what actually came back.
+#
+# CREWBOX_SMOKE_SIGNED=1, as CI and every release set it, insists on signed
+# screens. Without it, a box built on screens nobody signed passes as a build
+# of its own, and so does one from before the screens said which they were.
+signed="${CREWBOX_SMOKE_SIGNED:-0}"
+web_info="$(curl -fsS "$BASE/crewbox-web.json" || true)"
+if contains "$web_info" '"kind": "crewbox-web"'; then
+  web_version="$(echo "$web_info" | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p')"
+  [ "$web_version" = "$box_version" ] ||
+    fail "the screens were built as '$web_version' but the box is $box_version: an app would refuse them"
+  sums="$(curl -fsS "$BASE/WEBSUMS" || true)"
+  if contains "$sums" '  crewbox-web.json'; then
+    sig="$(curl -fsS "$BASE/WEBSUMS.sig" || true)"
+    case "$sig" in
+      '' | *[!A-Za-z0-9+/=]*) fail "WEBSUMS is served without its signature" ;;
+    esac
+    count=0
+    listed=''
+    # A here-document, not a pipe, so a fail inside the loop ends the script.
+    while read -r digest path; do
+      got="$(curl -fsS --compressed "$BASE/$path" | sha256)"
+      [ "$got" = "$digest" ] || fail "$path is not served as it was signed"
+      count=$((count + 1))
+      listed="$listed$digest  $path\\n"
+    done <<EOF
+$sums
+EOF
+    pass "serves its screens as signed ($count files)"
+    # What an app asks for before it takes any of them: that list and its
+    # signature, from this version's own copy, in JSON (where a newline is \n).
+    offer="$(curl -fsS "$BASE/api/app/screens" || true)"
+    contains "$offer" "\"version\":\"$box_version\"" &&
+      contains "$offer" "\"sums\":\"$listed\",\"signature\":\"$sig\"" ||
+      fail "/api/app/screens doesn't offer the list it serves: ${offer:-no answer}"
+    pass "offers apps that list"
+  elif [ "$signed" = 1 ]; then
+    fail "the screens are not signed: no WEBSUMS lists them"
+  else
+    # An app told there is nothing signed keeps its own screens.
+    status="$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/app/screens" || true)"
+    [ "$status" = 404 ] || fail "/api/app/screens answers $status for screens nobody signed"
+    pass "serves its screens, unsigned (a build of its own)"
+  fi
+elif [ "$signed" = 1 ]; then
+  fail "the box doesn't say which screens it serves: no crewbox-web.json"
+fi
 
 # First-run setup has two right answers. A release box is "trial, then lock"
 # (LICENCE_POLICY in server/src/licence/decide.ts), and this script always

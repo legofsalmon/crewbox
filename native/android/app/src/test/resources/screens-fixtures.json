@@ -1,0 +1,982 @@
+{
+  "about": "Written by scripts/screens-fixtures.mjs, which says what these are for. Do not edit by hand.",
+  "signatures": [
+    {
+      "name": "signed with the first key",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk=",
+        "Hdu+1cXDlOs8qNLQtzrDOgflILaOswwsC43FgWB+2vA="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\n",
+      "keyIndex": 0
+    },
+    {
+      "name": "signed with the second key",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk=",
+        "Hdu+1cXDlOs8qNLQtzrDOgflILaOswwsC43FgWB+2vA="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "0bd+cto1wzF4VkdfZ6sb1iKoRtzsSKNt0Ftu6FHgduqo5TvRxCXVdGeW/CZBjpbE+pqTfnglc0VsetnzCSb/DA==\n",
+      "keyIndex": 1
+    },
+    {
+      "name": "signed with a key the app doesn't trust",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk=",
+        "Hdu+1cXDlOs8qNLQtzrDOgflILaOswwsC43FgWB+2vA="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "3YxooEo8z3UpAB361PHHXBA+mruYlOc0ZbpPrN2MHWYY1+lglaYakAms9RPfm3d2jy/bF+Seg8FvVlABBpFdBw==",
+      "keyIndex": -1
+    },
+    {
+      "name": "checked against no keys at all",
+      "keys": [],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "a key that isn't 32 bytes, then the one that signed",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJ",
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": 1
+    },
+    {
+      "name": "ASCII whitespace around the signature",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": " \tT/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\r\n",
+      "keyIndex": 0
+    },
+    {
+      "name": "a no-break space after the signature",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg== ",
+      "keyIndex": -1
+    },
+    {
+      "name": "a byte-order mark before the signature",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "﻿T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "a line break inside the signature",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjK\naBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "a signature without its padding",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg",
+      "keyIndex": -1
+    },
+    {
+      "name": "a signature 63 bytes long",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnb",
+      "keyIndex": -1
+    },
+    {
+      "name": "a signature 65 bytes long",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDgA=",
+      "keyIndex": -1
+    },
+    {
+      "name": "the signature with S + L for S",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXi3PAkSF/To8loKEUd1Th1N/1QDvZTVWHm6Z7a2iPnbHg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "the list with CRLF line ends",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\r\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\r\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\r\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "the list without its last newline",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "the list after a byte-order mark",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "﻿d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "the list with one bit changed",
+      "keys": [
+        "dr2u6JBxZE0SHX429ETJSgIkix1u05vs8BH1LZtJFhk="
+      ],
+      "sums": "d50d4b8fb88896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==",
+      "keyIndex": -1
+    },
+    {
+      "name": "RFC 8032 test 2",
+      "keys": [
+        "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw="
+      ],
+      "sums": "r",
+      "signature": "kqAJqfDUyrhyDoILX2QlQKKye1QWUD+Ps3YiI+vbadoIWsHkPhWZbkWPNhPQ8R2MOHsurrQwKu6wDSkWErsMAA==",
+      "keyIndex": 0
+    },
+    {
+      "name": "the research signature over a list like crewbox’s",
+      "keys": [
+        "zI4Gv7XaATJbyuthzP9skEdy9d3K9WKFZEC+AppKo7c="
+      ],
+      "sums": "54e7ee83cea0175729d5cdf2d6416cd090edcbfa1f1fe48c4dde804fe5c6c01d  crewbox-9.9.9.apk\ne76d394b97377fa7a867a58e1fda5bde170515fb6f1e2ce32eec834a52318363  crewbox-web-9.9.9.tar\n",
+      "signature": "BQrlHkQxkl8dkWPDTWqSUvB4Akyp/NtYCnW/gvBIP0Z61qHizctM9gU+6XFU87WAlWHJ1jwRsfznOmRJ0EWqBA==",
+      "keyIndex": 0
+    },
+    {
+      "name": "that signature with S + L for S",
+      "keys": [
+        "zI4Gv7XaATJbyuthzP9skEdy9d3K9WKFZEC+AppKo7c="
+      ],
+      "sums": "54e7ee83cea0175729d5cdf2d6416cd090edcbfa1f1fe48c4dde804fe5c6c01d  crewbox-9.9.9.apk\ne76d394b97377fa7a867a58e1fda5bde170515fb6f1e2ce32eec834a52318363  crewbox-web-9.9.9.tar\n",
+      "signature": "BQrlHkQxkl8dkWPDTWqSUvB4Akyp/NtYCnW/gvBIP0Znqpc/6C5fTtza4BQz7ZSVlWHJ1jwRsfznOmRJ0EWqFA==",
+      "keyIndex": -1
+    }
+  ],
+  "lists": [
+    {
+      "name": "what sha256sum writes",
+      "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+      "files": {
+        "crewbox-web.json": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5",
+        "index.html": "0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051",
+        "assets/index-Ab_9.js": "3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13"
+      }
+    },
+    {
+      "name": "files in the order listed, not sorted",
+      "sums": "41d3e1ce7c366144d43201b66b8732780392eab1cc2944869b15357c96631fd8  b.js\ndc5985b2a377c4ea735c99979da277be3bd24be88cf411c11b52b5c3f9570536  a.js\n",
+      "files": {
+        "b.js": "41d3e1ce7c366144d43201b66b8732780392eab1cc2944869b15357c96631fd8",
+        "a.js": "dc5985b2a377c4ea735c99979da277be3bd24be88cf411c11b52b5c3f9570536"
+      }
+    },
+    {
+      "name": "names that start with a dash or an underscore",
+      "sums": "beb59c080b9653fc4489f84d7ffbb41bbc8b344a93c99c8eb04e892e37e428a4  -x.js\n368291b0160c8122adbab019983bd072c1a39546b9fde1e417919cc8d16211ad  _y.js\n",
+      "files": {
+        "-x.js": "beb59c080b9653fc4489f84d7ffbb41bbc8b344a93c99c8eb04e892e37e428a4",
+        "_y.js": "368291b0160c8122adbab019983bd072c1a39546b9fde1e417919cc8d16211ad"
+      }
+    },
+    {
+      "name": "a deep path",
+      "sums": "aa2157e04dc269ab5919d37ec44fad5a1032bf64d77eaaa7c399a4474ce576e0  a/b/c/d.js\n",
+      "files": {
+        "a/b/c/d.js": "aa2157e04dc269ab5919d37ec44fad5a1032bf64d77eaaa7c399a4474ce576e0"
+      }
+    },
+    {
+      "name": "an empty list",
+      "sums": "",
+      "refused": true
+    },
+    {
+      "name": "no lines",
+      "sums": "\n",
+      "refused": true
+    },
+    {
+      "name": "no newline at the end",
+      "sums": "0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html",
+      "refused": true
+    },
+    {
+      "name": "a blank line",
+      "sums": "dc5985b2a377c4ea735c99979da277be3bd24be88cf411c11b52b5c3f9570536  a.js\n\n41d3e1ce7c366144d43201b66b8732780392eab1cc2944869b15357c96631fd8  b.js\n",
+      "refused": true
+    },
+    {
+      "name": "one space",
+      "sums": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881 index.html\n",
+      "refused": true
+    },
+    {
+      "name": "three spaces",
+      "sums": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881   index.html\n",
+      "refused": true
+    },
+    {
+      "name": "a tab",
+      "sums": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881\tindex.html\n",
+      "refused": true
+    },
+    {
+      "name": "a binary marker",
+      "sums": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881 *index.html\n",
+      "refused": true
+    },
+    {
+      "name": "a line that ends in CR",
+      "sums": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881  index.html\r\n",
+      "refused": true
+    },
+    {
+      "name": "capital hex",
+      "sums": "2D711642B726B04401627CA9FBAC32F5C8530FB1903CC4DB02258717921A4881  index.html\n",
+      "refused": true
+    },
+    {
+      "name": "a short digest",
+      "sums": "d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881  index.html\n",
+      "refused": true
+    },
+    {
+      "name": "a path out of the folder",
+      "sums": "579ab2998552564d21fcb88b6675210553fd42fca94b9d90a648013dcaa6553f  ../index.html\n",
+      "refused": true
+    },
+    {
+      "name": "a climb in the middle",
+      "sums": "467f4f8b80d9e9479ae2f6b5b48ef7f08a2380c1224cb3e741f213c4302ed0b6  a/../index.html\n",
+      "refused": true
+    },
+    {
+      "name": "an absolute path",
+      "sums": "213456c5dc963e03ec1f27600c46c954c70224985fa62603db2fb2ab1ca06d35  /index.html\n",
+      "refused": true
+    },
+    {
+      "name": "a hidden file",
+      "sums": "e9cbb0224c4a3d23a6019ba557e0cd568c1ad5e1582ff1e335fb7d99b7a1055d  .env\n",
+      "refused": true
+    },
+    {
+      "name": "a hidden folder",
+      "sums": "4ef1f5e08abad6520b6736fe429845c32872f903704156652063566ee80c3126  assets/.cache/a.js\n",
+      "refused": true
+    },
+    {
+      "name": "an empty segment",
+      "sums": "1204a949ec2b2992669493d99d51eb7ff71dfa2778cc2e0393d19bd3003f8fd3  a//b.js\n",
+      "refused": true
+    },
+    {
+      "name": "a trailing slash",
+      "sums": "8ef7d72155eb053bc67da1073f77f81210acfd5439301b59f8abf22afee3cbb3  assets/\n",
+      "refused": true
+    },
+    {
+      "name": "a percent sign",
+      "sums": "611280740d02d0221b5da87d51cf74259d1d4cbc666be8e2e9e5495b0c199047  x%20y.js\n",
+      "refused": true
+    },
+    {
+      "name": "a backslash",
+      "sums": "f4aadeac7065d507812cc4cb53b7ee7055f63873bc165d66758ae892b6334faf  a\\b.js\n",
+      "refused": true
+    },
+    {
+      "name": "a name that is not ASCII",
+      "sums": "6d8adba0d56fb6336b1a92dadddb30046ebf71b35afb847816e4d049c13524d3  é.js\n",
+      "refused": true
+    },
+    {
+      "name": "a file listed twice",
+      "sums": "0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n",
+      "refused": true
+    },
+    {
+      "name": "a list that names itself",
+      "sums": "0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n807e83e04190d0dc7301ddad863187cedc72128330e88a6e3670d9656955ccf0  WEBSUMS\n",
+      "refused": true
+    },
+    {
+      "name": "a list that names its signature",
+      "sums": "3f5a6f47a85ebade05960cbcbb8d9cba88be1b6a1fad4317f87323be37c104c3  WEBSUMS.sig\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n",
+      "refused": true
+    }
+  ],
+  "infos": [
+    {
+      "name": "as the web build writes it",
+      "text": "{\n  \"kind\": \"crewbox-web\",\n  \"version\": \"1.2.0+abc1234\",\n  \"protocol\": 1,\n  \"nativeApi\": {\n    \"needs\": 1,\n    \"builtFor\": 1\n  }\n}\n",
+      "info": {
+        "version": "1.2.0+abc1234",
+        "protocol": 1,
+        "needs": 1,
+        "builtFor": 1
+      }
+    },
+    {
+      "name": "fields it has no use for",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1,\"later\":true},\"extra\":[1,2]}",
+      "info": {
+        "version": "1.2.0+abc1234",
+        "protocol": 1,
+        "needs": 1,
+        "builtFor": 1
+      }
+    },
+    {
+      "name": "a pre-release",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0-rc.1+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "info": {
+        "version": "1.2.0-rc.1+abc1234",
+        "protocol": 1,
+        "needs": 1,
+        "builtFor": 1
+      }
+    },
+    {
+      "name": "a version 64 characters long",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "info": {
+        "version": "1.2.0+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocol": 1,
+        "needs": 1,
+        "builtFor": 1
+      }
+    },
+    {
+      "name": "whole numbers written with a point",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":3.0,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "info": {
+        "version": "1.2.0+abc1234",
+        "protocol": 3,
+        "needs": 1,
+        "builtFor": 1
+      }
+    },
+    {
+      "name": "a newer contract than it needs",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":2,\"builtFor\":5}}",
+      "info": {
+        "version": "1.2.0+abc1234",
+        "protocol": 1,
+        "needs": 2,
+        "builtFor": 5
+      }
+    },
+    {
+      "name": "a name given twice, the last one counting",
+      "text": "{\"kind\":\"other\",\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "info": {
+        "version": "1.2.0+abc1234",
+        "protocol": 1,
+        "needs": 1,
+        "builtFor": 1
+      }
+    },
+    {
+      "name": "another kind",
+      "text": "{\"kind\":\"crewbox-box\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "no kind",
+      "text": "{\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with no commit",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with an empty commit",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with a v",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"v1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with a leading zero",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"01.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with two parts",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with a slash",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc/../x\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with a space",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc 1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with an underscore",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc_1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version with an empty part",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc..1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "an empty pre-release",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0-+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version 65 characters long",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a version that is a number",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":1.2,\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "protocol 0",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":0,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a fraction for the protocol",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1.5,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "the protocol as text",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":\"1\",\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "no protocol",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "no native contract",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1}",
+      "refused": true
+    },
+    {
+      "name": "needs 0",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":0,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "needs over builtFor",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":2,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "needs as text",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":\"1\",\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "needs true",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":true,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a native contract that is a list",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":[1,1]}",
+      "refused": true
+    },
+    {
+      "name": "needs too big to be a number",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1e400,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a comma after the last field",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1},}",
+      "refused": true
+    },
+    {
+      "name": "a comment",
+      "text": "/* built */{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "single quotes",
+      "text": "{'kind':'crewbox-web','version':'1.2.0+abc1234','protocol':1,'nativeApi':{'needs':1,'builtFor':1}}",
+      "refused": true
+    },
+    {
+      "name": "something after it",
+      "text": "{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}} and more",
+      "refused": true
+    },
+    {
+      "name": "a byte-order mark before it",
+      "text": "﻿{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}",
+      "refused": true
+    },
+    {
+      "name": "a list",
+      "text": "[{\"kind\":\"crewbox-web\",\"version\":\"1.2.0+abc1234\",\"protocol\":1,\"nativeApi\":{\"needs\":1,\"builtFor\":1}}]",
+      "refused": true
+    },
+    {
+      "name": "null",
+      "text": "null",
+      "refused": true
+    },
+    {
+      "name": "nothing",
+      "text": "",
+      "refused": true
+    }
+  ],
+  "offers": [
+    {
+      "name": "as a box answers",
+      "text": "{\"version\":\"1.2.0+abc1234\",\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\",\"signature\":\"T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\"}",
+      "offer": {
+        "version": "1.2.0+abc1234",
+        "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+        "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg=="
+      }
+    },
+    {
+      "name": "with fields it has no use for",
+      "text": "{\"version\":\"1.2.0+abc1234\",\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\",\"signature\":\"T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\",\"later\":1}",
+      "offer": {
+        "version": "1.2.0+abc1234",
+        "sums": "d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\n",
+        "signature": "T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg=="
+      }
+    },
+    {
+      "name": "no list",
+      "text": "{\"version\":\"1.2.0+abc1234\",\"signature\":\"T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\"}",
+      "refused": true
+    },
+    {
+      "name": "no signature",
+      "text": "{\"version\":\"1.2.0+abc1234\",\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\"}",
+      "refused": true
+    },
+    {
+      "name": "a signature that is not text",
+      "text": "{\"version\":\"1.2.0+abc1234\",\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\",\"signature\":64}",
+      "refused": true
+    },
+    {
+      "name": "no version",
+      "text": "{\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\",\"signature\":\"T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\"}",
+      "refused": true
+    },
+    {
+      "name": "a version with no commit",
+      "text": "{\"version\":\"1.2.0\",\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\",\"signature\":\"T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\"}",
+      "refused": true
+    },
+    {
+      "name": "a version that climbs",
+      "text": "{\"version\":\"../../1.2.0+abc\",\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\",\"signature\":\"T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\"}",
+      "refused": true
+    },
+    {
+      "name": "a list",
+      "text": "[{\"version\":\"1.2.0+abc1234\",\"sums\":\"d50d4b8fb89896e53ac31432efb760ef43beddc187a19014ace3644beecdc7f5  crewbox-web.json\\n0eb547304658805aad788d320f10bf1f292797b5e6d745a3bf617584da017051  index.html\\n3814fb75f3e99b33efbac2626e63f0aaeba890f2f35e13dcd823169eb3649e13  assets/index-Ab_9.js\\n\",\"signature\":\"T/GrNVRPz1Ks/stYennVSfNkQkKMd//NJzsxPaUqSXjKaBO1/JDWmoRtGaSWVD44/1QDvZTVWHm6Z7a2iPnbDg==\"}]",
+      "refused": true
+    },
+    {
+      "name": "an error",
+      "text": "{\"error\":\"no signed screens on this box\"}",
+      "refused": true
+    },
+    {
+      "name": "not JSON",
+      "text": "<html>",
+      "refused": true
+    }
+  ],
+  "versions": [
+    {
+      "version": "0.0.0+0",
+      "valid": true
+    },
+    {
+      "version": "999999999.0.0+x",
+      "valid": true
+    },
+    {
+      "version": "1000000000.0.0+x",
+      "valid": false
+    },
+    {
+      "version": "1.0.0-alpha.1.beta+exp.sha.5114f85",
+      "valid": true
+    },
+    {
+      "version": "1.0.0-al_pha+x",
+      "valid": false
+    },
+    {
+      "version": "1.0.0+X-Y.z",
+      "valid": true
+    },
+    {
+      "version": "1.0.0+unknown",
+      "valid": true
+    },
+    {
+      "version": "1.0.0+x.",
+      "valid": false
+    },
+    {
+      "version": "1.0.0+.x",
+      "valid": false
+    },
+    {
+      "version": "1.0.0+x\n",
+      "valid": false
+    },
+    {
+      "version": " 1.0.0+x",
+      "valid": false
+    },
+    {
+      "version": "",
+      "valid": false
+    }
+  ],
+  "floors": [
+    {
+      "version": "1.0.0+abc",
+      "floor": "1.0.0",
+      "atOrAbove": true
+    },
+    {
+      "version": "1.0.0-rc.1+abc",
+      "floor": "1.0.0",
+      "atOrAbove": false
+    },
+    {
+      "version": "1.0.1+abc",
+      "floor": "1.0.0",
+      "atOrAbove": true
+    },
+    {
+      "version": "0.9.9+abc",
+      "floor": "1.0.0",
+      "atOrAbove": false
+    },
+    {
+      "version": "1.10.0+abc",
+      "floor": "1.9.0",
+      "atOrAbove": true
+    },
+    {
+      "version": "1.9.0+abc",
+      "floor": "1.10.0",
+      "atOrAbove": false
+    },
+    {
+      "version": "2.0.0+abc",
+      "floor": "1.99.99",
+      "atOrAbove": true
+    },
+    {
+      "version": "1.2.3-beta+abc",
+      "floor": "1.2.2",
+      "atOrAbove": true
+    },
+    {
+      "version": "1.2.2-beta+abc",
+      "floor": "1.2.2",
+      "atOrAbove": false
+    },
+    {
+      "version": "1.2.3-4+abc",
+      "floor": "1.2.3",
+      "atOrAbove": false
+    },
+    {
+      "version": "1.2.3-4+abc",
+      "floor": "1.2.2",
+      "atOrAbove": true
+    },
+    {
+      "version": "x.1.0+abc",
+      "floor": "1.0.0",
+      "atOrAbove": false
+    }
+  ],
+  "judgements": [
+    {
+      "name": "screens it can run",
+      "info": {
+        "version": "1.2.0+abc",
+        "needs": 1,
+        "builtFor": 1
+      },
+      "version": "1.2.0+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.0.0"
+      },
+      "answer": "ready"
+    },
+    {
+      "name": "another version's screens than the box runs",
+      "info": {
+        "version": "1.1.0+abc",
+        "needs": 1,
+        "builtFor": 1
+      },
+      "version": "1.2.0+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.0.0"
+      },
+      "answer": "unsigned"
+    },
+    {
+      "name": "screens that need a newer app",
+      "info": {
+        "version": "1.2.0+abc",
+        "needs": 2,
+        "builtFor": 2
+      },
+      "version": "1.2.0+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.0.0"
+      },
+      "answer": "incompatible",
+      "update": "app"
+    },
+    {
+      "name": "screens that need exactly what the app has",
+      "info": {
+        "version": "1.2.0+abc",
+        "needs": 2,
+        "builtFor": 2
+      },
+      "version": "1.2.0+abc",
+      "app": {
+        "nativeApi": 2,
+        "oldestScreensApi": 1,
+        "floor": "1.0.0"
+      },
+      "answer": "ready"
+    },
+    {
+      "name": "screens written for a newer contract than the app has, that need no more of it",
+      "info": {
+        "version": "1.2.0+abc",
+        "needs": 1,
+        "builtFor": 3
+      },
+      "version": "1.2.0+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.0.0"
+      },
+      "answer": "ready"
+    },
+    {
+      "name": "screens older than the app still honours",
+      "info": {
+        "version": "1.2.0+abc",
+        "needs": 1,
+        "builtFor": 1
+      },
+      "version": "1.2.0+abc",
+      "app": {
+        "nativeApi": 3,
+        "oldestScreensApi": 2,
+        "floor": "1.0.0"
+      },
+      "answer": "incompatible",
+      "update": "box"
+    },
+    {
+      "name": "screens below the floor",
+      "info": {
+        "version": "1.0.9+abc",
+        "needs": 1,
+        "builtFor": 1
+      },
+      "version": "1.0.9+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.1.0"
+      },
+      "answer": "incompatible",
+      "update": "box"
+    },
+    {
+      "name": "a pre-release of the floor",
+      "info": {
+        "version": "1.1.0-rc.2+abc",
+        "needs": 1,
+        "builtFor": 1
+      },
+      "version": "1.1.0-rc.2+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.1.0"
+      },
+      "answer": "incompatible",
+      "update": "box"
+    },
+    {
+      "name": "screens at the floor",
+      "info": {
+        "version": "1.1.0+abc",
+        "needs": 1,
+        "builtFor": 1
+      },
+      "version": "1.1.0+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.1.0"
+      },
+      "answer": "ready"
+    },
+    {
+      "name": "screens that need a newer app and are below the floor",
+      "info": {
+        "version": "1.0.0+abc",
+        "needs": 2,
+        "builtFor": 2
+      },
+      "version": "1.0.0+abc",
+      "app": {
+        "nativeApi": 1,
+        "oldestScreensApi": 1,
+        "floor": "1.1.0"
+      },
+      "answer": "incompatible",
+      "update": "app"
+    }
+  ],
+  "base64": [
+    {
+      "text": "",
+      "hex": ""
+    },
+    {
+      "text": "QQ==",
+      "hex": "41"
+    },
+    {
+      "text": "QUI=",
+      "hex": "4142"
+    },
+    {
+      "text": "QUJD",
+      "hex": "414243"
+    },
+    {
+      "text": "+/+/",
+      "hex": "fbffbf"
+    },
+    {
+      "text": "QR==",
+      "hex": "41"
+    },
+    {
+      "text": "QQ",
+      "hex": null
+    },
+    {
+      "text": "QQ=",
+      "hex": null
+    },
+    {
+      "text": "Q===",
+      "hex": null
+    },
+    {
+      "text": "====",
+      "hex": null
+    },
+    {
+      "text": "QQ==QQ==",
+      "hex": null
+    },
+    {
+      "text": "QU JD",
+      "hex": null
+    },
+    {
+      "text": "QUJD\n",
+      "hex": null
+    },
+    {
+      "text": "QU-_",
+      "hex": null
+    },
+    {
+      "text": "QUJ-",
+      "hex": null
+    },
+    {
+      "text": "QUJ_",
+      "hex": null
+    },
+    {
+      "text": "QUJD!",
+      "hex": null
+    }
+  ]
+}

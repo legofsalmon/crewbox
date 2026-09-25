@@ -59,6 +59,7 @@ import { AUDIT_METRICS, BUNDLE_PAGE, type MetricsStore } from './audit/metrics.t
 const VOICE_QUALITY_WINDOW_MS = 10 * 60_000
 import { Prober } from './audit/probes.ts'
 import { scoreAudit } from './audit/score.ts'
+import { signedScreens } from './screens.ts'
 import { setupPage } from './setup.ts'
 import {
   isVoiceUpgrade,
@@ -443,6 +444,12 @@ export interface AppDeps {
   modules?: string[]
   /** Data directory root; /connect offers the newest crewbox*.apk from here. */
   dataDir?: string
+  /**
+   * The folder of screens this box serves: on a box, the copy extracted for
+   * its own version. index.ts serves the files; here it is only where
+   * `/api/app/screens` finds their signed list. Omit for none (tests).
+   */
+  webDist?: string
   /** Certificate material; when present the box serves HTTPS itself. */
   tls?: { cert: Buffer; key: Buffer; ca?: Buffer }
   /** Environment probes; injected in tests so nothing touches a network. */
@@ -583,6 +590,7 @@ export function buildApp({
   relayLimits = {},
   modules = ['chat'],
   dataDir,
+  webDist,
   tls,
   probes,
   dmx,
@@ -961,6 +969,22 @@ export function buildApp({
 
   // Public settings the pre-auth join screen and offline screen need.
   fastify.get('/api/config', () => publicConfig())
+
+  /**
+   * The signed list of the screens this box serves, for an app deciding
+   * whether to run them (screens.ts). Public, as the screens are: any browser
+   * gets the same files. 404 on a box with nothing signed to show.
+   *
+   * Never cached: the answer changes when the box updates or rolls back, and
+   * an app holding an old one would check one version's files against
+   * another's list.
+   */
+  fastify.get('/api/app/screens', (_req, reply) => {
+    reply.header('cache-control', 'no-store')
+    const signed = signedScreens(webDist)
+    if (!signed) return reply.code(404).send({ error: 'no signed screens on this box' })
+    return { version: APP_VERSION, ...signed }
+  })
 
   /**
    * The box proving it is the event it says it is, at the address it was

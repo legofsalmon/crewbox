@@ -144,3 +144,20 @@ export const clockOf = (at: number): string => {
 /** How many entries in the log matter enough to put on a sidebar badge. */
 export const seriousCount = (entries: Incident[]): number =>
   entries.filter((e) => e.severity === 'serious').length
+
+/**
+ * What the pane says of the entries waiting for the box that the phone
+ * couldn't keep, after saying how many are waiting. The page holds them, and
+ * they go when the box is back, but only if the app is still open then
+ * (lib/unsent.ts).
+ */
+export function unsavedCopy(unsaved: number, waiting: number): string {
+  const sends = unsaved === 1 ? 'it sends' : 'they send'
+  const which =
+    unsaved === waiting
+      ? unsaved === 1
+        ? 'It isn’t'
+        : 'They aren’t'
+      : `${unsaved} of them ${unsaved === 1 ? 'isn’t' : 'aren’t'}`
+  return `${which} saved on this phone. Keep crewbox open until ${sends}.`
+}

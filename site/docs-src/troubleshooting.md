@@ -83,6 +83,11 @@ deliver when the connection returns — don't retype it. If everyone nearby
 has the same problem, the box or the Wi-Fi is down; if it's just you, walk
 closer to an access point and watch the banner.
 
+If it also says **Not saved on this phone**, your device refused to keep it,
+usually because it is out of space. It still delivers when the connection
+returns, but only while crewbox stays open: closing the app loses it. Free
+some space before you write anything else.
+
 ## "A channel looks empty" / "someone's messages are missing"
 
 If the filter bar is open, close it — a filter narrows the view to what's
@@ -104,6 +109,14 @@ app connected: it appears on your screen as soon as they do.
 **New version available — Reload** occasionally needs a few seconds while
 the new version finishes downloading. Tap it again. If it persists, close
 and reopen the app — nothing unsent is lost either way.
+
+In the iPhone and Android apps, **New version ready — Reload** appears only
+once the new version is already on the phone, so there is nothing to wait
+for. If the app goes back to the version you had, by itself or with a
+message that the phone couldn't open the new one, the new version didn't
+start on this phone. The app carries on with the one it has and doesn't
+offer that version again. The app also needs about 50 MB free on the phone
+to take a new version, and offers none until it has the room.
 
 ## "The lighting plot shows no levels"
 

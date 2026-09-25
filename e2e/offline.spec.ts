@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { newDevice, test, uniqueName } from './helpers'
+import { newDevice, test, uniqueName, untilChatCached } from './helpers'
 
 /**
  * The promise the whole product is built on: a message typed in a dead spot
@@ -19,6 +19,7 @@ test('a message typed with no box reaches the crew when it comes back', async ({
   const sam = await newDevice(browser, uniqueName('Sam'))
   await expect(alex.getByPlaceholder(/Message/)).toBeVisible()
   await expect(sam.getByPlaceholder(/Message/)).toBeVisible()
+  await untilChatCached(alex)
 
   // Cut Alex's socket the way connection.spec does — `setOffline` leaves an
   // established WebSocket alive, and `unrouteAll` will not remove a

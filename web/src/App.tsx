@@ -28,6 +28,7 @@ import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import FeedbackDialog from './components/FeedbackDialog.tsx'
 import { APP_VERSION } from './lib/pwa.ts'
+import { screensStarted } from './lib/appScreens.ts'
 import { flushDeviceOutbox, sendCrash } from './lib/reports.ts'
 import { sessionToken } from './store.ts'
 import { registerShortcut } from './shell/keys.ts'
@@ -58,6 +59,12 @@ export default function App() {
   // throwing away the running app — mid-shift, with unsent messages still in
   // the outbox. Missing a drop target should do nothing at all.
   useEffect(() => guardStrayFileDrops(), [])
+
+  // In the apps, these screens have started once the first screen past the
+  // blank one has drawn, the join form or the shell (lib/appScreens.ts).
+  useEffect(() => {
+    if (phase !== 'boot') screensStarted()
+  }, [phase])
 
   /*
    * `?admin` opens the panel.
@@ -148,6 +155,8 @@ function Shell() {
   const fileOffer = useSyncExternalStore(subscribeFileOffer, currentFileOffer)
   const updateReady = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
+  const screensNote = useStore((s) => s.screensNote)
+  const dismissScreensNote = useStore((s) => s.dismissScreensNote)
   const elsewhere = useStore((s) => s.elsewhere)
   const eventName = useStore((s) => s.config.eventName)
   const switchEvent = useStore((s) => s.switchEvent)
@@ -264,10 +273,25 @@ function Shell() {
       )}
       <AlertBanner />
       {updateReady && (
+        // In the apps it is there only once the phone has the new version
+        // and has checked a crewbox release made it (lib/appScreens.ts).
         <button className="update-pill" onClick={applyUpdate}>
-          <span>New version available</span>
+          <span>{isNative() ? 'New version ready' : 'New version available'}</span>
           <strong>Reload</strong>
         </button>
+      )}
+      {screensNote && (
+        <div className="screens-note" role="status">
+          <span>{screensNote}</span>
+          <button
+            className="screens-note-close"
+            aria-label="Dismiss"
+            title="Dismiss"
+            onClick={dismissScreensNote}
+          >
+            ×
+          </button>
+        </div>
       )}
       <OnAirBar />
       <VoiceBar />

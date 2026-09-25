@@ -1,8 +1,16 @@
 import type * as Y from 'yjs'
-import { WebsocketProvider } from 'y-websocket'
+import { messageSync, WebsocketProvider } from 'y-websocket'
 import { openEvent } from '../eventScope.ts'
 import { boxOrigin, docsWsUrl } from '../server.ts'
 import { sessionToken, useStore } from '../../store.ts'
+import {
+  heardFromRelay,
+  keepsEditsInApp,
+  readRelaySync,
+  relayInStep,
+  unwatchEdits,
+  watchEdits,
+} from './unsentEdits.ts'
 
 export type SyncStatus = 'off' | 'connecting' | 'connected'
 
@@ -97,6 +105,9 @@ class SyncManager {
     }
     this.docs.set(room, doc)
     if (present) this.present.add(room)
+    // In the apps, what it has that the box may not is kept, and what was
+    // kept is put back, before it can reach the box (unsentEdits.ts).
+    watchEdits(room, doc)
     this.connectDoc(room, doc)
   }
 
@@ -145,6 +156,7 @@ class SyncManager {
 
   detach(room: string) {
     this.disconnectDoc(room)
+    unwatchEdits(room)
     this.docs.delete(room)
     this.present.delete(room)
     this.emit()
@@ -189,7 +201,27 @@ class SyncManager {
     // document and announces nobody.
     if (this.present.has(room)) this.setUser(provider)
     provider.awareness.on('change', () => this.emit())
+    if (keepsEditsInApp()) this.hearRelay(room, provider)
     this.providers.set(room, provider)
+  }
+
+  /**
+   * Tell the apps' copy of edits the box hasn't confirmed (unsentEdits.ts)
+   * what the relay sends, and when the room is in step with it. Each sync
+   * message is looked at where it starts, before the provider reads it, and
+   * passed on once the provider has, so that a handshake it completes
+   * counts first.
+   */
+  private hearRelay(room: string, provider: WebsocketProvider) {
+    const read = provider.messageHandlers[messageSync]
+    if (!read) return
+    provider.messageHandlers[messageSync] = (encoder, decoder, from, emitSynced, type) => {
+      // From the socket: another tab of the page's is not the relay.
+      const heard = emitSynced ? readRelaySync(decoder.arr, decoder.pos) : null
+      read(encoder, decoder, from, emitSynced, type)
+      if (heard) heardFromRelay(room, heard)
+    }
+    provider.on('sync', (inStep: boolean) => relayInStep(room, inStep))
   }
 
   /**

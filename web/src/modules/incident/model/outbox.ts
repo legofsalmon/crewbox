@@ -1,5 +1,6 @@
 import { MAX_INCIDENT_LENGTH, type IncidentKind, type IncidentSeverity } from '@crewbox/shared'
-import { storageName, storageNameFor } from '../../../lib/eventScope.ts'
+import { openEvent, storageName, storageNameFor } from '../../../lib/eventScope.ts'
+import { holdUnsent, releaseAllUnsent, releaseUnsent, withHeld } from '../../../lib/unsent.ts'
 
 /**
  * Entries typed with no signal, kept until the box has them.
@@ -16,6 +17,10 @@ import { storageName, storageNameFor } from '../../../lib/eventScope.ts'
  * One queue per event (see lib/eventScope.ts), because an entry belongs in
  * the log of the event it was written at: a queue that followed the phone
  * filed the last event's entries in the next one's log.
+ *
+ * The page holds each entry too, until the box has it, and in the apps so
+ * does the app (lib/unsent.ts): localStorage can refuse the write, and in the
+ * apps it can be wiped. Reading the queue reads both.
  */
 
 const KEY = 'crewbox:incident-outbox'
@@ -39,7 +44,8 @@ export interface QueuedIncident {
   amends?: string
 }
 
-const isQueued = (value: unknown): value is QueuedIncident => {
+/** Whether a value is a queued entry, as one read from storage or the app's files has to be. */
+export function isQueuedIncident(value: unknown): value is QueuedIncident {
   if (!value || typeof value !== 'object') return false
   const entry = value as Partial<QueuedIncident>
   return (
@@ -53,11 +59,16 @@ const isQueued = (value: unknown): value is QueuedIncident => {
 
 /** Everything still waiting. Junk in the slot reads as empty, never throws. */
 export function queuedIncidents(): QueuedIncident[] {
-  return read(storageName(KEY))
+  return queuedIncidentsOf(openEvent())
 }
 
 /** What another event's queue holds, for moving it or forgetting the event. */
 export function queuedIncidentsOf(event: string | null): QueuedIncident[] {
+  return withHeld(storedIncidentsOf(event), event, 'entries')
+}
+
+/** What an event's queue holds in localStorage, and nothing the page holds. */
+export function storedIncidentsOf(event: string | null): QueuedIncident[] {
   return read(storageNameFor(event, KEY))
 }
 
@@ -68,27 +79,49 @@ export function unqueueIncidentsOf(event: string | null, clientMsgIds: ReadonlyS
     read(key).filter((e) => !clientMsgIds.has(e.clientMsgId)),
     key
   )
+  void releaseUnsent(event, 'entries', clientMsgIds)
 }
 
 function read(key: string): QueuedIncident[] {
   try {
     const raw = localStorage.getItem(key)
     const parsed: unknown = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter(isQueued) : []
+    return Array.isArray(parsed) ? parsed.filter(isQueuedIncident) : []
   } catch {
     return []
   }
 }
 
-export function queueIncident(entry: QueuedIncident): void {
-  const next = [...queuedIncidents().filter((e) => e.clientMsgId !== entry.clientMsgId), entry]
-  write(next.slice(-MAX_QUEUED))
+/**
+ * Queue an entry until the box has it: in localStorage before this returns,
+ * and held (lib/unsent.ts). Settles to whether it was kept anywhere a reload
+ * leaves it, localStorage or in the apps the app's files, so that an entry
+ * kept nowhere can say so.
+ */
+export function queueIncident(entry: QueuedIncident): Promise<boolean> {
+  const event = openEvent()
+  const next = [
+    ...queuedIncidentsOf(event).filter((e) => e.clientMsgId !== entry.clientMsgId),
+    entry,
+  ]
+  const stored = write(next.slice(-MAX_QUEUED))
+  // The oldest go past the limit, from what the page holds as from storage.
+  void releaseUnsent(
+    event,
+    'entries',
+    next.slice(0, -MAX_QUEUED).map((e) => e.clientMsgId)
+  )
+  return holdUnsent(event, 'entries', entry).then((kept) => stored || kept)
 }
 
 /** Called once the box has acknowledged the entry by broadcasting it back. */
 export function unqueueIncident(clientMsgId: string): void {
-  const next = queuedIncidents().filter((e) => e.clientMsgId !== clientMsgId)
-  write(next)
+  const key = storageName(KEY)
+  write(
+    read(key).filter((e) => e.clientMsgId !== clientMsgId),
+    key
+  )
+  void releaseUnsent(openEvent(), 'entries', [clientMsgId])
 }
 
 /**
@@ -99,15 +132,19 @@ export function unqueueIncident(clientMsgId: string): void {
  * record of what happened at an event. A session ending is different and does
  * not come through here: see `sessionEnded` in the store.
  */
-export function clearQueuedIncidents(): void {
+export async function clearQueuedIncidents(): Promise<void> {
   write([])
+  await releaseAllUnsent(openEvent(), ['entries'])
 }
 
-function write(entries: QueuedIncident[], key = storageName(KEY)): void {
+/** Whether localStorage took it. */
+function write(entries: QueuedIncident[], key = storageName(KEY)): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(entries))
+    return true
   } catch {
     // A full or blocked localStorage must not stop the entry going out over
     // the socket — the queue is the backstop, not the path.
+    return false
   }
 }

@@ -5,7 +5,8 @@
 //
 // Produces an ed25519 keypair: the private half signs releases and must never
 // leave your keeping, the public half goes into TRUSTED_KEYS in
-// server/src/update/verify.ts and ships inside every box.
+// server/src/update/verify.ts and ships inside every box, and into the apps'
+// copies of it, which check the screens a box hands them (docs/UPDATING.md).
 //
 // Why ed25519 rather than the RSA key you already have for Android: the
 // signature is 64 bytes, verification needs nothing but node:crypto, and
@@ -17,8 +18,8 @@
 // for the field to catch up before you can sign with it alone — annoying,
 // recoverable, which is the entire reason the box trusts a set. Leaking it
 // means whoever has it can publish a build that every crewbox in existence
-// will accept as genuine. Treat it like the Android keystore: password
-// manager, offline, never in the repo.
+// will accept as genuine, and screens every crew phone's app will run. Treat
+// it like the Android keystore: password manager, offline, never in the repo.
 
 import { generateKeyPairSync } from 'node:crypto'
 import { writeFileSync, existsSync } from 'node:fs'
@@ -37,6 +38,8 @@ for (const path of [PRIVATE, PUBLIC]) {
 const { publicKey, privateKey } = generateKeyPairSync('ed25519')
 const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' })
 const publicPem = publicKey.export({ type: 'spki', format: 'pem' })
+// The apps carry each key as its 32 raw bytes, not as a PEM.
+const publicRaw = Buffer.from(publicKey.export({ format: 'jwk' }).x, 'base64url').toString('base64')
 
 // 0o600 before anything is written to it, not after: a private key that spent
 // even a moment world-readable is a private key on a shared machine.
@@ -60,6 +63,16 @@ ${publicPem
   .join('\n')}
 
    (or paste the PEM as a template literal — whichever reads better)
+
+   and the same key, as its 32 bytes in base64, to the apps' copies of that
+   list, in the same order: TRUSTED_KEYS in
+   native/android/app/src/main/java/com/colmhewson/crewbox/Screens.java and
+   trustedKeys in native/ios/App/App/ScreensPlugin.swift.
+
+     "${publicRaw}",
+
+   A server test fails until the three agree. An app without the key runs
+   its own screens rather than the ones a box signed with it hands it.
 
 2. Add the private key as a repo secret on legofsalmon/crewbox:
 

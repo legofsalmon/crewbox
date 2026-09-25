@@ -6,6 +6,7 @@
  */
 import type { FileMeta } from '@crewbox/shared'
 import { fileUrl } from '@crewbox/shared'
+import { holdingWhileOpen } from './prefs.ts'
 
 const SERVER_KEY = 'crewbox:server-url'
 
@@ -218,11 +219,72 @@ export interface SessionsPlugin {
   forget(options: { name: string }): Promise<void>
 }
 
+/**
+ * Both apps' copy of what the page keeps for each event, in files of the
+ * app's own that backups leave out (native RecordsPlugin): a folder per
+ * event, by its ID, and a file per slot, each replaced whole. See
+ * lib/appCopy.ts.
+ */
+export interface RecordsPlugin {
+  /** Every event's copy of one slot, by event ID. */
+  readAll(options: { slot: string }): Promise<{ values: Record<string, string> }>
+  /** Keep one slot of an event's, in place of what was there. */
+  write(options: { event: string; slot: string; value: string }): Promise<void>
+  /** Forget one slot of an event's, or all of the event's without one. */
+  remove(options: { event: string; slot?: string }): Promise<void>
+}
+
+/**
+ * What the apps make of the screens a box serves (native ScreensPlugin).
+ * `same`: the box runs the version the app's own screens are. `ready`: its
+ * screens are on the phone, checked against a crewbox release's signature,
+ * and this app runs them. `unsigned`: nothing a release signed, so the app
+ * keeps its own. `incompatible`: signed screens this app won't run, until the
+ * app or the box (`update`) is updated. `failed`: the network or the phone's
+ * storage let the check down, and asking again may work; or the screens
+ * didn't start on this phone, and this build of the app runs them no more.
+ * `reason` is for the log.
+ */
+export interface ScreensAnswer {
+  result: 'same' | 'ready' | 'unsigned' | 'incompatible' | 'failed'
+  version?: string
+  update?: 'app' | 'box'
+  reason?: string
+}
+
+export interface ScreensPlugin {
+  /** Ask the box at `origin` for its screens, and have them on the phone if the app runs them. */
+  prepare(options: { origin: string }): Promise<ScreensAnswer>
+  /**
+   * Run `version` for `event` from the next load: the app's own screens when
+   * they are that version, or ones `prepare` answered `ready` for, checked
+   * again. The page reloads itself as soon as this resolves, which keeps its
+   * address, and the event starts with them from then on once they say they
+   * started. Rejects, and changes nothing, when the app won't run them. With
+   * no version, whatever the event would start with: what it last started
+   * with, when the app still runs them, and otherwise the app's own.
+   */
+  use(options: { event: string; version?: string }): Promise<void>
+  /**
+   * These screens, `version`, have drawn. Screens from a box that don't say
+   * so within 20 seconds of loading, with the app in front, have failed, and
+   * the app goes back to its own (lib/appScreens.ts).
+   */
+  ready(options: { version: string }): Promise<void>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
       isNativePlatform?: () => boolean
       getPlatform?: () => string
+      /**
+       * The plugins the screens call, as the app's bridge gives them: one the
+       * app lacks is absent, and so is each method a plugin lacks. A method
+       * with no `@since` came with native contract 1, which every app that
+       * runs these screens keeps. One marked `@since native contract N` is
+       * optional until the screens need N (lib/nativeApi.ts).
+       */
       Plugins?: {
         CrewboxAlerts?: AlertsPlugin
         App?: AppPlugin
@@ -235,6 +297,8 @@ declare global {
         CrewboxWifi?: WifiPlugin
         CrewboxNetwork?: NetworkPlugin
         CrewboxSessions?: SessionsPlugin
+        CrewboxRecords?: RecordsPlugin
+        CrewboxScreens?: ScreensPlugin
       }
     }
   }
@@ -310,6 +374,16 @@ export function nativeSessions(): SessionsPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxSessions
 }
 
+/** The apps' copy of what the page keeps for each event, when present (native builds only). */
+export function nativeRecords(): RecordsPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxRecords
+}
+
+/** The apps' download and check of a box's screens, when present (native builds only). */
+export function nativeScreens(): ScreensPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxScreens
+}
+
 /**
  * Whether the Android app may use the camera: false when it may not, and
  * undefined when there is nobody to ask, as in a browser or the iPhone app.
@@ -366,13 +440,31 @@ export function iphoneRefusesPlainHttp(origin: string): boolean {
   return !ip && host.includes('.') && !host.endsWith('.local')
 }
 
+/**
+ * The box's origin as the apps' page first read it or last set it
+ * (`holdingWhileOpen`).
+ *
+ * The web view's storage can be wiped underneath a page that is open
+ * (lib/appCopy.ts). A page that then read the address again would go on at
+ * the app's own origin, where there is no box: a phone left showing the
+ * running order would lose its box halfway through a show.
+ */
+let heldOrigin: string | undefined
+
+function storedOrigin(): string | null {
+  try {
+    return localStorage.getItem(SERVER_KEY)
+  } catch {
+    return null
+  }
+}
+
 /** The configured server origin, or '' meaning same-origin (PWA default). */
 export function serverOrigin(): string {
-  try {
-    return localStorage.getItem(SERVER_KEY) ?? ''
-  } catch {
-    return ''
-  }
+  if (heldOrigin !== undefined) return heldOrigin
+  const origin = storedOrigin() ?? ''
+  if (holdingWhileOpen()) heldOrigin = origin
+  return origin
 }
 
 /** Where this page reaches its box: the configured origin, or the page's own. */
@@ -384,7 +476,23 @@ export function setServerOrigin(input: string): void {
   const origin = normalizeOrigin(input)
   if (origin) localStorage.setItem(SERVER_KEY, origin)
   else localStorage.removeItem(SERVER_KEY)
+  if (holdingWhileOpen()) heldOrigin = origin
   holdBoxWifi(origin)
+}
+
+/**
+ * Give the page's storage back a box address it has lost, from the app's
+ * copy (lib/appCopy.ts). Only where it has none: an address it has is the
+ * page's own say. Whether it was put back, and stayed put.
+ */
+export function putBackServerOrigin(origin: string): boolean {
+  if (storedOrigin() !== null || !normalizeOrigin(origin)) return false
+  try {
+    setServerOrigin(origin)
+  } catch {
+    return false
+  }
+  return storedOrigin() === normalizeOrigin(origin)
 }
 
 /** The longest a join waits to hear which way its requests go; see boxWifiSettled. */

@@ -45,6 +45,7 @@ Chat, voice and every module go down for about 20 seconds while the box restarts
 <p><strong>Install now</strong> is the only thing that takes the box off the air.</p>
 <h2 id="what-happens-then"><a class="anchor" href="#what-happens-then">What happens then</a></h2>
 <p>Every phone loses the box for about twenty seconds, then reconnects on its own. Nobody has to rejoin, nothing is lost, and unsent messages send when the connection returns.</p>
+<p>Then phones take the new version from the box. A browser offers <strong>New version available — Reload</strong>. The iPhone and Android apps fetch it first and check that a Crewbox release made it, then offer <strong>New version ready — Reload</strong>. An app too old for the new version says to update the app, and carries on with the version it has, so update the apps along with the box where you can (<a href="/docs/phones-and-platforms#new-versions-in-the-apps">more</a>).</p>
 <p>Behind that:</p>
 <ul><li>The database is copied first, so going back is possible.</li><li>The old binary is kept, not deleted.</li><li>The old program stays running until the new one answers.</li><li>If the new one never answers, the old one comes back and the box carries on.</li></ul>
 <p>You do not have to do anything for that last part. It is not a recovery procedure, it is what happens.</p>
@@ -62,7 +63,7 @@ Chat, voice and every module go down for about 20 seconds while the box restarts
 <p><strong>It came back but something's wrong with the data.</strong> Database copies are in the <code>snapshots</code> folder in the box's data directory, named with the version they belong to. Stop the box, copy the right one over <code>crewbox.db</code>, start it.</p>
 <p><strong>The power went out mid-update.</strong> Nothing to do. The box works out on its next start whether the new version is running, and either keeps it or puts the old one back.</p>
 <h2 id="a-box-run-from-source"><a class="anchor" href="#a-box-run-from-source">A box run from source</a></h2>
-<p>If you're running crewbox with <code>npm run dev</code> or from a checkout, there's no binary to swap and the panel offers nothing. Update it with git.</p>
+<p>If you're running crewbox with <code>npm run dev</code> or from a checkout, there's no binary to swap and the panel offers nothing. Update it with git. No Crewbox release made its screens either, so the phone apps keep their own version there rather than running the box's.</p>
         <footer class="prevnext"><a class="prev" href="/docs/phones-and-platforms"><span>Previous</span>Phones and platforms</a><a class="next" href="/docs/control-api"><span>Next</span>Driving the box from a desk</a></footer>
       </main>
     </div>

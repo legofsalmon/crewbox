@@ -177,6 +177,9 @@ describe('the browser storage names', () => {
         // yet had its box renew, by name (lib/sessions.ts). Device-wide: it
         // names any event's.
         'crewbox:carried-sign-ins',
+        // In the apps: nothing has wiped the page's storage since the app's
+        // copy of it was made (lib/appCopy.ts). Device-wide.
+        'crewbox:copied-to-app',
         // Which event has the names in this list: the first one the device
         // held. See lib/eventScope.ts; every other event's are its own.
         'crewbox:db-epoch',

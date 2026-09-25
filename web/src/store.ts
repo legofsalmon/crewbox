@@ -39,11 +39,18 @@ import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
 import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
 import {
+  screensAfterWelcome,
+  screensForEvent,
+  switchScreens,
+  type ScreensOffer,
+} from './lib/appScreens.ts'
+import {
   boxOrigin,
   boxWifiSettled,
   isIosApp,
   isNative,
   nativeAlerts,
+  nativeScreens,
   nativeSystemBars,
   serverLabel,
   serverOrigin,
@@ -81,6 +88,7 @@ import {
   TOKEN_KEY,
 } from './lib/sessions.ts'
 import { notThePostersCopy, posterDisagreesCopy, refusedCopy } from './lib/connscreen.ts'
+import { releaseUnsent } from './lib/unsent.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
 /** The open event's; see lib/eventScope.ts. Its sign-in's is lib/sessions.ts's. */
@@ -162,6 +170,12 @@ export interface Pending {
   fileId?: string
   fileName?: string
   fileMime?: string
+  /**
+   * Kept nowhere a reload leaves it: the chat cache and, in the apps, the
+   * app's files both refused it. It goes when the box is back, if the page is
+   * still open, and says so until then (lib/unsent.ts).
+   */
+  unsaved?: boolean
 }
 
 /**
@@ -335,6 +349,11 @@ export interface AppState {
    * a fragment.
    */
   incidentsComplete: boolean
+  /**
+   * Show-log entries filed here and kept nowhere a reload leaves them, by
+   * `clientMsgId`: as `Pending.unsaved` is for a message.
+   */
+  unsavedEntries: string[]
   pending: Record<string, Pending[]>
   typing: Record<string, Record<string, number>>
   activeChannelId: string | null
@@ -400,6 +419,11 @@ export interface AppState {
   latencyMs: number | null
   /** A newer build is available; show the reload pill. */
   updateReady: boolean
+  /**
+   * In the apps, why the app can't run the box's own screens, and which of
+   * the two to update (lib/appScreens.ts). Null when there is nothing to do.
+   */
+  screensNote: string | null
   /** Transient notices; each auto-dismisses on its own timer. */
   toasts: { id: number; message: string; kind: ToastKind }[]
   /** A mention or DM that arrived while the app was on screen; null when none. */
@@ -502,6 +526,7 @@ export interface AppState {
   closeFileDetail: () => void
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
   applyUpdate: () => void
+  dismissScreensNote: () => void
   retryConnection: () => void
   /**
    * Open another event this device holds, or the one found at this address.
@@ -570,6 +595,12 @@ let voiceManager: VoiceManager | null = null
 /** Reloads into the new service worker; set once PWA registration runs. */
 let updateSW: ((reload?: boolean) => Promise<void>) | null = null
 let pwaStarted = false
+/** In the apps, the box's screens the update pill switches to (lib/appScreens.ts). */
+let screensUpdate: string | null = null
+/** A note about the box's screens put away this load, which isn't shown again. */
+let screensNoteDismissed: string | null = null
+/** A switch of screens or of event under way: the page is about to reload. */
+let switching = false
 const lastTypingSent = new Map<string, number>()
 let toastSeq = 0
 let bannerSeq = 0
@@ -946,10 +977,55 @@ export const useStore = create<AppState>()((set, get) => {
       }
     }
 
+    // Both queues as the page holds them too (lib/unsent.ts), so what the
+    // page's storage refused, or lost to a wipe while the page was open,
+    // goes with the rest.
     const outbox = await cache.loadOutbox()
     // The show log's own queue goes through the same pacing, because it
     // shares the same counter — see flushOrder.
     void paced(flushOrder(outbox, queuedIncidents()))
+  }
+
+  /**
+   * A message kept nowhere a reload leaves it says so, while it waits
+   * (`Pending.unsaved`). Nothing to say once it has gone.
+   */
+  function saidUnsaved(channelId: string, clientMsgId: string): void {
+    const list = get().pending[channelId]
+    if (!list?.some((p) => p.clientMsgId === clientMsgId)) return
+    set({
+      pending: {
+        ...get().pending,
+        [channelId]: list.map((p) => (p.clientMsgId === clientMsgId ? { ...p, unsaved: true } : p)),
+      },
+    })
+  }
+
+  /**
+   * In the apps, what the box's build means for these screens: the update
+   * pill, when the app has the box's own screens for the event open, a note
+   * of what to update, or nothing. A note put away stays away for the load,
+   * and nothing changes once the page is on its way to a reload.
+   */
+  function showScreensOffer(offer: ScreensOffer): void {
+    if (switching) return
+    if (offer?.kind === 'switch' && openEvent()) {
+      screensUpdate = offer.version
+      set({ updateReady: true, screensNote: null })
+      return
+    }
+    screensUpdate = null
+    const note = offer?.kind === 'note' && offer.text !== screensNoteDismissed ? offer.text : null
+    set({ updateReady: false, screensNote: note })
+  }
+
+  /** The box has a show-log entry, or has refused it for good: out of the queue. */
+  function settleEntry(clientMsgId: string): void {
+    unqueueIncident(clientMsgId)
+    const unsaved = get().unsavedEntries
+    if (unsaved.includes(clientMsgId)) {
+      set({ unsavedEntries: unsaved.filter((id) => id !== clientMsgId) })
+    }
   }
 
   async function handleWelcome(msg: WelcomeMessage): Promise<void> {
@@ -982,7 +1058,15 @@ export const useStore = create<AppState>()((set, get) => {
     // reload pill. Guarded by an active service worker so dev (no SW) and any
     // transient mismatch don't nag; the SW's own onNeedRefresh is the primary
     // trigger, this just makes reconnect-after-redeploy instant.
-    if (
+    //
+    // The apps have no service worker. Their pill switches to the box's own
+    // screens once the app has them and knows a crewbox release made them,
+    // for another version or another protocol alike, and otherwise a note
+    // says what to update. The pill never offers a reload that changes
+    // nothing, which is all this one could do there (lib/appScreens.ts).
+    if (isNative()) {
+      screensAfterWelcome(here(), msg, showScreensOffer)
+    } else if (
       msg.serverVersion &&
       msg.serverVersion !== APP_VERSION &&
       // Only when both sides know which build they are. A tree with no git
@@ -1128,8 +1212,13 @@ export const useStore = create<AppState>()((set, get) => {
 
     // A protocol mismatch means this bundle predates the server (they deploy
     // in lockstep) — surface the reload pill immediately, and kick the SW so
-    // the new worker is waiting by the time the pill is tapped.
-    if (msg.protocolVersion !== undefined && msg.protocolVersion !== PROTOCOL_VERSION) {
+    // the new worker is waiting by the time the pill is tapped. The apps
+    // asked for the box's screens above.
+    if (
+      !isNative() &&
+      msg.protocolVersion !== undefined &&
+      msg.protocolVersion !== PROTOCOL_VERSION
+    ) {
       set({ updateReady: true })
       checkForUpdate()
     }
@@ -1182,7 +1271,7 @@ export const useStore = create<AppState>()((set, get) => {
           const without = state.incidents.filter((e) => e.id !== msg.incident.id)
           return { incidents: [...without, msg.incident] }
         })
-        if (msg.incident.clientMsgId) unqueueIncident(msg.incident.clientMsgId)
+        if (msg.incident.clientMsgId) settleEntry(msg.incident.clientMsgId)
         break
       }
       case 'msg': {
@@ -1241,7 +1330,7 @@ export const useStore = create<AppState>()((set, get) => {
          * filed it believed the box had it. A no-op for a chat id, which is
          * what most of these are.
          */
-        unqueueIncident(msg.clientMsgId)
+        settleEntry(msg.clientMsgId)
         break
       }
       case 'tally':
@@ -1373,6 +1462,7 @@ export const useStore = create<AppState>()((set, get) => {
     incidents: [],
     incidentsLoaded: false,
     incidentsComplete: false,
+    unsavedEntries: [],
     pending: {},
     typing: {},
     activeChannelId: null,
@@ -1392,6 +1482,7 @@ export const useStore = create<AppState>()((set, get) => {
     feedbackOpen: false,
     latencyMs: null,
     updateReady: false,
+    screensNote: null,
     toasts: [],
     alertBanner: null,
     loadingOlder: false,
@@ -1617,6 +1708,8 @@ export const useStore = create<AppState>()((set, get) => {
         replacedAt(here(), { id: eventId, name: '', ...(continues ? { continues } : {}) })
         rememberEvent({ id: eventId, origin: here() })
         keepEventKey(eventId, key)
+        // In the apps, on its box's own screens (lib/appScreens.ts).
+        await screensForEvent(eventId, here())
         chooseEvent(eventId)
         reopenOnAnotherEvent()
         return
@@ -1637,11 +1730,14 @@ export const useStore = create<AppState>()((set, get) => {
         body: trimmed,
         createdAt: Date.now(),
       }
-      void cache.putOutbox(entry)
+      const saving = cache.putOutbox(entry)
       const pending = { ...get().pending }
       pending[channelId] = [...(pending[channelId] ?? []), entry]
       set({ pending })
       ws?.send({ type: 'send', clientMsgId: entry.clientMsgId, channelId, body: trimmed })
+      void saving.then((saved) => {
+        if (!saved) saidUnsaved(channelId, entry.clientMsgId)
+      })
     },
 
     logIncident(entry) {
@@ -1650,19 +1746,29 @@ export const useStore = create<AppState>()((set, get) => {
       const queued = { ...entry, body, clientMsgId: newId() }
       // Queued before it is sent, never after: the tap that files a show stop
       // has to survive the screen going dark a moment later.
-      queueIncident(queued)
+      const saving = queueIncident(queued)
       ws?.send({ type: 'logIncident', ...queued })
+      void saving.then((saved) => {
+        const id = queued.clientMsgId
+        if (saved || !queuedIncidents().some((e) => e.clientMsgId === id)) return
+        set({ unsavedEntries: [...get().unsavedEntries, id] })
+      })
     },
 
     async queueMoved(messages, entries) {
-      for (const entry of messages) await cache.putOutbox(entry)
-      for (const entry of entries) queueIncident(entry)
-      // Read back rather than trusted: the cache swallows a failed write, and
-      // the other event's copy is deleted on the strength of this answer.
-      const saved = new Set([
-        ...(await cache.loadOutbox()).map((entry) => entry.clientMsgId),
-        ...queuedIncidents().map((entry) => entry.clientMsgId),
-      ])
+      // Claimed only where this event's queue or the app's files took it: the
+      // other event's copy is deleted on the strength of this answer. One kept
+      // nowhere stays with its own event, and this one lets it go.
+      const open = openEvent()
+      const saved = new Set<string>()
+      for (const entry of messages) {
+        if (await cache.putOutbox(entry)) saved.add(entry.clientMsgId)
+        else await releaseUnsent(open, 'messages', [entry.clientMsgId])
+      }
+      for (const entry of entries) {
+        if (await queueIncident(entry)) saved.add(entry.clientMsgId)
+        else unqueueIncident(entry.clientMsgId)
+      }
       const landed = messages.filter((entry) => saved.has(entry.clientMsgId))
       if (landed.length) {
         const pending = { ...get().pending }
@@ -1757,7 +1863,7 @@ export const useStore = create<AppState>()((set, get) => {
           fileName: meta.name,
           fileMime: meta.mime,
         }
-        void cache.putOutbox(entry)
+        const saving = cache.putOutbox(entry)
         const pending = { ...get().pending }
         pending[channelId] = [...(pending[channelId] ?? []), entry]
         set({ pending })
@@ -1767,6 +1873,9 @@ export const useStore = create<AppState>()((set, get) => {
           channelId,
           body: entry.body,
           fileId: meta.id,
+        })
+        void saving.then((saved) => {
+          if (!saved) saidUnsaved(channelId, entry.clientMsgId)
         })
       } catch (err) {
         get().toast(err instanceof api.ApiError ? err.message : 'Upload failed')
@@ -2084,10 +2193,36 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     applyUpdate() {
+      // In the apps: the box's own screens, once the app serves them.
+      const version = screensUpdate
+      if (version) {
+        const event = openEvent()
+        if (!event || switching) return
+        switching = true
+        switchScreens(event, version).then(
+          () => {
+            ws?.stop()
+            location.reload()
+          },
+          () => {
+            // Gone from the phone, or failed on it, since the app answered.
+            switching = false
+            screensUpdate = null
+            set({ updateReady: false })
+            get().toast('This phone couldn’t open the new version, so it carries on with this one.')
+          }
+        )
+        return
+      }
       // Activate the waiting service worker and reload. Unsent messages are in
       // the IndexedDB outbox, so nothing is lost across the reload.
       if (updateSW) void updateSW(true)
       else location.reload()
+    },
+
+    dismissScreensNote() {
+      screensNoteDismissed = get().screensNote
+      set({ screensNote: null })
     },
 
     retryConnection() {
@@ -2100,9 +2235,23 @@ export const useStore = create<AppState>()((set, get) => {
       // In the app the event's box is wherever it was last reached. A
       // browser is at its box's address and stays there.
       const origin = knownEvent(id)?.origin
-      if (isNative() && origin) setServerOrigin(origin)
-      chooseEvent(id)
-      reopenOnAnotherEvent(pin)
+      const open = () => {
+        if (isNative() && origin) setServerOrigin(origin)
+        chooseEvent(id)
+        reopenOnAnotherEvent(pin)
+      }
+      if (!isNative() || !nativeScreens()) {
+        open()
+        return
+      }
+      // The apps first have the event's own box's screens served for the
+      // reload, which can take a few seconds. Only then is anything of this
+      // page's changed: until the reload it is still the open event's page.
+      if (switching) return
+      switching = true
+      const name = knownEvent(id)?.name
+      get().toast(name ? `Opening ${name}…` : 'Opening the event…', 'info')
+      void screensForEvent(id, origin).then(open)
     },
 
     openEventAt({ id, name, origin, key, pin }) {
@@ -2192,7 +2341,7 @@ export const useStore = create<AppState>()((set, get) => {
       ws?.stop()
       ws = null
       await forgetSession(storageName(TOKEN_KEY))
-      clearQueuedIncidents()
+      await clearQueuedIncidents()
       await cache.wipe()
       location.reload()
     },

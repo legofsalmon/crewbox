@@ -1,7 +1,8 @@
 import { getConfigAt } from './api.ts'
-import { chatDatabase, chatDatabaseName } from './db.ts'
+import { chatDatabaseName, databaseNames, outboxOf } from './db.ts'
 import { deleteLocalDatabase } from './docs/persistence.ts'
 import { allDocStores } from './docs/store.ts'
+import { forgetAllEdits } from './docs/unsentEdits.ts'
 import { addressOf, type NearbyBox } from './discovery.ts'
 import {
   eventIdFrom,
@@ -17,6 +18,7 @@ import {
 import { forgetPref } from './prefs.ts'
 import { forgetSession, TOKEN_KEY } from './sessions.ts'
 import { iphoneRefusesPlainHttp, isIosApp, normalizeOrigin } from './server.ts'
+import { releaseAllUnsent } from './unsent.ts'
 import { queuedIncidentsOf } from '../modules/incident/model/outbox.ts'
 import { timetableDatabase } from '../shell/timetable/store.ts'
 
@@ -39,40 +41,10 @@ export interface Holdings {
   unsentEntries: number
 }
 
-/** Every IndexedDB database this device has, or null where the browser will not say. */
-export async function databaseNames(): Promise<string[] | null> {
-  if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') return null
-  try {
-    return (await indexedDB.databases()).flatMap((db) => (db.name ? [db.name] : []))
-  } catch {
-    return null
-  }
-}
-
-/**
- * The messages waiting in an event's outbox.
- *
- * Asked of the database only if it is there, where the browser can say:
- * opening one that is not makes it, and looking at the Boxes screen should
- * not leave an empty chat cache behind for every event on it.
- */
-async function unsentMessagesOf(event: string): Promise<number> {
-  const names = await databaseNames()
-  if (names && !names.includes(chatDatabaseName(event))) return 0
-  const db = chatDatabase(event)
-  try {
-    return await db.outbox.count()
-  } catch {
-    return 0
-  } finally {
-    db.close()
-  }
-}
-
 export async function holdingsOf(event: string): Promise<Holdings> {
   return {
     documents: allDocStores().reduce((sum, store) => sum + store.storageOf(event).ids().length, 0),
-    unsentMessages: await unsentMessagesOf(event),
+    unsentMessages: (await outboxOf(event)).length,
     unsentEntries: queuedIncidentsOf(event).length,
   }
 }
@@ -113,6 +85,9 @@ export async function forgetEvent(event: string): Promise<void> {
   }
   await Promise.all([...databases].map(deleteLocalDatabase))
   for (const key of keys) forgetPref(key)
+  // Its unsent work, which the page holds, and in the apps the app too, with
+  // the document edits the app kept for its box.
+  await Promise.all([releaseAllUnsent(event), forgetAllEdits(event)])
   await forgetSession(session)
   releaseEvent(event)
   forgetEventRecord(event)

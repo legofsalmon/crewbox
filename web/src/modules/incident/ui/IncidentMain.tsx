@@ -11,7 +11,14 @@ import {
 import DrawerButton from '../../../shell/DrawerButton.tsx'
 import { deliveredNote, deliverText } from '../../../lib/download.ts'
 import { useStore } from '../../../store.ts'
-import { byShowDay, clockOf, filterLog, loggedLate, type LogFilter } from '../model/log.ts'
+import {
+  byShowDay,
+  clockOf,
+  filterLog,
+  loggedLate,
+  unsavedCopy,
+  type LogFilter,
+} from '../model/log.ts'
 import { reportFilename, showReportHtml } from '../model/report.ts'
 import { queuedIncidents } from '../model/outbox.ts'
 import LogEntryForm from './LogEntryForm.tsx'
@@ -107,7 +114,11 @@ export default function IncidentMain() {
   // Entries this device has filed and the box has not yet confirmed. Read
   // once per render rather than held in state: the queue is small, and the
   // socket acknowledgement is what removes them.
-  const unsent = queuedIncidents().length
+  const queued = queuedIncidents()
+  const unsent = queued.length
+  // Those of them the phone couldn't keep, which a closed app loses.
+  const unsavedIds = useStore((s) => s.unsavedEntries)
+  const unsaved = queued.filter((e) => unsavedIds.includes(e.clientMsgId)).length
 
   useEffect(() => {
     void loadIncidents()
@@ -176,8 +187,10 @@ export default function IncidentMain() {
         </p>
         {unsent > 0 && (
           <p className={styles.unsent} role="status">
-            {unsent} {unsent === 1 ? 'entry is' : 'entries are'} waiting for the box. They’re held
-            on this phone and go out as soon as it’s back.
+            {unsent} {unsent === 1 ? 'entry is' : 'entries are'} waiting for the box.{' '}
+            {unsaved === 0
+              ? 'They’re held on this phone and go out as soon as it’s back.'
+              : unsavedCopy(unsaved, unsent)}
           </p>
         )}
       </header>

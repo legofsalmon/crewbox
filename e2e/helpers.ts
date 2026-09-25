@@ -66,6 +66,44 @@ export const newDevice = async (browser: Browser, crewName?: string): Promise<Pa
 }
 
 /**
+ * Until a page's chat cache holds what the app shows at a start with no
+ * signal: the snapshot of its channels and crew (lib/db.ts).
+ *
+ * Chat is on screen before that is saved. The page draws the box's welcome
+ * first and saves the snapshot after (store.ts, persistSnapshot), so a test
+ * that cuts a page off and reloads it the moment chat shows can catch it
+ * with nothing cached. That page shows "Can't reach the crew server", a
+ * first start's screen, instead of the banner a returning phone shows.
+ */
+export const untilChatCached = (page: Page) =>
+  expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const saved = (name: string) =>
+          new Promise<boolean>((resolve) => {
+            const open = indexedDB.open(name)
+            open.onerror = () => resolve(false)
+            open.onsuccess = () => {
+              const db = open.result
+              const done = (value: boolean) => {
+                db.close()
+                resolve(value)
+              }
+              if (!db.objectStoreNames.contains('kv')) return done(false)
+              const get = db.transaction('kv').objectStore('kv').get('snapshot')
+              get.onsuccess = () => done(get.result !== undefined)
+              get.onerror = () => done(false)
+            }
+          })
+        for (const { name } of await indexedDB.databases()) {
+          if (name && (await saved(name))) return true
+        }
+        return false
+      })
+    )
+    .toBe(true)
+
+/**
  * The apps' keeping of sign-ins (SessionsPlugin), for an init script added
  * after the one that stands the app in: the iPhone's Keychain or Android's
  * Keystore, stood in for by the tab's sessionStorage, which a reload keeps
@@ -118,6 +156,111 @@ export const keychainOf = (page: Page) =>
 /** What the stood-in app's keeping of sign-ins has been asked, on the page as loaded. */
 export const keychainCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as { __keychainCalls: string[] }).__keychainCalls)
+
+/**
+ * The apps' own files (RecordsPlugin, web/src/lib/appCopy.ts), for an init
+ * script added after the one that stands the app in: a folder per event and
+ * a file per slot, stood in for by the tab's sessionStorage, which a reload
+ * keeps and a wipe of the page's IndexedDB and localStorage doesn't reach, as
+ * on a phone.
+ */
+export function keepRecordsInTheApp(): void {
+  const w = window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }
+  const plugins = w.Capacitor?.Plugins
+  if (!plugins) return
+  type Folders = Record<string, Record<string, string>>
+  const kept = (): Folders => JSON.parse(sessionStorage.getItem('__records') ?? '{}') as Folders
+  const keep = (folders: Folders) => sessionStorage.setItem('__records', JSON.stringify(folders))
+  // A little later, as a call across the bridge is, and in the order asked.
+  const answered = () => new Promise((resolve) => setTimeout(resolve, 20))
+  plugins.CrewboxRecords = {
+    readAll: async ({ slot }: { slot: string }) => {
+      await answered()
+      const values: Record<string, string> = {}
+      for (const [event, slots] of Object.entries(kept())) {
+        const value = slots[slot]
+        if (value !== undefined) values[event] = value
+      }
+      return { values }
+    },
+    write: async ({ event, slot, value }: { event: string; slot: string; value: string }) => {
+      await answered()
+      const folders = kept()
+      folders[event] = { ...folders[event], [slot]: value }
+      keep(folders)
+    },
+    remove: async ({ event, slot }: { event: string; slot?: string }) => {
+      await answered()
+      const folders = kept()
+      if (slot === undefined) delete folders[event]
+      else if (folders[event]) delete folders[event][slot]
+      keep(folders)
+    },
+  }
+}
+
+/**
+ * The apps' running of screens from a box (ScreensPlugin, web/src/lib/appScreens.ts),
+ * for an init script added after the one that stands the app in: what the
+ * page tells it is kept for `screensCalls`, on the page as loaded, and the
+ * switches it asks for for `screensSwitches`, across loads. Its `prepare`
+ * answers as `screensWillAnswer` says, and otherwise that the box has no
+ * screens from a crewbox release.
+ */
+export function keepScreensInTheApp(): void {
+  const w = window as unknown as {
+    Capacitor?: { Plugins?: Record<string, unknown> }
+    __screensCalls?: string[]
+  }
+  const plugins = w.Capacitor?.Plugins
+  if (!plugins) return
+  const calls: string[] = []
+  w.__screensCalls = calls
+  plugins.CrewboxScreens = {
+    prepare: async ({ origin }: { origin: string }) => {
+      calls.push(`prepare ${origin}`)
+      const answer = sessionStorage.getItem('__screensAnswer')
+      return answer ? (JSON.parse(answer) as unknown) : { result: 'unsigned', reason: 'stood in' }
+    },
+    use: async ({ event, version }: { event: string; version?: string }) => {
+      const call = version ? `use ${event} ${version}` : `use ${event}`
+      calls.push(call)
+      // The page reloads next, which the app outlives, and so does this.
+      const switches = JSON.parse(sessionStorage.getItem('__screensSwitches') ?? '[]') as string[]
+      sessionStorage.setItem('__screensSwitches', JSON.stringify([...switches, call]))
+    },
+    ready: async ({ version }: { version: string }) => {
+      // Said while the blank screen boot shows is said too early.
+      const blank = document.querySelector('.boot-screen') ? ' on the blank screen' : ''
+      calls.push(`ready ${version}${blank}`)
+    },
+  }
+}
+
+/** What the stood-in app has been told about its screens, on the page as loaded. */
+export const screensCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __screensCalls: string[] }).__screensCalls)
+
+/** What the stood-in app's `prepare` answers from now on: `ScreensAnswer` in web/src/lib/server.ts. */
+export const screensWillAnswer = (page: Page, answer: Record<string, string>) =>
+  page.evaluate(
+    (answer) => sessionStorage.setItem('__screensAnswer', JSON.stringify(answer)),
+    answer
+  )
+
+/** Every switch of screens the stood-in app was asked for, oldest first, across loads. */
+export const screensSwitches = (page: Page) =>
+  page.evaluate(() => JSON.parse(sessionStorage.getItem('__screensSwitches') ?? '[]') as string[])
+
+/** What the stood-in app's files hold, by event and slot. */
+export const recordsOf = (page: Page) =>
+  page.evaluate(
+    () =>
+      JSON.parse(sessionStorage.getItem('__records') ?? '{}') as Record<
+        string,
+        Record<string, string>
+      >
+  )
 
 /** A box as the apps' search reports one: `FoundService` in web/src/lib/server.ts. */
 export interface FoundService {
