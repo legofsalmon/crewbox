@@ -81,6 +81,7 @@ import {
   TOKEN_KEY,
 } from './lib/sessions.ts'
 import { notThePostersCopy, posterDisagreesCopy, refusedCopy } from './lib/connscreen.ts'
+import { releaseUnsent } from './lib/unsent.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
 /** The open event's; see lib/eventScope.ts. Its sign-in's is lib/sessions.ts's. */
@@ -162,6 +163,12 @@ export interface Pending {
   fileId?: string
   fileName?: string
   fileMime?: string
+  /**
+   * Kept nowhere a reload leaves it: the chat cache and, in the apps, the
+   * app's files both refused it. It goes when the box is back, if the page is
+   * still open, and says so until then (lib/unsent.ts).
+   */
+  unsaved?: boolean
 }
 
 /**
@@ -335,6 +342,11 @@ export interface AppState {
    * a fragment.
    */
   incidentsComplete: boolean
+  /**
+   * Show-log entries filed here and kept nowhere a reload leaves them, by
+   * `clientMsgId`: as `Pending.unsaved` is for a message.
+   */
+  unsavedEntries: string[]
   pending: Record<string, Pending[]>
   typing: Record<string, Record<string, number>>
   activeChannelId: string | null
@@ -946,10 +958,37 @@ export const useStore = create<AppState>()((set, get) => {
       }
     }
 
+    // Both queues as the page holds them too (lib/unsent.ts), so what the
+    // page's storage refused, or lost to a wipe while the page was open,
+    // goes with the rest.
     const outbox = await cache.loadOutbox()
     // The show log's own queue goes through the same pacing, because it
     // shares the same counter — see flushOrder.
     void paced(flushOrder(outbox, queuedIncidents()))
+  }
+
+  /**
+   * A message kept nowhere a reload leaves it says so, while it waits
+   * (`Pending.unsaved`). Nothing to say once it has gone.
+   */
+  function saidUnsaved(channelId: string, clientMsgId: string): void {
+    const list = get().pending[channelId]
+    if (!list?.some((p) => p.clientMsgId === clientMsgId)) return
+    set({
+      pending: {
+        ...get().pending,
+        [channelId]: list.map((p) => (p.clientMsgId === clientMsgId ? { ...p, unsaved: true } : p)),
+      },
+    })
+  }
+
+  /** The box has a show-log entry, or has refused it for good: out of the queue. */
+  function settleEntry(clientMsgId: string): void {
+    unqueueIncident(clientMsgId)
+    const unsaved = get().unsavedEntries
+    if (unsaved.includes(clientMsgId)) {
+      set({ unsavedEntries: unsaved.filter((id) => id !== clientMsgId) })
+    }
   }
 
   async function handleWelcome(msg: WelcomeMessage): Promise<void> {
@@ -1182,7 +1221,7 @@ export const useStore = create<AppState>()((set, get) => {
           const without = state.incidents.filter((e) => e.id !== msg.incident.id)
           return { incidents: [...without, msg.incident] }
         })
-        if (msg.incident.clientMsgId) unqueueIncident(msg.incident.clientMsgId)
+        if (msg.incident.clientMsgId) settleEntry(msg.incident.clientMsgId)
         break
       }
       case 'msg': {
@@ -1241,7 +1280,7 @@ export const useStore = create<AppState>()((set, get) => {
          * filed it believed the box had it. A no-op for a chat id, which is
          * what most of these are.
          */
-        unqueueIncident(msg.clientMsgId)
+        settleEntry(msg.clientMsgId)
         break
       }
       case 'tally':
@@ -1373,6 +1412,7 @@ export const useStore = create<AppState>()((set, get) => {
     incidents: [],
     incidentsLoaded: false,
     incidentsComplete: false,
+    unsavedEntries: [],
     pending: {},
     typing: {},
     activeChannelId: null,
@@ -1637,11 +1677,14 @@ export const useStore = create<AppState>()((set, get) => {
         body: trimmed,
         createdAt: Date.now(),
       }
-      void cache.putOutbox(entry)
+      const saving = cache.putOutbox(entry)
       const pending = { ...get().pending }
       pending[channelId] = [...(pending[channelId] ?? []), entry]
       set({ pending })
       ws?.send({ type: 'send', clientMsgId: entry.clientMsgId, channelId, body: trimmed })
+      void saving.then((saved) => {
+        if (!saved) saidUnsaved(channelId, entry.clientMsgId)
+      })
     },
 
     logIncident(entry) {
@@ -1650,19 +1693,29 @@ export const useStore = create<AppState>()((set, get) => {
       const queued = { ...entry, body, clientMsgId: newId() }
       // Queued before it is sent, never after: the tap that files a show stop
       // has to survive the screen going dark a moment later.
-      queueIncident(queued)
+      const saving = queueIncident(queued)
       ws?.send({ type: 'logIncident', ...queued })
+      void saving.then((saved) => {
+        const id = queued.clientMsgId
+        if (saved || !queuedIncidents().some((e) => e.clientMsgId === id)) return
+        set({ unsavedEntries: [...get().unsavedEntries, id] })
+      })
     },
 
     async queueMoved(messages, entries) {
-      for (const entry of messages) await cache.putOutbox(entry)
-      for (const entry of entries) queueIncident(entry)
-      // Read back rather than trusted: the cache swallows a failed write, and
-      // the other event's copy is deleted on the strength of this answer.
-      const saved = new Set([
-        ...(await cache.loadOutbox()).map((entry) => entry.clientMsgId),
-        ...queuedIncidents().map((entry) => entry.clientMsgId),
-      ])
+      // Claimed only where this event's queue or the app's files took it: the
+      // other event's copy is deleted on the strength of this answer. One kept
+      // nowhere stays with its own event, and this one lets it go.
+      const open = openEvent()
+      const saved = new Set<string>()
+      for (const entry of messages) {
+        if (await cache.putOutbox(entry)) saved.add(entry.clientMsgId)
+        else await releaseUnsent(open, 'messages', [entry.clientMsgId])
+      }
+      for (const entry of entries) {
+        if (await queueIncident(entry)) saved.add(entry.clientMsgId)
+        else unqueueIncident(entry.clientMsgId)
+      }
       const landed = messages.filter((entry) => saved.has(entry.clientMsgId))
       if (landed.length) {
         const pending = { ...get().pending }
@@ -1757,7 +1810,7 @@ export const useStore = create<AppState>()((set, get) => {
           fileName: meta.name,
           fileMime: meta.mime,
         }
-        void cache.putOutbox(entry)
+        const saving = cache.putOutbox(entry)
         const pending = { ...get().pending }
         pending[channelId] = [...(pending[channelId] ?? []), entry]
         set({ pending })
@@ -1767,6 +1820,9 @@ export const useStore = create<AppState>()((set, get) => {
           channelId,
           body: entry.body,
           fileId: meta.id,
+        })
+        void saving.then((saved) => {
+          if (!saved) saidUnsaved(channelId, entry.clientMsgId)
         })
       } catch (err) {
         get().toast(err instanceof api.ApiError ? err.message : 'Upload failed')
@@ -2192,7 +2248,7 @@ export const useStore = create<AppState>()((set, get) => {
       ws?.stop()
       ws = null
       await forgetSession(storageName(TOKEN_KEY))
-      clearQueuedIncidents()
+      await clearQueuedIncidents()
       await cache.wipe()
       location.reload()
     },

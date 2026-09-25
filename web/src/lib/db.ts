@@ -1,8 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { Channel, Message, User } from '@crewbox/shared'
 import { openEvent, storageNameFor } from './eventScope.ts'
+import { holdUnsent, releaseAllUnsent, releaseUnsent, withHeld } from './unsent.ts'
 
-/** A send waiting for a server ack. Survives reloads and battery death. */
+/**
+ * A send waiting for a server ack. Survives reloads and battery death, and
+ * is held while the page is open, and in the apps by the app (lib/unsent.ts).
+ */
 export interface OutboxEntry {
   clientMsgId: string
   channelId: string
@@ -13,6 +17,28 @@ export interface OutboxEntry {
   fileName?: string
   fileMime?: string
 }
+
+const optionalText = (value: unknown): boolean => value === undefined || typeof value === 'string'
+
+/** Whether a value is an outbox entry, as one read back from the app's files has to be. */
+export function isOutboxEntry(value: unknown): value is OutboxEntry {
+  if (!value || typeof value !== 'object') return false
+  const entry = value as Partial<OutboxEntry>
+  return (
+    typeof entry.clientMsgId === 'string' &&
+    entry.clientMsgId !== '' &&
+    typeof entry.channelId === 'string' &&
+    typeof entry.body === 'string' &&
+    typeof entry.createdAt === 'number' &&
+    optionalText(entry.fileId) &&
+    optionalText(entry.fileName) &&
+    optionalText(entry.fileMime)
+  )
+}
+
+/** An outbox, with whatever the page holds (lib/unsent.ts) that it lacks, oldest first. */
+const withHeldMessages = (stored: OutboxEntry[], event: string | null): OutboxEntry[] =>
+  withHeld(stored, event, 'messages').sort((a, b) => a.createdAt - b.createdAt)
 
 /** Sidebar/users snapshot so the app boots meaningfully with no network. */
 export interface Snapshot {
@@ -50,6 +76,41 @@ export function chatDatabase(event: string | null): CrewboxDb {
     kv: 'key',
   })
   return db
+}
+
+/** Every IndexedDB database this device has, or null where the browser will not say. */
+export async function databaseNames(): Promise<string[] | null> {
+  if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') return null
+  try {
+    return (await indexedDB.databases()).flatMap((db) => (db.name ? [db.name] : []))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The messages waiting in an event's chat cache, and nothing the page holds.
+ *
+ * Asked of the database only if it is there, where the browser can say:
+ * opening one that is not makes it, and a look at an event's work should
+ * not leave an empty chat cache behind.
+ */
+export async function storedOutboxOf(event: string): Promise<OutboxEntry[]> {
+  const names = await databaseNames()
+  if (names && !names.includes(chatDatabaseName(event))) return []
+  const db = chatDatabase(event)
+  try {
+    return await db.outbox.orderBy('createdAt').toArray()
+  } catch {
+    return []
+  } finally {
+    db.close()
+  }
+}
+
+/** Every message waiting to go to an event's box: in its chat cache, and held (lib/unsent.ts). */
+export async function outboxOf(event: string): Promise<OutboxEntry[]> {
+  return withHeldMessages(await storedOutboxOf(event), event)
 }
 
 let open: CrewboxDb | null = null
@@ -188,16 +249,37 @@ export const cache = {
     }
   },
 
-  async putOutbox(entry: OutboxEntry): Promise<void> {
-    await bestEffort(() => database().outbox.put(entry))
+  /**
+   * Queue a message until the box has it: in the chat cache, and held
+   * (lib/unsent.ts). Settles to whether it was kept anywhere a reload
+   * leaves it, the chat cache or in the apps the app's files, so that a
+   * message kept nowhere can say so.
+   */
+  async putOutbox(entry: OutboxEntry): Promise<boolean> {
+    const [stored, kept] = await Promise.all([
+      orEmpty(
+        () =>
+          database()
+            .outbox.put(entry)
+            .then(() => true),
+        false
+      ),
+      holdUnsent(openEvent(), 'messages', entry),
+    ])
+    return stored || kept
   },
 
   async deleteOutbox(clientMsgId: string): Promise<void> {
-    await bestEffort(() => database().outbox.delete(clientMsgId))
+    await Promise.all([
+      bestEffort(() => database().outbox.delete(clientMsgId)),
+      releaseUnsent(openEvent(), 'messages', [clientMsgId]),
+    ])
   },
 
-  loadOutbox(): Promise<OutboxEntry[]> {
-    return orEmpty(() => database().outbox.orderBy('createdAt').toArray(), [])
+  /** Every message waiting to go, oldest first: in the chat cache, and held. */
+  async loadOutbox(): Promise<OutboxEntry[]> {
+    const stored = await orEmpty(() => database().outbox.orderBy('createdAt').toArray(), [])
+    return withHeldMessages(stored, openEvent())
   },
 
   async saveSnapshot(snapshot: Omit<Snapshot, 'key' | 'savedAt'>): Promise<void> {
@@ -210,9 +292,12 @@ export const cache = {
 
   /** Everything, for a device being handed to somebody else. */
   async wipe(): Promise<void> {
-    await bestEffort(() =>
-      Promise.all([database().messages.clear(), database().outbox.clear(), database().kv.clear()])
-    )
+    await Promise.all([
+      bestEffort(() =>
+        Promise.all([database().messages.clear(), database().outbox.clear(), database().kv.clear()])
+      ),
+      releaseAllUnsent(openEvent(), ['messages']),
+    ])
   },
 
   /**

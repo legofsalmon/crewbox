@@ -1330,6 +1330,26 @@ a.app-version:hover {
   opacity: 0.55;
 }
 
+/* A pending message the phone couldn't keep: faded as any unsent one, but
+   the line saying so is at full strength, since it is what somebody has to
+   read before they close the app. */
+.msg.pending.unsaved {
+  opacity: 1;
+}
+
+.msg.pending.unsaved > .msg-gutter,
+.msg.pending.unsaved .msg-head,
+.msg.pending.unsaved .msg-body {
+  opacity: 0.55;
+}
+
+.msg-unsaved {
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
 .jump-pill {
   position: sticky;
   bottom: 12px;

@@ -66,4 +66,12 @@ describe('the page’s side', () => {
     expect(copy).toContain("const SLOT = 'event'")
     expect(copy).toContain("const COPIED = 'crewbox:copied-to-app'")
   })
+
+  it('keeps each event’s unsent messages and show-log entries in slots whose names reach phones', () => {
+    // Beside the record, in the event's folder (web/src/lib/unsent.ts). A new
+    // name would strand, on every phone, whatever was waiting under the old.
+    const unsent = read('web/src/lib/unsent.ts')
+    expect(unsent).toContain("const MESSAGES_SLOT = 'outbox'")
+    expect(unsent).toContain("const ENTRIES_SLOT = 'incident-outbox'")
+  })
 })

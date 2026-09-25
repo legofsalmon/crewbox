@@ -119,6 +119,58 @@ export const keychainOf = (page: Page) =>
 export const keychainCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as { __keychainCalls: string[] }).__keychainCalls)
 
+/**
+ * The apps' own files (RecordsPlugin, web/src/lib/appCopy.ts), for an init
+ * script added after the one that stands the app in: a folder per event and
+ * a file per slot, stood in for by the tab's sessionStorage, which a reload
+ * keeps and a wipe of the page's IndexedDB and localStorage doesn't reach, as
+ * on a phone.
+ */
+export function keepRecordsInTheApp(): void {
+  const w = window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }
+  const plugins = w.Capacitor?.Plugins
+  if (!plugins) return
+  type Folders = Record<string, Record<string, string>>
+  const kept = (): Folders => JSON.parse(sessionStorage.getItem('__records') ?? '{}') as Folders
+  const keep = (folders: Folders) => sessionStorage.setItem('__records', JSON.stringify(folders))
+  // A little later, as a call across the bridge is, and in the order asked.
+  const answered = () => new Promise((resolve) => setTimeout(resolve, 20))
+  plugins.CrewboxRecords = {
+    readAll: async ({ slot }: { slot: string }) => {
+      await answered()
+      const values: Record<string, string> = {}
+      for (const [event, slots] of Object.entries(kept())) {
+        const value = slots[slot]
+        if (value !== undefined) values[event] = value
+      }
+      return { values }
+    },
+    write: async ({ event, slot, value }: { event: string; slot: string; value: string }) => {
+      await answered()
+      const folders = kept()
+      folders[event] = { ...folders[event], [slot]: value }
+      keep(folders)
+    },
+    remove: async ({ event, slot }: { event: string; slot?: string }) => {
+      await answered()
+      const folders = kept()
+      if (slot === undefined) delete folders[event]
+      else if (folders[event]) delete folders[event][slot]
+      keep(folders)
+    },
+  }
+}
+
+/** What the stood-in app's files hold, by event and slot. */
+export const recordsOf = (page: Page) =>
+  page.evaluate(
+    () =>
+      JSON.parse(sessionStorage.getItem('__records') ?? '{}') as Record<
+        string,
+        Record<string, string>
+      >
+  )
+
 /** A box as the apps' search reports one: `FoundService` in web/src/lib/server.ts. */
 export interface FoundService {
   name: string

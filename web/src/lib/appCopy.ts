@@ -9,9 +9,22 @@ import {
   subscribeEventRecords,
   type EventRecord,
 } from './eventScope.ts'
+import { isOutboxEntry, storedOutboxOf } from './db.ts'
 import { holdWhileOpen, readPref, writePref } from './prefs.ts'
 import { isNative, nativeRecords, putBackServerOrigin, serverOrigin } from './server.ts'
 import { TOKEN_KEY } from './sessions.ts'
+import {
+  clearedCount,
+  heldUnsent,
+  holdsUnsent,
+  holdUnsent,
+  keepsUnsentInApp,
+  loadUnsent,
+  wasReleased,
+  type Unsent,
+  type UnsentKind,
+} from './unsent.ts'
+import { isQueuedIncident, storedIncidentsOf } from '../modules/incident/model/outbox.ts'
 
 /**
  * The apps' copy of what only this phone has, in files of the app's own
@@ -57,6 +70,13 @@ import { TOKEN_KEY } from './sessions.ts'
  * open (lib/server.ts, lib/eventScope.ts, lib/sessions.ts). The mark goes
  * with the rest, and the page doesn't make it again: the next start finds
  * it missing and puts back what went.
+ *
+ * Beside each record the app keeps the event's unsent messages and show-log
+ * entries, which nothing else has (lib/unsent.ts). The start reads them with
+ * the records, and from then on the page holds them and sends them with the
+ * rest, whatever the page's storage still has: no mark is needed to tell a
+ * wipe from a change, since whatever the box has had, or refused, or moved
+ * elsewhere, the page lets go of in both places at once.
  *
  * The files stay out of backups, as the sign-ins do: what they hold is one
  * phone's. On an iPhone that is only guidance, and a restore may bring
@@ -142,7 +162,8 @@ function waitFor<T>(answer: Promise<T>): Promise<T> {
  * Put back whatever of this phone's events a wipe of the web view's storage
  * took, from the app's copy, before anything reads a sign-in: main.tsx
  * renders once this settles. At once anywhere but the apps, and in an app
- * too old to keep a copy.
+ * too old to keep a copy. The unsent work the app keeps is read at the same
+ * time, so that the page holds it before anything reads a queue.
  *
  * Settles to the sign-ins the app's records vouch for: those of events it
  * holds a record of, which lib/sessions.ts keeps though the page's storage
@@ -165,10 +186,12 @@ export async function restoreFromApp(): Promise<ReadonlySet<string> | null> {
   serverOrigin()
   const app = nativeRecords()
   if (!app) return new Set()
+  const unsent = loadUnsent(app, { messages: isOutboxEntry, entries: isQueuedIncident })
   let values: Record<string, string>
   try {
     values = (await waitFor(app.readAll({ slot: SLOT }))).values ?? {}
   } catch {
+    await unsent
     return null
   }
   kept.clear()
@@ -177,7 +200,10 @@ export async function restoreFromApp(): Promise<ReadonlySet<string> | null> {
     if (record) kept.set(id, record)
   }
   loaded = true
-  if (readPref(COPIED) !== null) return new Set()
+  if (readPref(COPIED) !== null) {
+    await unsent
+    return new Set()
+  }
   markDue = true
 
   const records = new Map<string, EventRecord>()
@@ -192,6 +218,7 @@ export async function restoreFromApp(): Promise<ReadonlySet<string> | null> {
     location.reload()
     return new Promise(() => {})
   }
+  await unsent
   return new Set([...records.keys()].map((id) => storageNameFor(id, TOKEN_KEY)))
 }
 
@@ -248,10 +275,57 @@ async function copyOnce(): Promise<void> {
 
 /**
  * Keep the app's copy in step with the page's storage from now on: at once,
- * and whenever an event is listed, changed, opened or forgotten.
+ * and whenever an event is listed, changed, opened or forgotten. Its unsent
+ * work the page keeps in step as it changes (lib/unsent.ts).
  */
 export function keepAppCopy(): void {
+  void copyUnsent()
   if (!loaded) return
   subscribeEventRecords(() => void copyToApp())
   void copyToApp()
+}
+
+/** Settles once the app has whatever unsent work the page's storage had at the start. */
+let copyingUnsent: Promise<void> = Promise.resolve()
+
+/**
+ * Give the app whatever unsent work of each event the page's storage has
+ * and its files lack: all of it at the first start since the apps kept it,
+ * and anything a write that failed left out. After the first render, since
+ * it reads every event's queues. It logs what the files had that the page's
+ * storage had lost, so that a wipe shows up in testing.
+ */
+export function copyUnsent(): Promise<void> {
+  copyingUnsent = copyingUnsent.then(copyUnsentOnce, copyUnsentOnce)
+  return copyingUnsent
+}
+
+async function copyUnsentOnce(): Promise<void> {
+  if (!keepsUnsentInApp()) return
+  let lost = 0
+  for (const event of eventRecords().keys()) {
+    const cleared = clearedCount(event)
+    const stored: { [K in UnsentKind]: Unsent[K][] } = {
+      messages: await storedOutboxOf(event),
+      entries: storedIncidentsOf(event),
+    }
+    // Let go of meanwhile, as a phone handed on lets go of everything: none
+    // of what was read is anybody's to keep now.
+    if (clearedCount(event) !== cleared) continue
+    for (const kind of ['messages', 'entries'] as const) {
+      const ids = new Set(stored[kind].map((item) => item.clientMsgId))
+      lost += heldUnsent(event, kind).filter((item) => !ids.has(item.clientMsgId)).length
+      for (const item of stored[kind]) {
+        const id = item.clientMsgId
+        if (!holdsUnsent(event, kind, id) && !wasReleased(event, kind, id)) {
+          void holdUnsent(event, kind, item)
+        }
+      }
+    }
+  }
+  if (lost > 0) {
+    console.info(
+      `crewbox: the app kept ${lost} unsent message(s) or show-log entries the page's storage had lost`
+    )
+  }
 }

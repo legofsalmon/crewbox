@@ -7,6 +7,7 @@ import {
   loggedLate,
   seriousCount,
   showDayOf,
+  unsavedCopy,
   withCorrections,
 } from './log.ts'
 
@@ -145,5 +146,22 @@ describe('narrowing a long night', () => {
 
   it('counts what a sidebar badge should say', () => {
     expect(seriousCount(log)).toBe(1)
+  })
+})
+
+describe('what the pane says of entries this phone couldn’t save', () => {
+  it('speaks of all of them, or of how many, and says what to do', () => {
+    expect(unsavedCopy(1, 1)).toBe(
+      'It isn’t saved on this phone. Keep crewbox open until it sends.'
+    )
+    expect(unsavedCopy(2, 2)).toBe(
+      'They aren’t saved on this phone. Keep crewbox open until they send.'
+    )
+    expect(unsavedCopy(1, 3)).toBe(
+      '1 of them isn’t saved on this phone. Keep crewbox open until it sends.'
+    )
+    expect(unsavedCopy(2, 3)).toBe(
+      '2 of them aren’t saved on this phone. Keep crewbox open until they send.'
+    )
   })
 })

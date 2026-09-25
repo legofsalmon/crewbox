@@ -67,6 +67,9 @@ The app treats a dropped connection as expected weather, not an error:
 - Everything you've already loaded stays readable.
 - Anything you send while offline is queued on your device — marked
   "sending…" — and delivered, once, when the box is back in reach.
+- If your device refuses to keep a message, usually because it is out of
+  space, the message says **Not saved on this phone**. It still goes when
+  the box is back, but only if crewbox is still open then, so leave it open.
 - A banner says **Offline** or **Connecting…** so you always know which
   state you're in. When the connection is up but slow, signal bars appear in
   the channel header instead.

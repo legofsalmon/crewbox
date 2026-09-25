@@ -83,6 +83,11 @@ deliver when the connection returns — don't retype it. If everyone nearby
 has the same problem, the box or the Wi-Fi is down; if it's just you, walk
 closer to an access point and watch the banner.
 
+If it also says **Not saved on this phone**, your device refused to keep it,
+usually because it is out of space. It still delivers when the connection
+returns, but only while crewbox stays open: closing the app loses it. Free
+some space before you write anything else.
+
 ## "A channel looks empty" / "someone's messages are missing"
 
 If the filter bar is open, close it — a filter narrows the view to what's

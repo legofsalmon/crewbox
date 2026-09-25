@@ -552,11 +552,11 @@ describe('work brought across from the event this box replaced', () => {
   })
 
   it('claims only what it saved, so the other event keeps the rest', async () => {
-    // A chat outbox that could not take the message, which the cache does not
-    // say: the other event's copy is all there is, and must not be let go of.
+    // A chat outbox that could not take the message, and no app to keep it:
+    // the other event's copy is all there is, and must not be let go of.
     const store = await loadStore()
     const { cache } = await import('./lib/db.ts')
-    vi.spyOn(cache, 'putOutbox').mockResolvedValue()
+    vi.spyOn(cache, 'putOutbox').mockResolvedValue(false)
     vi.spyOn(cache, 'loadOutbox').mockResolvedValue([])
     await store.getState().boot()
     const saved = await store
@@ -1243,5 +1243,131 @@ describe('the open event’s box, found on the Wi-Fi at a new address and proven
     await settle()
     expect(sent.map((m) => m.type)).toContain('logIncident')
     expect(store.getState()).toMatchObject({ connection: 'online', welcomedAt: 'http://10.0.0.9' })
+  })
+})
+
+describe('work this phone couldn’t save', () => {
+  // Nothing here keeps a chat outbox (there is no IndexedDB) and there is no
+  // app, so a message is kept nowhere a reload leaves it: a phone whose
+  // storage refuses writes.
+  // Undone by hand: restoreAllMocks leaves a spy on happy-dom's storage in place.
+  let refusing: { mockRestore: () => void } | undefined
+  const refuseShowLogQueue = () => {
+    const setItem = localStorage.setItem.bind(localStorage)
+    refusing = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key.includes('incident-outbox')) {
+        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+      }
+      setItem(key, value)
+    })
+  }
+
+  afterEach(() => {
+    refusing?.mockRestore()
+    refusing = undefined
+  })
+
+  beforeEach(() => {
+    localStorage.setItem('crewbox:incident-outbox', '[]')
+  })
+
+  it('says a message isn’t saved on this phone, and still sends it at the next connection', async () => {
+    const store = await loadStore()
+    await store.getState().boot()
+    store.getState().sendMessage('general', 'Doors in ten')
+    await settle()
+    const [waiting] = store.getState().pending['general'] ?? []
+    expect(waiting).toMatchObject({ body: 'Doors in ten', unsaved: true })
+
+    // The send before the socket was up went nowhere; the connection's flush
+    // is what takes it, from what the page holds.
+    sent.length = 0
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: 'send', clientMsgId: waiting!.clientMsgId })
+    )
+
+    socket!.onMessage({
+      type: 'ack',
+      clientMsgId: waiting!.clientMsgId,
+      message: {
+        id: 'm1',
+        channelId: 'general',
+        seq: 1,
+        authorId: 'u1',
+        kind: 'text',
+        body: 'Doors in ten',
+        clientMsgId: waiting!.clientMsgId,
+        createdAt: 2,
+      },
+    })
+    await settle()
+    expect(store.getState().pending['general'] ?? []).toEqual([])
+    const { cache } = await import('./lib/db.ts')
+    expect(await cache.loadOutbox()).toEqual([])
+  })
+
+  it('says a show-log entry isn’t saved until the box has it, and sends it all the same', async () => {
+    const store = await loadStore()
+    await store.getState().boot()
+    refuseShowLogQueue()
+    const { clientMsgId: _, ...typed } = QUEUED as QueuedIncident
+    store.getState().logIncident(typed)
+    await settle()
+    const [id] = store.getState().unsavedEntries
+    expect(id).toEqual(expect.any(String))
+    const { queuedIncidents } = await import('./modules/incident/model/outbox.ts')
+    expect(queuedIncidents().map((e) => e.clientMsgId)).toEqual([id])
+
+    sent.length = 0
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    expect(sent).toContainEqual(expect.objectContaining({ type: 'logIncident', clientMsgId: id }))
+
+    socket!.onMessage({ type: 'incident', incident: { id: 'i1', clientMsgId: id } })
+    expect(store.getState().unsavedEntries).toEqual([])
+    expect(queuedIncidents()).toEqual([])
+  })
+
+  it('says nothing of an entry the queue took', async () => {
+    const store = await loadStore()
+    await store.getState().boot()
+    const { clientMsgId: _, ...typed } = QUEUED as QueuedIncident
+    store.getState().logIncident(typed)
+    await settle()
+    expect(store.getState().unsavedEntries).toEqual([])
+  })
+
+  it('lets go of all of it on signing out, as the queues do', async () => {
+    const store = await loadStore()
+    await store.getState().boot()
+    refuseShowLogQueue()
+    store.getState().sendMessage('general', 'Doors in ten')
+    const { clientMsgId: _, ...typed } = QUEUED as QueuedIncident
+    store.getState().logIncident(typed)
+    await settle()
+    const { heldUnsent } = await import('./lib/unsent.ts')
+    expect(heldUnsent('friday', 'messages')).toHaveLength(1)
+    expect(heldUnsent('friday', 'entries')).toHaveLength(1)
+    await store.getState().logout()
+    expect(heldUnsent('friday', 'messages')).toEqual([])
+    expect(heldUnsent('friday', 'entries')).toEqual([])
+  })
+
+  it('sends nothing brought across from another event that it couldn’t save, which stays there', async () => {
+    const store = await loadStore()
+    await store.getState().boot()
+    const saved = await store
+      .getState()
+      .queueMoved(
+        [{ clientMsgId: 'unsent', channelId: 'general-here', body: 'Doors in ten', createdAt: 1 }],
+        []
+      )
+    expect(saved.has('unsent')).toBe(false)
+    sent.length = 0
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    expect(sent).not.toContainEqual(expect.objectContaining({ clientMsgId: 'unsent' }))
   })
 })

@@ -84,7 +84,9 @@ production email or file it with the paperwork.
 Entries file with no signal. They are held on the phone that wrote them —
 through a reload, a dead battery, a walk out of Wi-Fi range — and go to the
 box the moment it is reachable. The pane says how many are still waiting
-rather than pretending they have landed.
+rather than pretending they have landed. If the phone refused to keep one,
+usually because it is out of space, the pane says that too: it still goes
+when the box is back, but only if crewbox is still open then.
 
 Because the log is the box's, not the phone's, an entry only reaches the
 rest of the crew once it has arrived. What you cannot lose is the entry

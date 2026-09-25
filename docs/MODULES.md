@@ -173,10 +173,15 @@ in files of the app's own, a folder per event and a file per slot:
 in `getNoBackupFilesDir()` on Android. Each event's list entry, whether it has
 today's names, and when the phone last opened it are in the slot `event`.
 `crewbox:copied-to-app` in the page's storage says nothing has wiped it since
-the copy was made; a start that finds it missing puts back what went. The
-folder, the slots and the key all reach phones. A module that keeps
-something the box can't give back, such as work not yet sent, adds a slot
-of its own rather than a new folder.
+the copy was made; a start that finds it missing puts back what went.
+Beside it, the slots `outbox` and `incident-outbox` hold the event's
+messages and show-log entries not yet sent, each the whole queue as a JSON
+array (`web/src/lib/unsent.ts`). The page holds those queues in memory as
+well while it is open, and reads each as its own storage's plus whatever it
+holds that storage lacks, so neither a refused write nor a wipe loses what
+was typed. The folder, the slots and the key all reach phones. A module that
+keeps something else the box can't give back adds a slot of its own rather
+than a new folder.
 
 ## The five steps
 

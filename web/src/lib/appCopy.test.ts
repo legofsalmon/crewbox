@@ -461,3 +461,168 @@ describe('an app too old to keep a copy', () => {
     expect(keychain.keychain.get('crewbox:token')).toBe(FRIDAY_TOKEN)
   })
 })
+
+describe('unsent work', () => {
+  const MESSAGE = { clientMsgId: 'doors', channelId: 'general', body: 'Doors in ten', createdAt: 1 }
+  const ENTRY = {
+    clientMsgId: 'barrier',
+    kind: 'note',
+    severity: 'note',
+    body: 'Barrier moved at stage left',
+    at: 1,
+    stage: 'Main',
+    actId: '',
+    actName: '',
+  }
+
+  /** What one slot of the app's files holds, parsed. */
+  function slot(files: ReturnType<typeof app>['records'], id: string, name: string): unknown {
+    const text = files.folders.get(id)?.get(name)
+    return text === undefined ? undefined : JSON.parse(text)
+  }
+
+  /**
+   * An event's chat cache that answers once `answer` is called, and then as
+   * `after` says: a read the page is part way through.
+   */
+  function slowChatCache(after: unknown[]) {
+    let answer!: (messages: unknown[]) => void
+    const first = new Promise<unknown[]>((resolve) => (answer = resolve))
+    const storedOutboxOf = vi.fn(() => Promise.resolve(after)).mockReturnValueOnce(first)
+    vi.doMock('./db.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('./db.ts')>()),
+      storedOutboxOf,
+    }))
+    return { answer: (messages: unknown[]) => answer(messages) }
+  }
+
+  /** The app's files, answering for unsent work after the records, as a start mustn't count on. */
+  function unsentLast(records: ReturnType<typeof app>['records'], recordsToo?: 'unreadable'): void {
+    const read = records.readAll.getMockImplementation()!
+    records.readAll.mockImplementation(async (options) => {
+      if (options.slot === 'event') {
+        if (recordsToo) throw new Error('The files answered nothing')
+        return read(options)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return read(options)
+    })
+  }
+
+  afterEach(() => {
+    vi.doUnmock('./db.ts')
+  })
+
+  it('is held before the page renders, from the app’s files, whatever the page’s storage lost', async () => {
+    // At the first start since the apps kept a copy, and at any other.
+    for (const copied of [false, true]) {
+      localStorage.clear()
+      signedInToFriday()
+      if (copied) localStorage.setItem('crewbox:copied-to-app', '1')
+      const { records } = app({
+        files: {
+          friday: {
+            outbox: JSON.stringify([MESSAGE]),
+            'incident-outbox': JSON.stringify([ENTRY]),
+          },
+        },
+      })
+      unsentLast(records)
+      vi.resetModules()
+      const copy = await import('./appCopy.ts')
+      const { cache } = await import('./db.ts')
+      const { queuedIncidents } = await import('../modules/incident/model/outbox.ts')
+      await copy.restoreFromApp()
+      // None of it in the page's storage, which here has no chat cache at all.
+      expect(localStorage.getItem('crewbox:incident-outbox')).toBeNull()
+      expect(queuedIncidents()).toEqual([ENTRY])
+      expect(await cache.loadOutbox()).toEqual([MESSAGE])
+    }
+  })
+
+  it('is read though the records can’t be, and kept in step from then on', async () => {
+    signedInToFriday()
+    const { records } = app({ files: { friday: { outbox: JSON.stringify([MESSAGE]) } } })
+    unsentLast(records, 'unreadable')
+    vi.resetModules()
+    const copy = await import('./appCopy.ts')
+    const unsent = await import('./unsent.ts')
+    expect(await copy.restoreFromApp()).toBeNull()
+    expect(unsent.heldUnsent('friday', 'messages')).toEqual([MESSAGE])
+    await unsent.releaseUnsent('friday', 'messages', [MESSAGE.clientMsgId])
+    expect(records.folders.get('friday')?.has('outbox')).toBe(false)
+  })
+
+  it('is given to the app from the page’s storage, at the first start since the apps kept it', async () => {
+    signedInToFriday()
+    localStorage.setItem('crewbox:incident-outbox', JSON.stringify([ENTRY]))
+    const { answer } = slowChatCache([MESSAGE])
+    const { records } = app()
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const { copy } = await start()
+    answer([MESSAGE])
+    await copy.copyUnsent()
+    expect(slot(records, 'friday', 'outbox')).toEqual([MESSAGE])
+    expect(slot(records, 'friday', 'incident-outbox')).toEqual([ENTRY])
+    // The page's storage lost nothing, so there is nothing to say.
+    expect(info).not.toHaveBeenCalled()
+  })
+
+  it('gives the app nothing the box has had while the chat cache was being read', async () => {
+    signedInToFriday()
+    const acked = { ...MESSAGE, clientMsgId: 'acked' }
+    const { answer } = slowChatCache([MESSAGE])
+    const { records } = app()
+    const { copy } = await start()
+    // The box acknowledges it, and the page lets go of it, part way through.
+    const unsent = await import('./unsent.ts')
+    await unsent.releaseUnsent('friday', 'messages', [acked.clientMsgId])
+    answer([acked, MESSAGE])
+    await copy.copyUnsent()
+    expect(slot(records, 'friday', 'outbox')).toEqual([MESSAGE])
+    expect(unsent.holdsUnsent('friday', 'messages', acked.clientMsgId)).toBe(false)
+  })
+
+  it('gives it nothing of an event let go of meanwhile, as a phone handed on is', async () => {
+    signedInToFriday()
+    const { answer } = slowChatCache([])
+    const { records } = app()
+    const { copy } = await start()
+    const unsent = await import('./unsent.ts')
+    await unsent.releaseAllUnsent('friday')
+    answer([MESSAGE])
+    await copy.copyUnsent()
+    expect(unsent.heldUnsent('friday', 'messages')).toEqual([])
+    expect(records.folders.get('friday')?.has('outbox') ?? false).toBe(false)
+  })
+
+  it('says in the log how much the app kept that the page’s storage had lost', async () => {
+    signedInToFriday()
+    app({
+      files: {
+        friday: {
+          outbox: JSON.stringify([MESSAGE]),
+          'incident-outbox': JSON.stringify([ENTRY]),
+        },
+      },
+    })
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    await start()
+    await vi.waitFor(() =>
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('kept 2 unsent'))
+    )
+  })
+
+  it('goes with an event forgotten on the Boxes screen, from the app’s files too', async () => {
+    signedInToFriday()
+    const { records } = app({ files: { saturday: { outbox: JSON.stringify([MESSAGE]) } } })
+    const { scope } = await start()
+    scope.rememberEvent(SATURDAY)
+    const { forgetEvent } = await import('./boxes.ts')
+    const unsent = await import('./unsent.ts')
+    expect(unsent.heldUnsent('saturday', 'messages')).toEqual([MESSAGE])
+    await forgetEvent('saturday')
+    expect(unsent.heldUnsent('saturday', 'messages')).toEqual([])
+    expect(records.folders.get('saturday')?.has('outbox') ?? false).toBe(false)
+  })
+})

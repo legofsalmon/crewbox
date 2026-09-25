@@ -44,6 +44,13 @@ phones can both do by themselves. The note holds no sign-in. It is left out
 of backups and transfers to a new phone, though on an iPhone that is only
 guidance to iOS, so a new iPhone set up from the old one may bring it.
 
+Messages and show-log entries you write while your phone can't reach the
+box wait on the phone until it can. The apps keep them in those files too,
+so that none is lost if the web storage is cleared before it has gone, and
+delete each one there once the box has it. Signing out deletes them, and so
+does forgetting the event on the Boxes screen. They are left out of backups
+in the same way as the note.
+
 Deleting a sheet, plot or screen map deletes it from the box too. The box
 overwrites what it held rather than only marking the space free, and never
 saves it again, though the SD card or disk underneath can keep an old copy

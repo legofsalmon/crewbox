@@ -611,9 +611,11 @@ const MessageRow = memo(function MessageRow(props: {
         }
       : undefined)
 
+  const unsaved = pendingEntry?.unsaved === true
+
   return (
     <div
-      className={`msg ${grouped ? 'grouped' : ''} ${pending ? 'pending' : ''} ${flashed ? 'msg-flash' : ''}`}
+      className={`msg ${grouped ? 'grouped' : ''} ${pending ? 'pending' : ''} ${unsaved ? 'unsaved' : ''} ${flashed ? 'msg-flash' : ''}`}
       data-seq={msg?.seq}
     >
       <div className="msg-gutter">{!grouped && <Avatar name={authorName} id={authorId} />}</div>
@@ -633,6 +635,13 @@ const MessageRow = memo(function MessageRow(props: {
             <div className="msg-body msg-file-pending">📎 {file.name}</div>
           ))}
         {grouped && pending && <span className="msg-state">◷</span>}
+        {unsaved && (
+          // Said, not left to the "sending…": the phone refused to keep it,
+          // so closing the app loses it (lib/unsent.ts).
+          <div className="msg-unsaved" role="status">
+            Not saved on this phone. Keep crewbox open until it sends.
+          </div>
+        )}
       </div>
     </div>
   )
