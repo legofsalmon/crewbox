@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { FakeConsole } from '../dmxSender'
 import { CREW, fixedDevice, phoneDevice, shoot } from './helpers'
+import { wallAddress } from './wallAddress'
 
 /**
  * The docs screenshot run: one seeded event, photographed area by area into
@@ -308,8 +309,8 @@ test('shots: LED walls', async () => {
   // Runs after 'shots: admin', which leaves the unlock in memory — the add
   // form and the sweep button are both admin-only.
   //
-  // The processor being read is scripts/coex-sim.mjs on loopback, started by
-  // this config. Nobody has had a NovaStar box in front of this module, so
+  // The processor being read is scripts/coex-sim.mjs on this machine's LAN
+  // address (wallAddress.ts says why not loopback), started by the config. Nobody has had a NovaStar box in front of this module, so
   // the alternative was photographing an empty pane; the docs page says
   // plainly that the field names behind these numbers are unconfirmed.
   await maya
@@ -318,7 +319,7 @@ test('shots: LED walls', async () => {
     .click()
   await expect(maya.getByRole('heading', { name: 'LED walls' })).toBeVisible()
 
-  await maya.getByLabel('Address').fill('127.0.0.1')
+  await maya.getByLabel('Address').fill(wallAddress())
   await maya.getByLabel('Name').fill('Main wall')
   await maya.getByRole('button', { name: 'Add', exact: true }).click()
 
