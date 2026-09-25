@@ -38,6 +38,7 @@ describe('the Android app’s own plugins', () => {
       'CrewboxNetwork',
       'CrewboxRecords',
       'CrewboxScanner',
+      'CrewboxScreens',
       'CrewboxSessions',
       'CrewboxVoice',
       'CrewboxWifi',

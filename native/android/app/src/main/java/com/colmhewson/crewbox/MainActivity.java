@@ -23,6 +23,7 @@ public class MainActivity extends BridgeActivity {
     registerPlugin(NetworkPlugin.class);
     registerPlugin(SessionsPlugin.class);
     registerPlugin(RecordsPlugin.class);
+    registerPlugin(ScreensPlugin.class);
     AlertsService.forgetOldToken(this);
     forgetLinkFromRecents(getIntent());
     super.onCreate(savedInstanceState);

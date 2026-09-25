@@ -192,6 +192,16 @@ from the sync manager, so a module has nothing to do for it. The folder,
 the slots and the key all reach phones. A module that keeps something else
 the box can't give back adds a slot of its own rather than a new folder.
 
+The apps keep the screens a box serves as well, once a crewbox release is
+seen to have signed them (`CrewboxScreens` in `web/src/lib/server.ts`): a
+folder per version, `crewbox-screens/<version>/`, beside `crewbox-records`
+on both apps, holding the files the signed list names, the list
+(`WEBSUMS`), its signature (`WEBSUMS.sig`) and a `.checked` mark, the
+list's digest. A download goes into `crewbox-screens/.partial-<version>/`
+and is renamed into place only once every file has checked out. Those names
+reach phones too. A module's code is in the screens, so a module needs
+nothing of its own for this.
+
 ## The five steps
 
 ### 1. Model

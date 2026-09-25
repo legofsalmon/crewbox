@@ -234,6 +234,28 @@ export interface RecordsPlugin {
   remove(options: { event: string; slot?: string }): Promise<void>
 }
 
+/**
+ * What the apps make of the screens a box serves (native ScreensPlugin).
+ * `same`: the box runs the version the app's own screens are. `ready`: its
+ * screens are on the phone, checked against a crewbox release's signature,
+ * and this app runs them. `unsigned`: nothing a release signed, so the app
+ * keeps its own. `incompatible`: signed screens this app won't run, until the
+ * app or the box (`update`) is updated. `failed`: the network or the phone's
+ * storage let the check down, and asking again may work. `reason` is for the
+ * log.
+ */
+export interface ScreensAnswer {
+  result: 'same' | 'ready' | 'unsigned' | 'incompatible' | 'failed'
+  version?: string
+  update?: 'app' | 'box'
+  reason?: string
+}
+
+export interface ScreensPlugin {
+  /** Ask the box at `origin` for its screens, and have them on the phone if the app runs them. */
+  prepare(options: { origin: string }): Promise<ScreensAnswer>
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -252,6 +274,7 @@ declare global {
         CrewboxNetwork?: NetworkPlugin
         CrewboxSessions?: SessionsPlugin
         CrewboxRecords?: RecordsPlugin
+        CrewboxScreens?: ScreensPlugin
       }
     }
   }
@@ -330,6 +353,11 @@ export function nativeSessions(): SessionsPlugin | undefined {
 /** The apps' copy of what the page keeps for each event, when present (native builds only). */
 export function nativeRecords(): RecordsPlugin | undefined {
   return window.Capacitor?.Plugins?.CrewboxRecords
+}
+
+/** The apps' download and check of a box's screens, when present (native builds only). */
+export function nativeScreens(): ScreensPlugin | undefined {
+  return window.Capacitor?.Plugins?.CrewboxScreens
 }
 
 /**

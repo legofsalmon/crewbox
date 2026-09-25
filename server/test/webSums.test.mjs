@@ -336,8 +336,18 @@ describe('reading a list, as strictly as a phone will', () => {
     ['an absolute path', listing('/index.html')],
     ['a file listed twice', listing('index.html') + listing('index.html')],
     ['too much of it', listing('index.html').repeat(Math.ceil(LIMITS.sumsBytes / 80))],
+    ['itself', listing('index.html') + listing(SUMS)],
+    ['its signature', listing(SIGNATURE) + listing('index.html')],
   ])('refuses %s', (_, text) => {
     expect(() => parseSums(text)).toThrow()
+  })
+
+  it(`takes ${LIMITS.files} files and refuses one more`, () => {
+    // Short names, so the list is under its own limit either way.
+    const files = (count) =>
+      Array.from({ length: count }, (_, i) => listing(`${i.toString(36)}.js`)).join('')
+    expect(parseSums(files(LIMITS.files)).size).toBe(LIMITS.files)
+    expect(() => parseSums(files(LIMITS.files + 1))).toThrow(/over the 500 files/)
   })
 
   it.each([

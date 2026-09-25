@@ -25,7 +25,7 @@
  * checks the files in <dir> against its `WEBSUMS`, as the APK's copy of the
  * screens is checked before it's packed.
  */
-import { createHash } from 'node:crypto'
+import { createHash, createPublicKey, verify } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -44,13 +44,51 @@ export const KIND = 'crewbox-web'
  */
 export const LIMITS = Object.freeze({ sumsBytes: 64 * 1024, files: 500, bytes: 50 * 1024 * 1024 })
 
+/*
+ * The patterns below are the apps' too: Screens.java and ScreensPlugin.swift
+ * carry them as text, and server/test/screensFixtures.test.mjs holds each
+ * copy to these.
+ */
+
 /**
  * A path segment a phone will write to its disk: nothing a file system or a
  * URL reads specially, and no dot first, so no `..` and nothing hidden.
  */
-const SEGMENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/
+export const SEGMENT_PATTERN = '[A-Za-z0-9_-][A-Za-z0-9._-]*'
+const SEGMENT = new RegExp(`^${SEGMENT_PATTERN}$`)
 
 export const safePath = (rel) => rel.split('/').every((segment) => SEGMENT.test(segment))
+
+/**
+ * A version as crewbox writes one: `<major>.<minor>.<patch>`, perhaps a
+ * pre-release, then `+` and the commit (web/vite.config.ts,
+ * server/src/version.ts). A phone keeps each version's screens in a folder
+ * named after it, so nothing else gets in.
+ */
+export const VERSION_PATTERN =
+  '(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*'
+const VERSION = new RegExp(`^${VERSION_PATTERN}$`)
+export const MAX_VERSION_LENGTH = 64
+
+export const isVersion = (value) =>
+  typeof value === 'string' && value.length <= MAX_VERSION_LENGTH && VERSION.test(value)
+
+/**
+ * Whether `version` is at or above `floor`, a plain `1.2.3`, in the order
+ * semver gives them: a pre-release comes before its release, and the commit
+ * after the `+` counts for nothing.
+ */
+export function atOrAbove(version, floor) {
+  const parts = (value) => /^([0-9]{1,9})\.([0-9]{1,9})\.([0-9]{1,9})(?![0-9])(-)?/.exec(value)
+  const [, ...mine] = parts(version) ?? []
+  const [, ...least] = parts(floor) ?? []
+  if (!mine.length || !least.length) return false
+  for (let i = 0; i < 3; i++) {
+    const difference = Number(mine[i]) - Number(least[i])
+    if (difference !== 0) return difference > 0
+  }
+  return mine[3] === undefined
+}
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
@@ -126,18 +164,27 @@ function staleCopies(dir) {
  * the apps' native code they keep (web/src/lib/nativeApi.ts).
  */
 export function readInfo(dir) {
+  let text
+  try {
+    text = readFileSync(join(dir, INFO), 'utf8')
+  } catch (err) {
+    throw new Error(`${INFO} is missing or unreadable: ${err.message}`, { cause: err })
+  }
+  return parseInfo(text)
+}
+
+/** The same, from the file's text, as a phone reads it. */
+export function parseInfo(text) {
   let info
   try {
-    info = JSON.parse(readFileSync(join(dir, INFO), 'utf8'))
+    info = JSON.parse(text)
   } catch (err) {
     throw new Error(`${INFO} is missing or unreadable: ${err.message}`, { cause: err })
   }
   const api = info?.nativeApi
   const whole = (n) => Number.isInteger(n) && n >= 1
   if (info?.kind !== KIND) throw new Error(`${INFO} is not a ${KIND} file`)
-  if (typeof info.version !== 'string' || !/^\d+\.\d+\.\d+\S*\+\S+$/.test(info.version)) {
-    throw new Error(`${INFO} has no version of the form 1.2.3+commit`)
-  }
+  if (!isVersion(info.version)) throw new Error(`${INFO} has no version of the form 1.2.3+commit`)
   if (!whole(info.protocol)) throw new Error(`${INFO} has no protocol`)
   if (!whole(api?.needs) || !whole(api?.builtFor) || api.needs > api.builtFor) {
     throw new Error(`${INFO} has no nativeApi with needs at or below builtFor`)
@@ -165,6 +212,10 @@ export function sumsFor(dir, files) {
   return files.map((rel) => `${sha256(readFileSync(join(dir, rel)))}  ${rel}\n`).join('')
 }
 
+/** A line of the list, as `sha256sum` writes it: the digest, two spaces and the path. */
+export const LINE_PATTERN = '([0-9a-f]{64}) {2}(\\S+)'
+const LINE = new RegExp(`^${LINE_PATTERN}$`)
+
 /**
  * Read a list, strictly: a line this can't read rejects the whole list, as
  * the box's own `parseManifest` does, and so will a phone.
@@ -176,11 +227,17 @@ export function parseSums(text) {
   if (!text.endsWith('\n')) throw new Error(`${SUMS} doesn't end in a newline`)
   const listed = new Map()
   for (const line of text.slice(0, -1).split('\n')) {
-    const match = /^([0-9a-f]{64}) {2}(\S+)$/.exec(line)
+    const match = LINE.exec(line)
     if (!match || !safePath(match[2])) {
       throw new Error(`unreadable line in ${SUMS}: ${line.slice(0, 80)}`)
     }
+    if (match[2] === SUMS || match[2] === SIGNATURE) {
+      throw new Error(`${SUMS} lists ${match[2]}, which is no file of the screens`)
+    }
     if (listed.has(match[2])) throw new Error(`${match[2]} is listed twice in ${SUMS}`)
+    if (listed.size === LIMITS.files) {
+      throw new Error(`${SUMS} lists over the ${LIMITS.files} files a phone takes`)
+    }
     listed.set(match[2], match[1])
   }
   return listed
@@ -225,6 +282,87 @@ export function checkSignedScreens(dir, version) {
     )
   }
   return checkSums(dir, { exact: true })
+}
+
+/*
+ * What a phone does with a box's screens, before it runs any of them. The
+ * apps do this in their own code (Screens.java, ScreensPlugin.swift), since
+ * screens can't vouch for themselves. It is written here too so that the
+ * release's rules and the phones' are held to the same cases
+ * (scripts/screens-fixtures.mjs), and so a stand-in for an app can do it in a
+ * browser test.
+ */
+
+/** ASCII whitespace, all a phone trims from a signature. */
+const trimAscii = (text) => text.replace(/^[\t\n\v\f\r ]+|[\t\n\v\f\r ]+$/g, '')
+
+/** Base64 as the release writes it, padded and with nothing else in it. Null for anything else. */
+export function strictBase64(text) {
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(text)
+    ? Buffer.from(text, 'base64')
+    : null
+}
+
+/**
+ * Which of `keys` signed `sums`, or -1 when none did. Each key is an Ed25519
+ * public key's 32 bytes in base64, as the apps carry the ones in
+ * server/src/update/verify.ts. The signature is the text of `WEBSUMS.sig`,
+ * trimmed, and must be strict base64 of 64 bytes. It is checked over the
+ * list's exact bytes: a phone never reads a list and writes it out again.
+ */
+export function signedBy(sums, signature, keys) {
+  const bytes = strictBase64(trimAscii(signature))
+  if (!bytes || bytes.length !== 64) return -1
+  const data = Buffer.from(sums, 'utf8')
+  return keys.findIndex((raw) => {
+    const x = strictBase64(raw)
+    if (!x || x.length !== 32) return false
+    try {
+      const jwk = { kty: 'OKP', crv: 'Ed25519', x: x.toString('base64url') }
+      return verify(null, data, createPublicKey({ key: jwk, format: 'jwk' }), bytes)
+    } catch {
+      return false
+    }
+  })
+}
+
+/**
+ * What a box says about the screens it serves (`GET /api/app/screens`,
+ * server/src/screens.ts): the version it runs, the list and its signature.
+ * Throws on anything else, as a phone takes it as no signed screens at all.
+ */
+export function parseOffer(text) {
+  const offer = JSON.parse(text)
+  if (typeof offer?.sums !== 'string' || typeof offer.signature !== 'string') {
+    throw new Error("the box's answer has no list and signature")
+  }
+  if (!isVersion(offer.version))
+    throw new Error("the box's answer has no version of the form 1.2.3+commit")
+  return { version: offer.version, sums: offer.sums, signature: offer.signature }
+}
+
+/**
+ * Whether an app runs screens that say `info` (parseInfo) from a box that
+ * says it runs `version`: null when it does, and otherwise what it answers
+ * instead. `app` is what an app build carries: the contract with the screens
+ * its native code keeps (`nativeApi`), the oldest it still honours
+ * (`oldestScreensApi`), and the oldest screens it runs (`floor`).
+ *
+ * - Screens of another version than the box runs are refused as if unsigned:
+ *   a box can't pass off one release as another.
+ * - Screens that need more of the app than it has say to update the app.
+ * - Screens older than the app honours, or below its floor, say to update
+ *   the box.
+ */
+export function judge(info, version, app) {
+  if (info.version !== version) {
+    return { answer: 'unsigned', reason: `the box runs ${version} but serves ${info.version}` }
+  }
+  if (info.nativeApi.needs > app.nativeApi) return { answer: 'incompatible', update: 'app' }
+  if (info.nativeApi.builtFor < app.oldestScreensApi || !atOrAbove(info.version, app.floor)) {
+    return { answer: 'incompatible', update: 'box' }
+  }
+  return null
 }
 
 function main(args) {
