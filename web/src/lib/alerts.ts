@@ -1,3 +1,4 @@
+import { isMentioned } from '@crewbox/shared'
 import { readPref, writePref } from './prefs.ts'
 import { nativeHaptics } from './server.ts'
 
@@ -89,17 +90,13 @@ export function requestNotificationPermission(): void {
   }
 }
 
-/** True when the message text @-mentions this user (or @all / @everyone). */
-export function isMentioned(body: string, myName: string | undefined): boolean {
-  const lower = body.toLowerCase()
-  if (/@(all|everyone|channel)\b/.test(lower)) return true
-  if (!myName) return false
-  // Require a non-alphanumeric boundary after the name so "@Sammy" doesn't
-  // mention "Sam". Names can contain regex metacharacters ("Alex (Stage 2)"),
-  // so escape before building the pattern.
-  const name = myName.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`@${name}(?![a-z0-9])`).test(lower)
-}
+/**
+ * True when the message text @-mentions this user (or @all / @everyone).
+ *
+ * The box's test, from the alerts contract, so the page, the box and the
+ * phones agree on who a message is for (shared/src/alerts.ts).
+ */
+export { isMentioned }
 
 /** What to announce about messages that arrived while nobody was looking. */
 export interface MissedAlert {
