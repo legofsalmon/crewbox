@@ -588,6 +588,8 @@ export interface AppState {
    * null; undefined where the app can't show one (a browser, an older app).
    */
   lockScreenStage: string | null | undefined
+  /** iPhone: whether the app may notify; undefined where it can't say. */
+  notificationState: 'granted' | 'denied' | 'ask' | undefined
   setLockScreenStage: (stage: string | null) => void
   logout: () => Promise<void>
   /** The box says this session is dead. Keeps what has not been sent. */
@@ -1276,8 +1278,16 @@ export const useStore = create<AppState>()((set, get) => {
     // phone buzzes for messages while the app is backgrounded or locked.
     const alerts = nativeAlerts()
     if (alerts && serverOrigin()) {
-      void alerts
-        .start({
+      void (async () => {
+        // The iPhone asks the first time, and the system's question can't
+        // say why, so the page does, just before it.
+        const asked = await alerts.notificationState?.().catch(() => undefined)
+        if (asked?.state === 'ask') {
+          get().toast(
+            'Crewbox can buzz this phone when somebody needs you, even locked, while you’re on the event’s Wi-Fi.'
+          )
+        }
+        await alerts.start({
           serverUrl: serverOrigin(),
           token: getToken() ?? '',
           session: storageName(TOKEN_KEY),
@@ -1286,7 +1296,9 @@ export const useStore = create<AppState>()((set, get) => {
             ? { eventId: msg.config.eventId, eventKey: knownEvent(msg.config.eventId)?.key ?? '' }
             : {}),
         })
-        .catch(() => {})
+        const now = await alerts.notificationState?.().catch(() => undefined)
+        if (now) set({ notificationState: now.state })
+      })().catch(() => {})
     }
 
     /**
@@ -1617,6 +1629,7 @@ export const useStore = create<AppState>()((set, get) => {
     alertSettings: NO_ALERT_SETTINGS,
     alertSettingsOpen: false,
     lockScreenStage: undefined,
+    notificationState: undefined,
     loadingOlder: false,
     uploading: false,
     theme: initialTheme(),

@@ -129,18 +129,20 @@ describe('joining the Wi-Fi from its code', () => {
     )
   })
 
-  it('signs the app with the two entitlements the join needs, and only those', () => {
+  it('signs the app with the two entitlements the join needs, Time Sensitive, and only those', () => {
     // Without Hotspot Configuration iOS refuses every network the app hands
     // it, and without Access Wi-Fi Information the check that the phone got
     // on the network always reads none, so every join would say it failed.
+    // Time Sensitive lets a show stop through a Focus (Phase 4, docs/ALERTS.md).
     // Each is a capability of the App ID on the developer account as well.
     const entitlements = read('native/ios/App/App/App.entitlements').replace(/<!--[\s\S]*?-->/g, '')
     const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>\s*<true\/>/g)].map((m) => m[1])
     expect(keys.sort()).toEqual([
       'com.apple.developer.networking.HotspotConfiguration',
       'com.apple.developer.networking.wifi-info',
+      'com.apple.developer.usernotifications.time-sensitive',
     ])
-    expect([...entitlements.matchAll(/<key>/g)]).toHaveLength(2)
+    expect([...entitlements.matchAll(/<key>/g)]).toHaveLength(3)
     // In every configuration of the app's target, which is the one with the
     // bundle identifier: a build without them installs, and joins nothing.
     const configurations = [

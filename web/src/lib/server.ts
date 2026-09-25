@@ -40,6 +40,16 @@ interface AlertsPlugin {
    * @since native contract 2
    */
   getCountdown?(): Promise<{ stage: string | null }>
+  /**
+   * iPhone: whether this app may notify. `ask` before the person has said.
+   * @since native contract 2
+   */
+  notificationState?(): Promise<{ state: 'granted' | 'denied' | 'ask' }>
+  /**
+   * iPhone: the app's notification settings, where a refusal is undone.
+   * @since native contract 2
+   */
+  openNotificationSettings?(): Promise<void>
 }
 
 /**

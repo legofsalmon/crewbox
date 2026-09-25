@@ -231,6 +231,7 @@ describe('the native methods the page declares', () => {
       'CrewboxWifi',
     ])
     expect(own('ios')).toEqual([
+      'CrewboxAlerts',
       'CrewboxDiscovery',
       'CrewboxRecords',
       'CrewboxScanner',

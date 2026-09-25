@@ -287,4 +287,36 @@ describe('on a box that decides alerts', () => {
     const store = await signedIn()
     expect(store.getState().lockScreenStage).toBeUndefined()
   })
+
+  it('says why before the iPhone asks to notify, and remembers a refusal', async () => {
+    let state: 'ask' | 'denied' = 'ask'
+    const started: unknown[] = []
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: {
+        CrewboxAlerts: {
+          start: async (options: unknown) => {
+            started.push(options)
+            state = 'denied'
+          },
+          stop: async () => {},
+          notificationState: async () => ({ state }),
+        },
+      },
+    }
+    // The app's box, as the join screen keeps it.
+    const { setServerOrigin } = await import('./lib/server.ts')
+    setServerOrigin('http://10.20.0.1:3000')
+    try {
+      const store = await signedIn()
+      await vi.waitFor(() => expect(store.getState().notificationState).toBe('denied'))
+      expect(store.getState().toasts.map((t) => t.message)).toContain(
+        'Crewbox can buzz this phone when somebody needs you, even locked, while you’re on the event’s Wi-Fi.'
+      )
+      expect(started).toEqual([expect.objectContaining({ eventId: 'friday', eventKey: '' })])
+    } finally {
+      delete window.Capacitor
+    }
+  })
 })

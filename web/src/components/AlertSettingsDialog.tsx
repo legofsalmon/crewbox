@@ -1,6 +1,7 @@
 import { levelFor, type ChannelAlertLevel } from '@crewbox/shared'
 import { useStore, channelLabel } from '../store.ts'
 import { useStageNames } from '../shell/timetable/hooks.ts'
+import { nativeAlerts } from '../lib/server.ts'
 import { LEVEL_TEXT, DM_LEVELS, CHANNEL_LEVELS, dmText } from '../lib/alertLevels.ts'
 
 /**
@@ -21,6 +22,7 @@ export default function AlertSettingsDialog({ onClose }: { onClose: () => void }
   const setChannelAlerts = useStore((s) => s.setChannelAlerts)
   const followStage = useStore((s) => s.followStage)
   const stageNames = useStageNames()
+  const refused = useStore((s) => s.notificationState === 'denied')
 
   const listed = Object.values(channels)
     .filter((c) => !c.retired && (c.kind === 'public' || c.memberIds?.includes(me?.id ?? '')))
@@ -48,6 +50,20 @@ export default function AlertSettingsDialog({ onClose }: { onClose: () => void }
         <p>
           What buzzes your phone. Show stops, holds and the production desk always reach everyone.
         </p>
+        {refused && (
+          <div className="alert-settings-off" role="status">
+            <p>
+              Alerts are off for Crewbox on this phone, so nothing here can buzz it. The app works
+              the same without them.
+            </p>
+            <button
+              className="confirm-cancel"
+              onClick={() => void nativeAlerts()?.openNotificationSettings?.()}
+            >
+              Open Settings
+            </button>
+          </div>
+        )}
         <h4>Channels</h4>
         {listed.length === 0 ? (
           <p className="alert-settings-empty">No channels yet.</p>

@@ -8,7 +8,8 @@ import Capacitor
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Before this returns, or a tap that launched the app goes unheard.
+        AlertsNotifications.shared.install()
         return true
     }
 
