@@ -7,6 +7,7 @@ import {
   SEND_LIMIT,
   SEND_WINDOW_MS,
   type Channel,
+  type ChannelAlertLevel,
   type ClientMessage,
   type DmxUniverseWire,
   type Message,
@@ -82,6 +83,12 @@ const ACTION_LIMIT = 60
  * real event needs more than this many named channels.
  */
 const MAX_PUBLIC_CHANNELS = 500
+
+/**
+ * Stages one person may follow. A festival has a handful; this only bounds a
+ * loop that would otherwise add rows for ever.
+ */
+const MAX_FOLLOWED_STAGES = 50
 
 /**
  * How often watching clients hear about the lighting network.
@@ -471,6 +478,20 @@ export class Hub {
           conn
         )
         break
+      case 'setChannelAlerts':
+        if (this.overActionLimit(conn)) {
+          this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+          break
+        }
+        this.onSetChannelAlerts(conn, conn.user, msg.channelId, msg.level)
+        break
+      case 'followStage':
+        if (this.overActionLimit(conn)) {
+          this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+          break
+        }
+        this.onFollowStage(conn, conn.user, msg.stage, msg.follow)
+        break
       case 'logIncident': {
         // The same flood guard as `send`, and rejected the same way, because
         // this ends in the same place: a durable row and a broadcast to every
@@ -582,6 +603,7 @@ export class Hub {
       // Which database this is. A phone that sees it change knows its cursors
       // and its cached messages belong to one that is no longer here.
       dbEpoch: this.store.dbEpoch(),
+      alertSettings: this.store.getAlertSettings(user.id),
     })
     // Straight after the welcome, and only when somebody is actually live:
     // a device joining mid-show has to arrive already knowing, or its red
@@ -721,6 +743,47 @@ export class Hub {
     this.sendToUser(user.id, { type: 'readState', channelId, seq }, conn.ws)
   }
 
+  /**
+   * A person's level for a channel.
+   *
+   * Gated on membership like markRead, for the same reason: the write upserts
+   * a channel_members row, and those rows define who is in a DM.
+   */
+  private onSetChannelAlerts(
+    conn: Conn,
+    user: User,
+    channelId: string,
+    level: ChannelAlertLevel
+  ): void {
+    if (!this.store.getChannel(channelId) || !this.store.isMember(channelId, user.id)) {
+      this.send(conn.ws, { type: 'error', code: 'not_found', message: 'channel not found' })
+      return
+    }
+    this.store.setChannelAlerts(user.id, channelId, level)
+    this.announceAlertSettings(user.id)
+  }
+
+  private onFollowStage(conn: Conn, user: User, stage: string, follow: boolean): void {
+    if (follow && this.store.getAlertSettings(user.id).stages.length >= MAX_FOLLOWED_STAGES) {
+      this.send(conn.ws, {
+        type: 'error',
+        code: 'bad_request',
+        message: `you can follow up to ${MAX_FOLLOWED_STAGES} stages`,
+      })
+      return
+    }
+    this.store.followStage(user.id, stage, follow)
+    this.announceAlertSettings(user.id)
+  }
+
+  /** Tell every device of one person what their alert settings are now, this one included. */
+  private announceAlertSettings(userId: string): void {
+    this.sendToUser(userId, {
+      type: 'alertSettings',
+      settings: this.store.getAlertSettings(userId),
+    })
+  }
+
   private onCreateChannel(conn: Conn, user: User, name: string, topic: string): void {
     if (this.store.getChannelByName(name)) {
       this.send(conn.ws, { type: 'error', code: 'bad_request', message: `#${name} already exists` })
@@ -787,12 +850,18 @@ export class Hub {
     }
   }
 
-  systemMessage(channelId: string, body: string): Message {
+  /**
+   * Post a message with no author. `origin` is `desk` for the production
+   * desk's messages, which alert like `@channel`; the box's own ("#foh
+   * created by Sam") have none and never alert (docs/ALERTS.md).
+   */
+  systemMessage(channelId: string, body: string, origin?: 'desk'): Message {
     const { message } = this.store.appendMessage({
       channelId,
       authorId: null,
       kind: 'system',
       body,
+      ...(origin ? { origin } : {}),
     })
     this.broadcastToChannel(channelId, { type: 'msg', message })
     return message

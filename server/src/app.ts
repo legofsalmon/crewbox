@@ -2486,7 +2486,7 @@ export function buildApp({
     if (!channel || channel.kind !== 'public' || channel.retired) {
       return reply.code(404).send({ error: `no channel "${parsed.data.channel}"` })
     }
-    const message = hub.systemMessage(channel.id, parsed.data.body)
+    const message = hub.systemMessage(channel.id, parsed.data.body, 'desk')
     return { ok: true, channelId: channel.id, channel: channel.name, seq: message.seq }
   })
 

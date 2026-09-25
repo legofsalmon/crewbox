@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { Channel, Message, User } from './types.js'
+import { CHANNEL_ALERT_LEVELS, type AlertSettings } from './alerts.js'
 import {
   INCIDENT_KINDS,
   INCIDENT_SEVERITIES,
@@ -177,6 +178,26 @@ export const logIncidentSchema = z.object({
   amends: z.string().max(64).optional(),
 })
 
+/**
+ * Set how much of one channel reaches this person's pocket (docs/ALERTS.md).
+ *
+ * Written the way a read position is, with the same membership check, and
+ * passed to the person's other devices as `alertSettings`. Additive: an
+ * older box drops the type, and the bell just doesn't stick.
+ */
+export const setChannelAlertsSchema = z.object({
+  type: z.literal('setChannelAlerts'),
+  channelId: z.string().min(1),
+  level: z.enum(CHANNEL_ALERT_LEVELS),
+})
+
+/** Follow a stage for changeover calls and the lock-screen countdown, or stop. */
+export const followStageSchema = z.object({
+  type: z.literal('followStage'),
+  stage: z.string().trim().min(1).max(80),
+  follow: z.boolean(),
+})
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   helloSchema,
   sendSchema,
@@ -189,6 +210,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   rttReportSchema,
   voiceStatsSchema,
   logIncidentSchema,
+  setChannelAlertsSchema,
+  followStageSchema,
 ])
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -307,6 +330,12 @@ export interface WelcomeMessage {
    * that sees none keeps whatever it had. No PROTOCOL_VERSION bump.
    */
   dbEpoch?: string
+  /**
+   * This person's alert settings: their level for each channel that isn't
+   * at the default, and the stages they follow (docs/ALERTS.md).
+   * Optional: a box that predates them doesn't send them.
+   */
+  alertSettings?: AlertSettings
 }
 
 export interface MsgMessage {
@@ -503,7 +532,14 @@ export interface IncidentMessage {
   incident: Incident
 }
 
+/** This person's alert settings changed, here or on another of their devices. */
+export interface AlertSettingsMessage {
+  type: 'alertSettings'
+  settings: AlertSettings
+}
+
 export type ServerMessage =
+  | AlertSettingsMessage
   | IncidentMessage
   | TallyMessage
   | WelcomeMessage

@@ -1,8 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { unlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import { newId } from '@crewbox/shared'
+import { DEFAULT_CHANNEL_ALERTS, isChannelAlertLevel, newId } from '@crewbox/shared'
 import type {
+  AlertSettings,
+  ChannelAlertLevel,
   Channel,
   ChannelKind,
   FileMeta,
@@ -43,6 +45,7 @@ interface MessageRow {
   body: string
   client_msg_id: string | null
   created_at: number
+  origin: string | null
   file_id: string | null
   file_name: string | null
   file_mime: string | null
@@ -117,6 +120,7 @@ function toMessage(row: MessageRow): Message {
     clientMsgId: row.client_msg_id ?? undefined,
     createdAt: row.created_at,
   }
+  if (row.origin === 'desk') message.origin = 'desk'
   if (row.file_id && row.file_name !== null) {
     message.file = toFileMeta({
       id: row.file_id,
@@ -226,6 +230,7 @@ export class Store {
     transaction(this.db, () => {
       this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
       this.db.prepare('DELETE FROM channel_members WHERE user_id = ?').run(userId)
+      this.db.prepare('DELETE FROM alert_stages WHERE user_id = ?').run(userId)
       this.db.prepare('UPDATE messages SET author_id = NULL WHERE author_id = ?').run(userId)
       // The show log keeps the entry and loses the person: what happened at
       // 21:04 is the event's record, who typed it is theirs. The name goes
@@ -515,6 +520,8 @@ export class Store {
     body: string
     clientMsgId?: string
     fileId?: string
+    /** `desk` for the production desk's messages (docs/ALERTS.md). */
+    origin?: 'desk'
   }): { message: Message; deduped: boolean } {
     return transaction(this.db, () => {
       if (input.clientMsgId) {
@@ -545,12 +552,13 @@ export class Store {
         kind: input.kind,
         body: input.body,
         clientMsgId: input.clientMsgId,
+        ...(input.origin ? { origin: input.origin } : {}),
         createdAt: Date.now(),
       }
       this.db
         .prepare(
-          `INSERT INTO messages (id, channel_id, seq, author_id, kind, body, client_msg_id, created_at, file_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO messages (id, channel_id, seq, author_id, kind, body, client_msg_id, created_at, file_id, origin)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           message.id,
@@ -561,7 +569,8 @@ export class Store {
           message.body,
           message.clientMsgId ?? null,
           message.createdAt,
-          input.fileId ?? null
+          input.fileId ?? null,
+          input.origin ?? null
         )
       if (input.fileId) {
         const file = this.getFile(input.fileId)
@@ -801,6 +810,60 @@ export class Store {
       .prepare('SELECT channel_id, last_read_seq FROM channel_members WHERE user_id = ?')
       .all(userId) as { channel_id: string; last_read_seq: number }[]
     return Object.fromEntries(rows.map((r) => [r.channel_id, r.last_read_seq]))
+  }
+
+  // -- alert settings -------------------------------------------------------
+  //
+  // Each person's say in what buzzes their phone (docs/ALERTS.md). Kept on
+  // the box because the iPhone's provider can't read the page's storage, a
+  // person's phone and laptop should agree, and the box needs them to decide.
+
+  /** One person's settings: channels only where they differ from Mentions. */
+  getAlertSettings(userId: string): AlertSettings {
+    const channels = this.db
+      .prepare(
+        'SELECT channel_id, alerts FROM channel_members WHERE user_id = ? AND alerts IS NOT NULL'
+      )
+      .all(userId) as { channel_id: string; alerts: string }[]
+    const stages = this.db
+      .prepare('SELECT stage FROM alert_stages WHERE user_id = ? ORDER BY stage')
+      .all(userId) as { stage: string }[]
+    return {
+      channels: Object.fromEntries(
+        channels
+          .filter((row) => isChannelAlertLevel(row.alerts) && row.alerts !== DEFAULT_CHANNEL_ALERTS)
+          .map((row) => [row.channel_id, row.alerts as ChannelAlertLevel])
+      ),
+      stages: stages.map((row) => row.stage),
+    }
+  }
+
+  /**
+   * Set one person's level for one channel.
+   *
+   * Upserts a channel_members row, as setReadState does, so the caller checks
+   * membership first: those rows are what make somebody a DM's member.
+   */
+  setChannelAlerts(userId: string, channelId: string, level: ChannelAlertLevel): void {
+    const stored = level === DEFAULT_CHANNEL_ALERTS ? null : level
+    this.db
+      .prepare(
+        `INSERT INTO channel_members (channel_id, user_id, alerts) VALUES (?, ?, ?)
+         ON CONFLICT (channel_id, user_id) DO UPDATE SET alerts = excluded.alerts`
+      )
+      .run(channelId, userId, stored)
+  }
+
+  /** Follow a stage, or stop. Returns false when nothing changed. */
+  followStage(userId: string, stage: string, follow: boolean): boolean {
+    const result = follow
+      ? this.db
+          .prepare('INSERT OR IGNORE INTO alert_stages (user_id, stage) VALUES (?, ?)')
+          .run(userId, stage)
+      : this.db
+          .prepare('DELETE FROM alert_stages WHERE user_id = ? AND stage = ?')
+          .run(userId, stage)
+    return Number(result.changes) > 0
   }
 
   // -- settings -------------------------------------------------------------
