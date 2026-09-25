@@ -336,7 +336,6 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
   }
 
   const pending = !report || report.pending
-  const needsDns = report?.checks.some((c) => c.id === 'hostname' && c.state !== 'ok') ?? false
   return (
     <>
       {pending ? (
@@ -348,9 +347,11 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
         <button className="admin-btn" disabled={busy} onClick={() => load(true)}>
           {busy ? 'Checking…' : 'Check again'}
         </button>
-        {/* Only offered when the name is actually wrong — a download button
-            for a problem you don't have is just clutter. */}
-        {needsDns && (
+        {/* Always offered: besides fixing the name, it carries the probe
+            block the "Phones stay on this Wi-Fi" line in This box asks for,
+            on every box. It used to appear only when the name was wrong, and
+            that line pointed at nothing. */}
+        {!pending && (
           <button className="admin-btn" onClick={() => void downloadDns()}>
             Download DNS config
           </button>

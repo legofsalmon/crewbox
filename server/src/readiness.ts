@@ -312,7 +312,7 @@ function captiveCheck(captive: NonNullable<ReadinessInput['captive']>): Readines
       'network as usable instead of falling back to mobile data.',
     fix:
       'Only reaches the box if the event router points the probe hostnames here. Download ' +
-      'the DNS config below and paste its optional second block onto the router.',
+      'DNS config, under This network below, and paste its optional block onto the router.',
   }
 }
 

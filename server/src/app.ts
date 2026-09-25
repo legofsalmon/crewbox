@@ -30,7 +30,7 @@ import {
 } from '@crewbox/shared'
 import { DocsRelay, type RelayLimits, parseRoomName } from './docs.ts'
 import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
-import { dnsConfigFile, dnsPlan } from './dnsconfig.ts'
+import { dnsConfigFile, dnsPlan, probesConfigFile } from './dnsconfig.ts'
 import { redirectConfigFile, redirectPlan } from './portredirect.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
@@ -2750,17 +2750,15 @@ export function buildApp({
     const pem = readCertPem()
     const hostname = pem ? certNames(pem)[0] : undefined
     const address = lanAddress()
-    if (!hostname || !address) {
-      return reply.code(404).send({
-        error: !hostname
-          ? 'This box has no certificate, so there is no name to point anywhere.'
-          : 'This box has no LAN address to point a name at.',
-      })
+    if (!address) {
+      return reply.code(404).send({ error: 'This box has no LAN address to point a name at.' })
     }
+    // No certificate still gets a file: the probe block is what the
+    // "Phones stay on this Wi-Fi" line asks for, name or no name.
     return reply
       .header('content-type', 'text/plain; charset=utf-8')
       .header('content-disposition', 'attachment; filename="crewbox-dns.conf"')
-      .send(dnsConfigFile(dnsPlan(hostname, address)))
+      .send(hostname ? dnsConfigFile(dnsPlan(hostname, address)) : probesConfigFile(address))
   })
 
   /**
