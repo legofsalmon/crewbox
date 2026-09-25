@@ -107,6 +107,7 @@ describe('judging what the APK holds', () => {
       'android.permission.INTERNET',
       'android.permission.MODIFY_AUDIO_SETTINGS',
       'android.permission.POST_NOTIFICATIONS',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
       'android.permission.RECORD_AUDIO',
       'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
       'android.permission.VIBRATE',

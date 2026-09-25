@@ -68,6 +68,8 @@ public class AlertsService extends Service {
   public static final String EXTRA_MY_NAME = "myName";
   public static final String EXTRA_EVENT_ID = "eventId";
   public static final String EXTRA_EVENT_KEY = "eventKey";
+  /** A start with nothing new: carry on with what was kept (BootReceiver). */
+  static final String ACTION_RESUME = "com.colmhewson.crewbox.alerts.RESUME";
 
   private static final String CH_SERVICE = "service";
   private static final String CH_MESSAGES = AlertNotice.CH_MESSAGES;
@@ -209,7 +211,7 @@ public class AlertsService extends Service {
     SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     // A start brings what a read still waiting on the Keystore was for.
     handler.removeCallbacks(readAgain);
-    if (intent != null) {
+    if (intent != null && !ACTION_RESUME.equals(intent.getAction())) {
       serverUrl = stringExtra(intent, EXTRA_SERVER);
       token = stringExtra(intent, EXTRA_TOKEN);
       session = stringExtra(intent, EXTRA_SESSION);
@@ -229,8 +231,9 @@ public class AlertsService extends Service {
           .putLong(PREF_SINCE, since)
           .apply();
     } else {
-      // A restart the OS asked for. Everything this service needs came in on
-      // an intent it no longer has, and the token is where the app keeps it.
+      // A restart the OS asked for, or the boot receiver's. Everything this
+      // service needs came in on an intent it no longer has, and the token
+      // is where the app keeps it.
       serverUrl = prefs.getString(PREF_SERVER, "");
       session = prefs.getString(PREF_SESSION, "");
       myName = prefs.getString(PREF_NAME, "");
@@ -948,6 +951,23 @@ public class AlertsService extends Service {
     intent.putExtra(EXTRA_TOKEN, token);
     intent.putExtra(EXTRA_SESSION, session);
     intent.putExtra(EXTRA_MY_NAME, myName);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent);
+    else ctx.startService(intent);
+  }
+
+  /**
+   * Whether alerts were on when the phone went down: a sign-in the service
+   * was given and has not been told to forget.
+   */
+  static boolean wasOn(Context ctx) {
+    SharedPreferences prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    return BootReceiver.shouldResume(
+        prefs.getString(PREF_SERVER, ""), prefs.getString(PREF_SESSION, ""));
+  }
+
+  /** Carry on with the kept sign-in, after a reboot or an update. */
+  static void resume(Context ctx) {
+    Intent intent = new Intent(ctx, AlertsService.class).setAction(ACTION_RESUME);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent);
     else ctx.startService(intent);
   }

@@ -41,7 +41,9 @@ import { pathToFileURL } from 'node:url'
  * scanning the join poster, which the app does itself (ScannerActivity), and
  * which "Take a photo" then needs as well, and CHANGE_NETWORK_STATE for
  * holding the crew Wi-Fi, so the box is reached over it when it has no
- * internet and mobile data is on (SiteWifi).
+ * internet and mobile data is on (SiteWifi), and RECEIVE_BOOT_COMPLETED
+ * for alerts to come back after a restart without anybody opening the app
+ * (BootReceiver).
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
@@ -56,6 +58,7 @@ export const REQUIRED = [
   'android.permission.CHANGE_WIFI_MULTICAST_STATE',
   'android.permission.CAMERA',
   'android.permission.CHANGE_NETWORK_STATE',
+  'android.permission.RECEIVE_BOOT_COMPLETED',
 ]
 
 /**
