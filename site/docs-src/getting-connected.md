@@ -71,7 +71,8 @@ a phone at the barricade and a laptop at front of house.
 
 It is also how you get back in on a new phone. The apps keep your sign-ins
 on the phone they were made on, so a new phone set up from your old one's
-backup opens signed out.
+backup opens signed out. An iPhone set up straight from your old one, with
+Quick Start, may open signed in.
 
 A backup made before the apps kept sign-ins this way has yours in it, so
 after the update the app has the box swap it for a new one. If another

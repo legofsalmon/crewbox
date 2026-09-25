@@ -23,9 +23,13 @@ Your device also keeps your sign-in to each event, the key the box gave it
 when you joined, so that it opens signed in. In a browser that is the page's
 own storage. The apps keep it in the phone's: the iPhone's Keychain, and on
 Android a file sealed with a key held by the phone's Keystore. Either way
-it stays on that phone. A new phone set up from the old one's backup, or
-moved across from it, doesn't bring your sign-ins, whatever else comes
-across, and you sign in to each event again with your name and PIN.
+it stays on that phone. A new phone set up from the old one's backup
+doesn't bring your sign-ins, whatever else comes across, and you sign in to
+each event again with your name and PIN. Nor does an Android phone set up
+straight from the old one. An iPhone set up straight from the old one, side
+by side with Quick Start, may bring them: Apple's documentation doesn't
+say, and other developers have reported what their apps kept this way
+arriving on the new phone.
 
 Earlier versions of the apps kept the sign-in in the page's storage, so a
 backup made before you updated has it. The updated app moves it into the

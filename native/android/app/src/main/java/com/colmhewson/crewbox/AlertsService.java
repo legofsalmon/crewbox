@@ -125,8 +125,16 @@ public class AlertsService extends Service {
     connect();
   });
 
+  /**
+   * A read of the token waiting on the Keystore, held so a start can cancel
+   * it (see `reconnect` on why it is a field).
+   */
+  private final Runnable readAgain = this::readToken;
+
   private String serverUrl = "";
   private String token = "";
+  /** The name the app keeps the token under (Sessions). */
+  private String session = "";
   private String myName = "";
   private String myId = "";
   private Pattern mentionPattern;
@@ -152,22 +160,33 @@ public class AlertsService extends Service {
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
     SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    // A start brings what a read still waiting on the Keystore was for.
+    handler.removeCallbacks(readAgain);
     if (intent != null) {
       serverUrl = stringExtra(intent, EXTRA_SERVER);
       token = stringExtra(intent, EXTRA_TOKEN);
+      session = stringExtra(intent, EXTRA_SESSION);
       myName = stringExtra(intent, EXTRA_MY_NAME);
       prefs.edit()
           .putString(PREF_SERVER, serverUrl)
-          .putString(PREF_SESSION, stringExtra(intent, EXTRA_SESSION))
+          .putString(PREF_SESSION, session)
           .putString(PREF_NAME, myName)
           .apply();
     } else {
       // A restart the OS asked for. Everything this service needs came in on
       // an intent it no longer has, and the token is where the app keeps it.
       serverUrl = prefs.getString(PREF_SERVER, "");
-      String session = Sessions.get(this, prefs.getString(PREF_SESSION, ""));
-      token = session == null ? "" : session;
+      session = prefs.getString(PREF_SESSION, "");
       myName = prefs.getString(PREF_NAME, "");
+      try {
+        String kept = serverUrl.isEmpty() ? null : Sessions.get(this, session);
+        token = kept == null ? "" : kept;
+      } catch (KeystoreCalls.NotNow e) {
+        // The Keystore didn't answer, which says nothing about the sign-in.
+        // Forgetting it here left alerts off until somebody opened the app.
+        waitForToken();
+        return START_STICKY;
+      }
     }
     if (serverUrl.isEmpty() || token.isEmpty()) {
       // Nothing to connect to: a restart before anybody has ever signed in,
@@ -179,6 +198,12 @@ public class AlertsService extends Service {
       stopSelf();
       return START_NOT_STICKY;
     }
+    begin();
+    return START_STICKY;
+  }
+
+  /** Connect with the credentials in hand. */
+  private void begin() {
     mentionPattern = Pattern.compile(
         "@(" + Pattern.quote(myName) + "|all|everyone|channel)", Pattern.CASE_INSENSITIVE);
     stopped = false;
@@ -193,7 +218,41 @@ public class AlertsService extends Service {
     SiteWifi siteWifi = SiteWifi.get(this);
     siteWifi.start(serverUrl);
     siteWifi.whenSettled(onWifi -> handler.post(this::connect));
-    return START_STICKY;
+  }
+
+  /**
+   * A restart found the Keystore not answering. The service says it is
+   * connecting, which it will be, and reads the token again, backing off as
+   * a reconnect does.
+   */
+  private void waitForToken() {
+    token = "";
+    stopped = false;
+    retryMs = RETRY_MS;
+    startForeground(NOTIF_FOREGROUND, serviceNotification("Connecting to crew server…"));
+    handler.postDelayed(readAgain, retryMs);
+  }
+
+  private void readToken() {
+    if (stopped) return;
+    String kept;
+    try {
+      kept = Sessions.get(this, session);
+    } catch (KeystoreCalls.NotNow e) {
+      retryMs = Math.min(MAX_RETRY_MS, retryMs * 2);
+      handler.postDelayed(readAgain, retryMs);
+      return;
+    }
+    if (kept == null) {
+      // Gone while it waited: the page forgot the event, or the Keystore
+      // lost its key. The app starts the service again at the next sign-in.
+      forgetCredentials(this);
+      stopForeground(STOP_FOREGROUND_REMOVE);
+      stopSelf();
+      return;
+    }
+    token = kept;
+    begin();
   }
 
   /** Forget the credentials, so a sticky restart does not use a dead token. */
@@ -269,7 +328,10 @@ public class AlertsService extends Service {
   }
 
   private void connect() {
-    if (stopped || serverUrl.isEmpty()) return;
+    // No token while it waits on the Keystore (waitForToken), when a move to
+    // or from the Wi-Fi can still call this: a hello without one would have
+    // the box refuse it, and the service forget the sign-in it waits for.
+    if (stopped || serverUrl.isEmpty() || token.isEmpty()) return;
     // Anything already open, and any reconnect already queued, belongs to a
     // previous attempt and is abandoned here — one socket at a time is the
     // whole invariant.

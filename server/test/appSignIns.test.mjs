@@ -37,8 +37,17 @@ describe('the iPhone app’s sign-ins', () => {
     expect(code).toContain('kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly')
     expect(code).not.toMatch(/kSecAttrAccessible(?!AfterFirstUnlockThisDeviceOnly)\w/)
     expect(code).not.toContain('kSecAttrSynchronizable')
-    // Each is written whole, so none keeps an older item's accessibility.
-    expect(code).toMatch(/SecItemDelete\(item as CFDictionary\)\s*var added = item/)
+    // Each is changed in place, never deleted first, so a write that fails
+    // loses nothing. One added new gets the accessibility above, and a change
+    // leaves it as it was.
+    const save = /@objc func save[\s\S]*?\n {4}\}\n/.exec(code)?.[0] ?? ''
+    expect(save).toMatch(
+      /SecItemUpdate\(\s*item as CFDictionary, \[kSecValueData as String: data\] as CFDictionary\)/
+    )
+    expect(save).toMatch(
+      /if status == errSecItemNotFound \{\s*var added = item[\s\S]*?kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly\s*status = SecItemAdd\(added as CFDictionary, nil\)/
+    )
+    expect(save).not.toContain('SecItemDelete')
   })
 
   it('are under a Keychain service that reaches phones, so it keeps its name', () => {
@@ -66,10 +75,10 @@ describe('the Android app’s sign-ins', () => {
 
   it('are what the alerts service reads when Android restarts it, and it keeps only the name', () => {
     expect(service).toContain('private static final String PREFS = "crewbox-alerts";')
-    expect(service).toMatch(
-      /String session = Sessions\.get\(this, prefs\.getString\(PREF_SESSION, ""\)\);/
-    )
-    expect(service).toMatch(/\.putString\(PREF_SESSION, stringExtra\(intent, EXTRA_SESSION\)\)/)
+    expect(service).toMatch(/session = prefs\.getString\(PREF_SESSION, ""\);/)
+    expect(service).toMatch(/Sessions\.get\(this, session\)/)
+    expect(service).toMatch(/session = stringExtra\(intent, EXTRA_SESSION\);/)
+    expect(service).toMatch(/\.putString\(PREF_SESSION, session\)/)
     // The token itself is never written there again, only removed.
     expect(service).not.toMatch(/putString\(PREF_(?:OLD_)?TOKEN/)
     expect(service.match(/\.remove\(PREF_OLD_TOKEN\)/g)).toHaveLength(2)
@@ -78,6 +87,40 @@ describe('the Android app’s sign-ins', () => {
     )
     // And the page names it (web/src/store.ts).
     expect(read('web/src/store.ts')).toContain('session: storageName(TOKEN_KEY)')
+  })
+
+  it('are waited for, not forgotten, when the Keystore doesn’t answer', () => {
+    // Forgetting the sign-in on a Keystore that didn't answer left alerts
+    // off until somebody opened the app. Sessions says which it was
+    // (KeystoreCalls, with JVM tests), and the service waits on the one.
+    expect(sessions).toMatch(
+      /static synchronized String get\(Context context, String name\) throws KeystoreCalls\.NotNow \{/
+    )
+    // Each Keystore call there is asked twice, a key is thrown away only
+    // when Android says it is gone, and before Android 12 a key said to be
+    // missing, with sign-ins sealed under it, is waited out too.
+    expect(sessions).toContain('KeystoreCalls.retried(call, Sessions::keyGone, Sessions::pause)')
+    const sealing = sessions.split('\n').filter((line) => /SessionSeal\.(open|seal)\(/.test(line))
+    expect(sealing).toHaveLength(3)
+    for (const line of sealing) expect(line).toMatch(/ask\(\(\) -> SessionSeal\.(open|seal)\(/)
+    expect(
+      sessions.match(
+        /missingMayBeOutOfReach\(Build\.VERSION\.SDK_INT\)\) \{\s*throw new KeystoreCalls\.NotNow/g
+      )
+    ).toHaveLength(2)
+    const waits = [...service.matchAll(/catch \(KeystoreCalls\.NotNow e\) \{([\s\S]*?)\n\s*\}/g)]
+    expect(waits).toHaveLength(2)
+    for (const [, body] of waits) {
+      expect(body).not.toContain('forgetCredentials')
+      expect(body).toMatch(/waitForToken\(\);|handler\.postDelayed\(readAgain, retryMs\);/)
+    }
+    // A start cancels a read still waiting, and nothing connects without a
+    // token: the box would refuse the hello, and the service forget the
+    // sign-in it was waiting for.
+    expect(service).toMatch(/onStartCommand[\s\S]*?handler\.removeCallbacks\(readAgain\);/)
+    expect(service).toMatch(
+      /private void connect\(\) \{[^}]*if \(stopped \|\| serverUrl\.isEmpty\(\) \|\| token\.isEmpty\(\)\) return;/
+    )
   })
 
   describe('left out of backups and transfers to a new phone', () => {
