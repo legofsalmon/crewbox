@@ -3720,7 +3720,13 @@ button.boxes-pick:hover .boxes-name {
   color: var(--text-muted);
 }
 
-.follow-stage.following {
+.stage-alert-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.follow-stage.following,
+.lock-screen-stage.following {
   color: var(--accent);
 }
 

@@ -43,7 +43,8 @@ import { pathToFileURL } from 'node:url'
  * holding the crew Wi-Fi, so the box is reached over it when it has no
  * internet and mobile data is on (SiteWifi), and RECEIVE_BOOT_COMPLETED
  * for alerts to come back after a restart without anybody opening the app
- * (BootReceiver).
+ * (BootReceiver), and POST_PROMOTED_NOTIFICATIONS for the stage countdown
+ * to be a Live Update on Android 16 QPR2 and later.
  */
 export const REQUIRED = [
   'android.permission.INTERNET',
@@ -59,6 +60,7 @@ export const REQUIRED = [
   'android.permission.CAMERA',
   'android.permission.CHANGE_NETWORK_STATE',
   'android.permission.RECEIVE_BOOT_COMPLETED',
+  'android.permission.POST_PROMOTED_NOTIFICATIONS',
 ]
 
 /**

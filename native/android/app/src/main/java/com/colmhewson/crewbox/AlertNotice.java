@@ -94,6 +94,11 @@ final class AlertNotice {
     link = open.toString();
   }
 
+  /** Where a tap on a stage's countdown goes: the running order, at that stage. */
+  static String stageLink(String eventId, String stage) {
+    return "crewbox://open?event=" + encode(eventId) + "&stage=" + encode(stage);
+  }
+
   /** The alert as posted, or null for one this build can't read. */
   static AlertNotice from(JsonObject alert, String eventId) {
     if (alert == null || text(alert, "id").isEmpty()) return null;

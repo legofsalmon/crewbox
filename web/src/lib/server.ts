@@ -29,6 +29,17 @@ interface AlertsPlugin {
     eventKey?: string
   }): Promise<void>
   stop(): Promise<void>
+  /**
+   * Put a followed stage's countdown on the lock screen, or take it off with
+   * `stage: null`.
+   * @since native contract 2
+   */
+  setCountdown?(options: { stage: string | null }): Promise<{ stage: string | null }>
+  /**
+   * The stage whose countdown is on the lock screen, or null.
+   * @since native contract 2
+   */
+  getCountdown?(): Promise<{ stage: string | null }>
 }
 
 /**

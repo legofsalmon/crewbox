@@ -77,6 +77,10 @@ public class AlertsService extends Service {
   private static final int NOTIF_FOREGROUND = 1;
   /** Every alert from the box is posted under this id, with the alert's id as its tag. */
   private static final int NOTIF_ALERT = 2;
+  /** The stage countdown the person put on the lock screen. */
+  private static final int NOTIF_COUNTDOWN = 3;
+  /** Stage countdown: ongoing, low, and promoted to a Live Update where Android can. */
+  static final String CH_COUNTDOWN = "countdown";
   /** In an alert notification's extras: its channel and seq, for a `read`. */
   private static final String EXTRA_ALERT_CHANNEL = "crewbox.channelId";
   private static final String EXTRA_ALERT_SEQ = "crewbox.seq";
@@ -111,6 +115,8 @@ public class AlertsService extends Service {
   private static final String PREF_EVENT_KEY = "eventKey";
   /** The largest `t` heard from the box, for the next hello's `since`. */
   private static final String PREF_SINCE = "since";
+  /** The stage whose countdown is on the lock screen, or absent. */
+  private static final String PREF_COUNTDOWN = "countdown";
   /** Where the token itself was, before Sessions kept it. Only ever removed now. */
   private static final String PREF_OLD_TOKEN = "token";
 
@@ -120,6 +126,9 @@ public class AlertsService extends Service {
    * changeover calls are posted.
    */
   public static volatile boolean appVisible = false;
+
+  /** The running service, for the plugin to tell about the countdown; null when none runs. */
+  private static volatile AlertsService running;
 
   private final Handler handler = new Handler(Looper.getMainLooper());
   private OkHttpClient http;
@@ -186,6 +195,8 @@ public class AlertsService extends Service {
   private String eventKey = "";
   /** The largest `t` heard from the box, or 0 before anything was. */
   private long since = 0;
+  /** The box's last word on the followed stages (`stages`), or null before any. */
+  private JsonElement stages;
   private Pattern mentionPattern;
 
   /** channelId → name, for notification titles. */
@@ -204,6 +215,7 @@ public class AlertsService extends Service {
     http = new OkHttpClient.Builder().pingInterval(15, TimeUnit.SECONDS).build();
     createChannels();
     SiteWifi.get(this).hear(moved);
+    running = this;
   }
 
   @Override
@@ -325,6 +337,7 @@ public class AlertsService extends Service {
         .remove(PREF_EVENT_ID)
         .remove(PREF_EVENT_KEY)
         .remove(PREF_SINCE)
+        .remove(PREF_COUNTDOWN)
         .remove(PREF_OLD_TOKEN)
         .apply();
   }
@@ -342,6 +355,9 @@ public class AlertsService extends Service {
   @Override
   public void onDestroy() {
     SiteWifi.get(this).stopHearing(moved);
+    if (running == this) running = null;
+    // Nothing keeps it current now. A restart brings it back.
+    getSystemService(NotificationManager.class).cancel(NOTIF_COUNTDOWN);
     stopped = true;
     generation++;
     closeCurrent("service stopped");
@@ -587,6 +603,8 @@ public class AlertsService extends Service {
         updateServiceNotification("Connected to crew server");
         retryMs = RETRY_MS;
         welcomed = true;
+        stages = frame.get("stages");
+        showCountdown();
         JsonElement catchUp = frame.get("catchUp");
         if (catchUp != null && catchUp.isJsonArray()) {
           for (JsonElement alert : catchUp.getAsJsonArray()) {
@@ -613,6 +631,10 @@ public class AlertsService extends Service {
         }
         break;
       }
+      case "stages":
+        stages = frame.get("stages");
+        showCountdown();
+        break;
       case "beat": {
         JsonObject answer = new JsonObject();
         answer.addProperty("type", "beat");
@@ -621,8 +643,72 @@ public class AlertsService extends Service {
         break;
       }
       default:
-        // `settings`, `stages`, and whatever a newer box sends: nothing to
+        // `settings`, and whatever a newer box sends: nothing to
         // post. A frame this build doesn't know is skipped, never an error.
+    }
+  }
+
+  /**
+   * The stage countdown, posted again from the box's latest `stages`.
+   *
+   * One ongoing notification that counts by itself: a chronometer to the
+   * next change, from API 24. On Android 16 QPR2 and later it asks to be a
+   * Live Update, and the status bar chip counts too; elsewhere, or with the
+   * person's promotion turned off, it is an ordinary ongoing notification.
+   * It goes when its stage has nothing on and nothing next, or is no longer
+   * followed.
+   */
+  private void showCountdown() {
+    NotificationManager nm = getSystemService(NotificationManager.class);
+    String stage = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PREF_COUNTDOWN, "");
+    if (stage.isEmpty()) {
+      nm.cancel(NOTIF_COUNTDOWN);
+      return;
+    }
+    // Before the box has said anything: leave the choice alone.
+    if (stages == null) return;
+    Countdown countdown = Countdown.of(stages, stage, TimeZone.getDefault());
+    if (countdown == null) {
+      nm.cancel(NOTIF_COUNTDOWN);
+      getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(PREF_COUNTDOWN).apply();
+      return;
+    }
+    String link = AlertNotice.stageLink(eventId, stage);
+    NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CH_COUNTDOWN)
+        .setSmallIcon(R.drawable.ic_stat_crewbox)
+        .setContentTitle(countdown.title)
+        .setContentText(countdown.text)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
+        .setCategory(NotificationCompat.CATEGORY_EVENT)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        .setContentIntent(openIntent(link))
+        .setRequestPromotedOngoing(true);
+    if (countdown.target > 0) {
+      builder.setWhen(countdown.target)
+          .setShowWhen(true)
+          .setUsesChronometer(true)
+          .setChronometerCountDown(true);
+    }
+    nm.notify(NOTIF_COUNTDOWN, builder.build());
+  }
+
+  /** The stage whose countdown is on the lock screen, or "" for none. */
+  static String countdownStage(Context ctx) {
+    return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PREF_COUNTDOWN, "");
+  }
+
+  /** Put a stage's countdown on the lock screen, or take it off with "". */
+  static void setCountdownStage(Context ctx, String stage) {
+    SharedPreferences.Editor prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
+    if (stage.isEmpty()) prefs.remove(PREF_COUNTDOWN);
+    else prefs.putString(PREF_COUNTDOWN, stage);
+    prefs.commit();
+    AlertsService service = running;
+    if (service != null) service.handler.post(service::showCountdown);
+    else if (stage.isEmpty()) {
+      ctx.getSystemService(NotificationManager.class).cancel(NOTIF_COUNTDOWN);
     }
   }
 
@@ -889,11 +975,18 @@ public class AlertsService extends Service {
         AlertNotice.CH_CHANGEOVER, "Changeover calls", NotificationManager.IMPORTANCE_HIGH);
     changeover.setDescription("Changeovers on the stages you follow.");
     changeover.enableVibration(true);
+    // Low, not Min: a promoted Live Update needs a channel above Min, and
+    // the connection's channel is Min and can't be raised.
+    NotificationChannel countdown = new NotificationChannel(
+        CH_COUNTDOWN, "Stage countdown", NotificationManager.IMPORTANCE_LOW);
+    countdown.setDescription("Who is on and who is next, on a stage you put on the lock screen.");
+    countdown.setShowBadge(false);
     nm.createNotificationChannel(service);
     nm.createNotificationChannel(messages);
     nm.createNotificationChannel(mentions);
     nm.createNotificationChannel(showStop);
     nm.createNotificationChannel(changeover);
+    nm.createNotificationChannel(countdown);
   }
 
   private PendingIntent openAppIntent() {

@@ -270,7 +270,7 @@ enum Screens {
     /// The contract with the screens this build's native code keeps: the
     /// plugins it has and what their methods do (web/src/lib/nativeApi.ts).
     /// Raised when a plugin gains a method, or a method changes what it does.
-    static let nativeApi = 1
+    static let nativeApi = 2
 
     /// The oldest contract this build still keeps for screens written against it.
     static let oldestScreensApi = 1

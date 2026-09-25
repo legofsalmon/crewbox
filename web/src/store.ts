@@ -583,6 +583,12 @@ export interface AppState {
   setChannelAlerts: (channelId: string, level: ChannelAlertLevel) => void
   /** Follow a stage for changeover calls and the countdown, or stop. */
   followStage: (stage: string, follow: boolean) => void
+  /**
+   * The followed stage whose countdown is on this phone's lock screen, or
+   * null; undefined where the app can't show one (a browser, an older app).
+   */
+  lockScreenStage: string | null | undefined
+  setLockScreenStage: (stage: string | null) => void
   logout: () => Promise<void>
   /** The box says this session is dead. Keeps what has not been sent. */
   sessionEnded: () => Promise<void>
@@ -1260,6 +1266,11 @@ export const useStore = create<AppState>()((set, get) => {
     // A tapped alert, once this event is known: one that started the app
     // waited for it.
     handleOpenLinks(openLink)
+    // The countdown the app has on the lock screen, where it can have one.
+    void nativeAlerts()
+      ?.getCountdown?.()
+      .then((result) => set({ lockScreenStage: result.stage }))
+      .catch(() => {})
 
     // Android wrapper: hand the session to the foreground service so the
     // phone buzzes for messages while the app is backgrounded or locked.
@@ -1605,6 +1616,7 @@ export const useStore = create<AppState>()((set, get) => {
     alertBanner: null,
     alertSettings: NO_ALERT_SETTINGS,
     alertSettingsOpen: false,
+    lockScreenStage: undefined,
     loadingOlder: false,
     uploading: false,
     theme: initialTheme(),
@@ -2451,6 +2463,18 @@ export const useStore = create<AppState>()((set, get) => {
       const stages = follow ? [...others, stage].sort() : others
       set({ alertSettings: { ...get().alertSettings, stages } })
       ws?.send({ type: 'followStage', stage, follow })
+      // An unfollowed stage's countdown goes too: the box stops sending it.
+      if (!follow && get().lockScreenStage === stage) get().setLockScreenStage(null)
+    },
+
+    setLockScreenStage(stage) {
+      const plugin = nativeAlerts()
+      if (!plugin?.setCountdown) return
+      set({ lockScreenStage: stage })
+      void plugin
+        .setCountdown({ stage })
+        .then((result) => set({ lockScreenStage: result.stage }))
+        .catch(() => {})
     },
 
     /**

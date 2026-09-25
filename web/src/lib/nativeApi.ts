@@ -14,7 +14,9 @@
  *   each use, so an older app still runs them without that one thing.
  *
  * Contract 1 is the plugins the apps have from the release that first carries
- * this file. Only ever raised; a number once shipped keeps its meaning.
+ * this file. Contract 2 adds Android's `CrewboxAlerts.setCountdown` and
+ * `getCountdown`, the stage countdown on the lock screen (Phase 4). Only ever
+ * raised; a number once shipped keeps its meaning.
  *
  * Every plugin and method the screens call is declared in lib/server.ts, and
  * held there to the Java and Swift the apps are built from
@@ -36,4 +38,4 @@
  * the like, which lint refuses): in either app, a call to a method the app
  * lacks is dropped, and never settles.
  */
-export const SCREENS_NATIVE_API = { needs: 1, builtFor: 1 } as const
+export const SCREENS_NATIVE_API = { needs: 1, builtFor: 2 } as const

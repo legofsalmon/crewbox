@@ -81,7 +81,7 @@ final class Screens {
    * plugins it has and what their methods do (web/src/lib/nativeApi.ts).
    * Raised when a plugin gains a method, or a method changes what it does.
    */
-  static final int NATIVE_API = 1;
+  static final int NATIVE_API = 2;
 
   /** The oldest contract this build still keeps for screens written against it. */
   static final int OLDEST_SCREENS_API = 1;

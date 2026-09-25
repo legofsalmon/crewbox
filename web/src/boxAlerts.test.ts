@@ -247,4 +247,44 @@ describe('on a box that decides alerts', () => {
     receiveLink('crewbox://open?event=saturday&channel=stage-2')
     expect(store.getState().activeChannelId).toBe('dm-alex')
   })
+
+  it("puts a followed stage's countdown on the app's lock screen, and takes it off when unfollowed", async () => {
+    const calls: unknown[] = []
+    let shown: string | null = null
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'android',
+      Plugins: {
+        CrewboxAlerts: {
+          start: async () => {},
+          stop: async () => {},
+          setCountdown: async ({ stage }: { stage: string | null }) => {
+            calls.push(stage)
+            shown = stage
+            return { stage }
+          },
+          getCountdown: async () => ({ stage: shown }),
+        },
+      },
+    }
+    try {
+      const store = await signedIn({ channels: {}, stages: ['Main Stage'] })
+      await settle()
+      expect(store.getState().lockScreenStage).toBeNull()
+      store.getState().setLockScreenStage('Main Stage')
+      await settle()
+      expect(store.getState().lockScreenStage).toBe('Main Stage')
+      store.getState().followStage('Main Stage', false)
+      await settle()
+      expect(store.getState().lockScreenStage).toBeNull()
+      expect(calls).toEqual(['Main Stage', null])
+    } finally {
+      delete window.Capacitor
+    }
+  })
+
+  it('offers no lock screen outside the apps', async () => {
+    const store = await signedIn()
+    expect(store.getState().lockScreenStage).toBeUndefined()
+  })
 })
