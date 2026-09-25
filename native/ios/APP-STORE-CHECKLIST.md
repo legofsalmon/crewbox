@@ -64,6 +64,10 @@ name and usually without a certificate".
    by hand instead, switch both on for `com.colmhewson.crewbox` under
    Certificates, Identifiers & Profiles and make a new profile, or the
    archive won't sign.
+   It lists **App Groups** too, with `group.com.colmhewson.crewbox`, where the
+   sign-ins are kept so the lock-screen alerts can read them; let it register
+   the group, or register it under Identifiers → App Groups and switch it on
+   for the App ID. The name is fixed once it ships.
    Set the same Team on the **Countdown** target, the lock screen's stage
    countdown. Its bundle id is `com.colmhewson.crewbox.countdown`, and it
    needs no capabilities of its own.

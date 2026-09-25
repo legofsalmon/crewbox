@@ -19,12 +19,14 @@ import Security
 /// phone of their own, signed in as they were.
 ///
 /// `AfterFirstUnlock` is readable once the phone has been unlocked since it
-/// started, which the page always has been, and which a Local Push
-/// Connectivity provider running with the phone locked would need too
-/// (Phase 4 of the plan). That provider is an extension, so it will need
-/// these moved to a Keychain access group the two share: items here are in
-/// the app's own, which is the one it has without the keychain-access-groups
-/// entitlement.
+/// started, which the page always has been, and which the Local Push
+/// provider running with the phone locked needs too (docs/ALERTS.md). That
+/// provider is an extension, a separate executable, so the sign-ins are kept
+/// in the App Group the two share, `group.com.colmhewson.crewbox`, which
+/// also works as a Keychain group. An App Group is never the default group,
+/// so everything added here names it, and nothing else the app keeps moves.
+/// Sign-ins from before it were in the app's own group; `load` moves them
+/// (`moveIntoAppGroup`).
 ///
 /// The Keychain outlives the app: delete it and install it again, and these
 /// are still here while the page's storage is not. The page drops any the
@@ -44,9 +46,17 @@ public class SessionsPlugin: CAPPlugin, CAPBridgedPlugin {
     /// renaming it strands every sign-in on them.
     static let service = "com.colmhewson.crewbox.sessions"
 
+    /// The App Group the app shares with its Local Push provider, as a
+    /// Keychain group. It reaches phones: never renamed.
+    static let appGroup = "group.com.colmhewson.crewbox"
+
     /// Every sign-in, by name. Rejects, and the page deletes nothing, when
     /// the Keychain won't say: before the phone's first unlock, for one.
     @objc func load(_ call: CAPPluginCall) {
+        SessionsPlugin.moveIntoAppGroup()
+        // Every search here names no group, so it finds a sign-in wherever
+        // it is: one not moved yet (before the first unlock, say) is still
+        // read, and still changed or forgotten in place.
         var names: CFTypeRef?
         let listed = SecItemCopyMatching([
             kSecClass as String: kSecClassGenericPassword,
@@ -110,8 +120,15 @@ public class SessionsPlugin: CAPPlugin, CAPBridgedPlugin {
         if status == errSecItemNotFound {
             var added = item
             added[kSecValueData as String] = data
+            added[kSecAttrAccessGroup as String] = SessionsPlugin.appGroup
             added[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             status = SecItemAdd(added as CFDictionary, nil)
+            if status == errSecMissingEntitlement {
+                // A build signed without the App Group, as CI's is: the
+                // app's own group, as before, rather than no sign-in.
+                added.removeValue(forKey: kSecAttrAccessGroup as String)
+                status = SecItemAdd(added as CFDictionary, nil)
+            }
         }
         if status == errSecSuccess {
             call.resolve()
@@ -135,5 +152,62 @@ public class SessionsPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             call.reject("The Keychain answered \(status)")
         }
+    }
+
+    /// Moves each sign-in kept in the app's own Keychain group into the App
+    /// Group, where the Local Push provider can read it.
+    ///
+    /// A copy is added first, with the same protection, and read back; only
+    /// then is the old one deleted, naming its own group. A delete that named
+    /// no group would search them all and take the new copy too. Apple
+    /// doesn't say whether an update can move an item between groups, so
+    /// none does. Anything that fails leaves the sign-in where it was, to be
+    /// moved on a later load: before the phone's first unlock, or in a build
+    /// signed without the App Group.
+    static func moveIntoAppGroup() {
+        var found: CFTypeRef?
+        guard SecItemCopyMatching([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ] as CFDictionary, &found) == errSecSuccess else { return }
+        for item in (found as? [[String: Any]]) ?? [] {
+            guard let name = item[kSecAttrAccount as String] as? String,
+                  let group = item[kSecAttrAccessGroup as String] as? String,
+                  group != appGroup
+            else { continue }
+            let old: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: name,
+                kSecAttrAccessGroup as String: group,
+            ]
+            var shared = old
+            shared[kSecAttrAccessGroup as String] = appGroup
+            guard let token = data(of: old) else { continue }
+
+            var copy = shared
+            copy[kSecValueData as String] = token
+            copy[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            var status = SecItemAdd(copy as CFDictionary, nil)
+            if status == errSecDuplicateItem {
+                // Copied once before, and the delete never happened.
+                status = SecItemUpdate(
+                    shared as CFDictionary, [kSecValueData as String: token] as CFDictionary)
+            }
+            guard status == errSecSuccess, data(of: shared) == token else { continue }
+            SecItemDelete(old as CFDictionary)
+        }
+    }
+
+    /// One item's data, or nil when the Keychain won't give it.
+    private static func data(of item: [String: Any]) -> Data? {
+        var query = item
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecReturnData as String] = true
+        var data: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &data) == errSecSuccess else { return nil }
+        return data as? Data
     }
 }

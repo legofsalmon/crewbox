@@ -8,5 +8,11 @@
 	<true/>
 	<key>com.apple.developer.usernotifications.time-sensitive</key>
 	<true/>
+	<!-- Shared with the Local Push provider: the sign-ins, as a Keychain
+	     group (SessionsPlugin.swift). A storage name on phones. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.colmhewson.crewbox</string>
+	</array>
 </dict>
 </plist>

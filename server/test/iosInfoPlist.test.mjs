@@ -129,7 +129,7 @@ describe('joining the Wi-Fi from its code', () => {
     )
   })
 
-  it('signs the app with the two entitlements the join needs, Time Sensitive, and only those', () => {
+  it('signs the app with the two entitlements the join needs, Time Sensitive, the App Group, and only those', () => {
     // Without Hotspot Configuration iOS refuses every network the app hands
     // it, and without Access Wi-Fi Information the check that the phone got
     // on the network always reads none, so every join would say it failed.
@@ -142,7 +142,16 @@ describe('joining the Wi-Fi from its code', () => {
       'com.apple.developer.networking.wifi-info',
       'com.apple.developer.usernotifications.time-sensitive',
     ])
-    expect([...entitlements.matchAll(/<key>/g)]).toHaveLength(3)
+    // The App Group the Local Push provider shares, for the sign-ins
+    // (appSignIns.test.mjs). A name on phones, chosen once.
+    const groups =
+      /<key>com\.apple\.security\.application-groups<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(
+        entitlements
+      )?.[1]
+    expect([...(groups ?? '').matchAll(/<string>([^<]*)<\/string>/g)].map((m) => m[1])).toEqual([
+      'group.com.colmhewson.crewbox',
+    ])
+    expect([...entitlements.matchAll(/<key>/g)]).toHaveLength(4)
     // In every configuration of the app's target, which is the one with the
     // app's bundle identifier: a build without them installs, and joins
     // nothing.
