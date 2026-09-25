@@ -204,8 +204,7 @@ public class AlertsService extends Service {
 
   /** Connect with the credentials in hand. */
   private void begin() {
-    mentionPattern = Pattern.compile(
-        "@(" + Pattern.quote(myName) + "|all|everyone|channel)", Pattern.CASE_INSENSITIVE);
+    mentionPattern = Mentions.forName(myName);
     stopped = false;
     retryMs = RETRY_MS;
     startForeground(NOTIF_FOREGROUND, serviceNotification("Connecting to crew server…"));
@@ -493,7 +492,7 @@ public class AlertsService extends Service {
         ? author
         : "#" + channelName + " — " + author;
 
-    boolean mention = mentionPattern != null && mentionPattern.matcher(body).find();
+    boolean mention = Mentions.isMentioned(body, mentionPattern);
     notifyMessage(title, body, mention || dm);
   }
 
