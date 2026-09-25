@@ -10,6 +10,7 @@ import {
   type EventRecord,
 } from './eventScope.ts'
 import { isOutboxEntry, storedOutboxOf } from './db.ts'
+import { loadKeptEdits } from './docs/unsentEdits.ts'
 import { holdWhileOpen, readPref, writePref } from './prefs.ts'
 import { isNative, nativeRecords, putBackServerOrigin, serverOrigin } from './server.ts'
 import { TOKEN_KEY } from './sessions.ts'
@@ -163,7 +164,8 @@ function waitFor<T>(answer: Promise<T>): Promise<T> {
  * took, from the app's copy, before anything reads a sign-in: main.tsx
  * renders once this settles. At once anywhere but the apps, and in an app
  * too old to keep a copy. The unsent work the app keeps is read at the same
- * time, so that the page holds it before anything reads a queue.
+ * time, so that the page holds it before anything reads a queue or opens a
+ * document.
  *
  * Settles to the sign-ins the app's records vouch for: those of events it
  * holds a record of, which lib/sessions.ts keeps though the page's storage
@@ -186,7 +188,10 @@ export async function restoreFromApp(): Promise<ReadonlySet<string> | null> {
   serverOrigin()
   const app = nativeRecords()
   if (!app) return new Set()
-  const unsent = loadUnsent(app, { messages: isOutboxEntry, entries: isQueuedIncident })
+  const unsent = Promise.all([
+    loadUnsent(app, { messages: isOutboxEntry, entries: isQueuedIncident }),
+    loadKeptEdits(app),
+  ])
   let values: Record<string, string>
   try {
     values = (await waitFor(app.readAll({ slot: SLOT }))).values ?? {}

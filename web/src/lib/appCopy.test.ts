@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as Y from 'yjs'
 import type { RecordsPlugin, SessionsPlugin } from './server.ts'
 
 /**
@@ -615,7 +616,9 @@ describe('unsent work', () => {
 
   it('goes with an event forgotten on the Boxes screen, from the app’s files too', async () => {
     signedInToFriday()
-    const { records } = app({ files: { saturday: { outbox: JSON.stringify([MESSAGE]) } } })
+    const { records } = app({
+      files: { saturday: { outbox: JSON.stringify([MESSAGE]), 'doc-edits': '{}' } },
+    })
     const { scope } = await start()
     scope.rememberEvent(SATURDAY)
     const { forgetEvent } = await import('./boxes.ts')
@@ -624,5 +627,47 @@ describe('unsent work', () => {
     await forgetEvent('saturday')
     expect(unsent.heldUnsent('saturday', 'messages')).toEqual([])
     expect(records.folders.get('saturday')?.has('outbox') ?? false).toBe(false)
+    expect(records.folders.get('saturday')?.has('doc-edits') ?? false).toBe(false)
+  })
+
+  it('goes with an event forgotten, from the app’s files, though its record couldn’t be read', async () => {
+    signedInToFriday()
+    const { records } = app({
+      files: { saturday: { outbox: JSON.stringify([MESSAGE]), 'doc-edits': '{}' } },
+    })
+    unsentLast(records, 'unreadable')
+    const { scope } = await start()
+    scope.rememberEvent(SATURDAY)
+    const { forgetEvent } = await import('./boxes.ts')
+    await forgetEvent('saturday')
+    // No record to take the folder with it: each slot goes by itself.
+    expect([...(records.folders.get('saturday')?.keys() ?? [])]).toEqual([])
+  })
+
+  it('includes document edits the box hasn’t confirmed, read before the page renders', async () => {
+    signedInToFriday()
+    const edit = new Y.Doc()
+    edit.getMap('acts').set('a', 'Band A')
+    const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes))
+    const { records } = app({
+      files: {
+        friday: {
+          'doc-edits': JSON.stringify({
+            'timetable/event': {
+              sv: base64(Y.encodeStateVector(new Map())),
+              update: base64(Y.encodeStateAsUpdate(edit)),
+            },
+          }),
+        },
+      },
+    })
+    unsentLast(records)
+    await start()
+    // Each document is given them as it opens (docs/unsentEdits.ts).
+    const edits = await import('./docs/unsentEdits.ts')
+    expect(edits.keepsEditsInApp()).toBe(true)
+    const doc = new Y.Doc()
+    edits.watchEdits('timetable/event', doc)
+    expect(doc.getMap('acts').toJSON()).toEqual({ a: 'Band A' })
   })
 })

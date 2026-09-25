@@ -65,7 +65,9 @@ Everyone edits at once, and it converges — that's the point:
   cell right now.
 - The **sync chip** by the title tells the truth: **Local only** (never
   synced), **Connecting…**, **Synced**, or **Synced · 3 devices**.
-- Offline edits are kept and merge cleanly when you're back in reach.
+- Offline edits are kept and merge cleanly when you're back in reach. The
+  iPhone and Android apps keep them even if the phone clears the app's web
+  storage before then.
 - **Undo is yours alone**: `⌘Z` reverts what _you_ did, never a
   colleague's change — so nobody can undo the monitor engineer from across
   the field.

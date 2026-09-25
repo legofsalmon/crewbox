@@ -10,7 +10,8 @@ import {
 } from './helpers'
 
 /**
- * Work typed with no signal, on a phone that lets it down (web/src/lib/unsent.ts).
+ * Work typed with no signal, on a phone that lets it down (web/src/lib/unsent.ts,
+ * web/src/lib/docs/unsentEdits.ts).
  *
  * offline.spec.ts is the promise when the phone's storage keeps its side of
  * it. These are the times it doesn't: storage that refuses the write, where
@@ -115,6 +116,38 @@ async function cutOff(page: Page) {
   }
 }
 
+/**
+ * The wipe: every IndexedDB database and all of localStorage, from under the
+ * open page, as WebKit's tracking prevention takes it on an iPhone. The
+ * stood-in app's files are in sessionStorage, which it leaves, as a wipe
+ * leaves the app's own.
+ */
+async function wipe(page: Page) {
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Storage.clearDataForOrigin', {
+    origin: new URL(page.url()).origin,
+    storageTypes: 'indexeddb,local_storage',
+  })
+  expect(await page.evaluate(() => localStorage.length)).toBe(0)
+  expect(await page.evaluate(async () => (await indexedDB.databases()).length)).toBe(0)
+}
+
+/** The next start after a wipe, still with no signal: signed in, from the app's copy, and trying its box. */
+async function startAfterWipe(page: Page) {
+  await page.reload()
+  await expect(page.getByRole('heading', { name: /reach the crew server/ })).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(page.getByText('Trying 127.0.0.1:4299')).toBeVisible()
+  await expect(page.getByLabel('Your PIN')).toHaveCount(0)
+}
+
+/** The documents whose edits the app keeps for the phone's one event, because its box may not have them. */
+async function keptDocuments(page: Page): Promise<string[]> {
+  const text = Object.values(await recordsOf(page))[0]?.['doc-edits']
+  return text ? Object.keys(JSON.parse(text) as object) : []
+}
+
 const openLog = async (page: Page) => {
   await page
     .getByRole('button', { name: /Show log/ })
@@ -211,25 +244,10 @@ test('the apps keep unsent work through a wipe of the page’s storage, and send
   expect(folders).toHaveLength(1)
   expect(Object.keys(folders[0]!).sort()).toEqual(['event', 'incident-outbox', 'outbox'])
 
-  // The wipe: every IndexedDB database and all of localStorage, from under
-  // the open page, as WebKit's tracking prevention takes it on an iPhone.
-  const cdp = await phone.context().newCDPSession(phone)
-  await cdp.send('Storage.clearDataForOrigin', {
-    origin: new URL(phone.url()).origin,
-    storageTypes: 'indexeddb,local_storage',
-  })
-  expect(await phone.evaluate(() => localStorage.length)).toBe(0)
-  expect(await phone.evaluate(async () => (await indexedDB.databases()).length)).toBe(0)
-
-  // The next start, still with no signal: signed in and trying its box, from
-  // the app's copy, with no chat cache to show and nothing of the work in
+  // The next start, with no chat cache to show and nothing of the work in
   // the page's storage.
-  await phone.reload()
-  await expect(phone.getByRole('heading', { name: /reach the crew server/ })).toBeVisible({
-    timeout: 15_000,
-  })
-  await expect(phone.getByText('Trying 127.0.0.1:4299')).toBeVisible()
-  await expect(phone.getByLabel('Your PIN')).toHaveCount(0)
+  await wipe(phone)
+  await startAfterWipe(phone)
   expect(await phone.evaluate(() => JSON.stringify({ ...localStorage }))).not.toContain(entry)
 
   await back()
@@ -244,4 +262,45 @@ test('the apps keep unsent work through a wipe of the page’s storage, and send
   // And the app lets go of both once the box has them.
   await expect.poll(files).not.toContain(message)
   await expect.poll(files).not.toContain(entry)
+})
+
+test('the apps keep a running-order change made with no signal through a wipe, and it reaches the crew after the next start', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000)
+  const phone = await appDevice(browser, uniqueName('App Stage'))
+  const back = await cutOff(phone)
+
+  // Added in a dead spot, where only the phone has it. By route, as
+  // schedule.spec.ts opens it.
+  await phone.goto('/m/schedule')
+  await expect(phone.getByRole('heading', { name: 'Running order' })).toBeVisible()
+  await expect(phone.locator('.conn-banner')).toBeVisible()
+  await phone.getByRole('button', { name: 'Edit' }).click()
+  await phone.getByRole('button', { name: '+ Add act' }).click()
+  // Upper case, and the last row, for the reasons schedule.spec.ts gives.
+  const act = uniqueName('LATE ADDITION')
+  await phone.locator('main').getByLabel('Act', { exact: true }).last().fill(act)
+
+  // The app's files keep the running order's edits, beside the event's record.
+  await expect.poll(() => keptDocuments(phone)).toContain('timetable/event')
+
+  await wipe(phone)
+  await startAfterWipe(phone)
+  await back()
+  await expect(phone.getByRole('heading', { name: /reach the crew server/ })).toBeHidden({
+    timeout: 30_000,
+  })
+
+  // Nothing of it was left in the page's storage: it reached the box from the app's files.
+  const sam = await newDevice(browser, uniqueName('Sam'))
+  await sam.goto('/m/schedule')
+  await expect(sam.getByRole('heading', { name: 'Running order' })).toBeVisible()
+  await sam.getByRole('button', { name: 'Edit' }).click()
+  await expect(sam.locator('main').getByRole('button', { name: `Remove ${act}` })).toBeVisible({
+    timeout: 30_000,
+  })
+
+  // And the app lets go once the box is seen to have it.
+  await expect.poll(() => keptDocuments(phone)).not.toContain('timetable/event')
 })

@@ -2,6 +2,7 @@ import { getConfigAt } from './api.ts'
 import { chatDatabaseName, databaseNames, outboxOf } from './db.ts'
 import { deleteLocalDatabase } from './docs/persistence.ts'
 import { allDocStores } from './docs/store.ts'
+import { forgetAllEdits } from './docs/unsentEdits.ts'
 import { addressOf, type NearbyBox } from './discovery.ts'
 import {
   eventIdFrom,
@@ -84,8 +85,9 @@ export async function forgetEvent(event: string): Promise<void> {
   }
   await Promise.all([...databases].map(deleteLocalDatabase))
   for (const key of keys) forgetPref(key)
-  // Its unsent work, which the page holds, and in the apps the app too.
-  await releaseAllUnsent(event)
+  // Its unsent work, which the page holds, and in the apps the app too, with
+  // the document edits the app kept for its box.
+  await Promise.all([releaseAllUnsent(event), forgetAllEdits(event)])
   await forgetSession(session)
   releaseEvent(event)
   forgetEventRecord(event)

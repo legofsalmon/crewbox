@@ -74,4 +74,10 @@ describe('the page’s side', () => {
     expect(unsent).toContain("const MESSAGES_SLOT = 'outbox'")
     expect(unsent).toContain("const ENTRIES_SLOT = 'incident-outbox'")
   })
+
+  it('keeps each event’s unconfirmed document edits in a slot whose name reaches phones', () => {
+    // Beside the rest, in the event's folder (web/src/lib/docs/unsentEdits.ts).
+    const edits = read('web/src/lib/docs/unsentEdits.ts')
+    expect(edits).toContain("const EDITS_SLOT = 'doc-edits'")
+  })
 })

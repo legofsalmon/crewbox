@@ -51,6 +51,12 @@ delete each one there once the box has it. Signing out deletes them, and so
 does forgetting the event on the Boxes screen. They are left out of backups
 in the same way as the note.
 
+Changes you make to a sheet, plot, screen map or the running order while
+your phone can't reach the box are kept in those files too, and deleted
+there once the phone sees the box has them. Deleting the document deletes
+them, and so does forgetting the event. Signing out leaves them, as it
+leaves the documents themselves on the phone.
+
 Deleting a sheet, plot or screen map deletes it from the box too. The box
 overwrites what it held rather than only marking the space free, and never
 saves it again, though the SD card or disk underneath can keep an old copy

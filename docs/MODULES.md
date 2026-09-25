@@ -179,9 +179,18 @@ messages and show-log entries not yet sent, each the whole queue as a JSON
 array (`web/src/lib/unsent.ts`). The page holds those queues in memory as
 well while it is open, and reads each as its own storage's plus whatever it
 holds that storage lacks, so neither a refused write nor a wipe loses what
-was typed. The folder, the slots and the key all reach phones. A module that
-keeps something else the box can't give back adds a slot of its own rather
-than a new folder.
+was typed. The slot `doc-edits` holds the edits to the event's documents
+that its box isn't known to have, as a JSON object by room, each a Yjs
+update with the state vector it was taken against, in base64
+(`web/src/lib/docs/unsentEdits.ts`). What the box has is read from what the
+relay sends: its handshake, and each change it sends to everybody in the
+room, the device that made it included. An edit made while its room isn't
+in step with the relay is kept, and let go once the relay is seen to have
+it, and a document is given what was kept of it as it opens, before it
+syncs. Every document the docs store or the running order opens gets this
+from the sync manager, so a module has nothing to do for it. The folder,
+the slots and the key all reach phones. A module that keeps something else
+the box can't give back adds a slot of its own rather than a new folder.
 
 ## The five steps
 
