@@ -671,6 +671,7 @@ async function main(): Promise<void> {
     metrics,
     updater,
     dataDir,
+    webDist,
     ...(config.iface ? { iface: config.iface } : {}),
     network: {
       boot,

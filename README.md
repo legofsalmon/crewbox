@@ -192,7 +192,8 @@ setup → join → admin, and asserts the voice server actually came up. It star
 the box on an empty data directory, so a release box is unlicensed there: it
 checks that first-run setup asks for a licence and refuses to save, rather
 than that it saves. It also fetches every file of the box's screens and checks
-it against their signed list, `WEBSUMS`, when there is one;
+it against their signed list, `WEBSUMS`, when there is one, and checks that
+`/api/app/screens` offers the apps that list, or answers 404 when there is none;
 `CREWBOX_SMOKE_SIGNED=1`, as CI and releases set it, fails a box that has none.
 Plain sh and curl, so it also runs on a festival admin's Mac against a
 downloaded release.

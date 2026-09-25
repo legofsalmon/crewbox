@@ -174,18 +174,30 @@ if contains "$web_info" '"kind": "crewbox-web"'; then
       '' | *[!A-Za-z0-9+/=]*) fail "WEBSUMS is served without its signature" ;;
     esac
     count=0
+    listed=''
     # A here-document, not a pipe, so a fail inside the loop ends the script.
     while read -r digest path; do
       got="$(curl -fsS --compressed "$BASE/$path" | sha256)"
       [ "$got" = "$digest" ] || fail "$path is not served as it was signed"
       count=$((count + 1))
+      listed="$listed$digest  $path\\n"
     done <<EOF
 $sums
 EOF
     pass "serves its screens as signed ($count files)"
+    # What an app asks for before it takes any of them: that list and its
+    # signature, from this version's own copy, in JSON (where a newline is \n).
+    offer="$(curl -fsS "$BASE/api/app/screens" || true)"
+    contains "$offer" "\"version\":\"$box_version\"" &&
+      contains "$offer" "\"sums\":\"$listed\",\"signature\":\"$sig\"" ||
+      fail "/api/app/screens doesn't offer the list it serves: ${offer:-no answer}"
+    pass "offers apps that list"
   elif [ "$signed" = 1 ]; then
     fail "the screens are not signed: no WEBSUMS lists them"
   else
+    # An app told there is nothing signed keeps its own screens.
+    status="$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/app/screens" || true)"
+    [ "$status" = 404 ] || fail "/api/app/screens answers $status for screens nobody signed"
     pass "serves its screens, unsigned (a build of its own)"
   fi
 elif [ "$signed" = 1 ]; then
