@@ -22,8 +22,9 @@ it to a stage manager.
 | Alerts, app open                  | yes                         | yes                   | yes                 |
 | Alerts, phone locked, no internet | no                          | **yes**               | **no — impossible** |
 | Exports and file downloads        | downloads to the device     | Downloads, then Share | the share sheet     |
+| Runs its box's version            | yes                         | once it's checked     | once it's checked   |
 
-The last row is worth a paragraph. A WebView has no download handler, so
+The downloads row is worth a paragraph. A WebView has no download handler, so
 the ordinary "save this file" path does nothing at all inside either app —
 it used to do nothing _and say it had worked_. Now each app does what its
 phone expects:
@@ -75,7 +76,7 @@ price of installing from your own box instead of a store.
 ## The iOS app
 
 Native microphone permission, so **voice talk works over plain HTTP** —
-the main reason it exists. But read the last row of the table again:
+the main reason it exists. But read the locked-phone row of the table again:
 
 > [!WARNING]
 > **A locked iPhone on an offline network cannot be alerted.** Apple
@@ -235,6 +236,27 @@ make a web address tappable, so send the address under the QR on `/connect`,
 which opens the join page. A phone without the app can't follow the link: an
 iPhone says Safari can't open the address, and an Android phone goes to the
 box's `/connect` page, which offers the app when the box has it.
+
+## New versions in the apps
+
+A browser runs whatever version its box serves. The apps come with a version
+built in, and run their box's instead once they can. When the box runs
+another version, the app fetches that version from the box and checks that a
+Crewbox release made it, the way a box checks its own updates. Only then does
+it offer **New version ready — Reload**
+([what crew see](/docs/around-the-app#when-a-new-version-arrives)). Each event
+runs its own box's version, and a phone with no signal opens an event on the
+version it last ran there.
+
+The apps run only what a Crewbox release made. A box run from source, or
+anybody's own build of it, has nothing the apps will run, and they carry on
+with their own version there. So does an app too old for its box's version,
+and it says to update the app. Update the apps before a show where you can:
+an iPhone from the App Store, and an Android phone from the box once the
+release's APK is on it ([how](/docs/run-the-box#serving-the-android-app)). A
+version that doesn't start on a phone is put aside there, and the app goes
+back to its own
+([more](/docs/troubleshooting#the-reload-pill-does-nothing)).
 
 ## Desktop helpers
 

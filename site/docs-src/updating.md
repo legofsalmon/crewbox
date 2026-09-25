@@ -57,6 +57,13 @@ Every phone loses the box for about twenty seconds, then reconnects on its
 own. Nobody has to rejoin, nothing is lost, and unsent messages send when the
 connection returns.
 
+Then phones take the new version from the box. A browser offers **New version
+available — Reload**. The iPhone and Android apps fetch it first and check that
+a Crewbox release made it, then offer **New version ready — Reload**. An app
+too old for the new version says to update the app, and carries on with the
+version it has, so update the apps along with the box where you can
+([more](/docs/phones-and-platforms#new-versions-in-the-apps)).
+
 Behind that:
 
 - The database is copied first, so going back is possible.
@@ -113,4 +120,6 @@ old one back.
 ## A box run from source
 
 If you're running crewbox with `npm run dev` or from a checkout, there's no
-binary to swap and the panel offers nothing. Update it with git.
+binary to swap and the panel offers nothing. Update it with git. No Crewbox
+release made its screens either, so the phone apps keep their own version
+there rather than running the box's.

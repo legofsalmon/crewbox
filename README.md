@@ -243,6 +243,11 @@ anything mid-task** (the service worker registers in `prompt` mode):
   version in `welcome`, the bar appears immediately on reconnect. Reloading is
   always safe — unsent messages live in the IndexedDB outbox and flush after
   the reload, so nothing is lost.
+- **In the iPhone and Android apps:** the app fetches the new build from the
+  box itself and checks the release's signature over it before the bar
+  appears, reading "New version ready — Reload". A box whose screens no
+  release signed leaves the apps on their own build. `docs/UPDATING.md`,
+  _Phones follow their box_, has the rest.
 - **Deploy both together:** the Node server serves the built web assets, so a
   single deploy updates client and server in lockstep. If you ever change the
   WebSocket protocol in `shared/` in a breaking way, treat it as a coordinated
