@@ -27,6 +27,7 @@ import { clearJoinLink, currentJoinLink, subscribeJoinLink } from './lib/appLink
 import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import FeedbackDialog from './components/FeedbackDialog.tsx'
+import AlertSettingsDialog from './components/AlertSettingsDialog.tsx'
 import { APP_VERSION } from './lib/pwa.ts'
 import { screensStarted } from './lib/appScreens.ts'
 import { flushDeviceOutbox, sendCrash } from './lib/reports.ts'
@@ -168,6 +169,8 @@ function Shell() {
   const activeModuleId = useStore((s) => s.activeModuleId)
   const activeChannelId = useStore((s) => s.activeChannelId)
   const feedbackOpen = useStore((s) => s.feedbackOpen)
+  const alertSettingsOpen = useStore((s) => s.alertSettingsOpen)
+  const setAlertSettingsOpen = useStore((s) => s.setAlertSettingsOpen)
   const setFeedbackOpen = useStore((s) => s.setFeedbackOpen)
 
   // A returning user gets the app from cache and a thin banner, which is
@@ -319,6 +322,7 @@ function Shell() {
       {audioSettingsOpen && <AudioSettings />}
       {fileDetail && <FileDetail />}
       {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
+      {alertSettingsOpen && <AlertSettingsDialog onClose={() => setAlertSettingsOpen(false)} />}
       <IosInstallTip />
     </div>
   )

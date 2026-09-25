@@ -1,4 +1,4 @@
-import { isMentioned } from '@crewbox/shared'
+import { isMentioned, levelFor, messageAlertKind, type AlertSettings } from '@crewbox/shared'
 import { readPref, writePref } from './prefs.ts'
 import { nativeHaptics } from './server.ts'
 
@@ -143,18 +143,41 @@ export function summariseMissed(input: {
   }[]
   myId: string | undefined
   myName: string | undefined
-  channels: Record<string, { kind?: string; name?: string } | undefined>
+  channels: Record<string, { kind?: string; name?: string; memberIds?: string[] } | undefined>
   users: Record<string, { name?: string } | undefined>
   /** Highest seq already read per channel, after the welcome has merged. */
   readState: Record<string, number>
   /** The channel on screen, when the app has focus; otherwise undefined. */
   focusedChannelId?: string | undefined
+  /**
+   * This person's alert settings, from a box that decides alerts. With them
+   * the box's rules choose (docs/ALERTS.md): a muted channel stays quiet, a
+   * channel set to All messages speaks up. Without them, the page's own:
+   * DMs and mentions.
+   */
+  settings?: AlertSettings
 }): MissedAlert | null {
   const wanted = input.missed.filter((m) => {
     if (!m.authorId || m.authorId === input.myId) return false
     if (m.seq <= (input.readState[m.channelId] ?? 0)) return false
     if (m.channelId === input.focusedChannelId) return false
     const channel = input.channels[m.channelId]
+    if (input.settings && channel && input.myId) {
+      return (
+        messageAlertKind({
+          message: { id: '', createdAt: 0, kind: 'text', ...m, authorId: m.authorId },
+          channel: {
+            id: m.channelId,
+            name: channel.name ?? '',
+            kind: channel.kind === 'dm' ? 'dm' : 'public',
+            ...(channel.memberIds ? { memberIds: channel.memberIds } : {}),
+          },
+          person: { id: input.myId, name: input.myName ?? '' },
+          level: levelFor(input.settings, m.channelId),
+          readSeq: input.readState[m.channelId] ?? 0,
+        }) !== null
+      )
+    }
     return channel?.kind === 'dm' || isMentioned(m.body, input.myName)
   })
   if (wanted.length === 0) return null

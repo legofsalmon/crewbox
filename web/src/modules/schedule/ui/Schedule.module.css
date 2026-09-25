@@ -46,8 +46,16 @@
   padding: 14px 16px;
 }
 
-.stageName {
+.stageHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 10px;
+}
+
+.stageName {
+  margin: 0;
   font-size: 13px;
   letter-spacing: 0.06em;
   text-transform: uppercase;

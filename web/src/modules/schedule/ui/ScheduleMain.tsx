@@ -5,6 +5,7 @@ import { relative } from '@crewbox/shared'
 import { addAct, stagesIn } from '../../../shell/timetable/model.ts'
 import { timetable } from '../../../shell/timetable/store.ts'
 import ActEditor from './ActEditor.tsx'
+import FollowStageButton from '../../../components/FollowStageButton.tsx'
 import styles from './Schedule.module.css'
 
 /**
@@ -74,7 +75,10 @@ export default function ScheduleMain() {
         <ul className={styles.stages}>
           {stages.map((stage) => (
             <li key={stage.stage} className={styles.stage}>
-              <h2 className={styles.stageName}>{stage.stage}</h2>
+              <div className={styles.stageHead}>
+                <h2 className={styles.stageName}>{stage.stage}</h2>
+                <FollowStageButton stage={stage.stage} />
+              </div>
 
               {stage.onNow ? (
                 <div className={`${styles.slot} ${styles.onNow}`}>
