@@ -191,8 +191,11 @@ members for a minute and asserts exactly-once delivery for every client.
 setup → join → admin, and asserts the voice server actually came up. It starts
 the box on an empty data directory, so a release box is unlicensed there: it
 checks that first-run setup asks for a licence and refuses to save, rather
-than that it saves. Plain sh and curl, so it also runs on a festival admin's
-Mac against a downloaded release.
+than that it saves. It also fetches every file of the box's screens and checks
+it against their signed list, `WEBSUMS`, when there is one;
+`CREWBOX_SMOKE_SIGNED=1`, as CI and releases set it, fails a box that has none.
+Plain sh and curl, so it also runs on a festival admin's Mac against a
+downloaded release.
 
 Every release runs it on each platform, including against the universal
 `Crewbox.app`, and CI runs it against the Linux box on every pull request. It
@@ -218,6 +221,13 @@ tab: pick the branch to build and type the version (e.g. `v1.0.0`). The tag is
 created at that commit, so no local tag push is needed (and tag pushes are
 blocked for automated sessions anyway). The run refuses to publish a version
 whose tag already points at a different commit.
+
+A release builds the screens once, signs a list of them with the release key
+(`WEBSUMS`, written by `scripts/sign-web.mjs` in a job that installs nothing),
+and every box and the APK carries exactly those files, so an app can tell a
+box's screens are ones a release made. A box refuses to build on signed
+screens built as another version, which is one more reason to bump `web` and
+`server` together.
 
 When you deploy a new build, updates reach crew **without forcing anyone to do
 anything mid-task** (the service worker registers in `prompt` mode):

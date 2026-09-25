@@ -22,6 +22,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { buildTray } from './build-tray.mjs'
+import { SUMS, checkSignedScreens } from './web-sums.mjs'
 
 // fileURLToPath, not URL.pathname — the latter yields /C:/... on Windows,
 // which every fs call then fails to resolve.
@@ -51,6 +52,21 @@ try {
   if (Number.isInteger(committed) && committed > 0) buildDate = committed
 } catch {
   /* release tarballs have no .git */
+}
+
+// 0. Screens a release signed (scripts/sign-web.mjs) go in exactly as signed.
+// An app runs the screens a box serves only when every file is the one signed
+// and they were built as the version the box says it is, so a box that
+// embedded anything else would ship screens every phone refuses, with nothing
+// to show for it but a browser that works.
+if (existsSync(join(distDir, SUMS))) {
+  try {
+    checkSignedScreens(distDir, `${version}+${commit}`)
+  } catch (err) {
+    for (const line of err.message.split('\n')) console.error(`::error::${line}`)
+    process.exit(1)
+  }
+  console.log(`embedding the screens as signed (${SUMS})`)
 }
 
 // 1. Bundle the TS server (workspace deps included) into one CJS file.

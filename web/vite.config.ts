@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+// By path, not as '@crewbox/shared': the config loader leaves a package to
+// Node, which can't run the shared package's TypeScript. A path is bundled.
+import { PROTOCOL_VERSION } from '../shared/src/protocol.ts'
+import { SCREENS_NATIVE_API } from './src/lib/nativeApi.ts'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 // The same token the server falls back to (server/src/version.ts). They used
@@ -20,12 +24,40 @@ try {
 // e.g. "0.2.0+a1b2c3d" — bump pkg.version for user-facing releases.
 const appVersion = `${pkg.version}+${commit}`
 
+/**
+ * `crewbox-web.json`, which says which screens a build is: the version they
+ * were built as, the protocol they speak, and the contract with the apps'
+ * native code they keep. A release signs it with the rest of the screens
+ * (scripts/sign-web.mjs), and an app reads it before it runs screens a box
+ * serves.
+ */
+function webInfo(): Plugin {
+  return {
+    name: 'crewbox-web-info',
+    apply: 'build',
+    generateBundle() {
+      const info = {
+        kind: 'crewbox-web',
+        version: appVersion,
+        protocol: PROTOCOL_VERSION,
+        nativeApi: SCREENS_NATIVE_API,
+      }
+      this.emitFile({
+        type: 'asset',
+        fileName: 'crewbox-web.json',
+        source: JSON.stringify(info, null, 2) + '\n',
+      })
+    },
+  }
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [
     react(),
+    webInfo(),
     VitePWA({
       // 'prompt': never yank a crew member's app out mid-message — surface an
       // "Update available" pill and let them reload when it's safe.

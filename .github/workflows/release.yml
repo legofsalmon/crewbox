@@ -97,17 +97,17 @@ jobs:
           echo "livekit $TAG for every box in this release"
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
-  box:
-    name: Box binary (${{ matrix.os }})
+  # The screens, built once for the whole release.
+  #
+  # Each box and the APK used to build its own copy. The same source, but not
+  # provably the same bytes, and the apps are to run the screens a box serves
+  # only when a release signed them (scripts/web-sums.mjs). So one build, one
+  # signature, and every box and the APK carries exactly those files.
+  web:
+    name: Web screens
     needs: validate
-    strategy:
-      matrix:
-        # macOS is not in here: it now has its own job, which builds the
-        # darwin boxes and packages the app in one go rather than handing
-        # artifacts to a second ten-times-billed runner. See `mac` below.
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -116,6 +116,73 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: web/dist
+          if-no-files-found: error
+
+  # The release key signs the screens here, not in the job that built them.
+  #
+  # Building means `npm ci`, and with it every lifecycle script of every
+  # dependency, which is no place for the key that every box and every app
+  # trusts. Like Publish, this job installs nothing: it needs the repository's
+  # own scripts and Node's own modules, and those two jobs are the only places
+  # RELEASE_SIGNING_KEY appears.
+  sign-web:
+    name: Sign the screens
+    needs: [validate, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Before the download, because actions/checkout cleans the workspace.
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: web/dist
+      # Refuses screens built as another version, and anything a phone would
+      # refuse, so a release no app would run stops here rather than in a field.
+      - name: Sign the screens
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          V: ${{ needs.validate.outputs.version }}
+        run: node scripts/sign-web.mjs web/dist "$V"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-signed
+          path: web/dist
+          if-no-files-found: error
+
+  box:
+    name: Box binary (${{ matrix.os }})
+    needs: [validate, sign-web]
+    strategy:
+      matrix:
+        # macOS is not in here: it now has its own job, which builds the
+        # darwin boxes and packages the app in one go rather than handing
+        # artifacts to a second ten-times-billed runner. See `mac` below.
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      # A release box has to serve its screens as signed, so the smoke tests
+      # fail one that doesn't rather than pass it as a build of its own.
+      CREWBOX_SMOKE_SIGNED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The release's screens, as signed, in place of a build of its own.
+      # build-box.mjs checks they are exactly the signed files, built as this
+      # version, before it embeds them.
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-signed
+          path: web/dist
       # LiveKit publishes no macOS binary, so the darwin box compiles one from
       # source (see scripts/fetch-livekit.mjs). Pure Go, no cgo — this is what
       # Homebrew's formula does. Only macOS needs the toolchain.
@@ -185,7 +252,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: box-${{ matrix.os }}
+          name: release-box-${{ matrix.os }}
           path: build/box/crewbox-*
 
   # macOS: build and package on one runner.
@@ -201,12 +268,16 @@ jobs:
   # minutes a release.
   mac:
     name: macOS box and app
-    needs: validate
+    needs: [validate, sign-web]
     runs-on: macos-latest
     # Compiles LiveKit from source, cross-builds the Intel box on top of that,
     # and then notarises — a round trip to Apple and the slowest step in a
     # release. Still far short of the six-hour default a wedged runner burns.
     timeout-minutes: 75
+    env:
+      # Not a secret, so job-wide: both smoke tests below insist on signed
+      # screens, as the box job's do.
+      CREWBOX_SMOKE_SIGNED: '1'
     # Apple credentials are scoped to the two steps that use them, not to the
     # job. At job level they were in the environment of `npm ci` — and every
     # lifecycle script of every dependency it installs — plus esbuild, the Go
@@ -222,7 +293,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build -w web
+      # The release's screens, as signed (see the box job).
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-signed
+          path: web/dist
       # LiveKit publishes no macOS binary, so the darwin box compiles one from
       # source (see scripts/fetch-livekit.mjs). Pure Go, no cgo — this is what
       # Homebrew's formula does.
@@ -358,16 +433,16 @@ jobs:
       # version produced.
       - uses: actions/upload-artifact@v4
         with:
-          name: box-macos
+          name: release-box-macos
           path: build/box/crewbox-darwin-*
       - uses: actions/upload-artifact@v4
         with:
-          name: macapp
+          name: release-macapp
           path: build/mac/Crewbox.dmg
 
   apk:
     name: Android APK
-    needs: validate
+    needs: [validate, sign-web]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -381,7 +456,17 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci
-      - run: npm run build:native
+      # `npm run build:native` without its web build: the release's screens,
+      # as signed, go into the Android project instead.
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-signed
+          path: web/dist
+      - run: npx -w native cap sync
+      # Not an exact check: Capacitor adds its own cordova.js and
+      # cordova_plugins.js beside the screens, and those were never theirs.
+      - name: The Android project has the signed screens
+        run: node scripts/web-sums.mjs native/android/app/src/main/assets/public
       # Signed with the persistent release key when the keystore secrets
       # exist (docs/ANDROID_SIGNING.md). This is what lets a phone upgrade
       # in place: Android refuses to install over an app whose signature
@@ -417,9 +502,19 @@ jobs:
       # asked to sideload from a QR code in a tent.
       - name: Check the APK's permissions
         run: node scripts/check-apk-permissions.mjs crewbox.apk
+      # And in the APK itself, which is not everything it was handed: packaging
+      # drops the .br and .gz copies and any name starting with a dot
+      # (ignoreAssetsPattern in native/android/app/build.gradle). A signed file
+      # dropped the same way would leave phones refusing the screens they
+      # carry, so check what went in.
+      - name: The APK carries the signed screens
+        run: |
+          set -euo pipefail
+          unzip -q crewbox.apk 'assets/public/*' -d "$RUNNER_TEMP/apk"
+          node scripts/web-sums.mjs "$RUNNER_TEMP/apk/assets/public"
       - uses: actions/upload-artifact@v4
         with:
-          name: apk
+          name: release-apk
           path: crewbox.apk
 
   release:
@@ -441,6 +536,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          # What gets published, and nothing else: the screens' own artifacts
+          # (web-build, web-signed) are inside every box and the APK already,
+          # and downloaded here they would be loose files among the assets.
+          pattern: release-*
           merge-multiple: true
 
       # Exactly these six, no more and no fewer.
