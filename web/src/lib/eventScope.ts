@@ -81,6 +81,10 @@ export const DEVICE_PREF_KEYS: readonly string[] = [
   KNOWN_EVENTS_KEY,
   FIRST_EVENT_KEY,
   OPEN_EVENT_KEY,
+  // The sign-ins, any event's, that the app moved out of the page's storage
+  // and their boxes haven't renewed yet (sessions.ts). Each goes with its
+  // sign-in, whichever event forgets it.
+  'crewbox:carried-sign-ins',
   'crewbox:find-boxes-asked',
   'crewbox:ios-tip-dismissed',
   // Reports somebody pressed Send on, for the studio, handed to whichever box

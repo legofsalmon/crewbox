@@ -54,11 +54,13 @@ const api = {
   join: vi.fn<
     () => Promise<{ token: string; eventId?: string; eventKey?: string; continues?: string }>
   >(),
+  renewSession: vi.fn<(token: string, signal?: AbortSignal) => Promise<{ token: string }>>(),
 }
 vi.mock('./lib/api.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./lib/api.ts')>()),
   getConfig: () => api.getConfig(),
   join: () => api.join(),
+  renewSession: (token: string, signal?: AbortSignal) => api.renewSession(token, signal),
 }))
 
 const config = (eventId: string, eventName = 'Harbour Fest', eventKey?: string): PublicConfig => ({
@@ -167,6 +169,8 @@ beforeEach(() => {
   socket = null
   api.getConfig.mockReset()
   api.join.mockReset()
+  api.renewSession.mockReset()
+  api.renewSession.mockRejectedValue(new TypeError('Failed to fetch'))
   // Never answers unless a test says so: the socket is what speaks first.
   api.getConfig.mockReturnValue(new Promise(() => {}))
   reload = vi.fn<() => void>()
@@ -866,7 +870,99 @@ describe('in the apps, a sign-in the app keeps', () => {
     expect(localStorage.getItem('crewbox:token')).toBe(HELD)
     await store.getState().boot()
     expect(store.getState().phase).toBe('chat')
+    // Its box didn't answer the renewal: the old one works until it does.
+    expect(api.renewSession).toHaveBeenCalledWith('fridays-sign-in', expect.any(AbortSignal))
     expect(socket!.hello().token).toBe('fridays-sign-in')
+  })
+
+  it('has its box renew the sign-in it moved before saying hello with it', async () => {
+    // The page's storage goes in backups, so a copy of that one may be on
+    // another phone: the box's new one is this phone's alone.
+    const { keychain, alerts } = inTheApp()
+    const renewed = 'r'.repeat(43)
+    api.renewSession.mockImplementation(async (token) => {
+      expect(socket).toBeNull()
+      expect(token).toBe('fridays-sign-in')
+      return { token: renewed }
+    })
+    const { store } = await start()
+    await store.getState().boot()
+    expect(api.renewSession).toHaveBeenCalledTimes(1)
+    expect(keychain.get('crewbox:token')).toBe(renewed)
+    expect(socket!.hello().token).toBe(renewed)
+    socket!.onMessage(welcome('friday'))
+    await settle()
+    expect(alerts.start).toHaveBeenCalledWith(expect.objectContaining({ token: renewed }))
+    // Once: the next start has nothing to renew.
+    const again = await start()
+    await again.store.getState().boot()
+    expect(api.renewSession).toHaveBeenCalledTimes(1)
+    expect(socket!.hello().token).toBe(renewed)
+  })
+
+  it('asks once the Android app has put the box’s traffic on the Wi-Fi', async () => {
+    // Over mobile data, the ask would only fail.
+    inTheApp()
+    let say: () => void = () => {}
+    const plugins = (window as unknown as { Capacitor: { Plugins: Record<string, unknown> } })
+      .Capacitor.Plugins
+    plugins.CrewboxNetwork = {
+      useBox: () => new Promise((resolve) => (say = () => resolve({ onWifi: true }))),
+    }
+    api.renewSession.mockResolvedValue({ token: 'r'.repeat(43) })
+    const { store } = await start()
+    ;(await import('./lib/server.ts')).holdBoxWifi()
+    const booted = store.getState().boot()
+    await settle()
+    await settle()
+    expect(api.renewSession).not.toHaveBeenCalled()
+    say()
+    await booted
+    expect(api.renewSession).toHaveBeenCalledTimes(1)
+    expect(socket!.hello().token).toBe('r'.repeat(43))
+  })
+
+  it('waits a few seconds at most for its box, and says hello with the old one', async () => {
+    inTheApp()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => AbortSignal.abort())
+    api.renewSession.mockImplementation(
+      (_token, signal) =>
+        new Promise((_, reject) => {
+          if (signal?.aborted) reject(signal.reason)
+          signal?.addEventListener('abort', () => reject(signal.reason))
+        })
+    )
+    const { store } = await start()
+    await store.getState().boot()
+    expect(timeout).toHaveBeenCalledWith(4000)
+    expect(socket!.hello().token).toBe('fridays-sign-in')
+  })
+
+  it('asks again at the next start when its box didn’t answer', async () => {
+    const { keychain } = inTheApp()
+    const first = await start()
+    await first.store.getState().boot()
+    expect(api.renewSession).toHaveBeenCalledTimes(1)
+    const renewed = 'r'.repeat(43)
+    api.renewSession.mockResolvedValue({ token: renewed })
+    const again = await start()
+    await again.store.getState().boot()
+    expect(api.renewSession).toHaveBeenCalledTimes(2)
+    expect(api.renewSession).toHaveBeenLastCalledWith('fridays-sign-in', expect.any(AbortSignal))
+    expect(keychain.get('crewbox:token')).toBe(renewed)
+    expect(socket!.hello().token).toBe(renewed)
+  })
+
+  it('renews nothing it didn’t move: a join’s sign-in was never in the page’s storage', async () => {
+    localStorage.removeItem('crewbox:token')
+    inTheApp()
+    api.join.mockResolvedValue({ token: 'fridays-new-sign-in', eventId: 'friday' })
+    const first = await start()
+    await first.store.getState().join('Sam', '4242', '1234')
+    const again = await start()
+    await again.store.getState().boot()
+    expect(api.renewSession).not.toHaveBeenCalled()
+    expect(socket!.hello().token).toBe('fridays-new-sign-in')
   })
 
   it('keeps a join’s sign-in in the app, and hands the alerts service its name', async () => {

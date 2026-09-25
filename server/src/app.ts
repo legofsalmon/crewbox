@@ -1489,6 +1489,26 @@ export function buildApp({
     return { user }
   })
 
+  /**
+   * A new sign-in in place of this one, for the same person.
+   *
+   * The apps ask once for each sign-in they moved out of the web view's
+   * storage, where it was until they kept sign-ins themselves: backups and
+   * phone-to-phone transfers carry that storage, so a copy may be on another
+   * phone (web/src/lib/sessions.ts). The first time the new token is used,
+   * the old one stops working, so the copy signs nothing in; until then it
+   * still works, so a phone that never heard this answer isn't signed out
+   * (Store.renewSession). A socket already open stays so until it closes.
+   */
+  fastify.post('/api/session/renew', (req, reply) => {
+    const header = req.headers.authorization ?? ''
+    const next = newToken()
+    if (!authUser(req) || !store.renewSession(header.slice('Bearer '.length), next)) {
+      return reply.code(401).send({ error: 'unauthenticated' })
+    }
+    return { token: next }
+  })
+
   // Delete your own account and personal data (App Store requirement).
   // Sessions, DM memberships and read state are removed; authored messages
   // are anonymized. Live sockets are dropped and the name frees up again.

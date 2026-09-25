@@ -27,6 +27,11 @@ it stays on that phone. A new phone set up from the old one's backup, or
 moved across from it, doesn't bring your sign-ins, whatever else comes
 across, and you sign in to each event again with your name and PIN.
 
+Earlier versions of the apps kept the sign-in in the page's storage, so a
+backup made before you updated has it. The updated app moves it into the
+phone's, and the next time the phone reaches the box, the box swaps it for
+a new one. From then on, the one in the backup signs nothing in.
+
 Deleting a sheet, plot or screen map deletes it from the box too. The box
 overwrites what it held rather than only marking the space free, and never
 saves it again, though the SD card or disk underneath can keep an old copy

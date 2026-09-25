@@ -160,7 +160,11 @@ from storage. In the apps the page's storage keeps `(kept by the app)` under
 (`web/src/lib/sessions.ts`), under names that reach phones just the same:
 the Keychain service `com.colmhewson.crewbox.sessions` on an iPhone, and on
 Android a preferences file and a Keystore key, both `crewbox-sessions`. Each
-keeps its tokens by the storage name.
+keeps its tokens by the storage name. `crewbox:carried-sign-ins` lists, by
+the same names, the sign-ins the app moved out of the page's storage, where
+the apps kept them before, until each one's box has renewed it
+(`POST /api/session/renew`). It holds names, never tokens, and reaches
+phones like the rest.
 
 ## The five steps
 

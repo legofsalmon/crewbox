@@ -316,6 +316,24 @@ const MIGRATIONS: Migration[] = [
   );
   CREATE INDEX IF NOT EXISTS idx_doc_updates_room ON doc_updates(room);
   `,
+  // v13: a session can stand in for another until it is first used.
+  //
+  // For the sign-ins the apps renew (POST /api/session/renew): ones that were
+  // in the web view's storage, which backups and phone-to-phone transfers
+  // carry, so a copy may be on another phone. The new session goes in beside
+  // the old one, naming it here, and the first time the new token is used the
+  // old one is deleted (Store.getSessionUser). Until then the old one works:
+  // a phone that asked and never heard the answer is still signed in, and
+  // asks again, where swapping them at once would have signed it out.
+  //
+  // Guarded, as v11 is: a database that already has the column, walked up
+  // again from an older number (one rebuilt by hand from a `.dump`), would
+  // otherwise stop the box from starting.
+  (db) => {
+    const columns = db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]
+    if (columns.some((column) => column.name === 'renews')) return
+    db.exec('ALTER TABLE sessions ADD COLUMN renews TEXT')
+  },
 ]
 
 /**

@@ -188,6 +188,18 @@ export function join(input: { name: string; eventPin: string; personalPin: strin
   })
 }
 
+/**
+ * A new sign-in from the box in place of this one, which stops working the
+ * first time the new one is used (lib/sessions.ts, renewCarried).
+ */
+export function renewSession(token: string, signal?: AbortSignal): Promise<{ token: string }> {
+  return request('/api/session/renew', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    ...(signal ? { signal } : {}),
+  })
+}
+
 export function uploadFile(
   token: string,
   file: File,

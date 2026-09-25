@@ -254,3 +254,188 @@ describe('in the apps', () => {
     expect(HELD).not.toMatch(/^[A-Za-z0-9_-]*$/)
   })
 })
+
+describe('a sign-in moved out of the page’s storage', () => {
+  /**
+   * What the box answers: a new token, as it mints them (base64url, 43
+   * characters), standing in for the old one until it is first used.
+   */
+  const NEW = 'n'.repeat(43)
+
+  /** A page load in the app with the old page's token still in its storage. */
+  async function moved(names = ['crewbox:token']) {
+    const plugin = app()
+    for (const name of names) localStorage.setItem(name, `old-${name}`)
+    const sessions = await load()
+    await sessions.loadSessions()
+    return { plugin, sessions }
+  }
+
+  const carried = () => JSON.parse(localStorage.getItem('crewbox:carried-sign-ins') ?? '[]')
+
+  it('is marked for its box to renew, every event’s, by name only', async () => {
+    const { sessions } = await moved(['crewbox:token', 'crewbox@saturday:token'])
+    expect(carried()).toEqual(['crewbox:token', 'crewbox@saturday:token'])
+    expect(localStorage.getItem('crewbox:carried-sign-ins')).not.toContain('old-')
+    expect(sessions.openSession()).toBe('old-crewbox:token')
+  })
+
+  it('is marked once, however often it moves', async () => {
+    // A later sign-in the app couldn't keep, left in the page's storage, and
+    // moved at a start after.
+    await moved()
+    localStorage.setItem('crewbox:token', 'later-sign-in')
+    const again = await load()
+    await again.loadSessions()
+    expect(carried()).toEqual(['crewbox:token'])
+    expect(again.openSession()).toBe('later-sign-in')
+  })
+
+  it('is swapped for the box’s new one before anything else uses it, once', async () => {
+    const { plugin, sessions } = await moved()
+    const renew = vi.fn(async () => NEW)
+    await sessions.renewCarried('crewbox:token', renew)
+    expect(renew).toHaveBeenCalledWith('old-crewbox:token')
+    expect(plugin.keychain.get('crewbox:token')).toBe(NEW)
+    expect(localStorage.getItem('crewbox:token')).toBe(sessions.HELD)
+    expect(sessions.openSession()).toBe(NEW)
+    expect(carried()).toEqual([])
+    expect(localStorage.getItem('crewbox:carried-sign-ins')).toBeNull()
+    await sessions.renewCarried('crewbox:token', renew)
+    expect(renew).toHaveBeenCalledTimes(1)
+    // Nor at the next start, where the app keeps it and the page names it.
+    const again = await load()
+    await again.loadSessions()
+    await again.renewCarried('crewbox:token', renew)
+    expect(renew).toHaveBeenCalledTimes(1)
+    expect(again.openSession()).toBe(NEW)
+  })
+
+  it('renews only the event asked about', async () => {
+    const { sessions } = await moved(['crewbox:token', 'crewbox@saturday:token'])
+    await sessions.renewCarried('crewbox@saturday:token', async () => NEW)
+    expect(carried()).toEqual(['crewbox:token'])
+    expect(sessions.readSession('crewbox:token')).toBe('old-crewbox:token')
+    expect(sessions.readSession('crewbox@saturday:token')).toBe(NEW)
+  })
+
+  it('keeps the old one, and asks again at the next start, when the box doesn’t say', async () => {
+    const { plugin, sessions } = await moved()
+    await sessions.renewCarried('crewbox:token', async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    expect(sessions.openSession()).toBe('old-crewbox:token')
+    expect(carried()).toEqual(['crewbox:token'])
+    const again = await load()
+    await again.loadSessions()
+    const renew = vi.fn(async () => NEW)
+    await again.renewCarried('crewbox:token', renew)
+    expect(renew).toHaveBeenCalledWith('old-crewbox:token')
+    expect(plugin.keychain.get('crewbox:token')).toBe(NEW)
+    expect(carried()).toEqual([])
+  })
+
+  it('takes nothing but a token for an answer', async () => {
+    const { sessions } = await moved()
+    for (const answer of ['', 'short', 'x'.repeat(257), 'has spaces in it at all', HELD_LIKE, 42]) {
+      await sessions.renewCarried('crewbox:token', async () => answer as string)
+      expect(sessions.openSession()).toBe('old-crewbox:token')
+      expect(carried()).toEqual(['crewbox:token'])
+    }
+  })
+
+  it('is forgotten with the sign-in', async () => {
+    const { sessions } = await moved(['crewbox:token', 'crewbox@saturday:token'])
+    await sessions.forgetSession('crewbox:token')
+    expect(carried()).toEqual(['crewbox@saturday:token'])
+    await sessions.forgetSession('crewbox@saturday:token')
+    expect(localStorage.getItem('crewbox:carried-sign-ins')).toBeNull()
+  })
+
+  it('is forgotten when a backup brings the mark and the name but not the token', async () => {
+    const plugin = app()
+    const sessions = await load()
+    localStorage.setItem('crewbox:token', sessions.HELD)
+    localStorage.setItem('crewbox:carried-sign-ins', JSON.stringify(['crewbox:token']))
+    await sessions.loadSessions()
+    expect(localStorage.getItem('crewbox:carried-sign-ins')).toBeNull()
+    const renew = vi.fn(async () => NEW)
+    await sessions.renewCarried('crewbox:token', renew)
+    expect(renew).not.toHaveBeenCalled()
+    expect(plugin.keychain.size).toBe(0)
+  })
+
+  it('isn’t marked where the app can’t keep it, until it can', async () => {
+    // Left in the page's storage, a new one would be there too.
+    const plugin = app()
+    plugin.refuseSaves = true
+    localStorage.setItem('crewbox:token', 'old-crewbox:token')
+    const sessions = await load()
+    await sessions.loadSessions()
+    expect(carried()).toEqual([])
+    const renew = vi.fn(async () => NEW)
+    await sessions.renewCarried('crewbox:token', renew)
+    expect(renew).not.toHaveBeenCalled()
+    plugin.refuseSaves = false
+    const again = await load()
+    await again.loadSessions()
+    expect(carried()).toEqual(['crewbox:token'])
+    await again.renewCarried('crewbox:token', renew)
+    expect(renew).toHaveBeenCalledWith('old-crewbox:token')
+    expect(again.openSession()).toBe(NEW)
+  })
+
+  it('goes to the page’s storage when the app can’t keep the new one, and is moved again later', async () => {
+    const { plugin, sessions } = await moved()
+    plugin.refuseSaves = true
+    await sessions.renewCarried('crewbox:token', async () => NEW)
+    expect(localStorage.getItem('crewbox:token')).toBe(NEW)
+    expect(sessions.openSession()).toBe(NEW)
+    plugin.refuseSaves = false
+    const again = await load()
+    await again.loadSessions()
+    expect(plugin.keychain.get('crewbox:token')).toBe(NEW)
+    expect(carried()).toEqual(['crewbox:token'])
+  })
+
+  it('reads a mark that isn’t a list of sign-in names as none', async () => {
+    const { sessions } = await moved()
+    const renew = vi.fn(async () => NEW)
+    for (const mark of ['not json', '{"crewbox:token":true}', '["crewbox:theme", 7]']) {
+      localStorage.setItem('crewbox:carried-sign-ins', mark)
+      await sessions.renewCarried('crewbox:token', renew)
+    }
+    expect(renew).not.toHaveBeenCalled()
+    expect(sessions.openSession()).toBe('old-crewbox:token')
+  })
+
+  it('keeps nothing in the mark but sign-in names', async () => {
+    const { sessions } = await moved()
+    localStorage.setItem(
+      'crewbox:carried-sign-ins',
+      JSON.stringify(['crewbox:token', 7, 'crewbox:theme', 'crewbox:token'])
+    )
+    await sessions.renewCarried('crewbox:token', async () => NEW)
+    expect(localStorage.getItem('crewbox:carried-sign-ins')).toBeNull()
+  })
+
+  it('is never marked in a browser, where the page’s storage is where it lives', async () => {
+    localStorage.setItem('crewbox:token', 'fridays-sign-in')
+    const sessions = await load()
+    await sessions.loadSessions()
+    const renew = vi.fn(async () => NEW)
+    await sessions.renewCarried('crewbox:token', renew)
+    expect(renew).not.toHaveBeenCalled()
+    expect(localStorage.getItem('crewbox:carried-sign-ins')).toBeNull()
+  })
+
+  it('is its own name, which reaches phones', async () => {
+    // Renamed, the marks on phones already updated would be lost, and their
+    // sign-ins never renewed.
+    await moved()
+    expect(Object.keys(localStorage)).toContain('crewbox:carried-sign-ins')
+  })
+})
+
+/** The placeholder's own text, which a box never answers with. */
+const HELD_LIKE = '(kept by the app)'

@@ -72,7 +72,14 @@ import {
 } from './lib/eventScope.ts'
 import { checkMove, checkPoster, eventKeyFrom, proveBox, type Proof } from './lib/identity.ts'
 import type { PosterEvent } from './lib/joinCode.ts'
-import { forgetSession, openSession, readSession, saveSession, TOKEN_KEY } from './lib/sessions.ts'
+import {
+  forgetSession,
+  openSession,
+  readSession,
+  renewCarried,
+  saveSession,
+  TOKEN_KEY,
+} from './lib/sessions.ts'
 import { notThePostersCopy, posterDisagreesCopy, refusedCopy } from './lib/connscreen.ts'
 import { LevelBuffer } from './modules/lighting/model/levelBuffer.ts'
 
@@ -570,6 +577,9 @@ let bannerSeq = 0
 function getToken(): string | null {
   return openSession()
 }
+
+/** How long a start waits for its box to renew a sign-in (renewCarried) before connecting anyway. */
+const RENEW_WAIT_MS = 4000
 
 /** Where this page reaches its box, as the list of known events records it. */
 const here = boxOrigin
@@ -1540,6 +1550,15 @@ export const useStore = create<AppState>()((set, get) => {
       if (route.kind === 'module') {
         set({ activeModuleId: route.moduleId, activeModuleSubpath: route.subpath })
       }
+      // A sign-in the app moved out of the page's storage, which backups
+      // carry, is renewed by its box before this phone says hello, and that
+      // hello, with the new one, ends the old one (lib/sessions.ts). Waiting
+      // only as long as a box on the Wi-Fi takes to answer: one that doesn't
+      // is asked at the next start, and the old one works until then.
+      await renewCarried(storageName(TOKEN_KEY), async (token) => {
+        await boxWifiSettled()
+        return (await api.renewSession(token, AbortSignal.timeout(RENEW_WAIT_MS))).token
+      })
       // Unless the box's config has already said it is running another
       // event, in which case there is nothing here for it.
       if (!get().elsewhere) startWs()

@@ -273,13 +273,68 @@ export class Store {
 
   getSessionUser(token: string, ttlMs?: number): User | undefined {
     const cutoff = ttlMs ? Date.now() - ttlMs : 0
+    const sha = hashToken(token)
     const row = this.db
       .prepare(
-        `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+        `SELECT u.*, s.renews AS renews FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_sha = ? AND s.last_seen >= ?`
       )
-      .get(hashToken(token), cutoff) as UserRow | undefined
-    return row ? toUser(row) : undefined
+      .get(sha, cutoff) as (UserRow & { renews: string | null }) | undefined
+    if (!row) return undefined
+    if (row.renews) this.settleRenewal(sha, row.renews)
+    return toUser(row)
+  }
+
+  /**
+   * A new session for the same person, standing in for this one: the first
+   * time the new token is used, this one is deleted (see migration v13).
+   * False, changing nothing, when this one isn't a session.
+   *
+   * For a sign-in a phone moved out of its web view's storage, which backups
+   * and phone-to-phone transfers carry (web/src/lib/sessions.ts): once the
+   * phone has used the new one, a copy of the old one that went to another
+   * phone signs nothing in there. Until then the old one works, so a phone
+   * that never heard the answer is still signed in.
+   *
+   * One stand-in at a time: asking again replaces one that was never used,
+   * so a phone that keeps missing the answer adds nothing, and of two phones
+   * holding the same sign-in, only one ends up with it.
+   */
+  renewSession(token: string, next: string): boolean {
+    const sha = hashToken(token)
+    return transaction(this.db, () => {
+      const row = this.db.prepare('SELECT user_id FROM sessions WHERE token_sha = ?').get(sha) as
+        { user_id: string } | undefined
+      if (!row) return false
+      this.db.prepare('DELETE FROM sessions WHERE renews = ?').run(sha)
+      const now = Date.now()
+      this.db
+        .prepare(
+          `INSERT INTO sessions (token_sha, user_id, created_at, last_seen, renews)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .run(hashToken(next), row.user_id, now, now, sha)
+      return true
+    })
+  }
+
+  /**
+   * A stand-in's first use: the session it stands in for goes, and it is a
+   * session like any other.
+   *
+   * Bookkeeping, and never a reason to refuse the sign-in in hand, which is
+   * what a throw here would do on a full disk (see the hub's onHello): both
+   * go on working, and the next use settles it.
+   */
+  private settleRenewal(sha: string, renews: string): void {
+    try {
+      transaction(this.db, () => {
+        this.db.prepare('DELETE FROM sessions WHERE token_sha = ?').run(renews)
+        this.db.prepare('UPDATE sessions SET renews = NULL WHERE token_sha = ?').run(sha)
+      })
+    } catch {
+      // Settled at the next use.
+    }
   }
 
   touchSession(token: string): void {

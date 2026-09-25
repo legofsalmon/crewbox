@@ -30,7 +30,10 @@ import { isNative, nativeSessions, type SessionsPlugin } from './server.ts'
  *   would have signed a fresh install in with no box to go to.
  * - A name with nothing behind it came to this phone in a backup, without
  *   its token. The phone is not signed in to that event, and says so.
- * - A token still in the page's storage, from before this, moves across.
+ * - A token still in the page's storage, from before this, moves across, and
+ *   its box renews it ({@link renewCarried}): a copy of it may have gone to
+ *   another phone in a backup made before, where the app would move it
+ *   across just the same.
  */
 
 /**
@@ -56,6 +59,38 @@ const LOAD_WAIT_MS = 5000
 
 /** The tokens the app keeps, by name, as the page last heard. */
 const held = new Map<string, string>()
+
+/**
+ * The sign-ins the app moved out of the page's storage whose box hasn't yet
+ * renewed them ({@link renewCarried}), by name. Names, not tokens: a copy of
+ * this that travels says nothing on a phone without them. It reaches phones,
+ * and renaming it would leave theirs unrenewed.
+ */
+const CARRIED = 'crewbox:carried-sign-ins'
+
+/** A box's token, as it makes them: base64url, which HELD can never be. */
+const TOKEN = /^[A-Za-z0-9_-]{16,256}$/
+
+function carried(): string[] {
+  try {
+    const names: unknown = JSON.parse(readPref(CARRIED) ?? '[]')
+    return Array.isArray(names)
+      ? names.filter((name): name is string => typeof name === 'string' && isSessionName(name))
+      : []
+  } catch {
+    return []
+  }
+}
+
+function setCarried(names: string[]): void {
+  if (names.length > 0) writePref(CARRIED, JSON.stringify([...new Set(names)]))
+  else forgetPref(CARRIED)
+}
+
+function uncarry(name: string): void {
+  const names = carried()
+  if (names.includes(name)) setCarried(names.filter((other) => other !== name))
+}
 
 function app(): SessionsPlugin | undefined {
   return isNative() ? nativeSessions() : undefined
@@ -107,11 +142,53 @@ export async function loadSessions(): Promise<void> {
   for (const name of localStorageKeys().filter(isSessionName)) {
     const value = readPref(name)
     if (value === HELD) {
-      if (!held.has(name)) forgetPref(name)
+      if (!held.has(name)) {
+        forgetPref(name)
+        uncarry(name)
+      }
     } else if (value) {
       await saveSession(name, value)
+      // The app keeps it now, and it is still the token that was where
+      // backups go, until its box swaps it.
+      if (held.has(name)) setCarried([...carried(), name])
     }
   }
+}
+
+/**
+ * Have its box renew a sign-in the app moved out of the page's storage, by
+ * `renew`, before this device says hello with it.
+ *
+ * The page's storage is the part of an app that backups and phone-to-phone
+ * transfers carry, so a sign-in that was ever there may have gone to another
+ * phone, whose app moves it across as this one did. The box's new one stands
+ * in for it, and the first time the new one is used the old one stops
+ * working (server Store.renewSession): the copy signs nothing in, and one
+ * phone keeps the sign-in. One the app couldn't keep, left in the page's
+ * storage, is renewed once the app keeps it: until then a new one would be
+ * kept there too.
+ *
+ * Anything but a new token changes nothing here, and the next start asks
+ * again, with the old one working until then: a box that doesn't answer, or
+ * doesn't in time, or another event's box at the address, which knows
+ * nothing of the sign-in. One that has ended, or that another phone renewed
+ * first, fails at hello, as it would have anyway.
+ */
+export async function renewCarried(
+  name: string,
+  renew: (token: string) => Promise<string>
+): Promise<void> {
+  const token = held.get(name)
+  if (!token || !carried().includes(name)) return
+  let next: unknown
+  try {
+    next = await renew(token)
+  } catch {
+    return
+  }
+  if (typeof next !== 'string' || !TOKEN.test(next)) return
+  await saveSession(name, next)
+  uncarry(name)
 }
 
 /** A sign-in's token, or null when this device isn't signed in to that event. */
@@ -149,6 +226,7 @@ export async function saveSession(name: string, token: string): Promise<void> {
 export async function forgetSession(name: string): Promise<void> {
   forgetPref(name)
   held.delete(name)
+  uncarry(name)
   await app()
     ?.forget({ name })
     .catch(() => {})

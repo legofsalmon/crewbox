@@ -73,6 +73,12 @@ It is also how you get back in on a new phone. The apps keep your sign-ins
 on the phone they were made on, so a new phone set up from your old one's
 backup opens signed out.
 
+A backup made before the apps kept sign-ins this way has yours in it, so
+after the update the app has the box swap it for a new one. If another
+phone set up from that backup got to the box first, the box gave the new
+one to that phone, and this one opens signed out: your name and PIN sign
+you back in.
+
 If you type a name that's already taken and the PIN doesn't match, crewbox
 says so — either you've misremembered your PIN, or someone else got to that
 name first. Pick another name, or ask an admin to reset your PIN.

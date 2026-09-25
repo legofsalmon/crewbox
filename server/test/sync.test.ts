@@ -1754,6 +1754,52 @@ describe('when the box cannot write session bookkeeping', () => {
   })
 })
 
+/**
+ * A renewed sign-in (renewSession.test.ts has the rest): a hello is a use
+ * like any other, and a socket that said hello before goes on as it was.
+ */
+describe('a renewed sign-in', () => {
+  const renew = async (token: string) => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/session/renew',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(200)
+    return (res.json() as { token: string }).token
+  }
+
+  it('says hello with the new one, after which the old one is refused', async () => {
+    const token = await join('Renewed')
+    const { welcome } = await connect(await renew(token))
+    expect(welcome.me.name).toBe('Renewed')
+    const client = new TestClient(wsUrl)
+    await client.open()
+    client.send({ type: 'hello', token, cursors: {} })
+    const error = await client.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'error' }> => m.type === 'error'
+    )
+    expect(error.code).toBe('auth')
+  })
+
+  it('leaves a socket that said hello with the old one open until it closes', async () => {
+    // The app's own alerts service, on Android, until the page hands it the
+    // new one at its next welcome.
+    const token = await join('Still Open')
+    const { client, welcome } = await connect(token)
+    await connect(await renew(token))
+    const clientMsgId = newId()
+    client.send({
+      type: 'send',
+      clientMsgId,
+      channelId: welcome.channels[0]!.id,
+      body: 'still here',
+    })
+    const ack = await client.waitFor((m): m is ServerMessage => m.type === 'ack')
+    expect(ack).toMatchObject({ clientMsgId })
+  })
+})
+
 describe('a socket that has not said hello', () => {
   it('is told about the socket, not about the session', async () => {
     // `auth` is the only code that ends somebody's session, so this must not

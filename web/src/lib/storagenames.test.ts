@@ -173,6 +173,10 @@ describe('the browser storage names', () => {
         // Every event this device holds (the Boxes screen), and which one it
         // opens once there is more than one. Device-wide, like the theme.
         'crewbox:boxes',
+        // Which sign-ins the app moved out of the page's storage and hasn't
+        // yet had its box renew, by name (lib/sessions.ts). Device-wide: it
+        // names any event's.
+        'crewbox:carried-sign-ins',
         // Which event has the names in this list: the first one the device
         // held. See lib/eventScope.ts; every other event's are its own.
         'crewbox:db-epoch',
