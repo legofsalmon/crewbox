@@ -36,6 +36,14 @@ backup made before you updated has it. The updated app moves it into the
 phone's, and the next time the phone reaches the box, the box swaps it for
 a new one. From then on, the one in the backup signs nothing in.
 
+The apps also keep a note of the events your phone has joined: each one's
+name, where its box was, and the key your phone checks that box by. It is in
+files of the app's own, so that your phone still knows them, and stays
+signed in, if the app's web storage is cleared, which iPhones and Android
+phones can both do by themselves. The note holds no sign-in. It is left out
+of backups and transfers to a new phone, though on an iPhone that is only
+guidance to iOS, so a new iPhone set up from the old one may bring it.
+
 Deleting a sheet, plot or screen map deletes it from the box too. The box
 overwrites what it held rather than only marking the space free, and never
 saves it again, though the SD card or disk underneath can keep an old copy

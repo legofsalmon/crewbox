@@ -166,6 +166,18 @@ the apps kept them before, until each one's box has renewed it
 (`POST /api/session/renew`). It holds names, never tokens, and reaches
 phones like the rest.
 
+The apps also keep a copy of what only the phone has, because the web view's
+storage can be wiped without anyone asking (`web/src/lib/appCopy.ts`). It is
+in files of the app's own, a folder per event and a file per slot:
+`crewbox-records/<event>/<slot>`, in Application Support on an iPhone and
+in `getNoBackupFilesDir()` on Android. Each event's list entry, whether it has
+today's names, and when the phone last opened it are in the slot `event`.
+`crewbox:copied-to-app` in the page's storage says nothing has wiped it since
+the copy was made; a start that finds it missing puts back what went. The
+folder, the slots and the key all reach phones. A module that keeps
+something the box can't give back, such as work not yet sent, adds a slot
+of its own rather than a new folder.
+
 ## The five steps
 
 ### 1. Model

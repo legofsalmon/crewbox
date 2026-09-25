@@ -11,6 +11,7 @@ import { installBackButton } from './shell/back.ts'
 import { installAppLinks } from './lib/appLinks.ts'
 import { holdBoxWifi } from './lib/server.ts'
 import { loadSessions } from './lib/sessions.ts'
+import { keepAppCopy, restoreFromApp } from './lib/appCopy.ts'
 
 installBackButton()
 installAppLinks()
@@ -29,5 +30,11 @@ function render(): void {
 }
 
 // In the apps the sign-ins are the app's, and the store reads one as it
-// boots, on the first render (lib/sessions.ts). In a browser this is at once.
-void loadSessions().then(render, render)
+// boots, on the first render (lib/sessions.ts). Before them, whatever of the
+// phone's events a wipe of the web view's storage took comes back from the
+// app's copy, which may mean loading the page again (lib/appCopy.ts). In a
+// browser all of this is at once.
+void restoreFromApp()
+  .then((vouched) => loadSessions(vouched))
+  .then(render, render)
+  .then(keepAppCopy)

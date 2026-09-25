@@ -148,6 +148,47 @@ describe('in the apps', () => {
     expect(sessions.readSession('crewbox@sat:token')).toBeNull()
   })
 
+  it('keeps one the page’s storage lost in a wipe, when the app’s copy of its event vouches for it', async () => {
+    // lib/appCopy.ts: the app still has a record of the event, so this is the
+    // web view's storage wiped under the app, and not a reinstall.
+    const plugin = app({ 'crewbox:token': 'fridays-sign-in', 'crewbox@sat:token': 'saturdays' })
+    const sessions = await load()
+    await sessions.loadSessions(new Set(['crewbox:token']))
+    expect(sessions.openSession()).toBe('fridays-sign-in')
+    expect(localStorage.getItem('crewbox:token')).toBe(sessions.HELD)
+    expect(plugin.keychain.has('crewbox@sat:token')).toBe(false)
+    // The wipe took the mark saying whether its box had renewed it yet.
+    expect(JSON.parse(localStorage.getItem('crewbox:carried-sign-ins') ?? '[]')).toEqual([
+      'crewbox:token',
+    ])
+  })
+
+  it('names nothing again that the app doesn’t keep', async () => {
+    const plugin = app()
+    const sessions = await load()
+    await sessions.loadSessions(new Set(['crewbox:token']))
+    expect(localStorage.getItem('crewbox:token')).toBeNull()
+    expect(localStorage.getItem('crewbox:carried-sign-ins')).toBeNull()
+    expect(sessions.openSession()).toBeNull()
+    expect(plugin.save).not.toHaveBeenCalled()
+  })
+
+  it('leaves one in the app, unused, when nobody can yet say whether it was a wipe', async () => {
+    // The app's copy of its events couldn't be read at this start.
+    const plugin = app({ 'crewbox:token': 'fridays-sign-in', 'crewbox@sat:token': 'saturdays' })
+    const sessions = await load()
+    localStorage.setItem('crewbox@sat:token', sessions.HELD)
+    localStorage.setItem('crewbox@sun:token', sessions.HELD)
+    await sessions.loadSessions(null)
+    expect(plugin.keychain.get('crewbox:token')).toBe('fridays-sign-in')
+    expect(plugin.forget).not.toHaveBeenCalled()
+    expect(localStorage.getItem('crewbox:token')).toBeNull()
+    expect(sessions.openSession()).toBeNull()
+    // Everything else is as ever.
+    expect(sessions.readSession('crewbox@sat:token')).toBe('saturdays')
+    expect(localStorage.getItem('crewbox@sun:token')).toBeNull()
+  })
+
   it('is signed out of an event whose name came in a backup without its token', async () => {
     const plugin = app()
     const sessions = await load()

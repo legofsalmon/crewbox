@@ -1,5 +1,5 @@
 import { storageName } from './eventScope.ts'
-import { forgetPref, readPref, writePref } from './prefs.ts'
+import { forgetPref, holdingWhileOpen, readPref, writePref } from './prefs.ts'
 import { isNative, nativeSessions, type SessionsPlugin } from './server.ts'
 
 /**
@@ -24,10 +24,13 @@ import { isNative, nativeSessions, type SessionsPlugin } from './server.ts'
  * start the two check each other:
  *
  * - A sign-in the app keeps that the page's storage doesn't name is from
- *   before that storage was cleared: the app deleted and installed again on
- *   an iPhone, whose Keychain outlives the app, or WebKit clearing a phone
- *   short of space. It goes, as the rest of that storage went. Kept, it
- *   would have signed a fresh install in with no box to go to.
+ *   before that storage went. If the app still has its copy of the event
+ *   (lib/appCopy.ts), the web view's storage was wiped under the app, and
+ *   the sign-in is named again. If not, the app was deleted and installed
+ *   again on an iPhone, whose Keychain outlives the app, and it goes, as the
+ *   rest of that storage went. Kept, it would have signed a fresh install in
+ *   with no box to go to. A start that couldn't read the app's copy leaves
+ *   it be for one that can.
  * - A name with nothing behind it came to this phone in a backup, without
  *   its token. The phone is not signed in to that event, and says so.
  * - A token still in the page's storage, from before this, moves across, and
@@ -117,8 +120,14 @@ export function isSessionName(name: string): boolean {
  * An app that doesn't answer (an iPhone not unlocked since it started, or a
  * Keystore that won't) leaves this start signed out of events it keeps, and
  * deletes nothing: the next start that hears from it has them all.
+ *
+ * `vouched` are the sign-ins the app's copy of its events vouches for, once
+ * the web view's storage has been wiped (lib/appCopy.ts): kept, and named
+ * again, though the page's storage no longer names them. Null when that copy
+ * couldn't be read: a sign-in the page's storage doesn't name is then left
+ * in the app, unused, for a start that can tell a wipe from a reinstall.
  */
-export async function loadSessions(): Promise<void> {
+export async function loadSessions(vouched: ReadonlySet<string> | null = new Set()): Promise<void> {
   const keeper = app()
   if (!keeper) return
   let sessions: Record<string, string>
@@ -135,10 +144,30 @@ export async function loadSessions(): Promise<void> {
     return
   }
   held.clear()
+  const named: string[] = []
   for (const [name, token] of Object.entries(sessions)) {
-    if (readPref(name) === HELD && typeof token === 'string' && token) held.set(name, token)
-    else await keeper.forget({ name }).catch(() => {})
+    const hasToken = typeof token === 'string' && token !== ''
+    const value = readPref(name)
+    if (hasToken && value === HELD) {
+      held.set(name, token)
+      continue
+    }
+    if (hasToken && value === null) {
+      // A wipe or a reinstall: only the app's copy of its events can say,
+      // and a start that couldn't read it leaves this for one that can.
+      if (vouched === null) continue
+      if (vouched.has(name)) {
+        writePref(name, HELD)
+        held.set(name, token)
+        named.push(name)
+        continue
+      }
+    }
+    await keeper.forget({ name }).catch(() => {})
   }
+  // The wipe took the marks of any sign-in still to be renewed, as it took
+  // everything else. Renewing one that wasn't costs its box a new token.
+  if (named.length > 0) setCarried([...carried(), ...named])
   for (const name of localStorageKeys().filter(isSessionName)) {
     const value = readPref(name)
     if (value === HELD) {
@@ -191,11 +220,19 @@ export async function renewCarried(
   uncarry(name)
 }
 
-/** A sign-in's token, or null when this device isn't signed in to that event. */
+/**
+ * A sign-in's token, or null when this device isn't signed in to that event.
+ *
+ * One the app keeps is read from what the page heard from the app. While the
+ * apps' page is open (`holdingWhileOpen`), that is so whether or not the
+ * page's storage still names it: a wipe of the web view's storage underneath
+ * an open page (lib/appCopy.ts) takes the name, and the crew member is
+ * signed in all the same.
+ */
 export function readSession(name: string): string | null {
   const value = readPref(name)
-  if (value !== HELD) return value
-  return held.get(name) ?? null
+  if (value === HELD || (value === null && holdingWhileOpen())) return held.get(name) ?? null
+  return value
 }
 
 /**

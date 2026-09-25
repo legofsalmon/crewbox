@@ -309,6 +309,129 @@ describe('the events a device knows', () => {
   })
 })
 
+describe('what the apps keep a copy of', () => {
+  const FRIDAY = {
+    id: 'friday',
+    name: 'Harbour Fest',
+    origin: 'http://10.0.0.2',
+    seenAt: 5,
+    key: 'k',
+  }
+
+  it('is every event listed, and the one with today’s names, listed or not', async () => {
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    const scope = await load()
+    scope.rememberEvent({ id: 'saturday', name: 'Quay Night', origin: 'http://10.0.0.9' })
+    expect([...scope.eventRecords()]).toEqual([
+      [
+        'saturday',
+        { known: { id: 'saturday', name: 'Quay Night', origin: 'http://10.0.0.9', seenAt: 0 } },
+      ],
+      ['friday', { todaysNames: true }],
+    ])
+  })
+
+  it('tells a listener whenever an event is listed, opened, named or forgotten', async () => {
+    const scope = await load()
+    const heard = vi.fn()
+    scope.subscribeEventRecords(heard)
+    for (const change of [
+      () => scope.acceptEvent('friday'),
+      () => scope.rememberEvent({ id: 'saturday', name: 'Quay Night' }),
+      () => scope.chooseEvent('saturday'),
+      () => scope.releaseEvent('friday'),
+      () => scope.forgetEventRecord('saturday'),
+    ]) {
+      heard.mockClear()
+      change()
+      expect(heard).toHaveBeenCalled()
+    }
+  })
+
+  it('puts back what the page’s storage lost, and leaves what it has', async () => {
+    const kept = { id: 'saturday', name: 'Kept', origin: '', seenAt: 1 }
+    localStorage.setItem('crewbox:boxes', JSON.stringify([kept]))
+    const scope = await load()
+    const records = new Map([
+      ['friday', { known: FRIDAY, todaysNames: true }],
+      ['saturday', { known: { ...kept, name: 'From the copy' } }],
+      ['sunday', { known: { ...FRIDAY, id: 'monday' } }],
+    ])
+    expect(scope.putBackEvents(records, 'friday')).toBe(true)
+    expect(scope.knownEvents()).toEqual([kept, FRIDAY])
+    expect(localStorage.getItem('crewbox:db-epoch')).toBe('friday')
+    expect(localStorage.getItem('crewbox:event')).toBe('friday')
+    expect(scope.openEvent()).toBe('friday')
+    expect(scope.storageName('crewbox:modules')).toBe('crewbox:modules')
+  })
+
+  it('leaves today’s names and the open event where the page’s storage has them', async () => {
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    localStorage.setItem('crewbox:event', 'saturday')
+    const scope = await load()
+    const records = new Map([
+      ['sunday', { todaysNames: true }],
+      ['monday', {}],
+    ])
+    expect(scope.putBackEvents(records, 'monday')).toBe(false)
+    expect(localStorage.getItem('crewbox:db-epoch')).toBe('friday')
+    expect(localStorage.getItem('crewbox:event')).toBe('saturday')
+  })
+
+  it('opens only an event it has a record of', async () => {
+    const scope = await load()
+    expect(scope.putBackEvents(new Map(), 'friday')).toBe(false)
+    expect(localStorage.getItem('crewbox:event')).toBeNull()
+  })
+
+  it('says nothing was put back when the page’s storage won’t keep it', async () => {
+    // Otherwise the page would load again to find it missing, and again.
+    const scope = await load()
+    // As the apps' page, which holds on to what it has put back.
+    ;(await import('./prefs.ts')).holdWhileOpen()
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => {
+        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+      },
+      removeItem: () => {},
+    })
+    try {
+      const records = new Map([['friday', { known: FRIDAY, todaysNames: true }]])
+      expect(scope.putBackEvents(records, 'friday')).toBe(false)
+      // And the page goes on named as it started, not half one way and half the other.
+      expect(scope.openEvent()).toBeNull()
+      expect(scope.storageName('crewbox:token')).toBe('crewbox:token')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('holds on to which event has today’s names and which is open, in the apps', async () => {
+    localStorage.setItem('crewbox:db-epoch', 'friday')
+    localStorage.setItem('crewbox:event', 'saturday')
+    const scope = await load()
+    ;(await import('./prefs.ts')).holdWhileOpen()
+    scope.holdEvents()
+    localStorage.clear()
+    expect(scope.openEvent()).toBe('saturday')
+    expect(scope.storageName('crewbox:modules')).toBe('crewbox@saturday:modules')
+    expect(scope.storageNameFor('friday', 'crewbox:modules')).toBe('crewbox:modules')
+    // And what the page changes since, as it changes it.
+    scope.chooseEvent('friday')
+    expect(scope.nextEvent()).toBe('friday')
+    expect(localStorage.getItem('crewbox:event')).toBe('friday')
+  })
+
+  it('reads them afresh each time in a browser, where another tab may change them', async () => {
+    localStorage.setItem('crewbox:event', 'saturday')
+    const scope = await load()
+    scope.holdEvents()
+    localStorage.setItem('crewbox:event', 'sunday')
+    expect(scope.nextEvent()).toBe('sunday')
+  })
+})
+
 describe('an event ID from a box', () => {
   it('is taken as the box mints it', async () => {
     const { eventIdFrom } = await load()

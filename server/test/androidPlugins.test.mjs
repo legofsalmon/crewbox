@@ -36,6 +36,7 @@ describe('the Android app’s own plugins', () => {
       'CrewboxDiscovery',
       'CrewboxFiles',
       'CrewboxNetwork',
+      'CrewboxRecords',
       'CrewboxScanner',
       'CrewboxSessions',
       'CrewboxVoice',
