@@ -15,5 +15,25 @@
  *
  * Contract 1 is the plugins the apps have from the release that first carries
  * this file. Only ever raised; a number once shipped keeps its meaning.
+ *
+ * Every plugin and method the screens call is declared in lib/server.ts, and
+ * held there to the Java and Swift the apps are built from
+ * (server/test/nativeContract.test.mjs). A method added after contract 1
+ * goes into the apps that can have it, and both apps raise their
+ * `NATIVE_API`, with `builtFor` here. It is declared with a tag,
+ * `@since native contract N`, and as optional (`name?()`) until `needs`
+ * reaches N, so the typecheck makes each call check for it first. That check
+ * is all an app without it needs: its plugin's object on the bridge has one
+ * function per method the app has, and nothing for the rest (Capacitor's
+ * JSExport). A control that needs a method the app lacks says so where it
+ * would be, for example "Update the app for voice with the phone locked.",
+ * and the rest of the screen carries on.
+ *
+ * The screens can check only that a method is there, not what it does. So a
+ * change in what a method does is a new method when screens can do without
+ * it, and otherwise raises `needs` in the screens that count on it. Nor do
+ * the screens ever call a method by its name (`Capacitor.nativePromise` and
+ * the like, which lint refuses): in either app, a call to a method the app
+ * lacks is dropped, and never settles.
  */
 export const SCREENS_NATIVE_API = { needs: 1, builtFor: 1 } as const

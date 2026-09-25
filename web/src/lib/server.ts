@@ -278,6 +278,13 @@ declare global {
     Capacitor?: {
       isNativePlatform?: () => boolean
       getPlatform?: () => string
+      /**
+       * The plugins the screens call, as the app's bridge gives them: one the
+       * app lacks is absent, and so is each method a plugin lacks. A method
+       * with no `@since` came with native contract 1, which every app that
+       * runs these screens keeps. One marked `@since native contract N` is
+       * optional until the screens need N (lib/nativeApi.ts).
+       */
       Plugins?: {
         CrewboxAlerts?: AlertsPlugin
         App?: AppPlugin

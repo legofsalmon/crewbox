@@ -4,6 +4,23 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import prettier from 'eslint-config-prettier'
 
+/**
+ * The bridge's ways to call a native method by its name. In either app, a
+ * call to a method the app lacks is dropped and never settles.
+ */
+const callsByName = ['nativePromise', 'nativeCallback', 'toNative', 'withPlugin'].map(
+  (property) => ({
+    property,
+    message:
+      'Call it through its plugin in lib/server.ts: a call by name to a method the app lacks never settles.',
+  })
+)
+
+const pluginsOutsideServer = {
+  property: 'Plugins',
+  message: 'Reach a native plugin through its accessor in lib/server.ts, which declares it.',
+}
+
 export default tseslint.config(
   {
     ignores: [
@@ -38,6 +55,17 @@ export default tseslint.config(
     },
   },
   { ...reactRefresh.configs.vite, files: ['web/src/**/*.{ts,tsx}'] },
+  {
+    // The screens reach the apps' native code only through the plugins
+    // web/src/lib/server.ts declares (web/src/lib/nativeApi.ts says why).
+    files: ['web/src/**/*.{ts,tsx}'],
+    ignores: ['web/src/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-properties': ['error', ...callsByName, pluginsOutsideServer] },
+  },
+  {
+    files: ['web/src/lib/server.ts'],
+    rules: { 'no-restricted-properties': ['error', ...callsByName] },
+  },
   {
     files: [
       'deploy/**/*.mjs',
