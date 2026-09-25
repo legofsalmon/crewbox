@@ -15,6 +15,7 @@ import {
   type Incident,
   type PublicConfig,
   type ServerMessage,
+  type StageCountdown,
   type User,
   type WelcomeMessage,
 } from '@crewbox/shared'
@@ -591,6 +592,12 @@ export interface AppState {
   /** iPhone: whether the app may notify; undefined where it can't say. */
   notificationState: 'granted' | 'denied' | 'ask' | undefined
   setLockScreenStage: (stage: string | null) => void
+  /**
+   * iPhone: what the lock screen's countdown shows, from the page's running
+   * order. Sent whenever it changes and whenever the app is looked at again,
+   * since only the app can update a Live Activity.
+   */
+  showLockScreenCountdown: (countdown: StageCountdown | null) => void
   logout: () => Promise<void>
   /** The box says this session is dead. Keeps what has not been sent. */
   sessionEnded: () => Promise<void>
@@ -2487,6 +2494,20 @@ export const useStore = create<AppState>()((set, get) => {
       void plugin
         .setCountdown({ stage })
         .then((result) => set({ lockScreenStage: result.stage }))
+        .catch(() => {})
+    },
+
+    showLockScreenCountdown(countdown) {
+      const stage = get().lockScreenStage
+      const plugin = nativeAlerts()
+      if (!stage || !plugin?.setCountdown) return
+      void plugin
+        .setCountdown({ stage, countdown })
+        .then((result) => {
+          // Live Activities turned off for crewbox: the button says so by
+          // showing the countdown as off.
+          if (get().lockScreenStage === stage) set({ lockScreenStage: result.stage })
+        })
         .catch(() => {})
     },
 

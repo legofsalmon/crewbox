@@ -283,6 +283,52 @@ describe('on a box that decides alerts', () => {
     }
   })
 
+  it('hands the iPhone what its countdown shows, and hears when Live Activities are off', async () => {
+    const calls: unknown[] = []
+    let allowed = true
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: {
+        CrewboxAlerts: {
+          start: async () => {},
+          stop: async () => {},
+          setCountdown: async (options: { stage: string | null; countdown?: unknown }) => {
+            calls.push(options)
+            return { stage: allowed ? options.stage : null }
+          },
+          getCountdown: async () => ({ stage: null }),
+        },
+      },
+    }
+    try {
+      const store = await signedIn({ channels: {}, stages: ['Main Stage'] })
+      await settle()
+      store.getState().setLockScreenStage('Main Stage')
+      await settle()
+      const countdown = {
+        stage: 'Main Stage',
+        onNow: { actId: 'a', name: 'Headliner', start: 1000, end: 2000 },
+        next: null,
+      }
+      store.getState().showLockScreenCountdown(countdown)
+      await settle()
+      expect(calls).toEqual([{ stage: 'Main Stage' }, { stage: 'Main Stage', countdown }])
+      expect(store.getState().lockScreenStage).toBe('Main Stage')
+
+      allowed = false
+      store.getState().showLockScreenCountdown(countdown)
+      await settle()
+      expect(store.getState().lockScreenStage).toBeNull()
+      // With none chosen there is nothing to show.
+      store.getState().showLockScreenCountdown(countdown)
+      await settle()
+      expect(calls).toHaveLength(3)
+    } finally {
+      delete window.Capacitor
+    }
+  })
+
   it('offers no lock screen outside the apps', async () => {
     const store = await signedIn()
     expect(store.getState().lockScreenStage).toBeUndefined()

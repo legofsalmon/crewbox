@@ -14,8 +14,9 @@
  *   each use, so an older app still runs them without that one thing.
  *
  * Contract 1 is the plugins the apps have from the release that first carries
- * this file. Contract 2 adds Android's `CrewboxAlerts.setCountdown` and
- * `getCountdown`, the stage countdown on the lock screen (Phase 4). Only ever
+ * this file. Contract 2 adds `CrewboxAlerts.setCountdown` and `getCountdown`,
+ * the stage countdown on the lock screen, and the iPhone's `CrewboxAlerts`
+ * (Phase 4). Only ever
  * raised; a number once shipped keeps its meaning.
  *
  * Every plugin and method the screens call is declared in lib/server.ts, and

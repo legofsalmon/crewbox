@@ -28,6 +28,7 @@ import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import FeedbackDialog from './components/FeedbackDialog.tsx'
 import AlertSettingsDialog from './components/AlertSettingsDialog.tsx'
+import LockScreenCountdown from './components/LockScreenCountdown.tsx'
 import { APP_VERSION } from './lib/pwa.ts'
 import { screensStarted } from './lib/appScreens.ts'
 import { flushDeviceOutbox, sendCrash } from './lib/reports.ts'
@@ -323,6 +324,7 @@ function Shell() {
       {fileDetail && <FileDetail />}
       {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
       {alertSettingsOpen && <AlertSettingsDialog onClose={() => setAlertSettingsOpen(false)} />}
+      <LockScreenCountdown />
       <IosInstallTip />
     </div>
   )

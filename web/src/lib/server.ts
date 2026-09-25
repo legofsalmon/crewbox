@@ -4,7 +4,7 @@
  * app package instead, so they carry a configured server origin — stored in
  * localStorage and applied to every API/WS/file URL.
  */
-import type { FileMeta } from '@crewbox/shared'
+import type { FileMeta, StageCountdown } from '@crewbox/shared'
 import { fileUrl } from '@crewbox/shared'
 import { holdingWhileOpen } from './prefs.ts'
 
@@ -31,10 +31,19 @@ interface AlertsPlugin {
   stop(): Promise<void>
   /**
    * Put a followed stage's countdown on the lock screen, or take it off with
-   * `stage: null`.
+   * `stage: null`. Resolves with the stage it shows, null when the phone
+   * won't show one (Live Activities turned off for crewbox).
+   *
+   * `countdown` is what it shows, for the iPhone's Live Activity, which only
+   * the app can update: the page works it out from its own running order
+   * (components/LockScreenCountdown.tsx). Android has it from the box and
+   * ignores it.
    * @since native contract 2
    */
-  setCountdown?(options: { stage: string | null }): Promise<{ stage: string | null }>
+  setCountdown?(options: {
+    stage: string | null
+    countdown?: StageCountdown | null
+  }): Promise<{ stage: string | null }>
   /**
    * The stage whose countdown is on the lock screen, or null.
    * @since native contract 2

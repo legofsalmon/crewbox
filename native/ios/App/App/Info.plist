@@ -99,6 +99,11 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Crewbox finds and connects to the crew box on the event Wi-Fi.</string>
+	<!-- A followed stage's countdown on the lock screen, drawn by the
+	     Countdown extension (LiveCountdown.swift). Without this key
+	     ActivityKit refuses every request, and the button does nothing. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<!-- The one Bonjour type the app looks for: a box announces itself as
 	     _crewbox._tcp on its crew network (docs/DISCOVERY.md), and the join
 	     and Boxes screens list what DiscoveryPlugin.swift finds. iOS refuses

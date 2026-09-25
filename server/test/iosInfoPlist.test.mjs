@@ -144,10 +144,11 @@ describe('joining the Wi-Fi from its code', () => {
     ])
     expect([...entitlements.matchAll(/<key>/g)]).toHaveLength(3)
     // In every configuration of the app's target, which is the one with the
-    // bundle identifier: a build without them installs, and joins nothing.
+    // app's bundle identifier: a build without them installs, and joins
+    // nothing.
     const configurations = [
       ...read('native/ios/App/App.xcodeproj/project.pbxproj').matchAll(
-        /buildSettings = \{([^}]*PRODUCT_BUNDLE_IDENTIFIER[^}]*)\}/g
+        /buildSettings = \{([^}]*PRODUCT_BUNDLE_IDENTIFIER = com\.colmhewson\.crewbox;[^}]*)\}/g
       ),
     ]
     expect(configurations).toHaveLength(2)
@@ -225,5 +226,55 @@ describe('the oldest iOS the app installs on', () => {
     )
     const floor = /IPHONEOS_DEPLOYMENT_TARGET = (\d+)/.exec(project)?.[1]
     expect(swiftPackage).toContain(`platforms: [.iOS(.v${floor})]`)
+  })
+})
+
+describe('the stage countdown on the lock screen', () => {
+  const read = (path) => readFileSync(join(import.meta.dirname, '..', '..', path), 'utf8')
+  const project = read('native/ios/App/App.xcodeproj/project.pbxproj')
+
+  it('declares Live Activities, or ActivityKit refuses every request', () => {
+    expect(plist).toMatch(/<key>NSSupportsLiveActivities<\/key>\s*<true\/>/)
+  })
+
+  it('builds the Countdown extension as a widget extension, embedded in the app', () => {
+    const extension = read('native/ios/App/Countdown/Info.plist')
+    expect(extension).toMatch(
+      /<key>NSExtensionPointIdentifier<\/key>\s*<string>com\.apple\.widgetkit-extension<\/string>/
+    )
+    expect(project).toContain('productType = "com.apple.product-type.app-extension";')
+    expect(project).toContain('/* Countdown.appex in Embed Foundation Extensions */,')
+    expect(project).toMatch(
+      /dependencies = \(\s*\w+ \/\* PBXTargetDependency \*\/,\s*\);\s*name = App;/
+    )
+    // Its bundle id goes to App Store Connect with the app's, under it.
+    const ids = [...project.matchAll(/PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/g)].map((m) => m[1])
+    expect([...new Set(ids)].sort()).toEqual([
+      'com.colmhewson.crewbox',
+      'com.colmhewson.crewbox.countdown',
+    ])
+  })
+
+  it('shares one attributes type between the app and the extension', () => {
+    // ActivityKit matches the app's activity to the extension's drawing by
+    // this type, so both targets compile the same file.
+    const builds = project.match(/\/\* CountdownAttributes\.swift in Sources \*\/,/g) ?? []
+    expect(builds).toHaveLength(2)
+    expect(project).toContain('/* CountdownWidget.swift in Sources */,')
+    expect(project).toContain('/* LiveCountdown.swift in Sources */,')
+    expect(read('native/ios/App/Countdown/CountdownWidget.swift')).toContain(
+      'ActivityConfiguration(for: CountdownAttributes.self)'
+    )
+  })
+
+  it('keeps the extension’s version with the app’s, as App Store Connect requires', () => {
+    const versions = new Set(
+      [...project.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((m) => m[1])
+    )
+    const builds = new Set(
+      [...project.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((m) => m[1])
+    )
+    expect(versions.size).toBe(1)
+    expect(builds.size).toBe(1)
   })
 })

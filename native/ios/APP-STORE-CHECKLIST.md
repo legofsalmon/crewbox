@@ -64,8 +64,13 @@ name and usually without a certificate".
    by hand instead, switch both on for `com.colmhewson.crewbox` under
    Certificates, Identifiers & Profiles and make a new profile, or the
    archive won't sign.
+   Set the same Team on the **Countdown** target, the lock screen's stage
+   countdown. Its bundle id is `com.colmhewson.crewbox.countdown`, and it
+   needs no capabilities of its own.
 3. Bump **Version** (`MARKETING_VERSION`) and **Build** (`CURRENT_PROJECT_VERSION`)
-   for each upload.
+   for each upload, on both the App and the Countdown targets. App Store
+   Connect refuses an upload whose extension's version differs from the
+   app's, and `server/test/iosInfoPlist.test.mjs` fails first.
 4. **Rebuild the web bundle into the shell first** — the app ships whatever is in
    `web/dist`: `npm --prefix web run build && npx --prefix native cap sync ios`.
 5. Product → Archive → Distribute App → App Store Connect.
