@@ -7,6 +7,7 @@ import {
   recordsOf,
   test,
   uniqueName,
+  untilChatCached,
 } from './helpers'
 
 /**
@@ -98,9 +99,11 @@ function refuseShowLogQueue(): void {
 /**
  * Cut a page off from its box, as offline.spec.ts does: `setOffline` leaves
  * an established WebSocket alive, so the socket is refused, and the way back
- * is a flag the handler reads.
+ * is a flag the handler reads. Only once the page has cached its chat, so the
+ * reload is a returning phone's.
  */
 async function cutOff(page: Page) {
+  await untilChatCached(page)
   let blocked = true
   await page.routeWebSocket(/\/ws$/, (ws) => {
     if (blocked) ws.close()

@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { newDevice, test } from './helpers'
+import { newDevice, test, untilChatCached } from './helpers'
 
 /**
  * What a returning crew member sees when the box genuinely goes away.
@@ -22,6 +22,7 @@ test('a sustained outage turns the banner into an explanation', async ({ browser
   // Cached and working first, so this is the returning-user path rather than
   // the cold-start recovery screen.
   await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+  await untilChatCached(page)
 
   // Cut the socket, with a way back. Two notes for whoever touches this next:
   //

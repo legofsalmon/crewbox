@@ -66,6 +66,44 @@ export const newDevice = async (browser: Browser, crewName?: string): Promise<Pa
 }
 
 /**
+ * Until a page's chat cache holds what the app shows at a start with no
+ * signal: the snapshot of its channels and crew (lib/db.ts).
+ *
+ * Chat is on screen before that is saved. The page draws the box's welcome
+ * first and saves the snapshot after (store.ts, persistSnapshot), so a test
+ * that cuts a page off and reloads it the moment chat shows can catch it
+ * with nothing cached. That page shows "Can't reach the crew server", a
+ * first start's screen, instead of the banner a returning phone shows.
+ */
+export const untilChatCached = (page: Page) =>
+  expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const saved = (name: string) =>
+          new Promise<boolean>((resolve) => {
+            const open = indexedDB.open(name)
+            open.onerror = () => resolve(false)
+            open.onsuccess = () => {
+              const db = open.result
+              const done = (value: boolean) => {
+                db.close()
+                resolve(value)
+              }
+              if (!db.objectStoreNames.contains('kv')) return done(false)
+              const get = db.transaction('kv').objectStore('kv').get('snapshot')
+              get.onsuccess = () => done(get.result !== undefined)
+              get.onerror = () => done(false)
+            }
+          })
+        for (const { name } of await indexedDB.databases()) {
+          if (name && (await saved(name))) return true
+        }
+        return false
+      })
+    )
+    .toBe(true)
+
+/**
  * The apps' keeping of sign-ins (SessionsPlugin), for an init script added
  * after the one that stands the app in: the iPhone's Keychain or Android's
  * Keystore, stood in for by the tab's sessionStorage, which a reload keeps
