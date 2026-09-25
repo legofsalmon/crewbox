@@ -464,7 +464,7 @@ function voiceCheck(input: ReadinessInput): ReadinessCheck {
     // real but only reachable from the native apps.
     fix: input.secure
       ? undefined
-      : `Works in the Android and iOS apps now. For browsers too, put cert.pem and key.pem for your domain in ${input.dataDir} and restart — the box serves HTTPS itself.`,
+      : `Works in the Android app now. For browsers too, put cert.pem and key.pem for your domain in ${input.dataDir} and restart — the box serves HTTPS itself.`,
   }
 }
 
@@ -653,7 +653,7 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
           label: 'Install to home screen, offline shell',
           state: 'limited',
           detail: `Not available over plain http://${input.host}.`,
-          fix: `Browsers only allow this on HTTPS. Put cert.pem and key.pem for your domain in ${input.dataDir} and restart, or use the Android/iOS apps.`,
+          fix: `Browsers only allow this on HTTPS. Put cert.pem and key.pem for your domain in ${input.dataDir} and restart, or use the Android app.`,
         }
   )
 

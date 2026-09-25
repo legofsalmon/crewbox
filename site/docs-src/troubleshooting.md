@@ -57,7 +57,7 @@ does it. More in
 
 That's the HTTPS microphone rule — the voice bar will say **listen-only**.
 See [the voice page](/docs/voice#the-https-rule-read-before-show-day).
-Quick fixes: use the Android/iOS app, or ask whoever runs the box whether
+Quick fixes: use the Android app, or ask whoever runs the box whether
 HTTPS is set up.
 
 If you're **not** listen-only but still silent: open the voice bar's gear

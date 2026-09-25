@@ -39,7 +39,9 @@ describe('box readiness', () => {
     // secure context, and the native apps are unaffected.
     const voice = find(boxReadiness(input({ secure: false })), 'voice')
     expect(voice.state).toBe('limited')
-    expect(voice.fix).toMatch(/Android and iOS apps/)
+    expect(voice.fix).toMatch(/Android app/)
+    // No iOS app ships, so the fix must not send an iPhone user to one.
+    expect(voice.fix).not.toMatch(/iOS/)
     // Name the actual fix, not a vague 'needs HTTPS'.
     expect(voice.fix).toMatch(/cert\.pem/)
   })
