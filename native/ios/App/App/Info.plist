@@ -111,8 +111,28 @@
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>UIMainStoryboardFile</key>
-	<string>Main</string>
+	<!-- The scene life cycle (Apple's TN3187), which the next major iOS
+	     release after 26 requires of an app built with its SDK. One scene,
+	     its window from Main.storyboard, its links through SceneDelegate. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<!-- arm64, not the armv7 Capacitor's template ships. The app is built for
 	     arm64 only, as every iOS 11-and-later app is, and App Store Connect
 	     has rejected arm64-only uploads whose list lacks arm64 (ITMS-90502).
