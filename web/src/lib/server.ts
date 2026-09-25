@@ -260,9 +260,11 @@ export interface ScreensPlugin {
    * they are that version, or ones `prepare` answered `ready` for, checked
    * again. The page reloads itself as soon as this resolves, which keeps its
    * address, and the event starts with them from then on once they say they
-   * started. Rejects, and changes nothing, when the app won't run them.
+   * started. Rejects, and changes nothing, when the app won't run them. With
+   * no version, whatever the event would start with: what it last started
+   * with, when the app still runs them, and otherwise the app's own.
    */
-  use(options: { event: string; version: string }): Promise<void>
+  use(options: { event: string; version?: string }): Promise<void>
   /**
    * These screens, `version`, have drawn. Screens from a box that don't say
    * so within 20 seconds of loading, with the app in front, have failed, and

@@ -39,11 +39,18 @@ import { initialVoiceState, type VoiceState } from './lib/voice-state.ts'
 import type { VoiceManager } from './lib/voice.ts'
 import { APP_VERSION, checkForUpdate, initPwa, knownBuild } from './lib/pwa.ts'
 import {
+  screensAfterWelcome,
+  screensForEvent,
+  switchScreens,
+  type ScreensOffer,
+} from './lib/appScreens.ts'
+import {
   boxOrigin,
   boxWifiSettled,
   isIosApp,
   isNative,
   nativeAlerts,
+  nativeScreens,
   nativeSystemBars,
   serverLabel,
   serverOrigin,
@@ -412,6 +419,11 @@ export interface AppState {
   latencyMs: number | null
   /** A newer build is available; show the reload pill. */
   updateReady: boolean
+  /**
+   * In the apps, why the app can't run the box's own screens, and which of
+   * the two to update (lib/appScreens.ts). Null when there is nothing to do.
+   */
+  screensNote: string | null
   /** Transient notices; each auto-dismisses on its own timer. */
   toasts: { id: number; message: string; kind: ToastKind }[]
   /** A mention or DM that arrived while the app was on screen; null when none. */
@@ -514,6 +526,7 @@ export interface AppState {
   closeFileDetail: () => void
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
   applyUpdate: () => void
+  dismissScreensNote: () => void
   retryConnection: () => void
   /**
    * Open another event this device holds, or the one found at this address.
@@ -582,6 +595,12 @@ let voiceManager: VoiceManager | null = null
 /** Reloads into the new service worker; set once PWA registration runs. */
 let updateSW: ((reload?: boolean) => Promise<void>) | null = null
 let pwaStarted = false
+/** In the apps, the box's screens the update pill switches to (lib/appScreens.ts). */
+let screensUpdate: string | null = null
+/** A note about the box's screens put away this load, which isn't shown again. */
+let screensNoteDismissed: string | null = null
+/** A switch of screens or of event under way: the page is about to reload. */
+let switching = false
 const lastTypingSent = new Map<string, number>()
 let toastSeq = 0
 let bannerSeq = 0
@@ -982,6 +1001,24 @@ export const useStore = create<AppState>()((set, get) => {
     })
   }
 
+  /**
+   * In the apps, what the box's build means for these screens: the update
+   * pill, when the app has the box's own screens for the event open, a note
+   * of what to update, or nothing. A note put away stays away for the load,
+   * and nothing changes once the page is on its way to a reload.
+   */
+  function showScreensOffer(offer: ScreensOffer): void {
+    if (switching) return
+    if (offer?.kind === 'switch' && openEvent()) {
+      screensUpdate = offer.version
+      set({ updateReady: true, screensNote: null })
+      return
+    }
+    screensUpdate = null
+    const note = offer?.kind === 'note' && offer.text !== screensNoteDismissed ? offer.text : null
+    set({ updateReady: false, screensNote: note })
+  }
+
   /** The box has a show-log entry, or has refused it for good: out of the queue. */
   function settleEntry(clientMsgId: string): void {
     unqueueIncident(clientMsgId)
@@ -1021,7 +1058,15 @@ export const useStore = create<AppState>()((set, get) => {
     // reload pill. Guarded by an active service worker so dev (no SW) and any
     // transient mismatch don't nag; the SW's own onNeedRefresh is the primary
     // trigger, this just makes reconnect-after-redeploy instant.
-    if (
+    //
+    // The apps have no service worker. Their pill switches to the box's own
+    // screens once the app has them and knows a crewbox release made them,
+    // for another version or another protocol alike, and otherwise a note
+    // says what to update. The pill never offers a reload that changes
+    // nothing, which is all this one could do there (lib/appScreens.ts).
+    if (isNative()) {
+      screensAfterWelcome(here(), msg, showScreensOffer)
+    } else if (
       msg.serverVersion &&
       msg.serverVersion !== APP_VERSION &&
       // Only when both sides know which build they are. A tree with no git
@@ -1167,8 +1212,13 @@ export const useStore = create<AppState>()((set, get) => {
 
     // A protocol mismatch means this bundle predates the server (they deploy
     // in lockstep) — surface the reload pill immediately, and kick the SW so
-    // the new worker is waiting by the time the pill is tapped.
-    if (msg.protocolVersion !== undefined && msg.protocolVersion !== PROTOCOL_VERSION) {
+    // the new worker is waiting by the time the pill is tapped. The apps
+    // asked for the box's screens above.
+    if (
+      !isNative() &&
+      msg.protocolVersion !== undefined &&
+      msg.protocolVersion !== PROTOCOL_VERSION
+    ) {
       set({ updateReady: true })
       checkForUpdate()
     }
@@ -1432,6 +1482,7 @@ export const useStore = create<AppState>()((set, get) => {
     feedbackOpen: false,
     latencyMs: null,
     updateReady: false,
+    screensNote: null,
     toasts: [],
     alertBanner: null,
     loadingOlder: false,
@@ -1657,6 +1708,8 @@ export const useStore = create<AppState>()((set, get) => {
         replacedAt(here(), { id: eventId, name: '', ...(continues ? { continues } : {}) })
         rememberEvent({ id: eventId, origin: here() })
         keepEventKey(eventId, key)
+        // In the apps, on its box's own screens (lib/appScreens.ts).
+        await screensForEvent(eventId, here())
         chooseEvent(eventId)
         reopenOnAnotherEvent()
         return
@@ -2140,10 +2193,36 @@ export const useStore = create<AppState>()((set, get) => {
     },
 
     applyUpdate() {
+      // In the apps: the box's own screens, once the app serves them.
+      const version = screensUpdate
+      if (version) {
+        const event = openEvent()
+        if (!event || switching) return
+        switching = true
+        switchScreens(event, version).then(
+          () => {
+            ws?.stop()
+            location.reload()
+          },
+          () => {
+            // Gone from the phone, or failed on it, since the app answered.
+            switching = false
+            screensUpdate = null
+            set({ updateReady: false })
+            get().toast('This phone couldn’t open the new version, so it carries on with this one.')
+          }
+        )
+        return
+      }
       // Activate the waiting service worker and reload. Unsent messages are in
       // the IndexedDB outbox, so nothing is lost across the reload.
       if (updateSW) void updateSW(true)
       else location.reload()
+    },
+
+    dismissScreensNote() {
+      screensNoteDismissed = get().screensNote
+      set({ screensNote: null })
     },
 
     retryConnection() {
@@ -2156,9 +2235,23 @@ export const useStore = create<AppState>()((set, get) => {
       // In the app the event's box is wherever it was last reached. A
       // browser is at its box's address and stays there.
       const origin = knownEvent(id)?.origin
-      if (isNative() && origin) setServerOrigin(origin)
-      chooseEvent(id)
-      reopenOnAnotherEvent(pin)
+      const open = () => {
+        if (isNative() && origin) setServerOrigin(origin)
+        chooseEvent(id)
+        reopenOnAnotherEvent(pin)
+      }
+      if (!isNative() || !nativeScreens()) {
+        open()
+        return
+      }
+      // The apps first have the event's own box's screens served for the
+      // reload, which can take a few seconds. Only then is anything of this
+      // page's changed: until the reload it is still the open event's page.
+      if (switching) return
+      switching = true
+      const name = knownEvent(id)?.name
+      get().toast(name ? `Opening ${name}…` : 'Opening the event…', 'info')
+      void screensForEvent(id, origin).then(open)
     },
 
     openEventAt({ id, name, origin, key, pin }) {

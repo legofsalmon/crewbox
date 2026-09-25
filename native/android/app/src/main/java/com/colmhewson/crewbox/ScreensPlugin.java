@@ -236,14 +236,16 @@ public class ScreensPlugin extends Plugin {
    * as this resolves: the app's own screens when they are that version, and
    * otherwise its kept folder, checked again. Rejects, and changes nothing,
    * when this build won't run them. The event starts with them from then on
-   * once they say they started.
+   * once they say they started. With no version, whatever the event would
+   * start with (Screens.launch), for a switch to an event whose box can't
+   * say what it runs now.
    */
   @PluginMethod
   public void use(PluginCall call) {
     String event = call.getString("event");
     String version = call.getString("version");
-    if (!Records.isEvent(event) || version == null) {
-      call.reject("An event and a version are needed");
+    if (!Records.isEvent(event)) {
+      call.reject("An event is needed");
       return;
     }
     try {
@@ -255,14 +257,21 @@ public class ScreensPlugin extends Plugin {
 
   private void switchTo(PluginCall call, String event, String version) {
     File folder;
+    String to = version;
     try {
-      folder = Screens.use(root(), app, version);
+      if (version != null) {
+        folder = Screens.use(root(), app, version);
+      } else {
+        Screens.Launch launch = Screens.launch(root(), records(getContext()), app, event);
+        folder = launch.folder;
+        to = launch.version;
+      }
     } catch (Screens.Refused | IOException | RuntimeException e) {
       call.reject(e.getMessage());
       return;
     }
     switchedFor = event;
-    running = version;
+    running = to;
     if (folder != null) {
       waitForReady();
     } else {

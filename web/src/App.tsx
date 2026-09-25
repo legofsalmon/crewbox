@@ -155,6 +155,8 @@ function Shell() {
   const fileOffer = useSyncExternalStore(subscribeFileOffer, currentFileOffer)
   const updateReady = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
+  const screensNote = useStore((s) => s.screensNote)
+  const dismissScreensNote = useStore((s) => s.dismissScreensNote)
   const elsewhere = useStore((s) => s.elsewhere)
   const eventName = useStore((s) => s.config.eventName)
   const switchEvent = useStore((s) => s.switchEvent)
@@ -271,10 +273,25 @@ function Shell() {
       )}
       <AlertBanner />
       {updateReady && (
+        // In the apps it is there only once the phone has the new version
+        // and has checked a crewbox release made it (lib/appScreens.ts).
         <button className="update-pill" onClick={applyUpdate}>
-          <span>New version available</span>
+          <span>{isNative() ? 'New version ready' : 'New version available'}</span>
           <strong>Reload</strong>
         </button>
+      )}
+      {screensNote && (
+        <div className="screens-note" role="status">
+          <span>{screensNote}</span>
+          <button
+            className="screens-note-close"
+            aria-label="Dismiss"
+            title="Dismiss"
+            onClick={dismissScreensNote}
+          >
+            ×
+          </button>
+        </div>
       )}
       <OnAirBar />
       <VoiceBar />

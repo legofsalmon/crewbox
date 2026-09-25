@@ -550,6 +550,33 @@ public class ScreensTest {
   }
 
   @Test
+  public void startsAnyEventOnTheScreensItLastStartedWith() throws IOException {
+    // A switch to another event while the app runs, when its box can't say
+    // what it runs now: by the rule a start follows, for that event.
+    keep(VERSION);
+    keep(OTHER);
+    ran("first", 100, VERSION);
+    ran("second", 200, OTHER);
+    record("fresh", 300);
+
+    Screens.Launch first = Screens.launch(root(), records(), app("1.0.0"), "first");
+    assertEquals("first", first.event);
+    assertEquals(VERSION, first.version);
+    assertEquals(new File(root(), VERSION), first.folder);
+    assertEquals("counted, as a start is", 1, launches().tries(VERSION));
+
+    Screens.Launch fresh = Screens.launch(root(), records(), app("1.0.0"), "fresh");
+    assertEquals("fresh", fresh.event);
+    assertEquals(BUILT_IN, fresh.version);
+    assertNull(fresh.folder);
+    assertNull("no event", Screens.launch(root(), records(), app("1.0.0"), null).folder);
+
+    Screens.failed(root(), app("1.0.0"), VERSION);
+    assertNull(Screens.launch(root(), records(), app("1.0.0"), "first").folder);
+    assertEquals(0, launches().tries(OTHER));
+  }
+
+  @Test
   public void readsWhichEventOpensAsThePageDoes() throws IOException {
     keep(VERSION);
     ran("opened", 100, VERSION);

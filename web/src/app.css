@@ -682,6 +682,39 @@ ul {
   font-weight: 800;
 }
 
+/*
+ * In the apps, what the app can't do about the box's build, and what to
+ * update (lib/appScreens.ts). Where the pill goes, but quieter: the phone
+ * carries on with the screens it has, and nothing here is anybody's fault.
+ */
+.screens-note {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  background: var(--bg-active);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.screens-note span {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 4px 8px 16px;
+  overflow-wrap: anywhere;
+}
+
+.screens-note-close {
+  flex-shrink: 0;
+  width: 44px;
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.screens-note-close:hover {
+  color: var(--text);
+}
+
 .sidebar-footer-links {
   display: flex;
   align-items: center;

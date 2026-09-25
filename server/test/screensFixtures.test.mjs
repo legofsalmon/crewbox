@@ -322,6 +322,32 @@ describe('which screens a start runs', () => {
     expect(withoutComments(SWIFT)).toContain('for name in names where name != Screens.launches {')
   })
 
+  it('is, for another event opened with no version named, what that event would start with', () => {
+    // Both apps take a switch with only an event, and run the start's own
+    // rule for it: the rule for the event opened last is that rule too.
+    const plugin = withoutComments(PLUGIN)
+    expect(plugin).toContain('if (!Records.isEvent(event)) {')
+    expect(plugin).toMatch(
+      /Screens\.Launch launch = Screens\.launch\(root\(\), records\(getContext\(\)\), app, event\);\s*folder = launch\.folder;\s*to = launch\.version;/
+    )
+    expect(withoutComments(JAVA)).toMatch(
+      /static Launch launch\(File root, File records, App app\) \{\s*return launch\(root, records, app, lastOpened\(records\)\);\s*\}/
+    )
+    const swift = withoutComments(SWIFT)
+    expect(swift).toContain(
+      'guard let event = call.getString("event"), RecordsPlugin.isEvent(event) else {'
+    )
+    expect(swift).toMatch(
+      /let launch = try Screens\.launch\(\s*root: Screens\.root\(\), records: RecordsPlugin\.root\(\), app: self\.app,\s*event: event\)\s*folder = launch\.folder\s*to = launch\.version/
+    )
+    expect(swift).toMatch(
+      /static func launch\(root: URL, records: URL, app: App\) -> Launch \{\s*launch\(root: root, records: records, app: app, event: lastOpened\(records: records\)\)\s*\}/
+    )
+    // Either way, the event starts with what runs once it says it started.
+    expect(plugin).toMatch(/switchedFor = event;\s*running = to;/)
+    expect(swift).toMatch(/self\.switchedFor = event\s*self\.running = to/)
+  })
+
   it('is remembered for each event beside the page’s record of it, in a slot the page leaves alone', () => {
     // The event a start opens is the one the page opened last, by the
     // openedAt in the record it keeps (lastOpened in web/src/lib/appCopy.ts).

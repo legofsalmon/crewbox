@@ -110,6 +110,14 @@ app connected: it appears on your screen as soon as they do.
 the new version finishes downloading. Tap it again. If it persists, close
 and reopen the app — nothing unsent is lost either way.
 
+In the iPhone and Android apps, **New version ready — Reload** appears only
+once the new version is already on the phone, so there is nothing to wait
+for. If the app goes back to the version you had, by itself or with a
+message that the phone couldn't open the new one, the new version didn't
+start on this phone. The app carries on with the one it has and doesn't
+offer that version again. The app also needs about 50 MB free on the phone
+to take a new version, and offers none until it has the room.
+
 ## "The lighting plot shows no levels"
 
 The drawings only colour by desk output when **Levels** is switched on in

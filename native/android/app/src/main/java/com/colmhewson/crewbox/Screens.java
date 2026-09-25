@@ -288,7 +288,7 @@ final class Screens {
 
   /** The screens a start runs, and the event it opens. */
   static final class Launch {
-    /** The event this phone opened last, which the page opens, or null for none. */
+    /** The event the page opens with them, or null for none. */
     final String event;
     /** The version of the screens, or null when the app's own can't say what they are. */
     final String version;
@@ -725,7 +725,15 @@ final class Screens {
    * so, and after MAX_TRIES of them the version has failed.
    */
   static Launch launch(File root, File records, App app) {
-    String event = lastOpened(records);
+    return launch(root, records, app, lastOpened(records));
+  }
+
+  /**
+   * The screens `event` starts with, by the rule a start follows for the
+   * event it opens, and counted as that start is. For a switch to another
+   * event while the app runs whose box can't say what it runs now.
+   */
+  static Launch launch(File root, File records, App app, String event) {
     Launch own = new Launch(event, app.builtIn, null);
     String version = event == null ? null : remembered(records, event);
     if (version == null || version.equals(app.builtIn)) return own;

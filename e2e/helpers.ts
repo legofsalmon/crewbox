@@ -202,7 +202,10 @@ export function keepRecordsInTheApp(): void {
 /**
  * The apps' running of screens from a box (ScreensPlugin, web/src/lib/appScreens.ts),
  * for an init script added after the one that stands the app in: what the
- * page tells it is kept for `screensCalls`, on the page as loaded.
+ * page tells it is kept for `screensCalls`, on the page as loaded, and the
+ * switches it asks for for `screensSwitches`, across loads. Its `prepare`
+ * answers as `screensWillAnswer` says, and otherwise that the box has no
+ * screens from a crewbox release.
  */
 export function keepScreensInTheApp(): void {
   const w = window as unknown as {
@@ -214,12 +217,17 @@ export function keepScreensInTheApp(): void {
   const calls: string[] = []
   w.__screensCalls = calls
   plugins.CrewboxScreens = {
-    prepare: async () => {
-      calls.push('prepare')
-      return { result: 'unsigned', reason: 'stood in' }
+    prepare: async ({ origin }: { origin: string }) => {
+      calls.push(`prepare ${origin}`)
+      const answer = sessionStorage.getItem('__screensAnswer')
+      return answer ? (JSON.parse(answer) as unknown) : { result: 'unsigned', reason: 'stood in' }
     },
-    use: async ({ event, version }: { event: string; version: string }) => {
-      calls.push(`use ${event} ${version}`)
+    use: async ({ event, version }: { event: string; version?: string }) => {
+      const call = version ? `use ${event} ${version}` : `use ${event}`
+      calls.push(call)
+      // The page reloads next, which the app outlives, and so does this.
+      const switches = JSON.parse(sessionStorage.getItem('__screensSwitches') ?? '[]') as string[]
+      sessionStorage.setItem('__screensSwitches', JSON.stringify([...switches, call]))
     },
     ready: async ({ version }: { version: string }) => {
       // Said while the blank screen boot shows is said too early.
@@ -232,6 +240,17 @@ export function keepScreensInTheApp(): void {
 /** What the stood-in app has been told about its screens, on the page as loaded. */
 export const screensCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as { __screensCalls: string[] }).__screensCalls)
+
+/** What the stood-in app's `prepare` answers from now on: `ScreensAnswer` in web/src/lib/server.ts. */
+export const screensWillAnswer = (page: Page, answer: Record<string, string>) =>
+  page.evaluate(
+    (answer) => sessionStorage.setItem('__screensAnswer', JSON.stringify(answer)),
+    answer
+  )
+
+/** Every switch of screens the stood-in app was asked for, oldest first, across loads. */
+export const screensSwitches = (page: Page) =>
+  page.evaluate(() => JSON.parse(sessionStorage.getItem('__screensSwitches') ?? '[]') as string[])
 
 /** What the stood-in app's files hold, by event and slot. */
 export const recordsOf = (page: Page) =>

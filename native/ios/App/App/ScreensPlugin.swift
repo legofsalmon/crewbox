@@ -180,24 +180,34 @@ public class ScreensPlugin: CAPPlugin, CAPBridgedPlugin {
     /// soon as this resolves: the app's own screens when they are that
     /// version, and otherwise its kept folder, checked again. Rejects, and
     /// changes nothing, when this build won't run them. The event starts with
-    /// them from then on once they say they started.
+    /// them from then on once they say they started. With no version,
+    /// whatever the event would start with (Screens.launch), for a switch to
+    /// an event whose box can't say what it runs now.
     @objc func use(_ call: CAPPluginCall) {
-        guard let event = call.getString("event"), RecordsPlugin.isEvent(event),
-              let version = call.getString("version")
-        else {
-            call.reject("An event and a version are needed")
+        guard let event = call.getString("event"), RecordsPlugin.isEvent(event) else {
+            call.reject("An event is needed")
             return
         }
+        let version = call.getString("version")
         queue.async {
             let folder: URL?
+            var to = version
             do {
-                folder = try Screens.use(root: Screens.root(), app: self.app, version: version)
+                if let version {
+                    folder = try Screens.use(root: Screens.root(), app: self.app, version: version)
+                } else {
+                    let launch = try Screens.launch(
+                        root: Screens.root(), records: RecordsPlugin.root(), app: self.app,
+                        event: event)
+                    folder = launch.folder
+                    to = launch.version
+                }
             } catch {
                 call.reject(Screens.describe(error))
                 return
             }
             self.switchedFor = event
-            self.running = version
+            self.running = to
             if folder != nil {
                 self.waitForReady()
             } else {
@@ -420,7 +430,7 @@ enum Screens {
 
     /// The screens a start runs, and the event it opens.
     struct Launch {
-        /// The event this phone opened last, which the page opens, or nil for none.
+        /// The event the page opens with them, or nil for none.
         let event: String?
         /// The version of the screens, or nil when the app's own can't say what they are.
         let version: String?
@@ -878,7 +888,13 @@ enum Screens {
     /// they say they started (started): a start that takes the app down
     /// never says so, and after `maxTries` of them the version has failed.
     static func launch(root: URL, records: URL, app: App) -> Launch {
-        let event = lastOpened(records: records)
+        launch(root: root, records: records, app: app, event: lastOpened(records: records))
+    }
+
+    /// The screens `event` starts with, by the rule a start follows for the
+    /// event it opens, and counted as that start is. For a switch to another
+    /// event while the app runs whose box can't say what it runs now.
+    static func launch(root: URL, records: URL, app: App, event: String?) -> Launch {
         let own = Launch(event: event, version: app.builtIn, folder: nil)
         guard let event, let version = remembered(records: records, event: event),
               version != app.builtIn
