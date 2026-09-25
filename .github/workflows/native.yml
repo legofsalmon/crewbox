@@ -63,3 +63,10 @@ jobs:
           xcodebuild build -project App.xcodeproj -scheme App
           -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO
         working-directory: native/ios/App
+      # The Local Push provider isn't in the app until Apple grants its
+      # entitlement (APP-STORE-CHECKLIST.md), so the App scheme doesn't build
+      # it. Built here on its own, so it keeps compiling while it waits.
+      - run: >
+          xcodebuild build -project App.xcodeproj -target Alerts -sdk iphoneos
+          CODE_SIGNING_ALLOWED=NO
+        working-directory: native/ios/App

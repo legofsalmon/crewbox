@@ -72,12 +72,36 @@ name and usually without a certificate".
    countdown. Its bundle id is `com.colmhewson.crewbox.countdown`, and it
    needs no capabilities of its own.
 3. Bump **Version** (`MARKETING_VERSION`) and **Build** (`CURRENT_PROJECT_VERSION`)
-   for each upload, on both the App and the Countdown targets. App Store
+   for each upload, on the App, Countdown and Alerts targets. App Store
    Connect refuses an upload whose extension's version differs from the
    app's, and `server/test/iosInfoPlist.test.mjs` fails first.
 4. **Rebuild the web bundle into the shell first** — the app ships whatever is in
    `web/dist`: `npm --prefix web run build && npx --prefix native cap sync ios`.
 5. Product → Archive → Distribute App → App Store Connect.
+
+## When Apple grants Local Push Connectivity
+
+The lock-screen alerts come from the **Alerts** target, a Local Push
+provider (`com.colmhewson.crewbox.alerts`, docs/ALERTS.md). It is built in CI
+on its own but left out of the app, because a signed archive that embeds it
+fails until the account has the entitlement. Once Apple grants it:
+
+1. Register `com.colmhewson.crewbox.alerts` as an App ID with **Network
+   Extensions**, **App Groups** (`group.com.colmhewson.crewbox`) and **Time
+   Sensitive Notifications**, and add Network Extensions to the app's own
+   App ID. Set the Team on the Alerts target in Xcode.
+2. Add `com.apple.developer.networking.networkextension` with
+   `app-push-provider` to `App/App.entitlements`, as `Alerts/Alerts.entitlements`
+   has it.
+3. Embed the extension: the App target's **Embed Foundation Extensions**
+   phase gets `Alerts.appex`, and the App target depends on Alerts (as it
+   does on Countdown). Then drop the `-target Alerts` step in
+   `.github/workflows/native.yml`, and turn the test in
+   `server/test/iosInfoPlist.test.mjs` that says it is left out around.
+4. Bump its **Version** and **Build** with the other two targets.
+5. On a phone, run the tests in docs/ALERTS.md, "Tests only a phone can
+   run", starting with a locked iPhone on an offline Wi-Fi buzzing for an
+   @mention.
 
 ## The privacy policy's public URL
 

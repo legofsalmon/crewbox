@@ -1,4 +1,5 @@
 import Capacitor
+import NetworkExtension
 import UIKit
 import UserNotifications
 
@@ -7,8 +8,9 @@ import UserNotifications
 ///
 /// `start` is called by the page after each welcome from a box. The first
 /// time, it asks for permission to notify; the page says why just before
-/// (web/src/store.ts). Nothing here connects to a box yet: that is the Local
-/// Push provider's job, once Apple grants the entitlement. `setCountdown`
+/// (web/src/store.ts). It also lists the box for the Local Push provider,
+/// the Alerts extension, which does the connecting (AlertsManagers.swift);
+/// that needs an entitlement Apple grants on request. `setCountdown`
 /// and `getCountdown` put a followed stage's countdown on the lock screen.
 ///
 /// The app never requires notifications (App Review guidelines 4.5.4 and
@@ -28,6 +30,7 @@ public class AlertsPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     @objc func start(_ call: CAPPluginCall) {
+        listForLockScreen(call)
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .notDetermined else {
@@ -44,7 +47,31 @@ public class AlertsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func stop(_ call: CAPPluginCall) {
+        AlertsManagers.removeCurrent()
         call.resolve()
+    }
+
+    /// Lists this box on its Wi-Fi's Local Push manager, so the provider
+    /// connects to it whenever the phone is on that Wi-Fi. The Wi-Fi's name
+    /// is the box's own setting when it has one, else the network the phone
+    /// is on now. Without the entitlement this does nothing (AlertsManagers).
+    private func listForLockScreen(_ call: CAPPluginCall) {
+        let origin = call.getString("serverUrl") ?? ""
+        let eventId = call.getString("eventId") ?? ""
+        let session = call.getString("session") ?? ""
+        guard !origin.isEmpty, !eventId.isEmpty, !session.isEmpty else { return }
+        let box = AlertsBox(
+            origin: origin, eventId: eventId, eventKey: call.getString("eventKey") ?? "",
+            session: session)
+        let ssid = (call.getString("wifiSsid") ?? "").trimmingCharacters(in: .whitespaces)
+        if !ssid.isEmpty {
+            AlertsManagers.add(box, ssid: ssid)
+            return
+        }
+        NEHotspotNetwork.fetchCurrent { network in
+            guard let current = network?.ssid, !current.isEmpty else { return }
+            AlertsManagers.add(box, ssid: current)
+        }
     }
 
     /// `granted`, `denied` or `ask`: whether the page should say alerts are off.

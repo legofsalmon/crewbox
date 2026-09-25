@@ -256,10 +256,12 @@ describe('the stage countdown on the lock screen', () => {
     expect(project).toMatch(
       /dependencies = \(\s*\w+ \/\* PBXTargetDependency \*\/,\s*\);\s*name = App;/
     )
-    // Its bundle id goes to App Store Connect with the app's, under it.
+    // Its bundle id goes to App Store Connect with the app's, under it, as
+    // the Local Push provider's does.
     const ids = [...project.matchAll(/PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/g)].map((m) => m[1])
     expect([...new Set(ids)].sort()).toEqual([
       'com.colmhewson.crewbox',
+      'com.colmhewson.crewbox.alerts',
       'com.colmhewson.crewbox.countdown',
     ])
   })
@@ -285,5 +287,62 @@ describe('the stage countdown on the lock screen', () => {
     )
     expect(versions.size).toBe(1)
     expect(builds.size).toBe(1)
+  })
+})
+
+describe('the Local Push provider', () => {
+  const read = (path) => readFileSync(join(import.meta.dirname, '..', '..', path), 'utf8')
+  const project = read('native/ios/App/App.xcodeproj/project.pbxproj')
+  const provider = read('native/ios/App/Alerts/Info.plist')
+
+  it('is an app-push extension whose principal class is the provider', () => {
+    expect(provider).toMatch(
+      /<key>NSExtensionPointIdentifier<\/key>\s*<string>com\.apple\.networkextension\.app-push<\/string>/
+    )
+    expect(provider).toMatch(
+      /<key>NSExtensionPrincipalClass<\/key>\s*<string>\$\(PRODUCT_MODULE_NAME\)\.AlertsProvider<\/string>/
+    )
+    expect(read('native/ios/App/Alerts/AlertsProvider.swift')).toContain(
+      'final class AlertsProvider: NEAppPushProvider {'
+    )
+  })
+
+  it('has the bundle id the app’s managers name, a name that reaches phones', () => {
+    expect(project).toContain('PRODUCT_BUNDLE_IDENTIFIER = com.colmhewson.crewbox.alerts;')
+    expect(read('native/ios/App/App/AlertsBoxes.swift')).toContain(
+      'static let providerBundleId = "com.colmhewson.crewbox.alerts"'
+    )
+  })
+
+  it('reads the sign-ins from the App Group the app keeps them in', () => {
+    const shared = read('native/ios/App/App/AlertsBoxes.swift')
+    const sessions = read('native/ios/App/App/SessionsPlugin.swift')
+    const group = /static let appGroup = "([^"]+)"/.exec(sessions)?.[1]
+    const service = /static let service = "([^"]+)"/.exec(sessions)?.[1]
+    expect(shared).toContain(`static let appGroup = "${group}"`)
+    expect(shared).toContain(`static let sessionsService = "${service}"`)
+    const entitlements = read('native/ios/App/Alerts/Alerts.entitlements')
+    expect(entitlements).toContain(`<string>${group}</string>`)
+    expect(entitlements).toContain('<string>app-push-provider</string>')
+  })
+
+  it('checks the box before it sends a sign-in', () => {
+    // The provider starts on any Wi-Fi with the registered name.
+    const link = read('native/ios/App/Alerts/BoxLink.swift')
+    const check = link.indexOf('BoxProof.check(')
+    const token = link.indexOf('SignIn.token(named: box.session)')
+    const hello = link.indexOf('"type": "hello"')
+    expect(check).toBeGreaterThan(-1)
+    expect(token).toBeGreaterThan(check)
+    expect(hello).toBeGreaterThan(token)
+    expect(link).toMatch(/guard verdict == \.proven \|\| verdict == \.sameEvent/)
+  })
+
+  it('is left out of the app until Apple grants Local Push, and built on its own in CI', () => {
+    // Embedding it before then fails the signed archive, since the App ID
+    // can't have the capability.
+    expect(project).not.toContain('Alerts.appex in Embed Foundation Extensions')
+    expect(read('native/ios/App/App/App.entitlements')).not.toContain('app-push-provider')
+    expect(read('.github/workflows/native.yml')).toMatch(/-target Alerts -sdk iphoneos/)
   })
 })

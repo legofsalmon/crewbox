@@ -27,6 +27,12 @@ interface AlertsPlugin {
      */
     eventId?: string
     eventKey?: string
+    /**
+     * iPhone: the crew Wi-Fi's name as the box's admin set it, which the
+     * Local Push provider is registered for. Empty to use the network the
+     * phone is on. Android ignores it.
+     */
+    wifiSsid?: string
   }): Promise<void>
   stop(): Promise<void>
   /**

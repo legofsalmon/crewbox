@@ -30,6 +30,13 @@
 		5CE4E0ABB2C3D4E5F6A7B8C9 /* LiveCountdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0AAB2C3D4E5F6A7B8C9 /* LiveCountdown.swift */; };
 		5CE4E0ADB2C3D4E5F6A7B8C9 /* CountdownWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0ACB2C3D4E5F6A7B8C9 /* CountdownWidget.swift */; };
 		5CE4E0B1B2C3D4E5F6A7B8C9 /* Countdown.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5CE4E0B0B2C3D4E5F6A7B8C9 /* Countdown.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5CE4E0C1B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0C0B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift */; };
+		5CE4E0C2B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0C0B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift */; };
+		5CE4E0C4B2C3D4E5F6A7B8C9 /* AlertsManagers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0C3B2C3D4E5F6A7B8C9 /* AlertsManagers.swift */; };
+		5CE4E0C6B2C3D4E5F6A7B8C9 /* AlertsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0C5B2C3D4E5F6A7B8C9 /* AlertsProvider.swift */; };
+		5CE4E0C8B2C3D4E5F6A7B8C9 /* BoxLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0C7B2C3D4E5F6A7B8C9 /* BoxLink.swift */; };
+		5CE4E0CAB2C3D4E5F6A7B8C9 /* AlertPoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0C9B2C3D4E5F6A7B8C9 /* AlertPoster.swift */; };
+		5CE4E0CCB2C3D4E5F6A7B8C9 /* BoxProof.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE4E0CBB2C3D4E5F6A7B8C9 /* BoxProof.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,6 +90,15 @@
 		5CE4E0ACB2C3D4E5F6A7B8C9 /* CountdownWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownWidget.swift; sourceTree = "<group>"; };
 		5CE4E0AEB2C3D4E5F6A7B8C9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		5CE4E0B0B2C3D4E5F6A7B8C9 /* Countdown.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Countdown.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		5CE4E0C0B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsBoxes.swift; sourceTree = "<group>"; };
+		5CE4E0C3B2C3D4E5F6A7B8C9 /* AlertsManagers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsManagers.swift; sourceTree = "<group>"; };
+		5CE4E0C5B2C3D4E5F6A7B8C9 /* AlertsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsProvider.swift; sourceTree = "<group>"; };
+		5CE4E0C7B2C3D4E5F6A7B8C9 /* BoxLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxLink.swift; sourceTree = "<group>"; };
+		5CE4E0C9B2C3D4E5F6A7B8C9 /* AlertPoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertPoster.swift; sourceTree = "<group>"; };
+		5CE4E0CBB2C3D4E5F6A7B8C9 /* BoxProof.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxProof.swift; sourceTree = "<group>"; };
+		5CE4E0CDB2C3D4E5F6A7B8C9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		5CE4E0CEB2C3D4E5F6A7B8C9 /* Alerts.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Alerts.entitlements; sourceTree = "<group>"; };
+		5CE4E0CFB2C3D4E5F6A7B8C9 /* Alerts.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Alerts.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +117,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5CE4E0D1B2C3D4E5F6A7B8C9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -110,6 +133,7 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				5CE4E0AFB2C3D4E5F6A7B8C9 /* Countdown */,
+				5CE4E0D0B2C3D4E5F6A7B8C9 /* Alerts */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -119,6 +143,7 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				5CE4E0B0B2C3D4E5F6A7B8C9 /* Countdown.appex */,
+				5CE4E0CFB2C3D4E5F6A7B8C9 /* Alerts.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -137,6 +162,8 @@
 				5CE4E0A4B2C3D4E5F6A7B8C9 /* AlertsNotifications.swift */,
 				5CE4E0A7B2C3D4E5F6A7B8C9 /* CountdownAttributes.swift */,
 				5CE4E0AAB2C3D4E5F6A7B8C9 /* LiveCountdown.swift */,
+				5CE4E0C0B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift */,
+				5CE4E0C3B2C3D4E5F6A7B8C9 /* AlertsManagers.swift */,
 				DF266471CC19819E5EEB02EC /* SessionsPlugin.swift */,
 				C395D3749E3D06E06108D3CB /* RecordsPlugin.swift */,
 				EAC6CA96A8C35EA7F3996073 /* ScreensPlugin.swift */,
@@ -158,6 +185,19 @@
 				5CE4E0AEB2C3D4E5F6A7B8C9 /* Info.plist */,
 			);
 			path = Countdown;
+			sourceTree = "<group>";
+		};
+		5CE4E0D0B2C3D4E5F6A7B8C9 /* Alerts */ = {
+			isa = PBXGroup;
+			children = (
+				5CE4E0C5B2C3D4E5F6A7B8C9 /* AlertsProvider.swift */,
+				5CE4E0C7B2C3D4E5F6A7B8C9 /* BoxLink.swift */,
+				5CE4E0C9B2C3D4E5F6A7B8C9 /* AlertPoster.swift */,
+				5CE4E0CBB2C3D4E5F6A7B8C9 /* BoxProof.swift */,
+				5CE4E0CDB2C3D4E5F6A7B8C9 /* Info.plist */,
+				5CE4E0CEB2C3D4E5F6A7B8C9 /* Alerts.entitlements */,
+			);
+			path = Alerts;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -202,6 +242,23 @@
 			productReference = 5CE4E0B0B2C3D4E5F6A7B8C9 /* Countdown.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		5CE4E0D2B2C3D4E5F6A7B8C9 /* Alerts */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5CE4E0D6B2C3D4E5F6A7B8C9 /* Build configuration list for PBXNativeTarget "Alerts" */;
+			buildPhases = (
+				5CE4E0D3B2C3D4E5F6A7B8C9 /* Sources */,
+				5CE4E0D1B2C3D4E5F6A7B8C9 /* Frameworks */,
+				5CE4E0D4B2C3D4E5F6A7B8C9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Alerts;
+			productName = Alerts;
+			productReference = 5CE4E0CFB2C3D4E5F6A7B8C9 /* Alerts.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -217,6 +274,9 @@
 						ProvisioningStyle = Automatic;
 					};
 					5CE4E0B2B2C3D4E5F6A7B8C9 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					5CE4E0D2B2C3D4E5F6A7B8C9 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -239,6 +299,7 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				5CE4E0B2B2C3D4E5F6A7B8C9 /* Countdown */,
+				5CE4E0D2B2C3D4E5F6A7B8C9 /* Alerts */,
 			);
 		};
 /* End PBXProject section */
@@ -264,6 +325,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5CE4E0D4B2C3D4E5F6A7B8C9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -281,6 +349,8 @@
 				5CE4E0A3B2C3D4E5F6A7B8C9 /* AlertsNotifications.swift in Sources */,
 				5CE4E0A8B2C3D4E5F6A7B8C9 /* CountdownAttributes.swift in Sources */,
 				5CE4E0ABB2C3D4E5F6A7B8C9 /* LiveCountdown.swift in Sources */,
+				5CE4E0C1B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift in Sources */,
+				5CE4E0C4B2C3D4E5F6A7B8C9 /* AlertsManagers.swift in Sources */,
 				694B1514D173E3F4B388C5F8 /* SessionsPlugin.swift in Sources */,
 				F27F1940030CEFF3A94FBB4D /* RecordsPlugin.swift in Sources */,
 				D6388DBA589F8E26B0345E84 /* ScreensPlugin.swift in Sources */,
@@ -293,6 +363,18 @@
 			files = (
 				5CE4E0ADB2C3D4E5F6A7B8C9 /* CountdownWidget.swift in Sources */,
 				5CE4E0A9B2C3D4E5F6A7B8C9 /* CountdownAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5CE4E0D3B2C3D4E5F6A7B8C9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CE4E0C6B2C3D4E5F6A7B8C9 /* AlertsProvider.swift in Sources */,
+				5CE4E0C8B2C3D4E5F6A7B8C9 /* BoxLink.swift in Sources */,
+				5CE4E0CAB2C3D4E5F6A7B8C9 /* AlertPoster.swift in Sources */,
+				5CE4E0CCB2C3D4E5F6A7B8C9 /* BoxProof.swift in Sources */,
+				5CE4E0C2B2C3D4E5F6A7B8C9 /* AlertsBoxes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -527,6 +609,54 @@
 			};
 			name = Release;
 		};
+		5CE4E0D7B2C3D4E5F6A7B8C9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Alerts/Alerts.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = Alerts/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.colmhewson.crewbox.alerts;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Debug;
+		};
+		5CE4E0D8B2C3D4E5F6A7B8C9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Alerts/Alerts.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = Alerts/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.colmhewson.crewbox.alerts;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -553,6 +683,15 @@
 			buildConfigurations = (
 				5CE4E0B7B2C3D4E5F6A7B8C9 /* Debug */,
 				5CE4E0B8B2C3D4E5F6A7B8C9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5CE4E0D6B2C3D4E5F6A7B8C9 /* Build configuration list for PBXNativeTarget "Alerts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5CE4E0D7B2C3D4E5F6A7B8C9 /* Debug */,
+				5CE4E0D8B2C3D4E5F6A7B8C9 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

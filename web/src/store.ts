@@ -1299,6 +1299,7 @@ export const useStore = create<AppState>()((set, get) => {
           token: getToken() ?? '',
           session: storageName(TOKEN_KEY),
           myName: msg.me.name,
+          wifiSsid: msg.config.wifiSsid ?? '',
           ...(msg.config.eventId
             ? { eventId: msg.config.eventId, eventKey: knownEvent(msg.config.eventId)?.key ?? '' }
             : {}),
