@@ -42,6 +42,17 @@ struct BoxStatus: Decodable {
     let update: UpdateInfo?
 }
 
+/// The box's admin link: the panel, unlocked, once (server/src/adminLink.ts).
+///
+/// A file of its own rather than a field in box-status.json, because the key
+/// in it is as good as the password and the box writes it readable by this
+/// user only. Absent from a box that predates it, and then the menu opens the
+/// password prompt instead, which is what it always did.
+struct AdminLink: Decodable {
+    let pid: Int32
+    let url: String
+}
+
 /// Where the box keeps its data — the same rule the box itself applies.
 ///
 /// `DATA_DIR` when it is set, because this wrapper *passes that variable
@@ -71,6 +82,20 @@ func readStatus() -> BoxStatus? {
     else { return nil }
     guard kill(status.pid, 0) == 0 || errno == EPERM else { return nil }
     return status
+}
+
+/// The admin link for the box that is running now, or nil.
+///
+/// Read at the moment it is clicked, never kept: the key works once, and the
+/// box writes a new one as soon as it is used. A link from any other process
+/// is a key nobody can spend, so the pid has to be the running box's.
+func readAdminLink(for status: BoxStatus) -> String? {
+    let path = dataDir().appendingPathComponent("admin-link.json")
+    guard let data = try? Data(contentsOf: path),
+          let link = try? JSONDecoder().decode(AdminLink.self, from: data),
+          link.pid == status.pid
+    else { return nil }
+    return link.url
 }
 
 // MARK: - App
@@ -252,9 +277,12 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
             // holding a binary with no idea what to do with it. Nothing is
             // installed by this click either — the panel asks twice, and shows
             // what a restart would interrupt before it does anything.
+            //
+            // Unlocked, like "Open the admin panel" below: the update is the
+            // panel's to do, and a password prompt is where it used to stop.
             if let update = status.update, !update.version.isEmpty {
                 let item = action(
-                    "Update available: \(update.version)", #selector(openUpdate),
+                    "Update available: \(update.version)", #selector(openAdmin),
                     represented: status.joinUrl + "?admin")
                 item.attributedTitle = NSAttributedString(
                     string: "Update available: \(update.version)",
@@ -270,6 +298,15 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
                 action(
                     "Open the QR poster page", #selector(openConnect),
                     represented: "\(status.joinUrl)/connect"))
+            // The way into the admin panel for whoever is at the box, without
+            // the password. The box printed that once, to a console a .app
+            // does not have, so this is how somebody who never saw it gets in
+            // and sets one they will remember. The represented URL is only
+            // the fallback, for a box too old to write an admin link.
+            menu.addItem(
+                action(
+                    "Open the admin panel", #selector(openAdmin),
+                    represented: status.joinUrl + "?admin"))
             menu.addItem(
                 action("Copy the join link", #selector(copyJoin), represented: status.joinUrl))
             menu.addItem(
@@ -325,8 +362,10 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
     // MARK: Actions
 
     @objc private func openJoin(_ sender: NSMenuItem) { open(sender.representedObject as? String) }
-    @objc private func openUpdate(_ sender: NSMenuItem) {
-        open(sender.representedObject as? String)
+    /// The admin link if the box has one for us, the password prompt if not.
+    @objc private func openAdmin(_ sender: NSMenuItem) {
+        let link = readStatus().flatMap { readAdminLink(for: $0) }
+        open(link ?? (sender.representedObject as? String))
     }
     @objc private func openConnect(_ sender: NSMenuItem) {
         open(sender.representedObject as? String)
