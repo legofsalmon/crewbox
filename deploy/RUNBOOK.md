@@ -406,35 +406,36 @@ licence is reinstated, the next check-in with the kept key restores it.
 
 ## Platform truths (so nobody promises otherwise)
 
-- **iOS phones cannot get lock-screen alerts offline** — Apple push needs
-  internet, even for native apps. Crew on iPhones should keep the app open
-  (guide: Settings → Display → Auto-Lock → Never during shifts). Alert-critical
-  roles carry Android with the Crewbox app (below) or a real radio as backup.
+- **A locked iPhone can't be alerted offline yet.** Apple push needs
+  internet; Apple's offline route (Local Push Connectivity) is built but
+  waits on Apple's entitlement before it can go in the app. Crew on iPhones
+  should keep the app open (guide: Settings → Display → Auto-Lock → Never
+  during shifts). Alert-critical roles carry Android with the Crewbox app
+  (below) or a real radio as backup.
 - Browsers only allow mic/notifications/install on HTTPS — hence the whole
   certificate dance. Don't skip it. (The native apps are exempt: plain HTTP.)
 
 ## The Android app (background alerts)
 
-The Phase 5 APK gives Android crew real lock-screen buzz with no internet:
-a foreground service holds a WebSocket to the crew server; mentions and DMs
-vibrate on a high-priority channel.
+The Android app gives Android crew real lock-screen alerts with no internet:
+a foreground service holds a connection to the crew server and posts what
+the box decides that person should hear: DMs, mentions, the production desk,
+and show stops and holds, which ring on the alarm stream. `docs/ALERTS.md`
+has the rules.
 
-1. Build it once per release:
-   `npm run build:native && cd native/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug`
-   → `native/android/app/build/outputs/apk/debug/app-debug.apk`.
-2. Copy it into `/var/lib/crewbox/` on the crew box — any `crewbox*.apk`
-   name works as-is (release assets are versioned, e.g. `crewbox-v0.9.5.apk`;
-   newest file wins). The app serves it at `/crewbox.apk` automatically and
-   links it from `/connect`.
-3. Add a line to the QR poster: "Android? Scan to install the app — it buzzes
+1. Every release attaches the APK (`crewbox-vX.Y.Z.apk`). Copy it into
+   `/var/lib/crewbox/` on the crew box — any `crewbox*.apk` name works as-is,
+   and the newest file wins. The box serves it at `/crewbox.apk` and links it
+   from `/connect`.
+2. Add a line to the QR poster: "Android? Scan to install the app — it buzzes
    even when locked." QR → `http://chat.<your-domain>/crewbox.apk`. Crew must
    allow install-from-browser once (Android prompts).
-4. On first app launch: enter the crew server address from the poster, join,
-   tap **Allow** on notifications, and **Allow** on battery exemption. Done —
-   test it by locking the phone and having someone @mention them.
-5. iPhones: TestFlight (Apple account required) — open `native/ios/App` in
-   Xcode, set your team, Product → Archive → Distribute. The PWA remains the
-   zero-setup iOS path.
+3. On first app launch: pick the box from the start screen (or enter the
+   address from the poster), join, tap **Allow** on notifications, and
+   **Allow** on battery exemption. Test it by locking the phone and having
+   someone @mention them.
+4. iPhones: the App Store app (`native/ios/APP-STORE-CHECKLIST.md`). The
+   installed web app remains the zero-setup iOS path.
 
 ## Remote support access (optional — needs internet at the site)
 

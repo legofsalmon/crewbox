@@ -78,7 +78,8 @@ site/     the public download page + install.sh (deployed to Vercel)
 shared/   protocol types + zod schemas (used by both sides)
 server/   Fastify + WebSocket + node:sqlite (no native deps)
 web/      React + Vite PWA — shell + modules
-native/   Capacitor wrappers (Android with offline lock-screen alerts, iOS)
+native/   Capacitor wrappers (Android with offline lock-screen alerts, iOS),
+          and the Mac menu-bar and Windows tray helpers for a packaged box
 deploy/   systemd unit, dnsmasq config, cert-renew.sh, backup.sh,
           restore.sh, make-poster.mjs, soak.mjs, RUNBOOK.md (the box serves
           TLS and voice itself, so no Caddy or livekit-server to install)
@@ -255,12 +256,15 @@ anything mid-task** (the service worker registers in `prompt` mode):
 
 ## Known platform limits
 
-- **iOS cannot receive lock-screen notifications offline** (Apple's push
-  servers are unreachable) — not even natively. In-app sounds/vibration work
-  while open. **The Android app solves this**: its foreground service
-  holds a WebSocket to the crew server and buzzes for messages and mentions
-  while the phone is locked, entirely on-LAN. Alert-critical roles carry
-  Android.
+- **A locked iPhone can't be alerted offline yet.** Ordinary iPhone
+  notifications come through Apple's servers, which an offline event network
+  can't reach. Apple's way round that, Local Push Connectivity, is built (the
+  `Alerts` target in `native/ios`) but stays out of the app until Apple grants
+  the entitlement; `native/ios/APP-STORE-CHECKLIST.md` lists what switches it
+  on. Until then an iPhone alerts while the app is open. **The Android app
+  already does this**: its foreground service holds a connection to the box
+  and posts the alerts the box decides, entirely on-LAN (`docs/ALERTS.md`).
+  Alert-critical roles carry Android.
 - Mic, install prompt and service worker require HTTPS _in the browser_ — a
   browser security rule, not something packaging can remove. On site that
   means a pre-fetched certificate plus the local DNS trick (see RUNBOOK).
@@ -271,15 +275,21 @@ anything mid-task** (the service worker registers in `prompt` mode):
 
 `native/` is a Capacitor workspace wrapping the built web bundle:
 
-- **Android** (`native/android`) — the important one. Sideloadable APK; a
-  foreground service (`AlertsService`) keeps its own WebSocket to the crew
-  server and raises notifications while the app is backgrounded: normal
-  traffic on a default-priority "Messages" channel, @mentions and DMs on a
-  high-priority vibrating "Mentions & DMs" channel. No notification floods
-  on reconnect (it baselines from the welcome payload), no alerts while the
-  app is visible, auto-reconnect, battery-optimisation exemption prompt.
+- **Android** (`native/android`) — the important one. Sideloadable APK,
+  built and attached by every release. A foreground service
+  (`AlertsService`) keeps its own connection to the crew server and posts the
+  alerts the box decides for that person while the phone is locked: DMs,
+  mentions, the production desk, and show stops and holds on the alarm
+  stream. What alerts, and why the box rather than the phone decides, is in
+  `docs/ALERTS.md`.
 - **iOS** (`native/ios`) — same app, native mic permission, plain-HTTP LAN
-  transport. No offline push (see above); distribute via TestFlight.
+  transport, the stage countdown on the lock screen. Ships through the App
+  Store (`native/ios/APP-STORE-CHECKLIST.md`). Locked-phone alerts wait on
+  Apple's entitlement (see above).
+- **macOS menu bar and Windows tray helpers** (`native/macos`,
+  `native/windows`) — the packaged box's own menu: open the join page,
+  the QR poster or the admin panel, copy the join link or event PIN, open
+  the data folder.
 
 Build: `npm run build:native` (web build + `cap sync`), then
 `cd native/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug`

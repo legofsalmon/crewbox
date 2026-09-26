@@ -13,13 +13,12 @@ This document is the foundation plan: the decisions, the target architecture, an
 phased roadmap. It is grounded in a full architecture review of both codebases
 (July 2026).
 
-**Status (July 2026):** Phases 0–4 are done — history merge + rename, shell/module
-seam, the shared-docs relay, the full Live Patch port (model, store, UI, e2e), and
-the unification features (share-to-chat, admin modules, updated-sheet dots). The
-soak test now exercises doc sync alongside chat. The Phase 5 native rebrand
-to `com.colmhewson.crewbox` is applied (cap sync validated; Java sources
-parse) — run a real `gradlew assembleDebug` / Xcode archive before
-distributing. Remaining: the Phase 6 stretch items.
+**Status (September 2026):** Phases 0–5 are done, and most of Phase 6 has
+shipped: the single-binary box on Linux, Windows and macOS, the lighting and
+video modules, and shared documents saved on the box. The native apps have
+gone well beyond Phase 5; their plan lives outside this document. What is
+still open here is department visibility and roles (§3.4) and the open
+questions in §7. The July status line this replaces said Phases 0–4.
 
 ---
 
