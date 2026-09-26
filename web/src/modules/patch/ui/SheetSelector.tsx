@@ -111,7 +111,8 @@ export default function SheetSelector({
   }
 
   const handleDelete = async (sheetId: string, title: string) => {
-    if (!window.confirm(`Delete "${title}" from this device and the shared index?`)) return
+    if (!window.confirm(`Delete "${title}" for everyone? An admin can restore it for 7 days.`))
+      return
     await deleteSheet(sheetId)
     addToast('Deleted', `"${title}" removed`, 'info')
   }

@@ -3108,6 +3108,36 @@ export function buildApp({
     }
   })
 
+  // Deleted sheets, plots and screen maps, kept a week (docs.ts, `BIN_MS`).
+  // Admin only: any crew member can delete, and bringing one back for
+  // everybody, or wiping it early, is a decision about the event's paperwork.
+  const binRoomSchema = z.object({ room: z.string().min(3).max(200) })
+
+  fastify.get('/api/admin/bin', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    return { docs: docs.bin() }
+  })
+
+  fastify.post('/api/admin/bin/restore', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const parsed = binRoomSchema.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'room required' })
+    if (!docs.restore(parsed.data.room)) {
+      return reply.code(404).send({ error: 'That is no longer in the bin.' })
+    }
+    return { ok: true, docs: docs.bin() }
+  })
+
+  fastify.post('/api/admin/bin/delete', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const parsed = binRoomSchema.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'room required' })
+    if (!docs.emptyFromBin(parsed.data.room)) {
+      return reply.code(404).send({ error: 'That is no longer in the bin.' })
+    }
+    return { ok: true, docs: docs.bin() }
+  })
+
   // Full JSON dump for the post-event archive.
   fastify.get('/api/admin/export', (req, reply) => {
     if (!authAdmin(req, reply)) return reply

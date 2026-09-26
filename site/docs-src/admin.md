@@ -155,6 +155,17 @@ makes no outbound connections, so its reports stay on the box. They are
 plain files in the `reports` folder of the box's data directory, if you want
 to read or delete one.
 
+## Deleted this week
+
+Anyone can delete a patch sheet, lighting plot or screen map, and it goes for
+everyone. The box keeps each one for 7 days first. This section lists them,
+with when each was deleted and when the box will wipe it.
+
+- **Restore** puts it back on every phone, under its old name. Phones that
+  deleted their copy fetch it from the box.
+- **Delete now** wipes it from the box before the week is up. It asks first,
+  because that can't be undone.
+
 ## Export
 
 **Download chat logs** — every user, channel and message as one JSON file

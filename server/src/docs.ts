@@ -18,8 +18,9 @@ import * as decoding from 'lib0/decoding'
  * see `SavedDocs`), so a crew member who opens a document later gets it from
  * the box, whatever has happened to the box since. It holds a document in
  * memory while anyone has it open, and keeps it there a while after (see
- * `KEEP_BYTES`). A document its module's index marks deleted is deleted
- * from the box's disk as well, and never saved again.
+ * `KEEP_BYTES`). A document its module's index marks deleted goes in the
+ * box's bin for `BIN_MS`, where an admin can restore it, and is then wiped
+ * from the box's disk. It is never saved again unless it is restored.
  */
 
 const MESSAGE_SYNC = 0
@@ -28,6 +29,38 @@ const MESSAGE_AWARENESS = 1
 /** A module's index room is `<module>/index`, and its tombstones live here. */
 const INDEX_SUFFIX = '/index'
 const TOMBSTONES = 'deleted'
+/** An index's rows, by document id (web/src/lib/docs/indexDoc.ts: 'sheets' for every module). */
+const ENTRIES = 'sheets'
+
+/**
+ * How long a deleted document stays in the bin.
+ *
+ * Any crew member can delete a sheet for everybody, and a wrong tap during a
+ * changeover is found out at the next one, or the next morning. A week covers
+ * a festival and the day after. After that it is wiped as a delete always
+ * was, because a delete is still somebody's decision that the paperwork
+ * should be gone.
+ */
+export const BIN_MS = 7 * 24 * 60 * 60_000
+
+/** How often the bin is checked for documents past their week. */
+const PURGE_EVERY_MS = 60 * 60_000
+
+/** Origin of an admin's restore, so it is saved and broadcast like any change. */
+const RESTORED = Symbol('restored')
+
+/** A deleted document in the bin, as the admin panel lists it. */
+export interface BinnedDoc {
+  /** Its room, `<module>/<kind>-<id>`: what a restore names. */
+  room: string
+  module: string
+  /** Its title when it was deleted, or '' when the box never saw its index row. */
+  title: string
+  deletedAt: number
+  /** When it is wiped unless restored. */
+  purgesAt: number
+  bytes: number
+}
 
 const PING_INTERVAL_MS = 15_000
 
@@ -176,6 +209,14 @@ export interface SavedDocs {
   wipeDocs(rooms: string[]): void
   /** Empty the write-ahead log, which can still hold what a delete overwrote. */
   emptyDocLog(): void
+  /** Put deleted documents in the bin; one already there keeps its first copy. */
+  binDocs(docs: { room: string; entry: string; data: Uint8Array }[], at: number): void
+  /** What is in the bin. */
+  listBin(): { room: string; entry: string; bytes: number; deletedAt: number }[]
+  /** One binned document. */
+  loadBin(room: string): { entry: string; data: Uint8Array; deletedAt: number } | null
+  /** Take documents out of the bin, overwriting what they held. */
+  unbinDocs(rooms: string[]): void
 }
 
 interface Saved {
@@ -203,6 +244,13 @@ export class DocsRelay {
   private warn: (message: string) => void
   /** Saving has failed and been said so. Quiet until something works. */
   private failing = false
+  /**
+   * Each module's index rows as last seen, by module then document id. Rows
+   * are added and updated here but never removed, so the row of a document
+   * just deleted is still here to go in the bin with it.
+   */
+  private entries = new Map<string, Map<string, Record<string, string>>>()
+  private purgeTimer: NodeJS.Timeout | null = null
 
   constructor(
     limits: Partial<RelayLimits> = {},
@@ -246,6 +294,9 @@ export class DocsRelay {
       for (const name of [...this.saved.keys()]) {
         if (name.endsWith(INDEX_SUFFIX) && !this.rooms.has(name)) this.loadKept(name)
       }
+      this.purgeBin()
+      this.purgeTimer = setInterval(() => this.purgeBin(), PURGE_EVERY_MS)
+      this.purgeTimer.unref()
     }
   }
 
@@ -330,6 +381,11 @@ export class DocsRelay {
     // deleted paperwork back to a device that follows an old link to it.
     if (name.endsWith(INDEX_SUFFIX)) {
       const namespace = name.slice(0, -INDEX_SUFFIX.length)
+      // Registered first, so a row is noted before the tombstone that
+      // deletes it is acted on, whichever order a merge fires them in.
+      const rows = doc.getMap<Y.Map<unknown>>(ENTRIES)
+      const noteRows = () => this.noteEntries(namespace, rows)
+      rows.observeDeep(noteRows)
       doc.getMap(TOMBSTONES).observe(() => this.forgetDeleted(namespace))
     }
 
@@ -369,7 +425,7 @@ export class DocsRelay {
 
     // What the box saved of it, before any device is told what it has. A
     // deleted one is not read, so an old link to it opens nothing.
-    if (deleted) this.wipe([name])
+    if (deleted) this.discard([name])
     else this.readSaved(name, room)
     return room
   }
@@ -510,6 +566,180 @@ export class DocsRelay {
       this.dirty.add(name)
       this.failed('save shared documents', err)
     }
+  }
+
+  /** A module's index changed: note its rows, keeping any since removed. */
+  private noteEntries(namespace: string, rows: Y.Map<Y.Map<unknown>>): void {
+    let known = this.entries.get(namespace)
+    if (!known) this.entries.set(namespace, (known = new Map()))
+    for (const [id, row] of rows.entries()) {
+      if (!(row instanceof Y.Map)) continue
+      const fields: Record<string, string> = {}
+      for (const [key, value] of row.entries()) if (typeof value === 'string') fields[key] = value
+      known.set(id, fields)
+    }
+  }
+
+  /** The id an index tombstone uses for a room, `<module>/<kind>-<id>`, if any. */
+  private idOf(name: string): string | null {
+    const indexName = name.slice(0, name.indexOf('/')) + INDEX_SUFFIX
+    const index = this.rooms.get(indexName)
+    if (index) {
+      for (const id of index.doc.getMap(TOMBSTONES).keys()) if (name.endsWith(`-${id}`)) return id
+    }
+    for (const id of this.entries.get(name.slice(0, name.indexOf('/')))?.keys() ?? []) {
+      if (name.endsWith(`-${id}`)) return id
+    }
+    return null
+  }
+
+  /**
+   * Deleted documents: into the bin with their index rows, then off the
+   * box's disk. `open` holds the ones in memory, whose state is the fullest
+   * copy; the rest are read from disk. An empty one is only wiped.
+   */
+  private discard(names: string[], open: Map<string, Room> = new Map()): void {
+    if (!this.disk) return
+    const binned: { room: string; entry: string; data: Uint8Array }[] = []
+    for (const name of names) {
+      let state: Uint8Array | null = null
+      try {
+        const room = open.get(name)
+        if (room) state = Y.encodeStateAsUpdate(room.doc)
+        else if (this.saved.has(name)) {
+          const { rows } = this.disk.loadDoc(name)
+          if (rows.length > 0) state = Y.mergeUpdates(rows)
+        }
+      } catch (err) {
+        this.failed('put a deleted document in the bin', err)
+      }
+      if (!state || state.length <= EMPTY_UPDATE_BYTES) continue
+      const id = this.idOf(name)
+      const row = id ? this.entries.get(name.slice(0, name.indexOf('/')))?.get(id) : undefined
+      binned.push({ room: name, entry: JSON.stringify(row ?? {}), data: state })
+    }
+    try {
+      this.disk.binDocs(binned, Date.now())
+    } catch (err) {
+      // Not wiped either: a delete that cannot be kept is retried the next
+      // time the index is read, rather than lost.
+      this.failed('put a deleted document in the bin', err)
+      return
+    }
+    this.wipe(names)
+  }
+
+  /** Wipe what has been in the bin longer than `BIN_MS`. */
+  purgeBin(now = Date.now()): number {
+    if (!this.disk || this.closed) return 0
+    try {
+      const old = this.disk
+        .listBin()
+        .filter((doc) => now - doc.deletedAt >= BIN_MS)
+        .map((doc) => doc.room)
+      if (old.length === 0) return 0
+      this.disk.unbinDocs(old)
+      this.emptyLog = true
+      this.scheduleSave()
+      return old.length
+    } catch (err) {
+      this.failed('empty the bin', err)
+      return 0
+    }
+  }
+
+  /** What is in the bin, newest deletion first. */
+  bin(): BinnedDoc[] {
+    if (!this.disk) return []
+    return this.disk
+      .listBin()
+      .map(({ room, entry, bytes, deletedAt }) => {
+        let title = ''
+        try {
+          const row = JSON.parse(entry) as Record<string, unknown>
+          if (typeof row.title === 'string') title = row.title
+        } catch {
+          // A row that will not parse lists with no title.
+        }
+        return {
+          room,
+          module: room.slice(0, room.indexOf('/')),
+          title,
+          deletedAt,
+          purgesAt: deletedAt + BIN_MS,
+          bytes,
+        }
+      })
+      .sort((a, b) => b.deletedAt - a.deletedAt || a.room.localeCompare(b.room))
+  }
+
+  /** Wipe one document from the bin now, rather than when its week is up. */
+  emptyFromBin(name: string): boolean {
+    if (!this.disk || !this.disk.loadBin(name)) return false
+    this.disk.unbinDocs([name])
+    this.emptyLog = true
+    this.scheduleSave()
+    return true
+  }
+
+  /**
+   * Bring a document back from the bin: saved again, listed again in its
+   * module's index, and its tombstone taken away, so every device lists it
+   * and opens it from the box. Devices that deleted their own copy fetch it;
+   * a device that was offline for the delete never lost it.
+   */
+  restore(name: string): boolean {
+    if (!this.disk || this.closed) return false
+    const binned = this.disk.loadBin(name)
+    if (!binned) return false
+    const namespace = name.slice(0, name.indexOf('/'))
+    const indexName = namespace + INDEX_SUFFIX
+    const index = this.rooms.get(indexName) ?? this.getRoom(indexName)
+    if (index.conns.size === 0 && index.keptSince === null) index.keptSince = Date.now()
+    const tombstones = index.doc.getMap<string>(TOMBSTONES)
+    const id = [...tombstones.keys()].find((key) => name.endsWith(`-${key}`))
+    let row: Record<string, string> = {}
+    try {
+      row = JSON.parse(binned.entry) as Record<string, string>
+    } catch {
+      // Listed with its module's default title.
+    }
+
+    // The document first, so that a device told it exists finds it here.
+    const now = Date.now()
+    this.disk.appendDocs([{ room: name, data: binned.data }], now)
+    const was = this.saved.get(name)
+    this.saved.set(name, {
+      bytes: (was?.bytes ?? 0) + binned.data.length,
+      rows: (was?.rows ?? 0) + 1,
+      savedAt: now,
+    })
+    const room = this.rooms.get(name)
+    if (room) {
+      room.deleted = false
+      if (room.conns.size === 0) this.free(name, room)
+      else {
+        Y.applyUpdate(room.doc, binned.data, FROM_DISK)
+        room.whole = true
+        this.dirty.add(name)
+      }
+    }
+
+    index.doc.transact(() => {
+      if (id) tombstones.delete(id)
+      const rows = index.doc.getMap<Y.Map<unknown>>(ENTRIES)
+      const key = id ?? this.idOf(name)
+      if (key && !rows.has(key)) {
+        const entry = new Y.Map<unknown>()
+        rows.set(key, entry)
+        for (const [field, value] of Object.entries(row)) {
+          if (typeof value === 'string') entry.set(field, value)
+        }
+      }
+    }, RESTORED)
+    this.disk.unbinDocs([name])
+    this.scheduleSave()
+    return true
   }
 
   /** Delete documents from the box's disk. */
@@ -679,9 +909,14 @@ export class DocsRelay {
     }
     room.bytes = Y.encodeStateAsUpdate(room.doc).length
     room.measuredAt = Date.now()
-    if (room.bytes <= EMPTY_UPDATE_BYTES || room.deleted || this.isDeleted(name)) {
+    if (room.bytes <= EMPTY_UPDATE_BYTES) {
       this.free(name, room)
       this.wipe([name])
+      return
+    }
+    if (room.deleted || this.isDeleted(name)) {
+      this.discard([name], new Map([[name, room]]))
+      this.free(name, room)
       return
     }
     // Nobody is changing it now, so what it has on disk and what was waiting
@@ -751,19 +986,23 @@ export class DocsRelay {
     const inModule = (name: string) =>
       name.startsWith(`${namespace}/`) && !name.endsWith(INDEX_SUFFIX)
     const gone: string[] = []
+    const open = new Map<string, Room>()
     for (const [name, room] of this.rooms) {
       if (room.deleted || !inModule(name) || !this.isDeleted(name)) continue
       room.deleted = true
       room.pending = []
       gone.push(name)
-      if (room.keptSince !== null) this.free(name, room)
+      open.set(name, room)
     }
     for (const name of this.saved.keys()) {
       if (inModule(name) && !this.rooms.has(name) && this.isDeleted(name)) gone.push(name)
     }
-    const wiped = gone.filter((name) => this.saved.has(name))
+    // Into the bin while the documents in memory still hold what they had,
+    // including changes that had not been saved yet.
+    const wiped = gone.filter((name) => this.saved.has(name) || open.has(name))
+    if (wiped.length > 0) this.discard(wiped, open)
+    for (const [name, room] of open) if (room.keptSince !== null) this.free(name, room)
     if (wiped.length === 0) return
-    this.wipe(wiped)
     // The index's own rows still say what each one was called, until they
     // are folded into its state, which does not. Not from in here: this runs
     // inside a change to the index.
@@ -813,6 +1052,7 @@ export class DocsRelay {
    */
   close(): void {
     clearInterval(this.heartbeat)
+    if (this.purgeTimer) clearInterval(this.purgeTimer)
     this.save()
     this.closed = true
     if (this.saveTimer) clearTimeout(this.saveTimer)

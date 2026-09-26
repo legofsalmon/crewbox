@@ -25,8 +25,9 @@ The **Patch Sheets** section of the sidebar lists your recent sheets;
   understands, including real festival master patches.
 - Each card shows title, stage, date and when it was last edited. A dot on a
   sidebar sheet means it changed since you last opened it.
-- The `×` deletes a sheet **from this device and the shared index** — it
-  asks first.
+- The `×` deletes a sheet **for everyone** — it asks first. The box keeps it
+  for 7 days, and an admin can restore it from **Admin → Deleted this
+  week**.
 
 Open a sheet and the toolbar carries: **Stage** and **Date** fields, a
 **Find** box (`⌘F`; Enter walks the matches), **undo/redo**, and the five

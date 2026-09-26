@@ -7,6 +7,7 @@ import { adminError } from '../lib/adminerror.ts'
 import { adapterMissing, describeAnnounce, listeningMode } from '../lib/adminnetwork.ts'
 import UpdateSection from './UpdateSection.tsx'
 import LicenceSection from './LicenceSection.tsx'
+import BinSection from './BinSection.tsx'
 import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
 import { addressOf } from '../lib/discovery.ts'
@@ -199,6 +200,10 @@ export default function AdminPanel() {
               />
             </section>
           )}
+          <section>
+            <h3 className="admin-section-title">Deleted this week</h3>
+            <BinSection auth={auth} onNote={setNote} />
+          </section>
           <section>
             <h3 className="admin-section-title">Export</h3>
             <p className="admin-hint">

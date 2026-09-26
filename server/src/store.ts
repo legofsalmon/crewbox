@@ -1135,6 +1135,51 @@ export class Store {
   }
 
   /**
+   * Put deleted documents in the bin: their state, their index row as JSON,
+   * and when. One already there keeps its first copy and time.
+   */
+  binDocs(docs: { room: string; entry: string; data: Uint8Array }[], at: number): void {
+    if (docs.length === 0) return
+    this.withSecureDelete(() =>
+      transaction(this.db, () => {
+        const insert = this.db.prepare(
+          'INSERT OR IGNORE INTO doc_bin (room, entry, data, deleted_at) VALUES (?, ?, ?, ?)'
+        )
+        for (const doc of docs) insert.run(doc.room, doc.entry, doc.data, at)
+      })
+    )
+  }
+
+  /** What is in the bin, oldest first, without the documents themselves. */
+  listBin(): { room: string; entry: string; bytes: number; deletedAt: number }[] {
+    return this.db
+      .prepare(
+        `SELECT room, entry, LENGTH(data) AS bytes, deleted_at AS deletedAt
+         FROM doc_bin ORDER BY deleted_at, room`
+      )
+      .all() as unknown as { room: string; entry: string; bytes: number; deletedAt: number }[]
+  }
+
+  /** One binned document, or null. */
+  loadBin(room: string): { entry: string; data: Uint8Array; deletedAt: number } | null {
+    const row = this.db
+      .prepare('SELECT entry, data, deleted_at AS deletedAt FROM doc_bin WHERE room = ?')
+      .get(room) as unknown as { entry: string; data: Uint8Array; deletedAt: number } | undefined
+    return row ?? null
+  }
+
+  /** Take documents out of the bin, overwriting what they held. */
+  unbinDocs(rooms: string[]): void {
+    if (rooms.length === 0) return
+    this.withSecureDelete(() =>
+      transaction(this.db, () => {
+        const remove = this.db.prepare('DELETE FROM doc_bin WHERE room = ?')
+        for (const room of rooms) remove.run(room)
+      })
+    )
+  }
+
+  /**
    * Copy the write-ahead log into the database file and empty it, so that
    * pages a delete overwrote are not still in the log as they were.
    *

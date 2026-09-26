@@ -144,7 +144,9 @@ export default function ScreensSelector({
               aria-label={`Delete ${entry.title}`}
               onClick={() => {
                 if (
-                  window.confirm(`Delete “${entry.title}” from this device and the shared index?`)
+                  window.confirm(
+                    `Delete “${entry.title}” for everyone? An admin can restore it for 7 days.`
+                  )
                 ) {
                   void deleteScreens(entry.id)
                 }

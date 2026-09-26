@@ -402,7 +402,11 @@ export default function ScreensView({ id, onClose }: { id: string; onClose: () =
 
   const remove = () => {
     if (!snapshot) return
-    if (window.confirm(`Delete “${snapshot.meta.title}” from this device and the shared index?`)) {
+    if (
+      window.confirm(
+        `Delete “${snapshot.meta.title}” for everyone? An admin can restore it for 7 days.`
+      )
+    ) {
       void deleteScreens(id)
       onClose()
     }
