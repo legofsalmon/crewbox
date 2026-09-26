@@ -629,7 +629,11 @@ async function main(): Promise<void> {
    * answering, so nothing writes it before that is true.
    */
   let statusBase: Omit<BoxStatus, 'eventPin' | 'eventName' | 'update'> | null = null
-  let latestUpdate: BoxStatus['update']
+  // Seeded from the answer a previous run stored. onAnswer below only fires
+  // when the answer changes, so without this a box restarted after it had
+  // already heard about a release would never tell the menu again: its next
+  // check finds the same release, and nothing counts as news.
+  let latestUpdate: BoxStatus['update'] = updates?.state().available ?? undefined
   const publishStatus = (): void => {
     if (!statusBase) return
     writeBoxStatus(dataDir, {
