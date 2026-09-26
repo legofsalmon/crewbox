@@ -78,10 +78,15 @@ export default function AdminUnlock() {
               {lockedReason}
             </p>
           )}
-          {/* Not the event PIN, and people will try the event PIN first. */}
+          {/*
+           * Not the event PIN, and people will try the event PIN first. And
+           * not always written down: a Mac box has no console to print it
+           * to, so the way back in is said here, where it is missed.
+           */}
           <p className="admin-muted">
-            Not the event PIN. The box printed this when it first started, and it can be changed
-            here once you&rsquo;re in.
+            Not the event PIN. Lost it? On the box itself, choose{' '}
+            <strong>Open the admin panel</strong> from the Crewbox icon beside the clock or in the
+            tray, then set a new one here.
           </p>
           {error && (
             <p className="admin-error" role="alert">

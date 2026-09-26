@@ -48,8 +48,8 @@ The box opens a browser on `/setup`:
 > [!WARNING]
 > **Write the admin password down now.** It is never shown again, and the
 > setup page closes forever the moment the first person joins. If it's
-> lost, the supported way back in is setting the `ADMIN_PASSWORD`
-> environment variable and restarting the box.
+> lost, get back in from the box itself: **Open the admin panel** in the
+> Crewbox menu, or `crewbox --admin` ([below](#day-to-day)).
 
 A **Networks** section appears when the machine has more than one network
 adapter — pick which side the crew are on, and whether to listen to a
@@ -78,13 +78,24 @@ machines.
 
 ```sh
 crewbox --status   # is it running, on what address, with which PIN
+crewbox --admin    # a link that opens the admin panel once, no password
 crewbox --stop     # stop it — works over SSH, works headless
 ```
 
 - **macOS**: a menu-bar item beside the clock — the event, the join link,
-  copy-the-PIN, and **Stop Crewbox and quit**. No Dock icon; it's a server.
+  copy-the-PIN, **Open the admin panel**, and **Stop Crewbox and quit**. No
+  Dock icon; it's a server.
 - **Windows**: the same menu in the system tray.
 - **Linux**: Ctrl-C in its terminal, or `crewbox --stop`.
+
+**Open the admin panel** opens the panel already unlocked, so a lost admin
+password is never the end: get in, then set a new one under **Admin → This
+box**. Each link works once, and only someone logged in on the box can get
+one — the menu and `--admin` read it from the box's data directory, which
+nobody on the network can. From another device, run `crewbox --admin` on the
+box (over SSH, say) and open the second link it prints. Setting the
+`ADMIN_PASSWORD` environment variable and restarting still works too, and
+overrides the stored password for as long as it is set.
 
 A second copy of the box refuses to start while one is running — it can't
 steal the port or hurt the live one. Stop the old one first (`--stop`),

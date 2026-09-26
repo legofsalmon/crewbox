@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
 import { config, dmxMode, warnOnDefaults } from './config.ts'
 import { SETUP_DONE_KEY, attachWs, buildApp, mirrorOnLoopback } from './app.ts'
+import { adminLinkUrl, clearAdminLink, printAdminLink, writeAdminLink } from './adminLink.ts'
 import {
   ANNOUNCE_KEY,
   Announcements,
@@ -105,9 +106,15 @@ async function main(): Promise<void> {
   // `--stop` is the answer that works everywhere. The menu-bar item and the
   // tray icon are nicer, but a headless Linux box in a shed has neither, and
   // until now a double-clicked macOS app had no way to be stopped at all.
-  const flag = process.argv.slice(2).find((arg) => arg === '--stop' || arg === '--status')
+  //
+  // `--admin` is the headless box's "Open the admin panel": a link that
+  // unlocks the panel once, without the password (adminLink.ts).
+  const flag = process.argv
+    .slice(2)
+    .find((arg) => arg === '--stop' || arg === '--status' || arg === '--admin')
   if (flag === '--stop') process.exit(await stopRunningBox(dataDir))
   if (flag === '--status') process.exit(printBoxStatus(dataDir))
+  if (flag === '--admin') process.exit(printAdminLink(dataDir))
 
   mkdirSync(dataDir, { recursive: true })
 
@@ -434,6 +441,19 @@ async function main(): Promise<void> {
   // the probe responder below needs somewhere to send a browser.
   const certName = tls ? certNames(tls.cert.toString())[0] : undefined
 
+  // Where to send a browser on this machine. Plain HTTP: localhost, which
+  // always works on the box itself. With a certificate, localhost stops being
+  // an option — it fails the browser's name check against the certificate
+  // and gets the full "not private" interstitial on the box's own screen — so
+  // the certificate's name is the origin, everywhere the box speaks. Whether
+  // that name resolves here yet is the environment panel's job to say.
+  //
+  // Decided up here because the admin link points at it too, and the app that
+  // publishes the link is built long before the browser is opened.
+  const origin = certName
+    ? `https://${certName}:${config.port}`
+    : `${tls ? 'https' : 'http'}://localhost:${config.port}`
+
   // Answer the checks phones make to decide whether this network has
   // internet. Without them iOS quietly moves to cellular and the box — on a
   // private address — becomes unreachable while the phone still shows the
@@ -639,6 +659,11 @@ async function main(): Promise<void> {
     // Setup and the admin panel change the event name and the PIN; the
     // helper beside the box has to follow them.
     ...(box ? { onSettingsChanged: publishStatus } : {}),
+    // Not only for a packaged box: a Linux service run from source has no
+    // menu to click, but its data directory is still where its owner can
+    // read a link from, which beats editing the unit file to get back in.
+    publishAdminLink: (key) =>
+      writeAdminLink(dataDir, { pid: process.pid, url: adminLinkUrl(origin, key) }),
     // Whether this box may go off-site at all — the same switch as the
     // update check, which the environment sweep used to ignore.
     outbound: config.updateCheck ?? box,
@@ -867,6 +892,9 @@ async function main(): Promise<void> {
     })
     await openLoopback()
     if (captiveOpts) captive = await startCaptive(captiveOpts)
+    // The build that failed wrote its own admin link over this one's before
+    // it went; the menu item would otherwise open a link nobody can spend.
+    app.republishAdminLink()
     announcements.start()
     // Only when voice was this box's to run. `livekit.embedded` was decided
     // at boot and is what the app was built with, so starting an SFU it does
@@ -941,15 +969,7 @@ async function main(): Promise<void> {
   app.log.info(
     `crewbox server listening on ${config.host}:${config.port} (${tls ? 'https' : 'http'})`
   )
-  // Where to send a browser. Plain HTTP: localhost, which always works on
-  // the box itself. With a certificate, localhost stops being an option —
-  // it fails the browser's name check against the certificate and gets the
-  // full "not private" interstitial on the box's own screen — so the
-  // certificate's name is the origin, everywhere the box speaks. Whether
-  // that name resolves here yet is the environment panel's job to say.
-  const origin = certName
-    ? `https://${certName}:${config.port}`
-    : `${tls ? 'https' : 'http'}://localhost:${config.port}`
+  // `origin` is where a browser on this machine goes; see where it is decided.
   app.log.info(`crew onboarding page: ${origin}/connect (QR, PIN, APK)`)
   if (box) {
     // Nobody has joined yet means nobody has set this box up yet, so send the
@@ -1025,6 +1045,8 @@ async function main(): Promise<void> {
       // First, so a helper watching this file stops offering to open a box
       // that is on its way down.
       if (box) clearBoxStatus(dataDir)
+      // Its key dies with this process anyway; the file goes with it.
+      clearAdminLink(dataDir)
       // Before the sockets close, so the goodbye goes while the box can
       // still say it.
       await announcements.stop()

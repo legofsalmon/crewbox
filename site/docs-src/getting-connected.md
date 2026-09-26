@@ -54,11 +54,11 @@ the spot — there are no accounts to create in advance and no email involved.
 Crewbox has three different secrets, and every crew ever assembled has mixed
 them up at least once:
 
-| Code               | Who uses it        | What it's for                                                                                                                           |
-| ------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **Event PIN**      | Everyone, once     | Lets a new person join this event. It's on the poster — it's not meant to be very secret.                                               |
-| **Your PIN**       | Just you           | Signs you back in as you, on any device. Made up by you when you first join.                                                            |
-| **Admin password** | The box's operator | Unlocks the admin panel — settings, crew management, exports. The box printed it when it was first set up. It is **not** the event PIN. |
+| Code               | Who uses it        | What it's for                                                                                                                                                                                                             |
+| ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Event PIN**      | Everyone, once     | Lets a new person join this event. It's on the poster — it's not meant to be very secret.                                                                                                                                 |
+| **Your PIN**       | Just you           | Signs you back in as you, on any device. Made up by you when you first join.                                                                                                                                              |
+| **Admin password** | The box's operator | Unlocks the admin panel — settings, crew management, exports. The box showed it when it was first set up; if it's lost, **Open the admin panel** in the Crewbox menu on the box gets you in. It is **not** the event PIN. |
 
 ## Signing back in
 

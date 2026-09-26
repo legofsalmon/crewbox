@@ -497,6 +497,7 @@ export function printBoxStatus(dataDir: string): number {
   console.log(`  Join:      ${status.joinUrl}`)
   for (const url of status.urls.slice(1)) console.log(`             ${url}`)
   console.log(`  Event PIN: ${status.eventPin}`)
+  console.log(`  Admin:     ${process.argv[0]} --admin`)
   console.log(`  Stop it:   ${process.argv[0]} --stop`)
   return 0
 }

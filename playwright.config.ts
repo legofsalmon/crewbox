@@ -8,7 +8,15 @@ import { E2E_LICENCE_PUBLIC_KEY } from './e2e/licenceKey.ts'
  *
  * In a sandbox with a preinstalled Chromium, set PW_CHROMIUM to its path.
  */
-const dataDir = `${process.env.RUNNER_TEMP ?? '/tmp'}/crewbox-e2e-data-${Date.now()}`
+
+/**
+ * The box's data directory, kept in the environment so a spec can read the
+ * box's own files from it (e2e/adminLink.spec.ts). Each worker evaluates this
+ * file again, and a fresh `Date.now()` would name a directory nobody made;
+ * the workers inherit the runner's environment, so they keep its name.
+ */
+const tmp = process.env.RUNNER_TEMP ?? '/tmp'
+const dataDir = (process.env.CREWBOX_E2E_DATA_DIR ??= `${tmp}/crewbox-e2e-data-${Date.now()}`)
 
 export default defineConfig({
   testDir: 'e2e',
