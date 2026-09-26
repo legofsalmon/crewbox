@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dnsConfigFile, dnsPlan } from '../src/dnsconfig.ts'
+import { dnsConfigFile, dnsPlan, probesConfigFile } from '../src/dnsconfig.ts'
 
 /**
  * The generated config is the fix for the one check an admin cannot act on
@@ -53,5 +53,23 @@ describe('local DNS config', () => {
     // about the network — an admin should choose it deliberately.
     expect(file).toMatch(/OPTIONAL/)
     expect(file).toMatch(/mobile network|mobile data/)
+  })
+
+  it('still gives a box with no certificate the probe block', () => {
+    // "Phones stay on this Wi-Fi" asks for this file on every box. A plain
+    // http box has no name to point anywhere, but its phones still drop to
+    // mobile data, so it gets the half that applies rather than a 404.
+    const file = probesConfigFile('192.168.1.50')
+    expect(file).toContain('address=/captive.apple.com/192.168.1.50')
+    expect(file).toMatch(/OPTIONAL/)
+    expect(file).toMatch(/no certificate/)
+    // Nothing that pretends there is a name.
+    expect(file).not.toMatch(/https:\/\//)
+    expect(file).not.toMatch(/IN\tA/)
+  })
+
+  it('puts the same probe block in both files', () => {
+    const tail = (file: string) => file.slice(file.indexOf('# OPTIONAL'))
+    expect(tail(probesConfigFile('192.168.1.50'))).toBe(tail(dnsConfigFile(plan)))
   })
 })

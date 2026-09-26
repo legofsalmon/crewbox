@@ -72,6 +72,28 @@ export function dnsPlan(hostname: string, address: string): DnsPlan {
 
 /** A file an admin can drop straight onto a router, comments and all. */
 export function dnsConfigFile(plan: DnsPlan): string {
+  return nameBlock(plan) + probeBlock(plan.probes)
+}
+
+/**
+ * The same file for a box with no certificate: the probe block alone.
+ *
+ * The "Phones stay on this Wi-Fi" line asks for that block whether or not
+ * the box has a name to point anywhere, and an iPhone moving to mobile data
+ * is just as much a problem on a plain-http box. Refusing the download there
+ * left the line pointing at a button that never appeared.
+ */
+export function probesConfigFile(address: string): string {
+  return (
+    `# Crewbox — local DNS for the crew box at ${address}
+#
+# This box has no certificate, so there is no name to point at it; crew
+# reach it by address. The one thing the router can still do is below.
+` + probeBlock(dnsPlan('', address).probes)
+  )
+}
+
+function nameBlock(plan: DnsPlan): string {
   return `# Crewbox — local DNS for ${plan.hostname}
 #
 # Point ${plan.hostname} at the crew box on this network, so phones reach it
@@ -98,7 +120,11 @@ ${plan.zone}
 
 # Check it worked from a phone on the crew network: the join page should load
 # at https://${plan.hostname} with no certificate warning.
+`
+}
 
+function probeBlock(probes: DnsPlan['probes']): string {
+  return `
 
 # ==========================================================================
 # OPTIONAL — stop phones deciding this network is dead
@@ -124,10 +150,10 @@ ${plan.zone}
 # redirecting them breaks pages instead of fixing a network.
 
 # --- dnsmasq (OpenWRT, Pi-hole) -------------------------------------------
-${plan.probes.dnsmasq}
+${probes.dnsmasq}
 
 # --- hosts file -----------------------------------------------------------
-${plan.probes.hosts}
+${probes.hosts}
 
 # Check it worked: join the crew Wi-Fi on an iPhone and confirm the Wi-Fi
 # icon stays in the status bar, with no "no internet connection" alert.

@@ -312,7 +312,7 @@ function captiveCheck(captive: NonNullable<ReadinessInput['captive']>): Readines
       'network as usable instead of falling back to mobile data.',
     fix:
       'Only reaches the box if the event router points the probe hostnames here. Download ' +
-      'the DNS config below and paste its optional second block onto the router.',
+      'DNS config, under This network below, and paste its optional block onto the router.',
   }
 }
 
@@ -382,7 +382,8 @@ function backupCheck(mark: { at: number; dest?: string }, now: number): Readines
     state: stale ? 'limited' : 'ok',
     detail: `Last backup ${duration(ageMinutes)} ago${where}.`,
     fix: stale
-      ? 'Run deploy/backup.sh. Chat history, accounts, uploads and the event PIN live only in this box until it has run.'
+      ? // Only backup.sh leaves the mark, so whoever sees this has it.
+        'Run deploy/backup.sh again. Chat history, accounts, uploads and the event PIN live only in this box until it has run.'
       : undefined,
   }
 }
@@ -464,7 +465,7 @@ function voiceCheck(input: ReadinessInput): ReadinessCheck {
     // real but only reachable from the native apps.
     fix: input.secure
       ? undefined
-      : `Works in the Android and iOS apps now. For browsers too, put cert.pem and key.pem for your domain in ${input.dataDir} and restart — the box serves HTTPS itself.`,
+      : `Works in the Android app now. For browsers too, put cert.pem and key.pem for your domain in ${input.dataDir} and restart — the box serves HTTPS itself.`,
   }
 }
 
@@ -653,7 +654,7 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
           label: 'Install to home screen, offline shell',
           state: 'limited',
           detail: `Not available over plain http://${input.host}.`,
-          fix: `Browsers only allow this on HTTPS. Put cert.pem and key.pem for your domain in ${input.dataDir} and restart, or use the Android/iOS apps.`,
+          fix: `Browsers only allow this on HTTPS. Put cert.pem and key.pem for your domain in ${input.dataDir} and restart, or use the Android app.`,
         }
   )
 
@@ -697,7 +698,14 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
             label: 'Backup',
             state: 'limited',
             detail: 'No backup has ever been taken from this box.',
-            fix: 'Run deploy/backup.sh — onto a USB stick, before the event rather than during it. Chat history, accounts, uploads and the event PIN exist nowhere else.',
+            // The release downloads are one file each, so deploy/backup.sh is
+            // only on rigs installed from source. Copying the data folder
+            // with the box stopped is the backup every box can take; this line
+            // cannot see that one, and says so rather than looking broken.
+            fix:
+              `Quit Crewbox and copy its data folder, ${input.dataDir}, onto a USB stick — before the event rather than during it. ` +
+              'Chat history, accounts, uploads and the event PIN exist nowhere else. ' +
+              'A rig installed from source has deploy/backup.sh, which copies it without stopping the box; only its backups show up here.',
           }
     )
   }

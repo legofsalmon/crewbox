@@ -52,7 +52,7 @@ export default function LiveBar({
       <div className={styles.bar}>
         <span className={styles.off}>Not watching a lighting network</span>
         <span className={styles.hint}>
-          This box is not listening to Art-Net or sACN. Admin → Lighting network says how.
+          This box is not listening to Art-Net or sACN. Admin → This box → Networks says how.
         </span>
       </div>
     )

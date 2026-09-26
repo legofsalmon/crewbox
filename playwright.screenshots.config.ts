@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test'
 import { E2E_LICENCE_PUBLIC_KEY } from './e2e/licenceKey.ts'
+import { wallAddress } from './e2e/screenshots/wallAddress.ts'
 
 /**
  * The docs screenshot run — `npm run docs:shots`.
@@ -19,6 +20,10 @@ import { E2E_LICENCE_PUBLIC_KEY } from './e2e/licenceKey.ts'
 // No timestamp: the path shows up inside the This-box screenshot's fix
 // lines, so it has to read cleanly. npm run docs:shots wipes it first.
 const dataDir = `${process.env.RUNNER_TEMP ?? '/tmp'}/crewbox-shots-data`
+
+// The fake LED processor's address. Not loopback, which the video module
+// refuses — see e2e/screenshots/wallAddress.ts.
+const wall = wallAddress()
 
 export default defineConfig({
   testDir: 'e2e/screenshots',
@@ -42,7 +47,8 @@ export default defineConfig({
   webServer: [
     {
       command: 'node scripts/coex-sim.mjs',
-      url: 'http://127.0.0.1:8001/api/v1/device',
+      url: `http://${wall}:8001/api/v1/device`,
+      env: { COEX_SIM_HOST: wall },
       reuseExistingServer: false,
       timeout: 10_000,
     },
@@ -76,10 +82,11 @@ export default defineConfig({
         CREWBOX_CONTROL_KEY: 'shots-control-key',
         JOIN_RATE_LIMIT: '1000',
         CREWBOX_MODULES: 'schedule,patch,lighting,incident,video,network',
-        // Loopback, so the video module's sweep button is offered rather than
-        // showing its "no video adapter" state. Nothing sweeps during a shot
-        // run — the scene photographs a processor added by address.
-        CREWBOX_VIDEO_IFACE: '127.0.0.1',
+        // The simulator's address, so the video module's sweep button is
+        // offered rather than showing its "no video adapter" state, and the
+        // processor sits on the adapter's own network. Nothing sweeps during
+        // a shot run — the scene photographs a processor added by address.
+        CREWBOX_VIDEO_IFACE: wall,
         LIVEKIT_URL: '',
       },
     },

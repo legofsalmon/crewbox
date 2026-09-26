@@ -225,7 +225,8 @@ export default function LicenceSection({
                 <a href={licence.manageUrl} target="_blank" rel="noreferrer">
                   letissier.ie/account
                 </a>{' '}
-                and pick your licence.
+                with the email your key went to, and pick it. A trial key works the same as a bought
+                licence.
               </li>
               <li>
                 Enter this box&rsquo;s request code:
