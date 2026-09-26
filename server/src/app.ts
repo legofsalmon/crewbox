@@ -103,6 +103,17 @@ import { LicenceProblem, type LicenceService } from './licence/service.ts'
 import type { ReportService } from './reports/service.ts'
 import { FEEDBACK_TYPES, OSES } from './reports/payload.ts'
 import type { Store } from './store.ts'
+import {
+  BOX_SETTINGS,
+  BOX_SETTING_NAMES,
+  OPTIONAL_MODULES,
+  boxSettingKey,
+  clearBoxSetting,
+  isBoxSetting,
+  savedBoxSetting,
+  type BoxSettingName,
+  type BoxSettingState,
+} from './boxSettings.ts'
 
 /**
  * Every method a route here takes, for the apps' requests from their own
@@ -440,6 +451,15 @@ export interface AppDeps {
     env: { iface: boolean; dmxMode: boolean; dmxIface: boolean; dmxUniverses: boolean }
   }
   /**
+   * The panel's Box settings (server/src/boxSettings.ts): what this process
+   * started with, and which of them the environment pins. Omit and the
+   * panel treats nothing as pinned and every saved value as not yet applied.
+   */
+  boxSettings?: {
+    boot: Partial<Record<BoxSettingName, string | undefined>>
+    fromEnv: BoxSettingName[]
+  }
+  /**
    * Admin panel password from the environment. Overrides whatever is stored,
    * so it doubles as the way back in when the password is lost. Omit and the
    * box uses the stored one, minting and printing it on first start.
@@ -615,6 +635,7 @@ export function buildApp({
   iface = '',
   boundHost,
   network,
+  boxSettings,
   sessionTtlMs,
   alertsBeatMs,
   trustProxy = false,
@@ -3105,6 +3126,73 @@ export function buildApp({
       network: networkPayload(),
       ...(reissued ? { adminToken: reissued } : {}),
     }
+  })
+
+  /**
+   * The panel's Box settings: everything that used to be an environment
+   * variable and nothing else (server/src/boxSettings.ts). Each row says what
+   * is saved, what this process started with, and whether the environment
+   * pins it — in which case the panel shows it and offers no field.
+   */
+  const boxSettingsPayload = () => {
+    const pinned = new Set(boxSettings?.fromEnv ?? [])
+    const settings = {} as Record<BoxSettingName, BoxSettingState>
+    let restartNeeded = false
+    for (const name of BOX_SETTING_NAMES) {
+      const saved = savedBoxSetting(store, name)
+      const fromEnv = pinned.has(name)
+      const boot = boxSettings?.boot[name]
+      settings[name] = {
+        ...(saved !== undefined ? { saved } : {}),
+        fromEnv,
+        ...(boot !== undefined ? { boot } : {}),
+      }
+      if (!fromEnv && saved !== boot) restartNeeded = true
+    }
+    return {
+      settings,
+      restartNeeded,
+      modules: [...OPTIONAL_MODULES],
+      adapters: lanAdapters(),
+    }
+  }
+
+  fastify.get('/api/admin/box-settings', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    return boxSettingsPayload()
+  })
+
+  const boxSettingsPatchSchema = z.object({
+    /** A value to save, or null to go back to the default. */
+    values: z.record(z.string(), z.union([z.string().max(400), z.null()])),
+  })
+
+  fastify.patch('/api/admin/box-settings', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const parsed = boxSettingsPatchSchema.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid input' })
+    if (configLocked()) return reply.code(423).send({ error: LOCKED_MESSAGE })
+    const pinned = new Set(boxSettings?.fromEnv ?? [])
+    const changes: [BoxSettingName, string | null][] = []
+    // Everything is checked before anything is saved, so a form with one bad
+    // field saves none of it rather than half.
+    for (const [name, raw] of Object.entries(parsed.data.values)) {
+      if (!isBoxSetting(name)) return reply.code(400).send({ error: `Unknown setting ${name}.` })
+      if (pinned.has(name)) {
+        return reply.code(409).send({
+          error: `This box takes ${name} from its environment. Change it there and restart, or unset it to choose here.`,
+        })
+      }
+      const value = raw === null ? null : raw.trim()
+      const problem = value === null ? null : BOX_SETTINGS[name](value)
+      if (problem) return reply.code(400).send({ error: problem, setting: name })
+      changes.push([name, value])
+    }
+    for (const [name, value] of changes) {
+      if (value === null) clearBoxSetting(store, name)
+      else store.setSetting(boxSettingKey(name), value)
+    }
+    return boxSettingsPayload()
   })
 
   // Full JSON dump for the post-event archive.

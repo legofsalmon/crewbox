@@ -137,7 +137,7 @@ export default function ReportsSection({
       </p>
       <p className="admin-hint">
         {!reports.outbound
-          ? `This box is set to make no outbound connections (CREWBOX_UPDATE_CHECK=0), so ${
+          ? `This box is set to make no outbound connections (Box settings → Use the internet: Off), so ${
               reports.waiting === 1 ? 'the report waiting here stays' : 'reports stay'
             } on the box.`
           : reports.waiting > 0

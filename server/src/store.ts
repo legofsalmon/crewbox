@@ -936,6 +936,10 @@ export class Store {
       .run(key, value, Date.now())
   }
 
+  deleteSetting(key: string): void {
+    this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+  }
+
   // -- show log -------------------------------------------------------------
   //
   // Append and read. There is deliberately no update and no delete: a

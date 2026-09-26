@@ -413,6 +413,58 @@ export function adminUpdateSettings(
 }
 
 /**
+ * Settings that used to be environment variables (server/src/boxSettings.ts),
+ * keyed by the variable each one stands in for. Values are in the variable's
+ * own syntax: "1"/"0" for on/off, a comma list of module ids, and so on.
+ */
+export type BoxSettingName =
+  | 'CREWBOX_MODULES'
+  | 'CREWBOX_TZ'
+  | 'CREWBOX_DMX_ARTNET_BASE'
+  | 'CREWBOX_WATCH'
+  | 'CREWBOX_WATCH_IFACE'
+  | 'CREWBOX_VIDEO_IFACE'
+  | 'CREWBOX_VIDEO_SNMP_COMMUNITY'
+  | 'CREWBOX_UPDATE_CHECK'
+  | 'CREWBOX_CAPTIVE'
+  | 'CREWBOX_CAPTIVE_PORT'
+  | 'SESSION_TTL_DAYS'
+
+export interface BoxSettingState {
+  /** Saved in the panel; absent means the default applies. */
+  saved?: string
+  /** Set in the environment, which wins, so the panel cannot change it. */
+  fromEnv: boolean
+  /** What the box started with, when it came from somewhere. */
+  boot?: string
+}
+
+export interface BoxSettings {
+  settings: Partial<Record<BoxSettingName, BoxSettingState>>
+  /** Saved values differ from what this box started with. */
+  restartNeeded: boolean
+  /** Module ids the box can turn on beyond chat. */
+  modules: string[]
+  adapters: Array<{ name: string; address: string }>
+}
+
+export function adminGetBoxSettings(auth: AdminAuth): Promise<BoxSettings> {
+  return request('/api/admin/box-settings', { headers: adminHeaders(auth) })
+}
+
+/** Save values; null puts a setting back to its default. */
+export function adminUpdateBoxSettings(
+  auth: AdminAuth,
+  values: Partial<Record<BoxSettingName, string | null>>
+): Promise<BoxSettings> {
+  return request('/api/admin/box-settings', {
+    method: 'PATCH',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ values }),
+  })
+}
+
+/**
  * The updater's flow, as the panel sees it.
  *
  * `canInstall` false with a `blocked` reason is the normal state on a box run

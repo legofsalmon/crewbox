@@ -2,7 +2,8 @@ import { join } from 'node:path'
 import { HOME_CHANNEL, PROTOCOL_VERSION } from '@crewbox/shared'
 import { existsSync, mkdirSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
-import { config, dmxMode, warnOnDefaults } from './config.ts'
+import { boxTunables, config, dmxMode, warnOnDefaults } from './config.ts'
+import { BOX_SETTING_NAMES, boxLookup, type BoxSettingName } from './boxSettings.ts'
 import { SETUP_DONE_KEY, attachWs, buildApp, mirrorOnLoopback } from './app.ts'
 import { adminLinkUrl, clearAdminLink, printAdminLink, writeAdminLink } from './adminLink.ts'
 import {
@@ -269,6 +270,17 @@ async function main(): Promise<void> {
   // Audit history (network module). index owns db; Store keeps its own.
   const metrics = new MetricsStore(db)
 
+  // The settings an admin can choose in the panel as well as the environment
+  // (server/src/boxSettings.ts): the environment where it is set, the saved
+  // value otherwise. Read once, here, like the network settings below —
+  // everything after this line runs off this one answer, and the panel
+  // compares its saved values against `boxBoot` to say when a restart is due.
+  const lookup = boxLookup(store)
+  const tuned = boxTunables(lookup)
+  const boxBoot = Object.fromEntries(
+    BOX_SETTING_NAMES.map((name) => [name, lookup(name)] as const)
+  ) as Record<BoxSettingName, string | undefined>
+
   // Crash reports and feedback. Queued on disk, sent only with an admin's yes
   // or a person pressing Send, and only when this box may go off-site at all
   // — the same switch as the update check. See server/src/reports/.
@@ -276,7 +288,7 @@ async function main(): Promise<void> {
     dir: join(dataDir, REPORTS_DIR),
     settings: store,
     version: APP_VERSION,
-    outbound: config.updateCheck ?? box,
+    outbound: tuned.updateCheck ?? box,
     ...(config.reports.serviceUrl ? { baseUrl: config.reports.serviceUrl } : {}),
     log: console,
   })
@@ -463,15 +475,15 @@ async function main(): Promise<void> {
   // Port 80 is privileged and often already held, so this fails soft in
   // exactly the way TLS does: one warning naming the fix, and a box that
   // works otherwise.
-  const captiveOn = config.captive.enabled ?? box
+  const captiveOn = tuned.captive.enabled ?? box
   // Kept so the responder can be started again after an update releases the
   // port: a new box cannot take :80 while this process still holds it, and
   // startCaptive deliberately does not retry EADDRINUSE.
   const captiveOpts = captiveOn
     ? {
         host: bindHost,
-        port: config.captive.port,
-        portFromEnv: config.captive.portFromEnv,
+        port: tuned.captive.port,
+        portFromEnv: tuned.captive.portFromEnv,
         // Computed here, from this box's own certificate and port — never
         // from a request, so the responder cannot be pointed anywhere else.
         origin: certName
@@ -490,16 +502,16 @@ async function main(): Promise<void> {
       : new DmxListener({
           mode: boot.dmxMode,
           universes: parseUniverseList(boot.dmxUniverses),
-          artnetBase: config.dmx.artnetBase,
+          artnetBase: tuned.artnetBase,
           ...(boot.dmxIface ? { interfaceIp: boot.dmxIface } : {}),
         })
 
   // Watching the audio/media network (PTP clock, Dante/NDI rosters, AES67
   // streams), when asked. Same off-by-default posture and the same
   // structural read-only guarantee as the lighting listener.
-  const netwatch = config.watch.enabled
+  const netwatch = tuned.watch.enabled
     ? new NetWatch({
-        ...(config.watch.interfaceIp ? { interfaceIp: config.watch.interfaceIp } : {}),
+        ...(tuned.watch.interfaceIp ? { interfaceIp: tuned.watch.interfaceIp } : {}),
         log: console,
       })
     : undefined
@@ -509,11 +521,11 @@ async function main(): Promise<void> {
   // admin has armed, and a box with none armed puts nothing on a video
   // network. CREWBOX_VIDEO_IFACE is only needed for the discovery scan — a
   // wall added by address is read without it.
-  const video = config.modules.includes('video')
+  const video = tuned.modules.includes('video')
     ? new VideoService({
         settings: store,
-        ...(config.video.interfaceIp ? { interfaceIp: config.video.interfaceIp } : {}),
-        community: config.video.community,
+        ...(tuned.video.interfaceIp ? { interfaceIp: tuned.video.interfaceIp } : {}),
+        community: tuned.video.community,
         log: console,
       })
     : undefined
@@ -530,9 +542,9 @@ async function main(): Promise<void> {
   // admin armed, by address.
   const watchers: Watcher[] = [
     ...(dmx ? [{ what: 'lighting listener', iface: boot.dmxIface }] : []),
-    ...(netwatch ? [{ what: 'media watcher', iface: config.watch.interfaceIp ?? '' }] : []),
-    ...(video && config.video.interfaceIp
-      ? [{ what: 'LED wall scan', iface: config.video.interfaceIp }]
+    ...(netwatch ? [{ what: 'media watcher', iface: tuned.watch.interfaceIp ?? '' }] : []),
+    ...(video && tuned.video.interfaceIp
+      ? [{ what: 'LED wall scan', iface: tuned.video.interfaceIp }]
       : []),
   ]
   const announceSetting = (): AnnounceSetting =>
@@ -574,7 +586,7 @@ async function main(): Promise<void> {
   // from source unless CREWBOX_UPDATE_CHECK says otherwise, the same rule the
   // captive responder follows.
   const updates =
-    (config.updateCheck ?? box)
+    (tuned.updateCheck ?? box)
       ? new UpdateChecker({
           currentVersion: APP_VERSION,
           settings: store,
@@ -670,14 +682,14 @@ async function main(): Promise<void> {
       writeAdminLink(dataDir, { pid: process.pid, url: adminLinkUrl(origin, key) }),
     // Whether this box may go off-site at all — the same switch as the
     // update check, which the environment sweep used to ignore.
-    outbound: config.updateCheck ?? box,
+    outbound: tuned.updateCheck ?? box,
     // The address this process is actually listening on. The readiness row
     // used to infer it from the adapters, which is a different question.
     boundHost: bindHost,
     eventPin: config.eventPin,
     // So the control API reads the running order against the festival's wall
     // clock rather than the box's process timezone. See CREWBOX_TZ.
-    ...(config.timeZone ? { timeZone: config.timeZone } : {}),
+    ...(tuned.timeZone ? { timeZone: tuned.timeZone } : {}),
     wifiSsid: config.wifiSsid,
     ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
     filesDir,
@@ -694,9 +706,9 @@ async function main(): Promise<void> {
           },
         }
       : {}),
-    sessionTtlMs: config.sessionTtlMs,
+    sessionTtlMs: tuned.sessionTtlMs,
     trustProxy: config.trustProxy,
-    modules: config.modules,
+    modules: tuned.modules,
     metrics,
     updater,
     dataDir,
@@ -710,6 +722,10 @@ async function main(): Promise<void> {
         dmxIface: config.dmx.ifaceFromEnv,
         dmxUniverses: config.dmx.universesFromEnv,
       },
+    },
+    boxSettings: {
+      boot: boxBoot,
+      fromEnv: BOX_SETTING_NAMES.filter((name) => process.env[name] !== undefined),
     },
     ...(dmx ? { dmx } : {}),
     ...(netwatch ? { netwatch } : {}),
@@ -938,7 +954,7 @@ async function main(): Promise<void> {
   // Same switch as the update check: a box told to make no outbound
   // connections still re-reads its token, but only checks in when an admin
   // asks. The first automatic check-in is a minute after serving.
-  licence.start({ checkIn: config.updateCheck ?? box })
+  licence.start({ checkIn: tuned.updateCheck ?? box })
   // Sending what may be sent, from a timer that starts well after the box is
   // serving. Nothing crew do waits on it; a box with no uplink keeps its queue.
   reports.start()

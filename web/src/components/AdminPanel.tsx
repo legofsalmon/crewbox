@@ -8,6 +8,7 @@ import { adapterMissing, describeAnnounce, listeningMode } from '../lib/adminnet
 import UpdateSection from './UpdateSection.tsx'
 import LicenceSection from './LicenceSection.tsx'
 import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
+import BoxSettingsSection from './BoxSettingsSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
 import { addressOf } from '../lib/discovery.ts'
 import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
@@ -177,6 +178,10 @@ export default function AdminPanel() {
             </p>
             <Environment onNote={setNote} />
           </section>
+          <section>
+            <h3 className="admin-section-title">Box settings</h3>
+            <BoxSettingsSection auth={auth} onNote={setNote} locked={licence?.locked ?? false} />
+          </section>
           {licence && (
             <section>
               <h3 className="admin-section-title">Licence</h3>
@@ -229,12 +234,12 @@ function formatUptime(sec: number): string {
   return `${m}m`
 }
 
-/** Enabled modules from live config (set via CREWBOX_MODULES on the box). */
+/** Enabled modules from live config (chosen under Box settings below). */
 function ModulesList() {
   const configModules = useStore((s) => s.config.modules)
   return (
     <>
-      {configModules.join(', ')} <span className="admin-muted">(set via CREWBOX_MODULES)</span>
+      {configModules.join(', ')} <span className="admin-muted">(chosen under Box settings)</span>
     </>
   )
 }
