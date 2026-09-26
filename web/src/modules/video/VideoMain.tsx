@@ -218,7 +218,8 @@ function LedWallsPane() {
           {processors.length === 0 ? (
             <p className={styles.empty}>
               No processors yet. Add one by address below, or — if you know which network they are
-              on — sweep for them.
+              on — sweep for them. An MX or CX series processor has to be added by address: it does
+              not answer a sweep.
             </p>
           ) : (
             <ul className={styles.list}>
@@ -345,9 +346,18 @@ function LedWallsPane() {
                 ))}
                 {state.scan.found.length > 0 && (
                   <p className={styles.meta}>
-                    A processor answers with its address and nothing crewbox can safely read beyond
-                    that — whatever follows is shown raw, unlabelled, because nobody has captured a
-                    real reply to know what it means.
+                    A processor answers with its address and a short tag, shown raw. The tag carries
+                    no model or name; those come from reading the processor once it is added.
+                  </p>
+                )}
+                {/* An MX40 Pro drew no reply to eight probes of every kind
+                    (novasun, OBSERVED 2026-09-11), so an empty sweep says
+                    nothing about whether a COEX controller is there. Saying
+                    so here is what stops "0 answered" reading as "no walls". */}
+                {state.scan.found.length === 0 && state.scan.errors.length === 0 && (
+                  <p className={styles.meta}>
+                    Nothing answering does not mean nothing is there. MX and CX series processors
+                    (an MX40 Pro, for one) do not answer a sweep at all; add them by address.
                   </p>
                 )}
               </div>
