@@ -425,7 +425,7 @@ describe('nothing transmits in one request', () => {
       payload: { action: 'scan' },
     })
     expect(res.statusCode).toBe(409)
-    expect((res.json() as { error: string }).error).toContain('CREWBOX_VIDEO_IFACE')
+    expect((res.json() as { error: string }).error).toContain('Box settings')
   })
 })
 

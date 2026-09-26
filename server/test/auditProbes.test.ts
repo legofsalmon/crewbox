@@ -291,7 +291,7 @@ describe('Prober', () => {
     expect(asked).toBe(0)
     expect(r.state).toBe('skipped')
     expect(r.sent).toBe('nothing')
-    expect(r.fix).toContain('CREWBOX_UPDATE_CHECK')
+    expect(r.fix).toContain('Use the internet')
   })
 
   it('checks the venue DNS against this box, both ways', async () => {

@@ -446,7 +446,7 @@ export function dmxReadiness(
         .slice(0, 6)
         .map((u) => `Art-Net ${u.wireUniverse} → plot universe ${u.universe}`)
         .join(', '),
-      fix: 'If your console numbers these differently, set CREWBOX_DMX_ARTNET_BASE — otherwise every fixture will be checked against the wrong universe.',
+      fix: 'If your console numbers these differently, change Box settings → Art-Net universe 0 is — otherwise every fixture will be checked against the wrong universe.',
     })
   }
 

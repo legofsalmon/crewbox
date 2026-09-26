@@ -137,7 +137,7 @@ describe('the listener', () => {
     const { portal, reason } = await startCaptive({ host: '127.0.0.1', port: held, origin: ORIGIN })
     expect(portal).toBeUndefined()
     expect(reason).toMatch(/already listening/)
-    expect(reason).toMatch(/CREWBOX_CAPTIVE_PORT/)
+    expect(reason).toMatch(/Box settings/)
 
     await new Promise<void>((done) => squatter.close(() => done()))
   })

@@ -103,7 +103,7 @@ export class VideoService {
       if (!this.canScan) {
         return {
           ok: false,
-          reason: 'this box has no video-network interface set (CREWBOX_VIDEO_IFACE)',
+          reason: 'this box has no video network adapter set (Admin → Box settings)',
         }
       }
       return {

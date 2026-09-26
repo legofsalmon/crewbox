@@ -285,7 +285,7 @@ export class Prober {
         state: 'skipped',
         sent: 'nothing',
         detail: 'Not checked — this box is configured to make no outbound connections.',
-        fix: 'Nothing here needs it. Unset CREWBOX_UPDATE_CHECK=0 if you want the box to look.',
+        fix: 'Nothing here needs it. Turn on Box settings → Use the internet if you want the box to look.',
       }
     }
     const sent =
@@ -451,7 +451,7 @@ export class Prober {
         state: 'skipped',
         sent: 'nothing',
         detail: 'Skipped: the media watchers are off, so solicited replies would go unheard.',
-        fix: 'Set CREWBOX_WATCH=1 and restart to include media discovery in the sweep.',
+        fix: 'Turn on Box settings → Watch the media network and restart to include media discovery in the sweep.',
       }
     }
     const iface = this.deps.watchIface()

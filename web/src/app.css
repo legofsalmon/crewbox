@@ -2729,7 +2729,8 @@ a.app-version:hover {
   color: var(--text);
 }
 
-.admin-networks .admin-help {
+.admin-networks .admin-help,
+.admin-networks .admin-hint {
   padding: 0;
   margin: 0;
 }
