@@ -7,6 +7,7 @@ import {
   SEND_LIMIT,
   SEND_WINDOW_MS,
   type Channel,
+  type ChannelAlertLevel,
   type ClientMessage,
   type DmxUniverseWire,
   type Message,
@@ -16,6 +17,7 @@ import {
 } from '@crewbox/shared'
 import type { DmxListener } from './dmx/listener.ts'
 import type { UniverseHealth } from './dmx/state.ts'
+import type { AlertsHub } from './alerts.ts'
 import type { Store } from './store.ts'
 import { APP_VERSION } from './version.ts'
 
@@ -82,6 +84,12 @@ const ACTION_LIMIT = 60
  * real event needs more than this many named channels.
  */
 const MAX_PUBLIC_CHANNELS = 500
+
+/**
+ * Stages one person may follow. A festival has a handful; this only bounds a
+ * loop that would otherwise add rows for ever.
+ */
+const MAX_FOLLOWED_STAGES = 50
 
 /**
  * How often watching clients hear about the lighting network.
@@ -215,6 +223,9 @@ export class Hub {
   /** Pending "they really have gone" timers, per user. See markOffline. */
   private tallyGrace = new Map<string, NodeJS.Timeout>()
 
+  /** What buzzes whom, when this box decides (server/src/alerts.ts). */
+  private alerts: AlertsHub | undefined
+
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
@@ -230,6 +241,21 @@ export class Hub {
   /** Hand the audit collector what the crew's devices report. Off by default. */
   setCollector(collector: CollectorSink | undefined): void {
     this.collector = collector
+  }
+
+  /**
+   * The alerts socket: told of every message, read, deletion, show-log entry
+   * and settings change, and given presence and the page's copy of each
+   * alert in return.
+   */
+  setAlerts(alerts: AlertsHub): void {
+    this.alerts = alerts
+    alerts.link({
+      addPresence: (userId, remote) => this.markOnline(userId, remote),
+      dropPresence: (userId, remote) => this.markOffline(userId, remote),
+      onlineUserIds: () => [...this.online.keys()],
+      alertPage: (userId, alert) => this.sendToUser(userId, { type: 'alert', alert }),
+    })
   }
 
   /** Where the on-air state lives, so a late joiner is told with the rest. */
@@ -275,6 +301,7 @@ export class Hub {
   }
 
   close(): void {
+    this.alerts?.close()
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.dmxTimer) clearInterval(this.dmxTimer)
     this.dmxTimer = null
@@ -471,6 +498,20 @@ export class Hub {
           conn
         )
         break
+      case 'setChannelAlerts':
+        if (this.overActionLimit(conn)) {
+          this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+          break
+        }
+        this.onSetChannelAlerts(conn, conn.user, msg.channelId, msg.level)
+        break
+      case 'followStage':
+        if (this.overActionLimit(conn)) {
+          this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+          break
+        }
+        this.onFollowStage(conn, conn.user, msg.stage, msg.follow)
+        break
       case 'logIncident': {
         // The same flood guard as `send`, and rejected the same way, because
         // this ends in the same place: a durable row and a broadcast to every
@@ -582,6 +623,7 @@ export class Hub {
       // Which database this is. A phone that sees it change knows its cursors
       // and its cached messages belong to one that is no longer here.
       dbEpoch: this.store.dbEpoch(),
+      alertSettings: this.store.getAlertSettings(user.id),
     })
     // Straight after the welcome, and only when somebody is actually live:
     // a device joining mid-show has to arrive already knowing, or its red
@@ -646,6 +688,7 @@ export class Hub {
     this.send(conn.ws, { type: 'ack', clientMsgId: msg.clientMsgId, message })
     if (!deduped) {
       this.broadcastToChannel(channel.id, { type: 'msg', message }, conn.ws)
+      this.alerts?.onMessage(message)
     }
   }
 
@@ -691,7 +734,10 @@ export class Hub {
     // Acked to the author either way, so a retry after a dropped
     // acknowledgement clears their outbox rather than filing a second copy.
     this.send(conn.ws, { type: 'incident', incident })
-    if (!deduped) this.broadcastAll({ type: 'incident', incident }, conn.ws)
+    if (!deduped) {
+      this.broadcastAll({ type: 'incident', incident }, conn.ws)
+      this.alerts?.onIncident(incident)
+    }
   }
 
   /** True (and records the attempt) once a socket is over its action limit. */
@@ -719,6 +765,49 @@ export class Hub {
     this.store.setReadState(user.id, channelId, seq)
     // Sync unread state to the same user's other devices.
     this.sendToUser(user.id, { type: 'readState', channelId, seq }, conn.ws)
+    this.alerts?.onRead(user.id, channelId, seq)
+  }
+
+  /**
+   * A person's level for a channel.
+   *
+   * Gated on membership like markRead, for the same reason: the write upserts
+   * a channel_members row, and those rows define who is in a DM.
+   */
+  private onSetChannelAlerts(
+    conn: Conn,
+    user: User,
+    channelId: string,
+    level: ChannelAlertLevel
+  ): void {
+    if (!this.store.getChannel(channelId) || !this.store.isMember(channelId, user.id)) {
+      this.send(conn.ws, { type: 'error', code: 'not_found', message: 'channel not found' })
+      return
+    }
+    this.store.setChannelAlerts(user.id, channelId, level)
+    this.announceAlertSettings(user.id)
+  }
+
+  private onFollowStage(conn: Conn, user: User, stage: string, follow: boolean): void {
+    if (follow && this.store.getAlertSettings(user.id).stages.length >= MAX_FOLLOWED_STAGES) {
+      this.send(conn.ws, {
+        type: 'error',
+        code: 'bad_request',
+        message: `you can follow up to ${MAX_FOLLOWED_STAGES} stages`,
+      })
+      return
+    }
+    this.store.followStage(user.id, stage, follow)
+    this.announceAlertSettings(user.id)
+  }
+
+  /** Tell every device of one person what their alert settings are now, this one included. */
+  private announceAlertSettings(userId: string): void {
+    this.sendToUser(userId, {
+      type: 'alertSettings',
+      settings: this.store.getAlertSettings(userId),
+    })
+    this.alerts?.onSettings(userId)
   }
 
   private onCreateChannel(conn: Conn, user: User, name: string, topic: string): void {
@@ -771,6 +860,7 @@ export class Hub {
   /** Tell a channel's audience a message was deleted (e.g. file removed). */
   announceDeleted(channelId: string, messageId: string): void {
     this.broadcastToChannel(channelId, { type: 'deleted', channelId, messageId })
+    this.alerts?.onDeleted(channelId, messageId)
   }
 
   /** Close every socket for a user (their session tokens are now invalid). */
@@ -779,6 +869,7 @@ export class Hub {
     // goes now rather than waiting out the grace period below.
     this.clearTallyGrace(userId)
     if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
+    this.alerts?.disconnectUser(userId)
     for (const conn of this.conns) {
       if (conn.user?.id === userId) {
         this.send(conn.ws, { type: 'error', code: 'auth', message: 'account deleted' })
@@ -787,14 +878,21 @@ export class Hub {
     }
   }
 
-  systemMessage(channelId: string, body: string): Message {
+  /**
+   * Post a message with no author. `origin` is `desk` for the production
+   * desk's messages, which alert like `@channel`; the box's own ("#foh
+   * created by Sam") have none and never alert (docs/ALERTS.md).
+   */
+  systemMessage(channelId: string, body: string, origin?: 'desk'): Message {
     const { message } = this.store.appendMessage({
       channelId,
       authorId: null,
       kind: 'system',
       body,
+      ...(origin ? { origin } : {}),
     })
     this.broadcastToChannel(channelId, { type: 'msg', message })
+    this.alerts?.onMessage(message)
     return message
   }
 

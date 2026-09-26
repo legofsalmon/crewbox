@@ -4,7 +4,7 @@
  * app package instead, so they carry a configured server origin — stored in
  * localStorage and applied to every API/WS/file URL.
  */
-import type { FileMeta } from '@crewbox/shared'
+import type { FileMeta, StageCountdown } from '@crewbox/shared'
 import { fileUrl } from '@crewbox/shared'
 import { holdingWhileOpen } from './prefs.ts'
 
@@ -20,8 +20,51 @@ interface AlertsPlugin {
     token: string
     session: string
     myName: string
+    /**
+     * The event it signs in to and the key kept for it: a box that decides
+     * alerts proves it is this event's before the service sends the token
+     * (docs/ALERTS.md). An older app ignores both.
+     */
+    eventId?: string
+    eventKey?: string
+    /**
+     * iPhone: the crew Wi-Fi's name as the box's admin set it, which the
+     * Local Push provider is registered for. Empty to use the network the
+     * phone is on. Android ignores it.
+     */
+    wifiSsid?: string
   }): Promise<void>
   stop(): Promise<void>
+  /**
+   * Put a followed stage's countdown on the lock screen, or take it off with
+   * `stage: null`. Resolves with the stage it shows, null when the phone
+   * won't show one (Live Activities turned off for crewbox).
+   *
+   * `countdown` is what it shows, for the iPhone's Live Activity, which only
+   * the app can update: the page works it out from its own running order
+   * (components/LockScreenCountdown.tsx). Android has it from the box and
+   * ignores it.
+   * @since native contract 2
+   */
+  setCountdown?(options: {
+    stage: string | null
+    countdown?: StageCountdown | null
+  }): Promise<{ stage: string | null }>
+  /**
+   * The stage whose countdown is on the lock screen, or null.
+   * @since native contract 2
+   */
+  getCountdown?(): Promise<{ stage: string | null }>
+  /**
+   * iPhone: whether this app may notify. `ask` before the person has said.
+   * @since native contract 2
+   */
+  notificationState?(): Promise<{ state: 'granted' | 'denied' | 'ask' }>
+  /**
+   * iPhone: the app's notification settings, where a refusal is undone.
+   * @since native contract 2
+   */
+  openNotificationSettings?(): Promise<void>
 }
 
 /**

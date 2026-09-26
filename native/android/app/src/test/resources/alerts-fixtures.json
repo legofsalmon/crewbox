@@ -1,0 +1,1189 @@
+{
+  "about": "Written by scripts/alerts-fixtures.mjs; read by server/test/alerts.test.ts and the Android app's AlertsFixturesTest. docs/ALERTS.md describes each frame.",
+  "mentions": [
+    {
+      "body": "@Sam can you check FOH",
+      "name": "Sam",
+      "expect": true
+    },
+    {
+      "body": "thanks @sam",
+      "name": "Sam",
+      "expect": true
+    },
+    {
+      "body": "(@Sam)",
+      "name": "Sam",
+      "expect": true
+    },
+    {
+      "body": "@Sammy can you check FOH",
+      "name": "Sam",
+      "expect": false
+    },
+    {
+      "body": "@Sam2",
+      "name": "Sam",
+      "expect": false
+    },
+    {
+      "body": "@all doors in 5",
+      "name": "Sam",
+      "expect": true
+    },
+    {
+      "body": "@Everyone doors",
+      "name": "Sam",
+      "expect": true
+    },
+    {
+      "body": "@channel.",
+      "name": "Sam",
+      "expect": true
+    },
+    {
+      "body": "@allison can you check FOH",
+      "name": "Sam",
+      "expect": false
+    },
+    {
+      "body": "@channels list",
+      "name": "Sam",
+      "expect": false
+    },
+    {
+      "body": "@alex (stage 2) cue",
+      "name": "Alex (Stage 2)",
+      "expect": true
+    },
+    {
+      "body": "@alex stage 2 cue",
+      "name": "Alex (Stage 2)",
+      "expect": false
+    },
+    {
+      "body": "@sam",
+      "name": "",
+      "expect": false
+    }
+  ],
+  "messages": [
+    {
+      "name": "plain message at the default is nothing",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "doors in 10",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "mentions",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "plain message in a channel set to All",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "doors in 10",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 0,
+      "expect": "message"
+    },
+    {
+      "name": "plain message in a muted channel",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "doors in 10",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "muted",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "a name mentions its person",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@Sam check FOH",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "mentions",
+      "readSeq": 0,
+      "expect": "mention"
+    },
+    {
+      "name": "a name gets through a mute",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@sam!",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "muted",
+      "readSeq": 0,
+      "expect": "mention"
+    },
+    {
+      "name": "a longer name is somebody else",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@Sammy check",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 0,
+      "expect": "message"
+    },
+    {
+      "name": "@channel at the default",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@channel doors",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "mentions",
+      "readSeq": 0,
+      "expect": "everyone"
+    },
+    {
+      "name": "@channel muted",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@channel doors",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "muted",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "@allison is not everyone",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@allison hi",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "mentions",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "a DM at the default",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-dm",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "doors in 10",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-dm",
+        "name": "dm",
+        "kind": "dm",
+        "memberIds": [
+          "u-sam",
+          "u-jo"
+        ]
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "mentions",
+      "readSeq": 0,
+      "expect": "dm"
+    },
+    {
+      "name": "a muted DM",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-dm",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "doors in 10",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-dm",
+        "name": "dm",
+        "kind": "dm",
+        "memberIds": [
+          "u-sam",
+          "u-jo"
+        ]
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "muted",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "already read",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@Sam",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 10,
+      "expect": null
+    },
+    {
+      "name": "read up to the one before",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@Sam",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 9,
+      "expect": "mention"
+    },
+    {
+      "name": "my own message",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": "u-sam",
+        "kind": "text",
+        "body": "@Sam",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "a retired channel",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-old",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@Sam",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-old",
+        "name": "old",
+        "kind": "public",
+        "retired": true
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "the box talking to itself",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": null,
+        "kind": "system",
+        "body": "#foh created by Jo",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "the desk at the default",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": null,
+        "kind": "system",
+        "body": "Changeover",
+        "createdAt": 1780000000000,
+        "origin": "desk"
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "mentions",
+      "readSeq": 0,
+      "expect": "desk"
+    },
+    {
+      "name": "the desk in a muted channel",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-foh",
+        "seq": 10,
+        "authorId": null,
+        "kind": "system",
+        "body": "Changeover",
+        "createdAt": 1780000000000,
+        "origin": "desk"
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "muted",
+      "readSeq": 0,
+      "expect": null
+    },
+    {
+      "name": "a DM I am not in",
+      "message": {
+        "id": "m-1",
+        "channelId": "c-dm2",
+        "seq": 10,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "doors in 10",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-dm2",
+        "name": "dm",
+        "kind": "dm",
+        "memberIds": [
+          "u-alex",
+          "u-jo"
+        ]
+      },
+      "person": {
+        "id": "u-sam",
+        "name": "Sam"
+      },
+      "level": "all",
+      "readSeq": 0,
+      "expect": null
+    }
+  ],
+  "incidents": [
+    {
+      "name": "a show stop logged at once",
+      "incident": {
+        "id": "i-1",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "show-stop",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780000120000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows"
+      },
+      "expect": true
+    },
+    {
+      "name": "a hold",
+      "incident": {
+        "id": "i-1",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "hold",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780000120000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows"
+      },
+      "expect": true
+    },
+    {
+      "name": "a delay",
+      "incident": {
+        "id": "i-1",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "delay",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780000120000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows"
+      },
+      "expect": false
+    },
+    {
+      "name": "serious, but medical",
+      "incident": {
+        "id": "i-1",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "medical",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780000120000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows"
+      },
+      "expect": false
+    },
+    {
+      "name": "a correction",
+      "incident": {
+        "id": "i-1",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "show-stop",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780000120000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows",
+        "amends": "i-0"
+      },
+      "expect": false
+    },
+    {
+      "name": "logged exactly fifteen minutes on",
+      "incident": {
+        "id": "i-1",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "show-stop",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780000900000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows"
+      },
+      "expect": true
+    },
+    {
+      "name": "logged the next morning",
+      "incident": {
+        "id": "i-1",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "show-stop",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780014400000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows"
+      },
+      "expect": false
+    }
+  ],
+  "calls": [
+    {
+      "name": "a gap gets a changeover call and each set an on-in-5",
+      "acts": [
+        {
+          "id": "a-1",
+          "name": "Night Bus",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "20:00",
+          "end": "21:00",
+          "changeover": 0
+        },
+        {
+          "id": "a-2",
+          "name": "The Hollows",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "21:30",
+          "end": "22:30",
+          "changeover": 0
+        }
+      ],
+      "day": "2026-07-10",
+      "expect": [
+        {
+          "id": "c:a-1:soon:2026-07-10:1200",
+          "due": 1195,
+          "title": "Night Bus on in 5 min"
+        },
+        {
+          "id": "c:a-2:soon:2026-07-10:1290",
+          "due": 1285,
+          "title": "The Hollows on in 5 min"
+        },
+        {
+          "id": "c:a-2:changeover:2026-07-10:1290",
+          "due": 1260,
+          "title": "Changeover on Main Stage"
+        }
+      ]
+    },
+    {
+      "name": "no changeover for a gap of zero or a set with no end",
+      "acts": [
+        {
+          "id": "a-1",
+          "name": "Night Bus",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "20:00",
+          "end": "21:00",
+          "changeover": 0
+        },
+        {
+          "id": "a-2",
+          "name": "The Hollows",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "21:00",
+          "end": "",
+          "changeover": 0
+        },
+        {
+          "id": "a-3",
+          "name": "Late Set",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "23:30",
+          "end": "00:30",
+          "changeover": 0
+        }
+      ],
+      "day": "2026-07-10",
+      "expect": [
+        {
+          "id": "c:a-1:soon:2026-07-10:1200",
+          "due": 1195,
+          "title": "Night Bus on in 5 min"
+        },
+        {
+          "id": "c:a-2:soon:2026-07-10:1260",
+          "due": 1255,
+          "title": "The Hollows on in 5 min"
+        },
+        {
+          "id": "c:a-3:soon:2026-07-10:1410",
+          "due": 1405,
+          "title": "Late Set on in 5 min"
+        }
+      ]
+    },
+    {
+      "name": "across the 06:00 roll, 00:30 is the same night",
+      "acts": [
+        {
+          "id": "a-1",
+          "name": "Late Set",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "23:30",
+          "end": "00:30",
+          "changeover": 0
+        },
+        {
+          "id": "a-2",
+          "name": "Closer",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "01:00",
+          "end": "02:00",
+          "changeover": 0
+        }
+      ],
+      "day": "2026-07-10",
+      "expect": [
+        {
+          "id": "c:a-1:soon:2026-07-10:1410",
+          "due": 1405,
+          "title": "Late Set on in 5 min"
+        },
+        {
+          "id": "c:a-2:soon:2026-07-10:1500",
+          "due": 1495,
+          "title": "Closer on in 5 min"
+        },
+        {
+          "id": "c:a-2:changeover:2026-07-10:1500",
+          "due": 1470,
+          "title": "Changeover on Main Stage"
+        }
+      ]
+    },
+    {
+      "name": "another day's sets are not tonight's",
+      "acts": [
+        {
+          "id": "a-1",
+          "name": "Friday",
+          "stage": "Main Stage",
+          "date": "2026-07-11",
+          "start": "20:00",
+          "end": "21:00",
+          "changeover": 0
+        }
+      ],
+      "day": "2026-07-10",
+      "expect": []
+    }
+  ],
+  "signed": {
+    "key": "BFlKP7wsGte8DRD7q5_TNbvvlNitW-qKNEf2nq-zpgaoPvsg63Omi2VmWrEYcMRRxH3xNPz9mNzfaiZ3QrH4BPg",
+    "eventId": "evt-3f9c2a",
+    "host": "10.20.0.1:3000",
+    "nonce": "q2-4k7BnW1xY8Zp0aVcDeF",
+    "statement": "crewbox-identity-v1\nevt-3f9c2a\n10.20.0.1:3000\nq2-4k7BnW1xY8Zp0aVcDeF",
+    "signature": "H9p9U8FohTTrzQ18VvIcCdSgtCwAVC6-8jLYUyJI68t2fZyBIV6muZNXiKLaV_osIQtnm89XR0BxnXjGQRKtwg",
+    "wrongHost": "10.20.0.99:3000"
+  },
+  "alertInputs": {
+    "mention": {
+      "message": {
+        "id": "m-7",
+        "channelId": "c-foh",
+        "seq": 12,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "@Sam can you check FOH",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "kind": "mention",
+      "authorName": "Jo",
+      "quiet": false
+    },
+    "dm": {
+      "message": {
+        "id": "m-8",
+        "channelId": "c-dm",
+        "seq": 3,
+        "authorId": "u-jo",
+        "kind": "text",
+        "body": "On my way",
+        "createdAt": 1780000000000
+      },
+      "channel": {
+        "id": "c-dm",
+        "name": "dm",
+        "kind": "dm",
+        "memberIds": [
+          "u-sam",
+          "u-jo"
+        ]
+      },
+      "kind": "dm",
+      "authorName": "Jo",
+      "quiet": true
+    },
+    "desk": {
+      "message": {
+        "id": "m-9",
+        "channelId": "c-foh",
+        "seq": 13,
+        "authorId": null,
+        "kind": "system",
+        "body": "Changeover started",
+        "createdAt": 1780000000000,
+        "origin": "desk"
+      },
+      "channel": {
+        "id": "c-foh",
+        "name": "foh",
+        "kind": "public"
+      },
+      "kind": "desk",
+      "authorName": "",
+      "quiet": false
+    },
+    "showStop": {
+      "incident": {
+        "id": "i-4",
+        "seq": 1,
+        "authorId": "u-jo",
+        "authorName": "Jo",
+        "kind": "show-stop",
+        "severity": "serious",
+        "body": "Crowd surge at the barrier",
+        "at": 1780000000000,
+        "loggedAt": 1780000120000,
+        "stage": "Main Stage",
+        "actId": "a-1",
+        "actName": "The Hollows"
+      },
+      "quiet": false
+    },
+    "changeover": {
+      "acts": [
+        {
+          "id": "a-1",
+          "name": "Night Bus",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "20:00",
+          "end": "21:00",
+          "changeover": 0
+        },
+        {
+          "id": "a-2",
+          "name": "The Hollows",
+          "stage": "Main Stage",
+          "date": "2026-07-10",
+          "start": "21:30",
+          "end": "22:30",
+          "changeover": 0
+        }
+      ],
+      "day": "2026-07-10",
+      "id": "c:a-2:changeover:2026-07-10:1290",
+      "at": 1780003600000,
+      "quiet": false
+    }
+  },
+  "frames": {
+    "box": {
+      "type": "box",
+      "v": 1,
+      "eventId": "evt-3f9c2a",
+      "signature": "H9p9U8FohTTrzQ18VvIcCdSgtCwAVC6-8jLYUyJI68t2fZyBIV6muZNXiKLaV_osIQtnm89XR0BxnXjGQRKtwg",
+      "beatMs": 30000,
+      "t": 1780005400000
+    },
+    "hello": {
+      "type": "hello",
+      "token": "tok-abc",
+      "since": 1780005100000,
+      "timeZone": "Europe/London"
+    },
+    "welcome": {
+      "type": "welcome",
+      "t": 1780005400000,
+      "settings": {
+        "channels": {
+          "c-foh": "all",
+          "c-dm": "muted"
+        },
+        "stages": [
+          "Main Stage"
+        ]
+      },
+      "catchUp": [
+        {
+          "id": "m:m-8",
+          "kind": "dm",
+          "title": "Jo",
+          "body": "On my way",
+          "target": {
+            "kind": "channel",
+            "channelId": "c-dm"
+          },
+          "thread": "c-dm",
+          "quiet": true,
+          "urgent": false,
+          "at": 1780000000000,
+          "from": {
+            "id": "u-jo",
+            "name": "Jo"
+          },
+          "seq": 3
+        },
+        {
+          "id": "m:m-7",
+          "kind": "mention",
+          "title": "Jo in #foh",
+          "body": "@Sam can you check FOH",
+          "target": {
+            "kind": "channel",
+            "channelId": "c-foh"
+          },
+          "thread": "c-foh",
+          "quiet": false,
+          "urgent": false,
+          "at": 1780000000000,
+          "from": {
+            "id": "u-jo",
+            "name": "Jo"
+          },
+          "seq": 12,
+          "channelName": "foh"
+        }
+      ],
+      "more": 3,
+      "stages": [
+        {
+          "stage": "Main Stage",
+          "onNow": {
+            "actId": "a-1",
+            "name": "Night Bus",
+            "start": 1780000000000,
+            "end": 1780003600000
+          },
+          "next": {
+            "actId": "a-2",
+            "name": "The Hollows",
+            "start": 1780005400000,
+            "end": 1780009000000
+          }
+        }
+      ]
+    },
+    "alertMention": {
+      "type": "alert",
+      "t": 1780005400000,
+      "alert": {
+        "id": "m:m-7",
+        "kind": "mention",
+        "title": "Jo in #foh",
+        "body": "@Sam can you check FOH",
+        "target": {
+          "kind": "channel",
+          "channelId": "c-foh"
+        },
+        "thread": "c-foh",
+        "quiet": false,
+        "urgent": false,
+        "at": 1780000000000,
+        "from": {
+          "id": "u-jo",
+          "name": "Jo"
+        },
+        "seq": 12,
+        "channelName": "foh"
+      }
+    },
+    "alertDm": {
+      "type": "alert",
+      "t": 1780005400000,
+      "alert": {
+        "id": "m:m-8",
+        "kind": "dm",
+        "title": "Jo",
+        "body": "On my way",
+        "target": {
+          "kind": "channel",
+          "channelId": "c-dm"
+        },
+        "thread": "c-dm",
+        "quiet": true,
+        "urgent": false,
+        "at": 1780000000000,
+        "from": {
+          "id": "u-jo",
+          "name": "Jo"
+        },
+        "seq": 3
+      }
+    },
+    "alertDesk": {
+      "type": "alert",
+      "t": 1780005400000,
+      "alert": {
+        "id": "m:m-9",
+        "kind": "desk",
+        "title": "Production desk in #foh",
+        "body": "Changeover started",
+        "target": {
+          "kind": "channel",
+          "channelId": "c-foh"
+        },
+        "thread": "c-foh",
+        "quiet": false,
+        "urgent": false,
+        "at": 1780000000000,
+        "seq": 13,
+        "channelName": "foh"
+      }
+    },
+    "alertShowStop": {
+      "type": "alert",
+      "t": 1780005400000,
+      "alert": {
+        "id": "i:i-4",
+        "kind": "showStop",
+        "title": "Show stop on Main Stage",
+        "body": "Jo: Crowd surge at the barrier",
+        "target": {
+          "kind": "showlog"
+        },
+        "thread": "showlog",
+        "quiet": false,
+        "urgent": true,
+        "at": 1780000120000
+      }
+    },
+    "alertChangeover": {
+      "type": "alert",
+      "t": 1780005400000,
+      "alert": {
+        "id": "c:a-2:changeover:2026-07-10:1290",
+        "kind": "changeover",
+        "title": "Changeover on Main Stage",
+        "body": "The Hollows on in 30 min",
+        "target": {
+          "kind": "stage",
+          "stage": "Main Stage"
+        },
+        "thread": "stage:Main Stage",
+        "quiet": false,
+        "urgent": true,
+        "at": 1780003600000
+      }
+    },
+    "read": {
+      "type": "read",
+      "t": 1780005400000,
+      "channelId": "c-foh",
+      "seq": 12
+    },
+    "withdraw": {
+      "type": "withdraw",
+      "t": 1780005400000,
+      "ids": [
+        "m:m-7",
+        "c:a-2:changeover:2026-07-10:1290"
+      ]
+    },
+    "settings": {
+      "type": "settings",
+      "t": 1780005400000,
+      "settings": {
+        "channels": {
+          "c-foh": "all",
+          "c-dm": "muted"
+        },
+        "stages": [
+          "Main Stage"
+        ]
+      }
+    },
+    "stages": {
+      "type": "stages",
+      "t": 1780005400000,
+      "stages": [
+        {
+          "stage": "Main Stage",
+          "onNow": {
+            "actId": "a-1",
+            "name": "Night Bus",
+            "start": 1780000000000,
+            "end": 1780003600000
+          },
+          "next": {
+            "actId": "a-2",
+            "name": "The Hollows",
+            "start": 1780005400000,
+            "end": 1780009000000
+          }
+        }
+      ]
+    },
+    "beat": {
+      "type": "beat",
+      "t": 1780005400000
+    },
+    "unknown": {
+      "type": "somethingNew",
+      "t": 1780005400000,
+      "extra": [
+        1,
+        2,
+        3
+      ]
+    }
+  }
+}

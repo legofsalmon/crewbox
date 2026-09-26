@@ -1,4 +1,6 @@
 import { useEffect, type PointerEvent } from 'react'
+import { talkKey } from '../lib/talkKey.ts'
+import { registerShortcut } from '../shell/keys.ts'
 import { channelLabel, useStore } from '../store.ts'
 
 /** Halo ring 8→30px with voice level; must mirror .ptt-btn.talking's resting shadow. */
@@ -54,6 +56,14 @@ export default function VoiceBar() {
       release()
     }
   }, [setTalking])
+
+  // Hold Space to talk, on a computer. Only while connected, so Space scrolls
+  // the page as usual the rest of the time; a drop mid-press is covered by
+  // the effect above.
+  useEffect(
+    () => (connected ? registerShortcut(talkKey(setTalking)) : undefined),
+    [connected, setTalking]
+  )
 
   if (voice.channelId === null || voice.status === 'idle') return null
 
@@ -146,6 +156,8 @@ export default function VoiceBar() {
           <button
             className={`ptt-btn ${voice.talking ? 'talking' : ''}`}
             aria-label="Hold to talk"
+            aria-keyshortcuts="Space"
+            title="Hold to talk (or hold Space)"
             // Live mic level drives the halo ring — visible proof you're heard.
             // Boosted like the settings meter so normal speech reads clearly.
             // Inline (not a CSS var): Chromium won't retarget a shadow

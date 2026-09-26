@@ -62,7 +62,9 @@ test('every page still works without expanding anything: search finds a heading'
 }) => {
   await page.goto('/docs')
 
-  await page.getByLabel('Search the docs').fill('changeover')
+  // Plural: the schedule page's "Changeover calls" heading matches the
+  // singular too, and ties with this one.
+  await page.getByLabel('Search the docs').fill('changeovers')
   const results = page.locator('.search .results a')
   await expect(results.first()).toBeVisible()
   await expect(results.first()).toContainText(/Patch|Stage|lineup/i)

@@ -20,6 +20,7 @@ class CrewboxViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(WifiPlugin())
         bridge?.registerPluginInstance(SessionsPlugin())
         bridge?.registerPluginInstance(RecordsPlugin())
+        bridge?.registerPluginInstance(AlertsPlugin())
         let screens = ScreensPlugin()
         screens.launched = launch
         bridge?.registerPluginInstance(screens)

@@ -1,3 +1,4 @@
+import { isMentioned, levelFor, messageAlertKind, type AlertSettings } from '@crewbox/shared'
 import { readPref, writePref } from './prefs.ts'
 import { nativeHaptics } from './server.ts'
 
@@ -89,17 +90,13 @@ export function requestNotificationPermission(): void {
   }
 }
 
-/** True when the message text @-mentions this user (or @all / @everyone). */
-export function isMentioned(body: string, myName: string | undefined): boolean {
-  const lower = body.toLowerCase()
-  if (/@(all|everyone|channel)\b/.test(lower)) return true
-  if (!myName) return false
-  // Require a non-alphanumeric boundary after the name so "@Sammy" doesn't
-  // mention "Sam". Names can contain regex metacharacters ("Alex (Stage 2)"),
-  // so escape before building the pattern.
-  const name = myName.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`@${name}(?![a-z0-9])`).test(lower)
-}
+/**
+ * True when the message text @-mentions this user (or @all / @everyone).
+ *
+ * The box's test, from the alerts contract, so the page, the box and the
+ * phones agree on who a message is for (shared/src/alerts.ts).
+ */
+export { isMentioned }
 
 /** What to announce about messages that arrived while nobody was looking. */
 export interface MissedAlert {
@@ -146,18 +143,41 @@ export function summariseMissed(input: {
   }[]
   myId: string | undefined
   myName: string | undefined
-  channels: Record<string, { kind?: string; name?: string } | undefined>
+  channels: Record<string, { kind?: string; name?: string; memberIds?: string[] } | undefined>
   users: Record<string, { name?: string } | undefined>
   /** Highest seq already read per channel, after the welcome has merged. */
   readState: Record<string, number>
   /** The channel on screen, when the app has focus; otherwise undefined. */
   focusedChannelId?: string | undefined
+  /**
+   * This person's alert settings, from a box that decides alerts. With them
+   * the box's rules choose (docs/ALERTS.md): a muted channel stays quiet, a
+   * channel set to All messages speaks up. Without them, the page's own:
+   * DMs and mentions.
+   */
+  settings?: AlertSettings
 }): MissedAlert | null {
   const wanted = input.missed.filter((m) => {
     if (!m.authorId || m.authorId === input.myId) return false
     if (m.seq <= (input.readState[m.channelId] ?? 0)) return false
     if (m.channelId === input.focusedChannelId) return false
     const channel = input.channels[m.channelId]
+    if (input.settings && channel && input.myId) {
+      return (
+        messageAlertKind({
+          message: { id: '', createdAt: 0, kind: 'text', ...m, authorId: m.authorId },
+          channel: {
+            id: m.channelId,
+            name: channel.name ?? '',
+            kind: channel.kind === 'dm' ? 'dm' : 'public',
+            ...(channel.memberIds ? { memberIds: channel.memberIds } : {}),
+          },
+          person: { id: input.myId, name: input.myName ?? '' },
+          level: levelFor(input.settings, m.channelId),
+          readSeq: input.readState[m.channelId] ?? 0,
+        }) !== null
+      )
+    }
     return channel?.kind === 'dm' || isMentioned(m.body, input.myName)
   })
   if (wanted.length === 0) return null

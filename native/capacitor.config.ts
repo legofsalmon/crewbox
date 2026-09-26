@@ -21,6 +21,12 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: true,
   },
+  ios: {
+    // crewbox's own notification delegate (AlertsNotifications.swift), not
+    // Capacitor's router, which with no notifications plugin shows nothing
+    // while the app is open and drops every tap.
+    handleApplicationNotifications: false,
+  },
 }
 
 export default config

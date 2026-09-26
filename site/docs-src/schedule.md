@@ -44,6 +44,26 @@ sinks to the bottom.
 The sidebar carries the same thing in one row per stage, so a stage manager
 who never opens the module still sees who's on and how long they have.
 
+## Changeover calls
+
+Each stage in the running order has a **bell**: follow it, and your phone
+gets its calls. Nobody follows a stage until they choose to.
+
+- **Changeover**, when a set ends and another follows: _Changeover on Main
+  Stage: The Hollows on in 30 min_.
+- **On in 5**, five minutes before a set starts.
+- **Moved**, when a set due on in the next two hours moves: _The Hollows now
+  on at 21:45 (was 21:30)_.
+
+The first two come through a Focus on an iPhone, and on Android's
+Changeover calls channel.
+A set that moves re-arms its calls.
+
+Beside a followed stage in the apps, **Show on the lock screen** keeps that
+stage's countdown there: who is on and when they come off, and who is next.
+It counts with the phone's own clock, and past the end it counts up, so a
+set that runs over shows by how much.
+
 ## One place, many readers
 
 Nobody types the day twice. The running order is entered once and everything

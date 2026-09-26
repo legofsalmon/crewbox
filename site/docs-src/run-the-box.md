@@ -40,7 +40,8 @@ The box opens a browser on `/setup`:
 
 1. **Event name** — what crew see when they join. Changeable any time.
 2. **Wi-Fi network** — the network crew join to reach the box, shown as
-   join guidance. Leave blank if you don't know yet.
+   join guidance. Leave blank if you don't know yet. Type it exactly: the
+   iPhone app listens for alerts on the network with this name.
 3. **Event PIN** — pre-filled with a freshly minted one; keep or change.
 4. **Admin password** — also minted for you, shown **this once**.
 

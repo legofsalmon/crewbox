@@ -71,6 +71,14 @@ of a block it has moved, as it can of any file. Each device that had a copy
 deletes it the next time it opens that list, once it has heard of the
 delete. A backup of the box made before the delete still has it.
 
+Alerts are decided on the box, so it keeps what each person chose: each
+channel's bell and the stages they follow. A phone listening for alerts
+tells the box its time zone, for the stage countdown. No push service is
+involved: Android and, once Apple allows it, the iPhone hold their own
+connection to the box on the crew Wi-Fi, and the iPhone app keeps the crew
+Wi-Fi's name so the phone knows when to listen. A phone checks that the box
+is the event's own before it sends a sign-in.
+
 The makers of Crewbox never receive your messages, files or name, and track
 nothing. When the event ends, the data is wherever the box's operator put
 it — typically an export in the production archive — and deleting your

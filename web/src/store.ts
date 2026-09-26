@@ -1,16 +1,21 @@
 import { create } from 'zustand'
 import {
+  DEFAULT_CHANNEL_ALERTS,
   HOME_CHANNEL,
   newId,
   OUTBOX_FLUSH_GAP_MS,
   PROTOCOL_VERSION,
+  type Alert,
+  type AlertSettings,
   type Channel,
+  type ChannelAlertLevel,
   type ClientMessage,
   type DmxUniverseWire,
   type Message,
   type Incident,
   type PublicConfig,
   type ServerMessage,
+  type StageCountdown,
   type User,
   type WelcomeMessage,
 } from '@crewbox/shared'
@@ -56,6 +61,7 @@ import {
   serverOrigin,
   setServerOrigin,
 } from './lib/server.ts'
+import { handleOpenLinks, type OpenLink } from './lib/appLinks.ts'
 import { measureImage } from './lib/files.ts'
 import { currentRoute, navigate, onRouteChange, routePath, type Route } from './shell/router.ts'
 import { capTranscript } from './lib/transcript.ts'
@@ -103,6 +109,9 @@ const THEME_KEY = 'crewbox:theme'
  * Module-level rather than in the store, because the whole point is that
  * incoming frames touch no store state until the frame flushes.
  */
+/** Every channel at Mentions, and no stages: where everybody starts. */
+const NO_ALERT_SETTINGS: AlertSettings = { channels: {}, stages: [] }
+
 const levelBuffer = new LevelBuffer()
 let levelFlush: number | null = null
 
@@ -278,6 +287,8 @@ export interface AlertBanner {
   body: string
   /** Where it takes you. None when it covers more than one channel. */
   channelId?: string
+  /** A module instead of a channel: the show log for a show stop, the running order for a call. */
+  moduleId?: string
 }
 export type Connection = 'connecting' | 'online' | 'offline'
 
@@ -562,6 +573,31 @@ export interface AppState {
   setBoxesOpen: (open: boolean) => void
   toggleTheme: () => void
   toggleSounds: () => void
+  /**
+   * This person's alert settings, kept on the box (docs/ALERTS.md): their
+   * level for each channel that isn't at Mentions, and the stages they follow.
+   */
+  alertSettings: AlertSettings
+  alertSettingsOpen: boolean
+  setAlertSettingsOpen: (open: boolean) => void
+  /** Set how much of a channel reaches this person's pocket, on every device. */
+  setChannelAlerts: (channelId: string, level: ChannelAlertLevel) => void
+  /** Follow a stage for changeover calls and the countdown, or stop. */
+  followStage: (stage: string, follow: boolean) => void
+  /**
+   * The followed stage whose countdown is on this phone's lock screen, or
+   * null; undefined where the app can't show one (a browser, an older app).
+   */
+  lockScreenStage: string | null | undefined
+  /** iPhone: whether the app may notify; undefined where it can't say. */
+  notificationState: 'granted' | 'denied' | 'ask' | undefined
+  setLockScreenStage: (stage: string | null) => void
+  /**
+   * iPhone: what the lock screen's countdown shows, from the page's running
+   * order. Sent whenever it changes and whenever the app is looked at again,
+   * since only the app can update a Live Activity.
+   */
+  showLockScreenCountdown: (countdown: StageCountdown | null) => void
   logout: () => Promise<void>
   /** The box says this session is dead. Keeps what has not been sent. */
   sessionEnded: () => Promise<void>
@@ -929,12 +965,90 @@ export const useStore = create<AppState>()((set, get) => {
    * the channel list whose badge would say is shut away in the drawer. So on
    * screen it is the banner.
    */
-  function announce(alert: { title: string; body: string; channelId?: string }): void {
-    playAlert()
+  /**
+   * Take the person to what an alert was about, out of whatever is over the
+   * chat, the way a phone's own notification takes you out of what you were
+   * doing: its channel, its module, or with neither (a banner for several
+   * channels) the channel list, whose badges say which.
+   */
+  function goTo(target: { channelId?: string; moduleId?: string }): void {
+    const state = get()
+    if (state.searchOpen) state.setSearchOpen(false)
+    if (state.adminOpen) state.setAdminOpen(false)
+    if (state.audioSettingsOpen) state.setAudioSettingsOpen(false)
+    if (state.fileDetail) state.closeFileDetail()
+    if (state.boxesOpen) state.setBoxesOpen(false)
+    if (target.channelId && state.channels[target.channelId]) {
+      state.setActiveChannel(target.channelId)
+    } else if (target.moduleId && state.config.modules.includes(target.moduleId)) {
+      state.setActiveModule(target.moduleId)
+    } else {
+      state.setSidebarOpen(true)
+    }
+  }
+
+  /**
+   * A tapped alert (lib/appLinks.ts). Only this event's: a notification left
+   * from another event names a channel this box doesn't have, and taking the
+   * person to another box is the Boxes screen's to offer, not a tap's.
+   */
+  function openLink(link: OpenLink): void {
+    if (link.event !== get().config.eventId) return
+    set({ alertBanner: null })
+    goTo(
+      link.to === 'channel'
+        ? { channelId: link.channelId }
+        : { moduleId: link.to === 'showlog' ? 'incident' : 'schedule' }
+    )
+  }
+
+  function announce(alert: {
+    title: string
+    body: string
+    channelId?: string
+    moduleId?: string
+    /** The box sent it quiet: a busy channel's second alert inside 30 seconds. */
+    quiet?: boolean
+  }): void {
+    if (!alert.quiet) playAlert()
     notify(alert.title, alert.body)
     if (document.visibilityState !== 'visible') return
-    const { title, body, channelId } = alert
-    set({ alertBanner: { id: ++bannerSeq, title, body, ...(channelId ? { channelId } : {}) } })
+    const { title, body, channelId, moduleId } = alert
+    set({
+      alertBanner: {
+        id: ++bannerSeq,
+        title,
+        body,
+        ...(channelId ? { channelId } : {}),
+        ...(moduleId ? { moduleId } : {}),
+      },
+    })
+  }
+
+  /**
+   * What the box says this person should be told (docs/ALERTS.md).
+   *
+   * The box ran the rules, with this person's settings, so the page follows
+   * them rather than deciding again. The one thing only the page knows is
+   * what is on screen: the channel somebody is looking at, with the app in
+   * focus, says nothing, as before.
+   */
+  function onBoxAlert(alert: Alert): void {
+    const channelId = alert.target.kind === 'channel' ? alert.target.channelId : undefined
+    if (channelId && channelId === get().activeChannelId && document.hasFocus()) return
+    const moduleId =
+      alert.target.kind === 'showlog'
+        ? 'incident'
+        : alert.target.kind === 'stage'
+          ? 'schedule'
+          : undefined
+    announce({
+      title: alert.title,
+      body: alert.body,
+      ...(channelId ? { channelId } : {}),
+      ...(moduleId ? { moduleId } : {}),
+      quiet: alert.quiet,
+    })
   }
 
   function markRead(channelId: string, seq: number): void {
@@ -1112,6 +1226,7 @@ export const useStore = create<AppState>()((set, get) => {
       online: Object.fromEntries(msg.online.map((id) => [id, true])),
       remoteUsers: Object.fromEntries((msg.remote ?? []).map((id) => [id, true])),
       readState,
+      alertSettings: msg.alertSettings ?? NO_ALERT_SETTINGS,
       messages,
       // Replay (or the truncated-channel reset) heals any search-jump gap.
       historyGapped: {},
@@ -1150,22 +1265,48 @@ export const useStore = create<AppState>()((set, get) => {
         users: get().users,
         readState,
         focusedChannelId: focused,
+        // A box that decides alerts has this person's settings; the page
+        // holds its catch-up to them, as the box holds the phones'.
+        ...(msg.config.alerts && msg.alertSettings ? { settings: msg.alertSettings } : {}),
       })
       if (alert) announce(alert)
     }
+
+    // A tapped alert, once this event is known: one that started the app
+    // waited for it.
+    handleOpenLinks(openLink)
+    // The countdown the app has on the lock screen, where it can have one.
+    void nativeAlerts()
+      ?.getCountdown?.()
+      .then((result) => set({ lockScreenStage: result.stage }))
+      .catch(() => {})
 
     // Android wrapper: hand the session to the foreground service so the
     // phone buzzes for messages while the app is backgrounded or locked.
     const alerts = nativeAlerts()
     if (alerts && serverOrigin()) {
-      void alerts
-        .start({
+      void (async () => {
+        // The iPhone asks the first time, and the system's question can't
+        // say why, so the page does, just before it.
+        const asked = await alerts.notificationState?.().catch(() => undefined)
+        if (asked?.state === 'ask') {
+          get().toast(
+            'Crewbox can buzz this phone when somebody needs you, even locked, while you’re on the event’s Wi-Fi.'
+          )
+        }
+        await alerts.start({
           serverUrl: serverOrigin(),
           token: getToken() ?? '',
           session: storageName(TOKEN_KEY),
           myName: msg.me.name,
+          wifiSsid: msg.config.wifiSsid ?? '',
+          ...(msg.config.eventId
+            ? { eventId: msg.config.eventId, eventKey: knownEvent(msg.config.eventId)?.key ?? '' }
+            : {}),
         })
-        .catch(() => {})
+        const now = await alerts.notificationState?.().catch(() => undefined)
+        if (now) set({ notificationState: now.state })
+      })().catch(() => {})
     }
 
     /**
@@ -1285,6 +1426,8 @@ export const useStore = create<AppState>()((set, get) => {
         const viewing = msg.message.channelId === activeChannelId && document.hasFocus()
         if (viewing) {
           markRead(msg.message.channelId, msg.message.seq)
+        } else if (get().config.alerts) {
+          // The box decides, and says so with an `alert` frame of its own.
         } else if (msg.message.authorId && msg.message.authorId !== me?.id) {
           const channel = channels[msg.message.channelId]
           const author = users[msg.message.authorId]?.name ?? 'Someone'
@@ -1392,6 +1535,12 @@ export const useStore = create<AppState>()((set, get) => {
       }
       case 'pong':
         break
+      case 'alert':
+        onBoxAlert(msg.alert)
+        break
+      case 'alertSettings':
+        set({ alertSettings: msg.settings })
+        break
       case 'config':
         rememberConfig(msg.config)
         carriesOn(msg.config)
@@ -1485,6 +1634,10 @@ export const useStore = create<AppState>()((set, get) => {
     screensNote: null,
     toasts: [],
     alertBanner: null,
+    alertSettings: NO_ALERT_SETTINGS,
+    alertSettingsOpen: false,
+    lockScreenStage: undefined,
+    notificationState: undefined,
     loadingOlder: false,
     uploading: false,
     theme: initialTheme(),
@@ -1937,20 +2090,7 @@ export const useStore = create<AppState>()((set, get) => {
       const banner = get().alertBanner
       if (!banner) return
       set({ alertBanner: null })
-      // Out of whatever is over the chat, the way a phone's own notification
-      // takes you out of what you were doing.
-      const state = get()
-      if (state.searchOpen) state.setSearchOpen(false)
-      if (state.adminOpen) state.setAdminOpen(false)
-      if (state.audioSettingsOpen) state.setAudioSettingsOpen(false)
-      if (state.fileDetail) state.closeFileDetail()
-      if (state.boxesOpen) state.setBoxesOpen(false)
-      if (banner.channelId && state.channels[banner.channelId]) {
-        state.setActiveChannel(banner.channelId)
-      } else {
-        // More than one channel: the list, whose badges say which.
-        state.setSidebarOpen(true)
-      }
+      goTo(banner)
     },
 
     dismissAlertBanner(id) {
@@ -2323,6 +2463,53 @@ export const useStore = create<AppState>()((set, get) => {
       const sounds = !get().sounds
       setSoundsEnabled(sounds)
       set({ sounds })
+    },
+
+    setAlertSettingsOpen(open) {
+      set({ alertSettingsOpen: open, ...(open ? { sidebarOpen: false } : {}) })
+    },
+
+    setChannelAlerts(channelId, level) {
+      // Shown at once, and put right by the box's answer, which goes to every
+      // device this person has, this one included.
+      const channels = { ...get().alertSettings.channels }
+      if (level === DEFAULT_CHANNEL_ALERTS) delete channels[channelId]
+      else channels[channelId] = level
+      set({ alertSettings: { ...get().alertSettings, channels } })
+      ws?.send({ type: 'setChannelAlerts', channelId, level })
+    },
+
+    followStage(stage, follow) {
+      const others = get().alertSettings.stages.filter((name) => name !== stage)
+      const stages = follow ? [...others, stage].sort() : others
+      set({ alertSettings: { ...get().alertSettings, stages } })
+      ws?.send({ type: 'followStage', stage, follow })
+      // An unfollowed stage's countdown goes too: the box stops sending it.
+      if (!follow && get().lockScreenStage === stage) get().setLockScreenStage(null)
+    },
+
+    setLockScreenStage(stage) {
+      const plugin = nativeAlerts()
+      if (!plugin?.setCountdown) return
+      set({ lockScreenStage: stage })
+      void plugin
+        .setCountdown({ stage })
+        .then((result) => set({ lockScreenStage: result.stage }))
+        .catch(() => {})
+    },
+
+    showLockScreenCountdown(countdown) {
+      const stage = get().lockScreenStage
+      const plugin = nativeAlerts()
+      if (!stage || !plugin?.setCountdown) return
+      void plugin
+        .setCountdown({ stage, countdown })
+        .then((result) => {
+          // Live Activities turned off for crewbox: the button says so by
+          // showing the countdown as off.
+          if (get().lockScreenStage === stage) set({ lockScreenStage: result.stage })
+        })
+        .catch(() => {})
     },
 
     /**

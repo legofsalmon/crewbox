@@ -33,17 +33,22 @@ describe('the iPhone app', () => {
   })
 
   it('hands a link to Capacitor, which gives it to the page', () => {
-    // Without this call the App plugin never hears of a link, and the app
-    // opens at whatever it last showed. iOS calls the app delegate for a link
-    // only while the app has no scene manifest. Capacitor 8.5's template has
-    // one, and Xcode 27 is to require it: then links come to the scene
-    // delegate, which must pass them to Capacitor's SceneDelegateProxy, and
-    // this has to check that instead.
-    expect(plist, 'links now come to the scene delegate').not.toMatch(/UIApplicationSceneManifest/)
-    const delegate = readFileSync(join(ROOT, 'native/ios/App/App/AppDelegate.swift'), 'utf8')
-    expect(delegate).toContain(
-      'return ApplicationDelegateProxy.shared.application(app, open: url, options: options)'
+    // Without this the App plugin never hears of a link, and the app opens at
+    // whatever it last showed. Under the scene life cycle (Apple's TN3187,
+    // which Xcode 27 is to require) iOS gives links to the scene delegate,
+    // not the app delegate, so the scene delegate passes each to Capacitor:
+    // a running app's at once, and one that started the app once the
+    // bridge's view has appeared, when the plugins can hear it.
+    expect(plist).toMatch(/UIApplicationSceneManifest/)
+    expect(plist).toMatch(/\$\(PRODUCT_MODULE_NAME\)\.SceneDelegate/)
+    const scene = readFileSync(join(ROOT, 'native/ios/App/App/SceneDelegate.swift'), 'utf8')
+    expect(scene).toMatch(/func scene\(_ scene: UIScene, openURLContexts URLContexts/)
+    expect(scene).toMatch(/connectionOptions\.urlContexts[\s\S]*\.capacitorViewDidAppear/)
+    expect(scene).toContain(
+      'ApplicationDelegateProxy.shared.application(\n            UIApplication.shared, open: context.url, options: options)'
     )
+    const project = readFileSync(join(ROOT, 'native/ios/App/App.xcodeproj/project.pbxproj'), 'utf8')
+    expect(project).toMatch(/SceneDelegate\.swift in Sources \*\/,/)
   })
 })
 

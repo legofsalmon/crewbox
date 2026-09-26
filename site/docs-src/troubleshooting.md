@@ -70,11 +70,18 @@ address bar).
 - Check the **bell** in the sidebar isn't muted.
 - Backgrounded browser alerts need notification permission — the browser
   asks once; if it was refused, re-enable it in site settings.
-- **iPhone, locked, no internet: alerts cannot work.** Apple's push
-  servers are unreachable from an offline event network and no app can work
-  around it. Give Android phones to roles that must not miss a call — the
-  Android app holds its own connection to the box and buzzes on the lock
-  screen, entirely on the LAN.
+- Check the channel's own **bell**: every channel starts at **Mentions**,
+  so ordinary messages don't buzz until you pick **All messages**.
+- Changeover calls need the stage **followed** in the running order.
+- **iPhone, locked, no internet: not yet.** Ordinary iPhone notifications
+  come through Apple's servers, unreachable from an offline event network.
+  Crewbox's way round it waits on Apple's permission
+  ([Phones and platforms](/docs/phones-and-platforms#the-ios-app)). Give
+  Android phones to roles that must not miss a call — the Android app holds
+  its own connection to the box and buzzes on the lock screen, entirely on
+  the LAN.
+- **Android, after a restart:** the alerts come back by themselves once the
+  phone is unlocked. If they don't, open the app once.
 
 ## "My message says sending… forever"
 

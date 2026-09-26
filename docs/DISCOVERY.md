@@ -219,6 +219,15 @@ A box at the address the phone already has, saying it runs the event the
 phone has open there, is taken at its word, as before: the app does not ask
 it to prove itself each time it connects.
 
+The alerts socket is the exception ([ALERTS.md](ALERTS.md), "The box proves
+itself first"). Android's alerts service and the iPhone's Local Push
+provider connect without anybody looking, and the iPhone's starts on any
+Wi-Fi with the crew network's name. So each sends a fresh challenge every
+time, and sends the sign-in only when the box signs it with the kept key
+for the address asked at, or, for an event joined before boxes had keys,
+says it runs the event. The same statement is signed, with the same code on
+the box.
+
 ## The join QR
 
 The QR a box prints for crew, on `/connect` and in its console at start-up

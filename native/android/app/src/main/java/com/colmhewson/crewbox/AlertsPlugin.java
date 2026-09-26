@@ -7,6 +7,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -14,6 +15,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+
+import org.json.JSONObject;
 
 /**
  * JS bridge for the background-alerts foreground service. The web app calls
@@ -49,13 +52,40 @@ public class AlertsPlugin extends Plugin {
     // The name the app keeps the token under (Sessions), for a restart.
     String session = call.getString("session", "");
     String myName = call.getString("myName", "");
+    // The event it signs in to, and the key its box proves itself with
+    // before it sees the token (docs/ALERTS.md). Absent from a page older
+    // than this build: the event is then whatever the box says it is not,
+    // so such a service stays on the chat socket's own rules.
+    String eventId = call.getString("eventId", "");
+    String eventKey = call.getString("eventKey", "");
     if (serverUrl == null || serverUrl.isEmpty() || token == null || token.isEmpty()) {
       call.reject("serverUrl and token are required");
       return;
     }
-    AlertsService.start(getContext(), serverUrl, token, session, myName);
+    AlertsService.start(getContext(), serverUrl, token, session, myName, eventId, eventKey);
     requestBatteryExemptionOnce();
     call.resolve();
+  }
+
+  /**
+   * Put a followed stage's countdown on the lock screen, or take it off with
+   * no stage (docs/ALERTS.md). The service keeps it current from the box's
+   * `stages` frames; it shows once the box has sent them.
+   */
+  @PluginMethod
+  public void setCountdown(PluginCall call) {
+    String stage = call.getString("stage", "");
+    AlertsService.setCountdownStage(getContext(), stage == null ? "" : stage.trim());
+    getCountdown(call);
+  }
+
+  /** The stage whose countdown is on the lock screen, or null. */
+  @PluginMethod
+  public void getCountdown(PluginCall call) {
+    String stage = AlertsService.countdownStage(getContext());
+    JSObject result = new JSObject();
+    result.put("stage", stage.isEmpty() ? JSONObject.NULL : stage);
+    call.resolve(result);
   }
 
   @PluginMethod

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Local Push Connectivity: granted by Apple on request, per account.
+	     Until it is, this target is built unsigned in CI and left out of the
+	     app (APP-STORE-CHECKLIST.md). -->
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>app-push-provider</string>
+	</array>
+	<!-- The sign-ins, shared with the app as a Keychain group. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.colmhewson.crewbox</string>
+	</array>
+	<!-- Show stops through a Focus. On both targets: nothing says which a
+	     provider-posted notification needs. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+</dict>
+</plist>
