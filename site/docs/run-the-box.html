@@ -39,8 +39,8 @@
 <ol><li><strong>Event name</strong> — what crew see when they join. Changeable any time.</li><li><strong>Wi-Fi network</strong> — the network crew join to reach the box, shown as join guidance. Leave blank if you don't know yet. Type it exactly: the iPhone app listens for alerts on the network with this name.</li><li><strong>Event PIN</strong> — pre-filled with a freshly minted one; keep or change.</li><li><strong>Admin password</strong> — also minted for you, shown <strong>this once</strong>.</li></ol>
 <div class="callout callout-warning"><p><strong>Write the admin password down now.</strong> It is never shown again, and the
 setup page closes forever the moment the first person joins. If it's
-lost, the supported way back in is setting the <code>ADMIN_PASSWORD</code>
-environment variable and restarting the box.</p></div>
+lost, get back in from the box itself: <strong>Open the admin panel</strong> in the
+Crewbox menu, or <code>crewbox --admin</code> (<a href="#day-to-day">below</a>).</p></div>
 <p>A <strong>Networks</strong> section appears when the machine has more than one network adapter — pick which side the crew are on, and whether to listen to a lighting network (<a href="/docs/lighting-live">why you'd want to</a>). Everything else on the setup page is editable later in <a href="/docs/admin">the admin panel</a>; the network choices apply on the next start.</p>
 <h2 id="the-noticeboard-connect"><a class="anchor" href="#the-noticeboard-connect">The noticeboard: /connect</a></h2>
 <p>Saving setup lands on <code>/connect</code>: the join QR (with the PIN already in it), the join URL as a tappable link, the PIN in print, and — once you've put the Android app on the box — a download link for it. Leave it on a spare screen, or print poster versions. Crew scan, pick a name, done.</p>
@@ -48,8 +48,10 @@ environment variable and restarting the box.</p></div>
 <p>The box's own terminal prints the same thing, QR included, for headless machines.</p>
 <h2 id="day-to-day"><a class="anchor" href="#day-to-day">Day to day</a></h2>
 <pre><code>crewbox --status   # is it running, on what address, with which PIN
+crewbox --admin    # a link that opens the admin panel once, no password
 crewbox --stop     # stop it — works over SSH, works headless</code></pre>
-<ul><li><strong>macOS</strong>: a menu-bar item beside the clock — the event, the join link, copy-the-PIN, and <strong>Stop Crewbox and quit</strong>. No Dock icon; it's a server.</li><li><strong>Windows</strong>: the same menu in the system tray.</li><li><strong>Linux</strong>: Ctrl-C in its terminal, or <code>crewbox --stop</code>.</li></ul>
+<ul><li><strong>macOS</strong>: a menu-bar item beside the clock — the event, the join link, copy-the-PIN, <strong>Open the admin panel</strong>, and <strong>Stop Crewbox and quit</strong>. No Dock icon; it's a server.</li><li><strong>Windows</strong>: the same menu in the system tray.</li><li><strong>Linux</strong>: Ctrl-C in its terminal, or <code>crewbox --stop</code>.</li></ul>
+<p><strong>Open the admin panel</strong> opens the panel already unlocked, so a lost admin password is never the end: get in, then set a new one under <strong>Admin → This box</strong>. Each link works once, and only someone logged in on the box can get one — the menu and <code>--admin</code> read it from the box's data directory, which nobody on the network can. From another device, run <code>crewbox --admin</code> on the box (over SSH, say) and open the second link it prints. Setting the <code>ADMIN_PASSWORD</code> environment variable and restarting still works too, and overrides the stored password for as long as it is set.</p>
 <p>A second copy of the box refuses to start while one is running — it can't steal the port or hurt the live one. Stop the old one first (<code>--stop</code>), including when upgrading: running programs can't be overwritten.</p>
 <h2 id="serving-the-android-app"><a class="anchor" href="#serving-the-android-app">Serving the Android app</a></h2>
 <p>Drop the <code>crewbox-*.apk</code> file into the box's data directory (<code>~/.crewbox/ data</code>) and it's served at <code>/crewbox.apk</code> — the <code>/connect</code> page starts offering it automatically. The URL never changes, so printed posters stay valid across versions.</p>

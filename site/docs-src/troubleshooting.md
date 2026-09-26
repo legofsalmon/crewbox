@@ -199,9 +199,11 @@ app.
   sends every lookup to that provider, over an internet the crew Wi-Fi
   hasn't got. Set it to **Automatic** at the venue, or use the box's address.
 - **Setup page gone** — `/setup` closes forever once the first person
-  joins. Everything on it lives on in the admin panel; the admin password,
-  if lost, can be overridden with the `ADMIN_PASSWORD` environment variable
-  and a restart.
+  joins. Everything on it lives on in the admin panel. Lost the admin
+  password as well? On the box, **Open the admin panel** in the Crewbox menu
+  or `crewbox --admin` gets you in without it, once; set a new one under
+  **Admin → This box**. The `ADMIN_PASSWORD` environment variable and a
+  restart still override it too.
 - **Everything else** — the readiness list in **Admin → This box** exists
   precisely for "what's wrong and what do I do": every red or amber row
   carries its own fix.

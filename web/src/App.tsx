@@ -24,6 +24,7 @@ import { useBoxSearch } from './lib/discovery.ts'
 import { useFollowBoxes } from './lib/follow.ts'
 import { boxOrigin, isNative, serverLabel } from './lib/server.ts'
 import { clearJoinLink, currentJoinLink, subscribeJoinLink } from './lib/appLinks.ts'
+import { takeAdminLinkOutcome } from './lib/adminLink.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import FeedbackDialog from './components/FeedbackDialog.tsx'
@@ -71,21 +72,31 @@ export default function App() {
   /*
    * `?admin` opens the panel.
    *
-   * The one caller is the tray and menu-bar helper's "Update available" item.
-   * Before the box could update itself that opened a download page, which is
-   * now the wrong answer — the update happens here. The helpers know a URL and
-   * nothing else about the app, so a query parameter is the whole interface.
+   * The callers are the tray and menu-bar helper's "Update available" and
+   * "Open the admin panel" items. Before the box could update itself the
+   * first opened a download page, which is now the wrong answer — the update
+   * happens here. The helpers know a URL and nothing else about the app, so a
+   * query parameter is the whole interface.
    *
    * Stripped from the address bar immediately, so a reload or a shared link
    * does not keep reopening a panel somebody deliberately closed.
+   *
+   * An admin link (lib/adminLink.ts) opens it too, already unlocked, or
+   * saying why not — even if joining on the way lost the `?admin`.
    */
   useEffect(() => {
     if (phase !== 'chat') return
     const url = new URL(window.location.href)
-    if (!url.searchParams.has('admin')) return
-    url.searchParams.delete('admin')
-    window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+    const asked = url.searchParams.has('admin')
+    const link = takeAdminLinkOutcome()
+    if (!asked && !link) return
+    if (asked) {
+      url.searchParams.delete('admin')
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+    }
     useStore.getState().setAdminOpen(true)
+    // After opening, which clears whatever the unlock screen said last time.
+    void link?.then((outcome) => useStore.getState().adminLinkAnswered(outcome))
   }, [phase])
 
   if (phase === 'boot') return <div className="boot-screen" />

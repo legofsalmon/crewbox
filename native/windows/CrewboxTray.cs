@@ -45,6 +45,19 @@ public class BoxStatus
     [DataMember(Name = "update")] public UpdateInfo Update { get; set; }
 }
 
+/// <summary>The box's admin link: the panel, unlocked, once (server/src/adminLink.ts).</summary>
+/// <remarks>
+/// A file of its own rather than a field in box-status.json, because the key
+/// in it is as good as the password. Absent from a box that predates it, and
+/// then the menu opens the password prompt instead, as it always did.
+/// </remarks>
+[DataContract]
+public class AdminLink
+{
+    [DataMember(Name = "pid")] public int Pid { get; set; }
+    [DataMember(Name = "url")] public string Url { get; set; }
+}
+
 public class CrewboxTray : ApplicationContext
 {
     private readonly NotifyIcon icon;
@@ -199,11 +212,13 @@ public class CrewboxTray : ApplicationContext
             // holding a binary with no idea what to do with it. Nothing is
             // installed by this click either — the panel asks twice, and shows
             // what a restart would interrupt before it does anything.
+            //
+            // Unlocked, like "Open the admin panel" below: the update is the
+            // panel's to do, and a password prompt is where it used to stop.
             if (status.Update != null && !string.IsNullOrEmpty(status.Update.Version))
             {
-                string url = status.JoinUrl + "?admin";
                 var item = new ToolStripMenuItem(
-                    "Update available: " + status.Update.Version, null, (s, e) => OpenUrl(url));
+                    "Update available: " + status.Update.Version, null, (s, e) => OpenAdmin());
                 item.Font = new Font(item.Font, FontStyle.Bold);
                 menu.Items.Add(item);
             }
@@ -212,6 +227,10 @@ public class CrewboxTray : ApplicationContext
 
             Add(menu, "Open the join page", (s, e) => OpenUrl(status.JoinUrl));
             Add(menu, "Open the QR poster page", (s, e) => OpenUrl(status.JoinUrl + "/connect"));
+            // The way into the admin panel for whoever is at the box, without
+            // the password — for somebody who closed the console the box
+            // printed it to, or never saw one.
+            Add(menu, "Open the admin panel", (s, e) => OpenAdmin());
             Add(menu, "Copy the join link", (s, e) => Copy(status.JoinUrl));
             Add(menu, "Copy the event PIN  (" + status.EventPin + ")", (s, e) => Copy(status.EventPin));
 
@@ -243,6 +262,43 @@ public class CrewboxTray : ApplicationContext
         // Named for what it does. "Exit" alone reads as closing this icon, and
         // the thing someone wants to be certain of is that the box stopped.
         Add(menu, "Stop Crewbox and exit", (s, e) => StopBoxAndQuit());
+    }
+
+    /// <summary>The admin link if the box has one for us, the password prompt if not.</summary>
+    private void OpenAdmin()
+    {
+        Read();
+        if (status == null) return;
+        OpenUrl(ReadAdminLink(status.Pid) ?? status.JoinUrl + "?admin");
+    }
+
+    /// <summary>The admin link for the running box, or null.</summary>
+    /// <remarks>
+    /// Read at the moment it is clicked, never kept: the key works once, and
+    /// the box writes a new one as soon as it is used. A link from any other
+    /// process is a key nobody can spend, so the pid has to be the running
+    /// box's. Opened letting the box replace the file while it is read, which
+    /// is what it does the moment the link is used.
+    /// </remarks>
+    private string ReadAdminLink(int pid)
+    {
+        try
+        {
+            string path = Path.Combine(dataDir, "admin-link.json");
+            if (!File.Exists(path)) return null;
+            using (var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                var serializer = new DataContractJsonSerializer(typeof(AdminLink));
+                var link = (AdminLink)serializer.ReadObject(stream);
+                if (link == null || link.Pid != pid || string.IsNullOrEmpty(link.Url)) return null;
+                return link.Url;
+            }
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static ToolStripMenuItem Header(string text)
@@ -289,6 +345,8 @@ public class CrewboxTray : ApplicationContext
             // clean exit and treats one left behind as a crash, which would
             // make every Quit from this icon read as "closed unexpectedly".
             try { File.Delete(Path.Combine(dataDir, "running-" + status.Pid + ".json")); } catch { }
+            // And its admin link, whose key died with it.
+            try { File.Delete(Path.Combine(dataDir, "admin-link.json")); } catch { }
         }
         Quit();
     }
