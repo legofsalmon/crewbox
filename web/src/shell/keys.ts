@@ -18,7 +18,19 @@ export interface Shortcut {
    * event through untouched (e.g. native text undo in a dirty input). */
   when?: (e: KeyboardEvent) => boolean
   handler: (e: KeyboardEvent) => void
+  /**
+   * For a hold shortcut: called on the key's keyup, whatever modifiers are
+   * down by then. The registry doesn't track what was pressed, so the
+   * shortcut decides whether this release is one it cares about.
+   */
+  release?: (e: KeyboardEvent) => void
 }
+
+/** Is this key press going into something the person is typing in? */
+export const isTyping = (target: EventTarget | null): target is HTMLElement =>
+  target instanceof HTMLInputElement ||
+  target instanceof HTMLTextAreaElement ||
+  (target instanceof HTMLElement && target.isContentEditable)
 
 /**
  * Is this key press happening inside the given view?
@@ -56,11 +68,7 @@ export const documentUndoTarget =
   (scope?: () => Element | null) =>
   (e: KeyboardEvent): boolean => {
     const target = e.target as HTMLElement | null
-    const typing =
-      target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement ||
-      target?.isContentEditable === true
-    if (!typing) return true
+    if (!isTyping(target)) return true
     if (!inScope(target, scope)) return false
     return !target.dataset.dirty
   }
@@ -88,6 +96,11 @@ if (typeof window !== 'undefined') {
         s.handler(e)
         return
       }
+    }
+  })
+  window.addEventListener('keyup', (e) => {
+    for (const s of shortcuts) {
+      if (s.release && e.key.toLowerCase() === s.key.toLowerCase()) s.release(e)
     }
   })
 }

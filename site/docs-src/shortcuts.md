@@ -16,6 +16,15 @@ blurb: Every keyboard shortcut, by where it works.
 | `⌘K`    | Open search                                                            |
 | `Enter` | Send the message you're typing (computers; phones use the send button) |
 
+## Voice
+
+| Keys       | Does                                                      |
+| ---------- | --------------------------------------------------------- |
+| Hold Space | Talk, like holding the big button; let go to stop talking |
+
+Space talks only while you're in voice, and never while you're typing in a
+text box — there it's still a space. It doesn't release a locked mic.
+
 ## Patch sheet
 
 | Keys            | Does                            |

@@ -27,6 +27,8 @@ configured.
 - **Hold** the big button to talk; release to go quiet. It reads **HOLD**
   when idle and **LIVE** with a level halo while you're transmitting — if
   the halo doesn't move, your mic isn't picking you up.
+- On a computer, **hold Space** to do the same — as long as you aren't
+  typing in a text box ([all shortcuts](/docs/shortcuts)).
 - The **lock** button latches your mic open — for gloved hands or a long
   explanation. Tap again to release. The bar shows everyone whose mic is
   open, so a stuck latch is visible to the whole line.
