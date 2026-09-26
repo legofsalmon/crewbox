@@ -286,3 +286,9 @@ Build: `npm run build:native` (web build + `cap sync`), then
 for the APK, or open `native/ios/App` in Xcode for the iOS archive. The
 join screen in native builds asks for the crew server address (also
 reachable via a `?server=` deep-link on the QR poster).
+
+## Licence
+
+Crewbox is source-available under the [Elastic License 2.0](LICENSE), licensed
+by LeTissier Creative Studios Ltd. The components it bundles keep their own
+licences, listed in `web/public/third-party-notices.txt`.
