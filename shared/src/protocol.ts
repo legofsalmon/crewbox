@@ -223,6 +223,16 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>
 /** Non-sensitive settings sent to every client (admin-editable subset + info). */
 export interface PublicConfig {
   /**
+   * The festival's timezone as an IANA name, when the box was given one
+   * (`CREWBOX_TZ`). The show log dates and times its entries in it, so a
+   * report printed off site still reads in the field's clock.
+   *
+   * Absent when the box has none, and then a device reads the log in its own
+   * zone, which on site is the festival's. The box's process zone is not
+   * sent in its place: a box imaged with UTC would be an hour out in July.
+   */
+  timeZone?: string
+  /**
    * What this box is for — "Ashton Court 2026". Shown instead of "Crewbox"
    * on the join screen, the sidebar and the tab title. '' when unset, which
    * is the honest state for a box nobody has set up yet.

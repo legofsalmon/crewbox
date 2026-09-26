@@ -55,14 +55,10 @@ after:
   with no warning at all: fine, then gone, discovered by crew phones sitting
   on "Connecting" mid-set. It goes amber on battery and red under half an
   hour. Machines with no battery don't show the row.
-- **Backup** — how long since `deploy/backup.sh` last finished, and where it
-  wrote to. The box can't go looking for backups (they're on a USB stick
-  that usually isn't plugged in), so the script leaves it a note. A backup
-  regime that quietly stopped three events ago looks identical from the
-  production desk to one that ran last night; this is the row that tells
-  them apart. The release downloads carry no `deploy/` folder, so on a box
-  run from one the row says to quit Crewbox and copy its data folder
-  instead. It can't see those copies, so it stays amber after one.
+- **Backup** — how long since the last backup finished, the box's own or
+  `deploy/backup.sh`'s, and where it went. It goes amber after a day with
+  none, and when the last one is on the same disk as the box's data, which
+  does not survive the box.
 
 Below the list, the settings:
 
@@ -154,6 +150,32 @@ after the show, and that's fine. A box set with `CREWBOX_UPDATE_CHECK=0`
 makes no outbound connections, so its reports stay on the box. They are
 plain files in the `reports` folder of the box's data directory, if you want
 to read or delete one.
+
+## Backups
+
+The box backs itself up every 6 hours, into a folder of its own: the
+database, the uploads, the certificate and the Android app.
+
+- **Backup folder** — where they go. Left empty, the data folder's own
+  `backups`, which is on the same disk as everything it backs up; plug in a
+  USB stick and put its folder here. It keeps the newest 14.
+- **Back up now** — takes one there and then. Do it before teardown, and
+  before anything risky.
+
+If a backup fails (the stick was pulled, or is full), the section says why,
+and the box tries again at the next one. Restoring is in
+[Run the box](/docs/run-the-box#data-backup-updates).
+
+## Deleted this week
+
+Anyone can delete a patch sheet, lighting plot or screen map, and it goes for
+everyone. The box keeps each one for 7 days first. This section lists them,
+with when each was deleted and when the box will wipe it.
+
+- **Restore** puts it back on every phone, under its old name. Phones that
+  deleted their copy fetch it from the box.
+- **Delete now** wipes it from the box before the week is up. It asks first,
+  because that can't be undone.
 
 ## Export
 

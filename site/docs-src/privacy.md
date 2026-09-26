@@ -64,9 +64,11 @@ running that version, with nothing about you or the event in them. They come
 from the box, not the internet, are left out of backups like the note, and
 are deleted once none of your events last ran them.
 
-Deleting a sheet, plot or screen map deletes it from the box too. The box
-overwrites what it held rather than only marking the space free, and never
-saves it again, though the SD card or disk underneath can keep an old copy
+Deleting a sheet, plot or screen map puts it in the box's bin for 7 days, so
+an admin can restore one deleted by mistake, and then deletes it from the
+box. An admin can also delete it from the bin straight away. Either way the
+box overwrites what it held rather than only marking the space free, and
+never saves it again, though the SD card or disk underneath can keep an old copy
 of a block it has moved, as it can of any file. Each device that had a copy
 deletes it the next time it opens that list, once it has heard of the
 delete. A backup of the box made before the delete still has it.

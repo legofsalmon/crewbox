@@ -20,8 +20,8 @@ import { DocsRelay, type RelayLimits, type SavedDocs } from '../src/docs.ts'
  * The phones hold every document they have opened, and used to be the only
  * place one outlived a restart of the box: a crew member who joined after it
  * was told a sheet had been deleted until its author opened it again. The box
- * saves each one in its database now (docs.ts, `doc_updates`), and deletes it
- * from its disk when it is deleted.
+ * saves each one in its database now (docs.ts, `doc_updates`). When one is
+ * deleted it goes in the box's bin for a week, and is then wiped.
  *
  * Each box here is a real app on a real database file, and a restart is a new
  * app on the same file. The failure cases drive the relay directly, with a
@@ -287,7 +287,7 @@ function databaseFiles(file: string): Buffer {
 }
 
 describe('a deleted document', { timeout: TEST_TIMEOUT }, () => {
-  it('is deleted from the box’s disk, leaving nothing of it in the database’s files', async () => {
+  it('is wiped from the box’s disk once it leaves the bin, leaving nothing of it in the database’s files', async () => {
     const box = await startBox('wipe.db', { saveEveryMs: 20 })
     const room = 'patch/sheet-confidential'
     try {
@@ -324,6 +324,11 @@ describe('a deleted document', { timeout: TEST_TIMEOUT }, () => {
         })
         await waitFor(() => rowsOf(box, room).length === 0)
         expect(box.app.docs.peek(room)).toBeNull()
+        // In the bin for a week, under its title, and then wiped. An admin's
+        // "Delete now" is the same wipe, sooner.
+        expect(box.app.docs.bin()).toMatchObject([{ room, title: 'Confidential Rider' }])
+        expect(box.app.docs.emptyFromBin(room)).toBe(true)
+        expect(box.app.docs.bin()).toEqual([])
         // The index's own rows said what it was called. Folded, they do not.
         await waitFor(() =>
           rowsOf(box, 'patch/index').every((row) => !holds(row, 'Confidential Rider'))
@@ -507,6 +512,13 @@ function flakyDisk(store: Store) {
       store.wipeDocs(rooms)
     },
     emptyDocLog: () => store.emptyDocLog(),
+    binDocs: (docs, at) => {
+      writing()
+      store.binDocs(docs, at)
+    },
+    listBin: () => store.listBin(),
+    loadBin: (room) => store.loadBin(room),
+    unbinDocs: (rooms) => store.unbinDocs(rooms),
   }
   return { disk, state }
 }
@@ -664,6 +676,109 @@ describe('folding a document', () => {
         title: 'Saved Before',
         stage: 'Added Since',
       })
+    } finally {
+      relay.close()
+    }
+  })
+})
+
+describe('the bin', { timeout: TEST_TIMEOUT }, () => {
+  /** A sheet on the box, listed in its index under its title, then deleted by a phone. */
+  async function deleteListed(box: Box, id: string, title: string): Promise<Y.Doc> {
+    const room = `patch/sheet-${id}`
+    await writeAndLeave(box, room, title, 'Kick in 1, snare in 2')
+    const index = new Y.Doc()
+    await withDevice(box, 'patch/index', index, async (prov) => {
+      await waitFor(() => prov.synced)
+      index.transact(() => {
+        const entry = new Y.Map<unknown>()
+        index.getMap('sheets').set(id, entry)
+        entry.set('title', title)
+        entry.set('stage', 'Main')
+      })
+      await waitFor(() => box.app.docs.peek('patch/index')?.getMap('sheets').has(id) === true)
+      // As removeIndexEntry writes it.
+      index.transact(() => {
+        index.getMap('sheets').delete(id)
+        index.getMap('deleted').set(id, new Date().toISOString())
+      })
+      await waitFor(() => rowsOf(box, room).length === 0)
+    })
+    return index
+  }
+
+  it('keeps a deleted sheet, under its title, until an admin restores it', async () => {
+    const box = await startBox('bin-restore.db', { saveEveryMs: 20 })
+    const room = 'patch/sheet-oops'
+    try {
+      await deleteListed(box, 'oops', 'Main Stage Friday')
+      expect(box.app.docs.peek(room)).toBeNull()
+      const [binned] = box.app.docs.bin()
+      expect(binned).toMatchObject({ room, module: 'patch', title: 'Main Stage Friday' })
+      expect(binned!.purgesAt - binned!.deletedAt).toBe(7 * 24 * 60 * 60_000)
+
+      expect(box.app.docs.restore(room)).toBe(true)
+      expect(box.app.docs.bin()).toEqual([])
+      // Listed again as it was, with no tombstone, and saved again.
+      const index = box.app.docs.peek('patch/index')!
+      expect(index.getMap('deleted').has('oops')).toBe(false)
+      expect((index.getMap('sheets').get('oops') as Y.Map<unknown>).toJSON()).toMatchObject({
+        title: 'Main Stage Friday',
+        stage: 'Main',
+      })
+      expect(rowsOf(box, room).length).toBeGreaterThan(0)
+      // A phone that deleted its own copy gets it from the box.
+      const doc = await openAsNewcomer(box, room)
+      expect(titleOf(doc)).toBe('Main Stage Friday')
+    } finally {
+      await box.stop()
+    }
+  })
+
+  it('tells a phone holding the index that the sheet is back', async () => {
+    const box = await startBox('bin-phone.db', { saveEveryMs: 20 })
+    try {
+      await deleteListed(box, 'back', 'Second Stage')
+      const phone = new Y.Doc()
+      await withDevice(box, 'patch/index', phone, async (prov) => {
+        await waitFor(() => prov.synced)
+        expect(phone.getMap('deleted').has('back')).toBe(true)
+        box.app.docs.restore('patch/sheet-back')
+        await waitFor(() => !phone.getMap('deleted').has('back'))
+        expect(phone.getMap('sheets').has('back')).toBe(true)
+      })
+    } finally {
+      await box.stop()
+    }
+  })
+
+  it('outlives a restart, and is wiped once its week is up', async () => {
+    const first = await startBox('bin-week.db', { saveEveryMs: 20 })
+    await deleteListed(first, 'week', 'Old Plot')
+    await first.stop()
+
+    const box = await startBox('bin-week.db')
+    try {
+      const [binned] = box.app.docs.bin()
+      expect(binned?.title).toBe('Old Plot')
+      expect(box.app.docs.purgeBin(binned!.deletedAt + 7 * 24 * 60 * 60_000 - 1)).toBe(0)
+      expect(box.app.docs.purgeBin(binned!.purgesAt)).toBe(1)
+      expect(box.app.docs.bin()).toEqual([])
+      expect(box.app.docs.restore('patch/sheet-week')).toBe(false)
+    } finally {
+      await box.stop()
+    }
+  })
+
+  it('holds nothing for an empty document', () => {
+    const store = new Store(openDb(':memory:'))
+    const relay = new DocsRelay({ saveEveryMs: 5 }, { disk: store })
+    try {
+      const indexSocket = new StandInSocket()
+      connect(relay, indexSocket, 'lighting/index')
+      connect(relay, new StandInSocket(), 'lighting/plot-blank')
+      phoneOn(indexSocket).getMap('deleted').set('blank', new Date().toISOString())
+      expect(relay.bin()).toEqual([])
     } finally {
       relay.close()
     }

@@ -52,7 +52,11 @@
 <p>If you know which network the processors are on but not their addresses, an admin can sweep for them. One broadcast, the same packet NovaLCT sends to find controllers, run once when you ask and never on a timer.</p>
 <p>This is the admin-gated one because it is the only thing here that talks to a whole segment instead of to an address somebody typed in.</p>
 <p>It shows you what it would send before it sends anything, and afterwards it prints what it actually transmitted, verbatim, for a venue that wants to check it against a capture.</p>
-<p>A processor answers with its address, and crewbox shows whatever follows raw and unlabelled — nobody has captured a real reply, so putting a label like &quot;model&quot; on those bytes would be a guess dressed as a fact.</p>
+<p>A processor answers with its address and a short tag, which crewbox shows raw. A captured reply from a NovaPro UHD Jr carried only <code>App,0161</code>: no model and no name, so crewbox doesn't pretend to read one. Those come from reading the processor once it's added.</p>
+<div class="callout callout-warning"><p><strong>MX and CX series processors don't answer a sweep.</strong> An MX40 Pro was sent
+the probe eight different ways and never replied, although it answered its
+web API from the same machine. A sweep that finds nothing on a network with
+an MX40 on it is expected. Add those processors by address.</p></div>
 <p>Sweeping needs the box to know which adapter is on the video network (<code>CREWBOX_VIDEO_IFACE</code>). Without it the pane says so, and processors added by address still work.</p>
 <h2 id="what-a-row-tells-you"><a class="anchor" href="#what-a-row-tells-you">What a row tells you</a></h2>
 <p>Only what the processor actually said. A controller that did not report a temperature contributes no temperature, and the row reads &quot;couldn't tell&quot; rather than &quot;fine&quot; — a screens tech reading <em>fine</em> off a box that never asked the question is worse off than one reading <em>couldn't tell</em>.</p>

@@ -14,11 +14,12 @@ export default function IncidentSidebar() {
   const setActiveModule = useStore((s) => s.setActiveModule)
   const activeModuleId = useStore((s) => s.activeModuleId)
   const incidents = useStore((s) => s.incidents)
+  const timeZone = useStore((s) => s.config.timeZone)
   const active = activeModuleId === 'incident'
 
   const [latest] = inLogOrder(incidents)
   const serious = seriousCount(incidents)
-  const when = latest ? clockOf(latest.at) : ''
+  const when = latest ? clockOf(latest.at, timeZone) : ''
 
   return (
     <>

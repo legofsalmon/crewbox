@@ -2530,6 +2530,28 @@ a.app-version:hover {
   margin-left: auto;
 }
 
+/* A deleted document: what it was and when it goes, then its two buttons,
+   which drop under it on a phone rather than squeezing the title. */
+.admin-bin-row {
+  flex-wrap: wrap;
+}
+
+.admin-bin-what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.admin-row.admin-bin-row > .admin-btn {
+  margin-left: 0;
+}
+
+.admin-bin-empty {
+  padding: 4px 20px 8px;
+}
+
 .role-tag {
   font-size: 11px;
   color: var(--accent);

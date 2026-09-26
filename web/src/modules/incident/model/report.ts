@@ -50,15 +50,33 @@ export interface ShowReport {
   eventName: string
   entries: Incident[]
   generatedAt: number
+  /** The festival's zone (`PublicConfig.timeZone`); unset, the device's. */
+  timeZone?: string
+}
+
+/**
+ * When the report was built. In the festival's zone, named, when the box has
+ * one, so a report built at home says so rather than passing off the home
+ * clock as the field's.
+ */
+function generatedLine(at: number, timeZone?: string): string {
+  if (timeZone) {
+    try {
+      return `${new Date(at).toLocaleString(undefined, { timeZone })} (${timeZone})`
+    } catch {
+      // An unreadable zone name: fall back to the device's clock below.
+    }
+  }
+  return new Date(at).toLocaleString()
 }
 
 /** One entry and its corrections, as the report renders them. */
-function entryHtml(entry: Incident, corrections: Incident[]): string {
+function entryHtml(entry: Incident, corrections: Incident[], timeZone?: string): string {
   const late = loggedLate(entry)
   const where = [entry.stage, entry.actName].filter(Boolean).join(' · ')
   return `<div class="entry ${entry.severity}">
     <div class="head">
-      <span class="time">${clockOf(entry.at)}</span>
+      <span class="time">${clockOf(entry.at, timeZone)}</span>
       <span class="kind">${esc(INCIDENT_KIND_LABELS[entry.kind])}${
         entry.severity === 'note' ? '' : ` — ${esc(INCIDENT_SEVERITY_LABELS[entry.severity])}`
       }</span>
@@ -74,7 +92,7 @@ function entryHtml(entry: Incident, corrections: Incident[]): string {
       .map(
         (c) => `<div class="correction">
       <p class="body">${esc(c.body)}</p>
-      <p class="by">Correction at ${clockOf(c.at)}${
+      <p class="by">Correction at ${clockOf(c.at, timeZone)}${
         c.authorName ? ` by ${esc(c.authorName)}` : ''
       }</p>
     </div>`
@@ -87,12 +105,12 @@ function entryHtml(entry: Incident, corrections: Incident[]): string {
  * Build the report. `entries` is everything the pane holds; this arranges
  * them by night and by clock, with corrections attached to their originals.
  */
-export function showReportHtml({ eventName, entries, generatedAt }: ShowReport): string {
+export function showReportHtml({ eventName, entries, generatedAt, timeZone }: ShowReport): string {
   const lines = withCorrections(entries)
   const days = new Map<string, typeof lines>()
   // Oldest first: a report is read forwards, unlike the pane.
   for (const line of [...lines].reverse()) {
-    const day = showDayOf(line.entry.at)
+    const day = showDayOf(line.entry.at, timeZone)
     days.set(day, [...(days.get(day) ?? []), line])
   }
 
@@ -104,7 +122,7 @@ export function showReportHtml({ eventName, entries, generatedAt }: ShowReport):
     .map(
       ([day, dayLines]) =>
         `<h2>${esc(new Date(`${day}T12:00:00`).toDateString())}</h2>` +
-        dayLines.map((l) => entryHtml(l.entry, l.corrections)).join('')
+        dayLines.map((l) => entryHtml(l.entry, l.corrections, timeZone)).join('')
     )
     .join('')
 
@@ -114,7 +132,7 @@ export function showReportHtml({ eventName, entries, generatedAt }: ShowReport):
 <title>${esc(title)}</title><style>${STYLE}</style></head>
 <body>
   <h1>${esc(title)}</h1>
-  <p class="meta">Generated ${esc(new Date(generatedAt).toLocaleString())}</p>
+  <p class="meta">Generated ${esc(generatedLine(generatedAt, timeZone))}</p>
   <p class="tally">${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}${
     serious ? ` · ${serious} serious` : ''
   }${issues ? ` · ${issues} affecting the show` : ''}</p>
@@ -123,7 +141,11 @@ export function showReportHtml({ eventName, entries, generatedAt }: ShowReport):
 }
 
 /** Filename for the download, dated so a week of them sorts. */
-export const reportFilename = (eventName: string, generatedAt: number): string => {
+export const reportFilename = (
+  eventName: string,
+  generatedAt: number,
+  timeZone?: string
+): string => {
   const slug = (eventName || 'crewbox').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  return `${slug.replace(/^-|-$/g, '') || 'crewbox'}-show-report-${showDayOf(generatedAt)}.html`
+  return `${slug.replace(/^-|-$/g, '') || 'crewbox'}-show-report-${showDayOf(generatedAt, timeZone)}.html`
 }

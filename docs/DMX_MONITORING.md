@@ -523,7 +523,10 @@ is real rather than mocked, where the platform allows it.
 
 ## Open decisions
 
-- **Which universes does a plot actually use?** The server holds the Yjs docs
+- ~~**Which universes does a plot actually use?**~~ Settled as proposed: the
+  lighting view sends the universes its plot references (`dmxWatch` in
+  `shared/src/protocol.ts`) and the box keeps nothing per plot. The original
+  note follows. The server holds the Yjs docs
   but shouldn't have to understand them. Simplest is for the client to send
   the universes its plot references when it opens the lighting view, and for
   the server to keep nothing per-plot. That also means the box only joins

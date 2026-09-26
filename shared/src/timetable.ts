@@ -194,6 +194,25 @@ export function wallClock(now: Date, timeZone?: string): { now: number; today: s
   return { now: showMinutes(clock), today: `${day.getUTCFullYear()}-${month}-${date}` }
 }
 
+/**
+ * An instant's wall-clock time in `timeZone`, as 24-hour HH:MM.
+ *
+ * Unset or unreadable, the device's own zone, as `wallClock` does. The show
+ * log reads its entries through this so that a report built on a laptop in
+ * another country still says 22:10 for a stop that happened at 22:10 in the
+ * field.
+ */
+export function clockIn(at: number, timeZone?: string): string {
+  const parts = zoneParts(new Date(at), timeZone)
+  return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`
+}
+
+/** An instant's calendar date in `timeZone`, YYYY-MM-DD, with no show-day roll. */
+export function calendarDayIn(at: number, timeZone?: string): string {
+  const parts = zoneParts(new Date(at), timeZone)
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+}
+
 interface ZoneParts {
   year: number
   month: number

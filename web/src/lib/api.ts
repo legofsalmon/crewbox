@@ -644,6 +644,63 @@ export function adminSendReports(
   return request('/api/admin/reports/send', { method: 'POST', headers: adminHeaders(auth) })
 }
 
+/** The box's own backups (server/src/autobackup.ts). */
+export interface BackupState {
+  dir: string
+  defaultDir: string
+  chosen: boolean
+  everyHours: number
+  sameDisk: boolean | null
+  running: boolean
+  last: { at: number; dest?: string } | null
+  error: string | null
+}
+
+export function adminBackup(auth: AdminAuth): Promise<{ backup: BackupState }> {
+  return request('/api/admin/backup', { headers: adminHeaders(auth) })
+}
+
+/** Choose where backups go; '' puts them back in the data folder's backups/. */
+export function adminSetBackupDir(auth: AdminAuth, dir: string): Promise<{ backup: BackupState }> {
+  return request('/api/admin/backup/folder', {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  })
+}
+
+export function adminBackUpNow(auth: AdminAuth): Promise<{ backup: BackupState }> {
+  return request('/api/admin/backup/run', { method: 'POST', headers: adminHeaders(auth) })
+}
+
+/** A deleted sheet, plot or screen map in the box's bin (server/src/docs.ts). */
+export interface BinnedDoc {
+  room: string
+  module: string
+  /** '' when the box never saw its title. */
+  title: string
+  deletedAt: number
+  purgesAt: number
+  bytes: number
+}
+
+export function adminBin(auth: AdminAuth): Promise<{ docs: BinnedDoc[] }> {
+  return request('/api/admin/bin', { headers: adminHeaders(auth) })
+}
+
+/** Bring one back for everybody, or wipe it now. */
+export function adminBinAct(
+  auth: AdminAuth,
+  action: 'restore' | 'delete',
+  room: string
+): Promise<{ ok: true; docs: BinnedDoc[] }> {
+  return request(`/api/admin/bin/${action}`, {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ room }),
+  })
+}
+
 /** The export is downloaded as a blob so the UI can save it as a file. */
 export async function adminExport(auth: AdminAuth): Promise<Blob> {
   const res = await fetch(apiUrl('/api/admin/export'), { headers: adminHeaders(auth) })

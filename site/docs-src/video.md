@@ -88,9 +88,16 @@ It shows you what it would send before it sends anything, and afterwards it
 prints what it actually transmitted, verbatim, for a venue that wants to check
 it against a capture.
 
-A processor answers with its address, and crewbox shows whatever follows raw
-and unlabelled — nobody has captured a real reply, so putting a label like
-"model" on those bytes would be a guess dressed as a fact.
+A processor answers with its address and a short tag, which crewbox shows
+raw. A captured reply from a NovaPro UHD Jr carried only `App,0161`: no model
+and no name, so crewbox doesn't pretend to read one. Those come from reading
+the processor once it's added.
+
+> [!WARNING]
+> **MX and CX series processors don't answer a sweep.** An MX40 Pro was sent
+> the probe eight different ways and never replied, although it answered its
+> web API from the same machine. A sweep that finds nothing on a network with
+> an MX40 on it is expected. Add those processors by address.
 
 Sweeping needs the box to know which adapter is on the video network
 (`CREWBOX_VIDEO_IFACE`). Without it the pane says so, and processors added by
