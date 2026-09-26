@@ -54,7 +54,9 @@ after:
   that usually isn't plugged in), so the script leaves it a note. A backup
   regime that quietly stopped three events ago looks identical from the
   production desk to one that ran last night; this is the row that tells
-  them apart.
+  them apart. The release downloads carry no `deploy/` folder, so on a box
+  run from one the row says to quit Crewbox and copy its data folder
+  instead. It can't see those copies, so it stays amber after one.
 
 Below the list, the settings:
 
@@ -103,9 +105,10 @@ again**): the box's address, internet (a captive portal is flagged; plain
 "no internet" is just information — the box doesn't need it), whether crew
 can reach the box by its name, certificate expiry, and clock sanity.
 
-When the name check fails, a **Download DNS config** button appears with a
-ready-made `crewbox-dns.conf` for the venue router — hand it to whoever
-runs the router instead of explaining DNS at the production desk.
+**Download DNS config** gives a ready-made `crewbox-dns.conf` for the venue
+router — hand it to whoever runs the router instead of explaining DNS at the
+production desk. On a box with a certificate it points the name at the box;
+on one without, it carries only the optional block below.
 
 That file carries a second, clearly-marked **optional** block: the addresses
 phones fetch to decide whether a network has internet. Adding it stops
