@@ -290,5 +290,5 @@ reachable via a `?server=` deep-link on the QR poster).
 ## Licence
 
 Crewbox is source-available under the [Elastic License 2.0](LICENSE), licensed
-by Colm Hewson. The components it bundles keep their own licences, listed in
-`web/public/third-party-notices.txt`.
+by LeTissier Creative Studios Ltd. The components it bundles keep their own
+licences, listed in `web/public/third-party-notices.txt`.
