@@ -18,6 +18,12 @@ The unlock lives in memory only: closing the app re-locks it, and the
 **Lock** button does it on the spot — use it before handing your phone to
 someone.
 
+**Lost the password?** On the box itself, **Open the admin panel** in the
+Crewbox menu (beside the clock on a Mac, in the tray on Windows) opens the
+panel unlocked, and `crewbox --admin` prints a link that does the same. Each
+works once. Set a new password under **This box** while you're in
+([more](/docs/run-the-box#day-to-day)).
+
 ## Crew
 
 ![The crew list with Reset PIN](shot:admin-crew)

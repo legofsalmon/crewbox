@@ -61,6 +61,7 @@ From any terminal, on any platform:
 
 ```sh
 crewbox --status   # is it running, on what address, with which PIN
+crewbox --admin    # a link that opens the admin panel, once, without the password
 crewbox --stop     # stop it
 ```
 
@@ -82,8 +83,9 @@ they're in. Every run after the first goes straight here.
 
 **The admin password is not the event PIN.** The event PIN goes on the poster
 and every crew member types it; the admin password opens the cog in the
-sidebar, and only you should have it. The box mints one on first start and
-prints it to its own terminal, so write it down — it is never shown again.
+sidebar, and only you should have it. The box mints one on first start, fills
+it in on the setup screen and prints it to its own terminal, so write it down —
+it is never shown again.
 
 Anyone can _see_ the cog; the password decides whether it opens, and it stays
 unlocked until the app is closed. That's deliberate. Admin used to belong to
@@ -94,9 +96,17 @@ Everything from the setup screen — plus channels and crew — is editable
 afterwards under **Admin**, so nothing you type on the first run is permanent.
 The setup screen itself closes once someone has joined.
 
-**Lost the admin password?** Set `ADMIN_PASSWORD` in the box's environment (or
-its service file) and restart. That overrides the stored one, and is the
-supported way back in.
+**Lost the admin password?** On the box itself, choose **Open the admin panel**
+from the Crewbox menu beside the clock (on Windows, the tray icon). It opens the
+panel without the password, and you can set a new one under **Admin → This
+box**. With no menu to click — Linux, or a box you reach over SSH — run
+`crewbox --admin` and open the link it prints. Either link works once; ask for
+another the same way.
+
+Only your login on the box can read that link, which is what keeps it yours.
+Setting `ADMIN_PASSWORD` in the box's environment (or its service file) and
+restarting still works too; it overrides the stored password until you take
+it out again.
 
 No screen on the box (a headless machine, or SSH)? The terminal prints the
 setup address too, and any device on the same network can open it.
