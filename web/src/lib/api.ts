@@ -276,6 +276,18 @@ export function adminUnlock(token: string, password: string): Promise<{ adminTok
   })
 }
 
+/**
+ * Trade an admin link's key for a token (lib/adminLink.ts). No session: the
+ * page spends the key as it loads, and the token still needs one to be used.
+ */
+export function adminUnlockWithLink(key: string): Promise<{ adminToken: string }> {
+  return request('/api/admin/unlock-link', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key }),
+  })
+}
+
 /** Hand the unlock back rather than waiting for it to expire. */
 export function adminLock(auth: AdminAuth): Promise<{ ok: true }> {
   return request('/api/admin/lock', { method: 'POST', headers: adminHeaders(auth) })

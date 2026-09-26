@@ -506,6 +506,11 @@ export interface AppState {
   setAdminOpen: (open: boolean) => void
   /** Trade the admin password for a token; throws with the server's message. */
   unlockAdmin: (password: string) => Promise<void>
+  /**
+   * What the box made of the admin link this page was opened with
+   * (lib/adminLink.ts): an unlock, or why not, for the unlock screen to say.
+   */
+  adminLinkAnswered: (outcome: { adminToken: string } | { problem: string }) => void
   /** Give the unlock back and close the panel — the Lock button. */
   lockAdmin: () => void
   /**
@@ -2288,6 +2293,16 @@ export const useStore = create<AppState>()((set, get) => {
     async unlockAdmin(password) {
       const { adminToken } = await api.adminUnlock(getToken() ?? '', password)
       set({ adminToken, adminLockedReason: null })
+    },
+
+    adminLinkAnswered(outcome) {
+      if ('adminToken' in outcome) {
+        set({ adminToken: outcome.adminToken, adminLockedReason: null })
+        return
+      }
+      // Already unlocked some other way: the panel is open, so a spent link
+      // is nothing to report.
+      if (!get().adminToken) set({ adminLockedReason: outcome.problem })
     },
 
     adminUnlockLost(reason) {

@@ -12,7 +12,11 @@ import { installAppLinks } from './lib/appLinks.ts'
 import { holdBoxWifi } from './lib/server.ts'
 import { loadSessions } from './lib/sessions.ts'
 import { keepAppCopy, restoreFromApp } from './lib/appCopy.ts'
+import { redeemAdminLink } from './lib/adminLink.ts'
 
+// First, before anything can rewrite the address: an admin link's key comes
+// out of it and is spent at once (lib/adminLink.ts).
+redeemAdminLink()
 installBackButton()
 installAppLinks()
 // The Android app kept its box from last time; this is the page's, which
