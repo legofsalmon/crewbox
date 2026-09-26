@@ -28,7 +28,7 @@ test('the audit pane grades the three networks for any crew member', async ({ br
   await expect(media).toBeVisible()
   await expect(media.getByText('Not watched')).toBeVisible()
   // The unwatched card carries the fix, not a fake verdict.
-  await expect(media.getByText(/CREWBOX_WATCH/)).toBeVisible()
+  await expect(media.getByText(/Watch the media network/)).toBeVisible()
 
   // The event strip renders (quiet is a valid, stated answer).
   await expect(page.getByRole('region', { name: 'Events, last 24 hours' })).toBeVisible()

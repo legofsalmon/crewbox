@@ -120,8 +120,8 @@ carries this box's IP address, as any request does, and the version it is
 running, as its `User-Agent` (`crewbox/1.0.0+abc1234`) — that is how it can
 be told a newer one exists. Nothing else: no event name, no crew, no message
 counts, no identifier. The reply is a version number and a link. Nothing is downloaded or installed unless an
-admin asks for it, twice. `CREWBOX_UPDATE_CHECK=0` stops the box asking at
-all; see [Updating the box](/docs/updating).
+admin asks for it, twice. Turning off **Use the internet when there is
+some** (Admin → Box settings) stops the box asking at all; see [Updating the box](/docs/updating).
 
 **A check that the internet works, when the box starts and when an admin
 asks.** So the admin panel can say whether the box has internet, and whether
@@ -154,8 +154,8 @@ it. It goes via the box.
 
 The licence check, reports and feedback go to LeTissier Creative Studios at
 letissier.ie and nowhere else — no analytics or crash-reporting company.
-`CREWBOX_UPDATE_CHECK=0` stops the box making any outbound connection;
-reports then stay on the box.
+With **Use the internet when there is some** turned off, the box makes no
+outbound connection at all; reports then stay on the box.
 
 One question stays on the venue's network. To check crew phones can find the
 box by the name on its certificate, the box looks that name up in the

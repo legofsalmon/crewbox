@@ -494,7 +494,7 @@ describe('the clock the running order is read against', () => {
     if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'UTC') {
       expect(clock.state).toBe('limited')
       expect(clock.detail).toContain('UTC')
-      expect(clock.fix).toContain('CREWBOX_TZ')
+      expect(clock.fix).toContain('Festival timezone')
     } else {
       // A developer machine with a real zone: the row is fine and says so.
       expect(clock.state).toBe('ok')

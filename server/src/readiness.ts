@@ -573,7 +573,7 @@ function clockCheck(input: ReadinessInput): ReadinessCheck {
       id: 'clock',
       label: 'Clock and timezone',
       state: 'limited',
-      detail: `CREWBOX_TZ is set to "${configured}", which is not a timezone this box knows. It is using ${describe(boxZone)}, where it is ${localTime(now, boxZone)}.`,
+      detail: `The festival timezone is set to "${configured}", which is not a timezone this box knows. It is using ${describe(boxZone)}, where it is ${localTime(now, boxZone)}.`,
       fix: 'Use an IANA name — Europe/Dublin, Europe/London, America/New_York. Then restart the box.',
     }
   }
@@ -585,9 +585,9 @@ function clockCheck(input: ReadinessInput): ReadinessCheck {
     state: onUtc ? 'limited' : 'ok',
     detail: onUtc
       ? `This box is on UTC and it is ${localTime(now, zone)}. Crew phones read their own local time, so anywhere that is not on UTC right now, the running order this box gives a production desk is off by the difference.`
-      : `${localTime(now, zone)} in ${describe(zone)}${configured ? ' (CREWBOX_TZ)' : ''}. Check it against your watch.`,
+      : `${localTime(now, zone)} in ${describe(zone)}${configured ? ' (the festival timezone)' : ''}. Check it against your watch.`,
     fix: onUtc
-      ? 'Set the machine\u2019s timezone, or start the box with CREWBOX_TZ=Europe/Dublin (any IANA name) if its clock has to stay on UTC.'
+      ? 'Set the machine\u2019s timezone, or set Box settings → Festival timezone (Europe/Dublin, or any IANA name) if its clock has to stay on UTC.'
       : undefined,
   }
 }

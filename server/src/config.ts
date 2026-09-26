@@ -13,6 +13,84 @@ function positiveDays(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
 
+/**
+ * The settings an admin can also choose in the panel (server/src/boxSettings.ts),
+ * parsed from wherever they came from. `get` is the environment for
+ * `config` below; a running box passes the environment with the panel's
+ * saved values behind it, so both are read by exactly this code.
+ */
+export function boxTunables(get: (name: string) => string | undefined = (n) => process.env[n]) {
+  const modules = get('CREWBOX_MODULES') ?? 'schedule,patch,lighting,incident,video,network'
+  const updateCheck = get('CREWBOX_UPDATE_CHECK')
+  const captive = get('CREWBOX_CAPTIVE')
+  const captivePort = get('CREWBOX_CAPTIVE_PORT')
+  return {
+    sessionTtlMs: positiveDays(get('SESSION_TTL_DAYS'), 60) * 24 * 60 * 60 * 1000,
+    modules: [
+      ...new Set(
+        ('chat,' + modules)
+          .split(',')
+          .map((m) => m.trim())
+          .filter(Boolean)
+      ),
+    ],
+    artnetBase: Number(get('CREWBOX_DMX_ARTNET_BASE') ?? 1) || 0,
+    watch: {
+      enabled: get('CREWBOX_WATCH') === '1',
+      /**
+       * Interface to join the multicast groups on — not a bind address, for
+       * the same Linux reason as CREWBOX_DMX_IFACE. On a box with more than
+       * one card this is effectively required.
+       */
+      interfaceIp: get('CREWBOX_WATCH_IFACE')?.trim() || undefined,
+    },
+    updateCheck: updateCheck === '1' ? true : updateCheck === '0' ? false : undefined,
+    video: {
+      /**
+       * IP of the video-network adapter (`CREWBOX_VIDEO_IFACE`).
+       *
+       * Needed only for the discovery scan, which sends to that segment's
+       * broadcast address rather than 255.255.255.255 — a limited broadcast
+       * leaves by whichever adapter the routing table picks, which on a box
+       * that also holds the crew Wi-Fi means probing a network nobody asked
+       * about. Unset, processors added by address are still read; only
+       * scanning is unavailable, and the pane says why.
+       */
+      interfaceIp: get('CREWBOX_VIDEO_IFACE')?.trim() || undefined,
+      /**
+       * SNMP read community. Not a secret — SNMPv2c has no encryption and
+       * "public" is what COEX controllers ship with. Configurable because
+       * some venues change it, and a venue that has will tell you what to.
+       */
+      community: get('CREWBOX_VIDEO_SNMP_COMMUNITY')?.trim() || 'public',
+    },
+    timeZone: get('CREWBOX_TZ')?.trim() || undefined,
+    /**
+     * Hours between the box's own backups (server/src/autobackup.ts); 0 for
+     * none on a timer. An admin's "Back up now" works either way.
+     */
+    backupHours: (() => {
+      const hours = Number(get('CREWBOX_BACKUP_HOURS') ?? '6')
+      return Number.isFinite(hours) && hours >= 0 ? hours : 6
+    })(),
+    captive: {
+      enabled: captive === '1' ? true : captive === '0' ? false : undefined,
+      /**
+       * Port 80 is where the probes go, and it is privileged. Left unset, the
+       * box tries 80 and drops to an unprivileged port when it may not have
+       * it (see captive.ts) — the normal outcome on macOS. Chosen explicitly,
+       * in the environment or the panel, it is honoured exactly: whoever
+       * named a port has arranged for something to reach it, and moving
+       * aside would break that silently.
+       */
+      port: Number(captivePort ?? 80) || 80,
+      portFromEnv: captivePort !== undefined,
+    },
+  }
+}
+
+const envTunables = boxTunables()
+
 export const config = {
   /**
    * The bind address, and the one setting that outranks `CREWBOX_IFACE`.
@@ -68,7 +146,7 @@ export const config = {
    * "never expire", the opposite of what an operator hardening a public
    * server intends).
    */
-  sessionTtlMs: positiveDays(process.env.SESSION_TTL_DAYS, 60) * 24 * 60 * 60 * 1000,
+  sessionTtlMs: envTunables.sessionTtlMs,
   /**
    * Behind cloudflared/Caddy: trust X-Forwarded-For so rate limits key on
    * the real client IP instead of lumping all proxied traffic together.
@@ -81,14 +159,7 @@ export const config = {
    * module costs one collapsed sidebar row. Set CREWBOX_MODULES='' to run
    * chat-only, or name a subset to trim it.
    */
-  modules: [
-    ...new Set(
-      ('chat,' + (process.env.CREWBOX_MODULES ?? 'schedule,patch,lighting,incident,video,network'))
-        .split(',')
-        .map((m) => m.trim())
-        .filter(Boolean)
-    ),
-  ],
+  modules: envTunables.modules,
   /**
    * Listening to a lighting network. Off unless asked for: a box that has not
    * been told to listen opens no sockets, and crewbox never transmits on one
@@ -121,7 +192,7 @@ export const config = {
      * fixture against the wrong universe — 512 channels out, invisible on
      * paper and very visible on stage.
      */
-    artnetBase: Number(process.env.CREWBOX_DMX_ARTNET_BASE ?? 1) || 0,
+    artnetBase: envTunables.artnetBase,
   },
   /**
    * Watching the audio/media network: PTP clock health, the Dante/NDI device
@@ -130,15 +201,7 @@ export const config = {
    * `send` removed (server/src/netwatch/listener.ts), the same guarantee the
    * lighting listener makes.
    */
-  watch: {
-    enabled: process.env.CREWBOX_WATCH === '1',
-    /**
-     * Interface to join the multicast groups on — not a bind address, for
-     * the same Linux reason as CREWBOX_DMX_IFACE. On a box with more than
-     * one card this is effectively required.
-     */
-    interfaceIp: process.env.CREWBOX_WATCH_IFACE?.trim() || undefined,
-  },
+  watch: envTunables.watch,
   /**
    * Announcing the box on the crew network, so the apps list it without
    * anybody typing an address (server/src/announce). `CREWBOX_ANNOUNCE` is
@@ -160,12 +223,7 @@ export const config = {
    * connections at all; the panel then simply never mentions updates. The
    * request tells GitHub this box's IP and version and nothing else.
    */
-  updateCheck:
-    process.env.CREWBOX_UPDATE_CHECK === '1'
-      ? true
-      : process.env.CREWBOX_UPDATE_CHECK === '0'
-        ? false
-        : undefined,
+  updateCheck: envTunables.updateCheck,
   /**
    * Watching LED processors (the video module).
    *
@@ -174,25 +232,7 @@ export const config = {
    * has confirmed that specific one twice, so "enabled" would gate nothing
    * that is not already gated.
    */
-  video: {
-    /**
-     * IP of the video-network adapter (`CREWBOX_VIDEO_IFACE`).
-     *
-     * Needed only for the discovery scan, which sends to that segment's
-     * broadcast address rather than 255.255.255.255 — a limited broadcast
-     * leaves by whichever adapter the routing table picks, which on a box that
-     * also holds the crew Wi-Fi means probing a network nobody asked about.
-     * Unset, processors added by address are still read; only scanning is
-     * unavailable, and the pane says why.
-     */
-    interfaceIp: process.env.CREWBOX_VIDEO_IFACE?.trim() || undefined,
-    /**
-     * SNMP read community. Not a secret — SNMPv2c has no encryption and
-     * "public" is what COEX controllers ship with. Configurable because some
-     * venues change it, and a venue that has will tell you what to.
-     */
-    community: process.env.CREWBOX_VIDEO_SNMP_COMMUNITY?.trim() || 'public',
-  },
+  video: envTunables.video,
   /**
    * The OS connectivity-probe responder (server/src/captive.ts) — the thing
    * that stops an iPhone declaring the crew Wi-Fi dead and moving to
@@ -216,16 +256,13 @@ export const config = {
    * hour from when every crew phone says, during the show. This is the one
    * place to say so once.
    */
-  timeZone: process.env.CREWBOX_TZ?.trim() || undefined,
+  timeZone: envTunables.timeZone,
 
   /**
    * Hours between the box's own backups (server/src/autobackup.ts); 0 for
    * none on a timer. An admin's "Back up now" works either way.
    */
-  backupHours: (() => {
-    const hours = Number(process.env.CREWBOX_BACKUP_HOURS ?? '6')
-    return Number.isFinite(hours) && hours >= 0 ? hours : 6
-  })(),
+  backupHours: envTunables.backupHours,
 
   /**
    * Licensing against a deployment other than letissier.ie — the e2e suite's
@@ -252,23 +289,7 @@ export const config = {
     serviceUrl: process.env.LETISSIER_API?.trim() || undefined,
   },
 
-  captive: {
-    enabled:
-      process.env.CREWBOX_CAPTIVE === '1'
-        ? true
-        : process.env.CREWBOX_CAPTIVE === '0'
-          ? false
-          : undefined,
-    /**
-     * Port 80 is where the probes go, and it is privileged. Left unset, the
-     * box tries 80 and drops to an unprivileged port when it may not have it
-     * (see captive.ts) — the normal outcome on macOS. Set explicitly, it is
-     * honoured exactly: whoever named a port has arranged for something to
-     * reach it, and moving aside would break that silently.
-     */
-    port: Number(process.env.CREWBOX_CAPTIVE_PORT ?? 80) || 80,
-    portFromEnv: process.env.CREWBOX_CAPTIVE_PORT !== undefined,
-  },
+  captive: envTunables.captive,
   /** LiveKit SFU for push-to-talk voice. Defaults match `livekit-server --dev`. */
   livekit: {
     /**

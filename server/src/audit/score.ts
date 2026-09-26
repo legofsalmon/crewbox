@@ -326,7 +326,7 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
       label: 'Audio & media network',
       state: 'off',
       detail: 'Not watching the media network (PTP clock, Dante/NDI rosters).',
-      fix: 'Set CREWBOX_WATCH=1 and restart, with the box on the media network.',
+      fix: 'Turn on Box settings → Watch the media network and restart, with the box on the media network.',
     })
     return { id: 'media', label: 'Audio & media network', grade: 'unknown', findings }
   }

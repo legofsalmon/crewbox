@@ -134,7 +134,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
     // A finding's detail and its fix line, on the row background.
     expect(await textContrast(page, 'text=/connection/')).toBeGreaterThan(4.5)
-    expect(await textContrast(page, 'text=/CREWBOX_WATCH/')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, 'text=/Watch the media network/')).toBeGreaterThan(4.5)
 
     await context.close()
   })

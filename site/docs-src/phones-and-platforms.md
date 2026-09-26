@@ -172,7 +172,8 @@ One gotcha worth knowing if you go the `pf` route on macOS: it doesn't
 redirect traffic the Mac sends to itself, so testing with `curl` on the box
 fails even when the rule is working. Test from a phone.
 
-Set `CREWBOX_CAPTIVE=0` to turn the responder off entirely. Without the DNS
+Set **Admin → Box settings → Answer phones’ internet checks** to **Off**
+and restart to turn the responder off entirely. Without the DNS
 half it does nothing regardless, except one small courtesy: typing the box's
 name into Safari without `https://` lands on the app instead of a
 connection error.

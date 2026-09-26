@@ -129,7 +129,7 @@ export function mediaReadiness(
       detail:
         'No PTP traffic seen. A Dante or AES67 network always has a grandmaster announcing, so ' +
         'hearing nothing means this adapter is not on the audio network — or the switch is filtering multicast.',
-      fix: 'Check which adapter CREWBOX_WATCH_IFACE names, and that it has a leg on the audio VLAN.',
+      fix: 'Check which adapter Box settings → Media network adapter names, and that it has a leg on the audio VLAN.',
     })
   }
 

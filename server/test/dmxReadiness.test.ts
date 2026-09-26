@@ -252,7 +252,7 @@ describe('the universe mapping', () => {
     const artnet = universe({ protocol: 'artnet', universe: 1, wireUniverse: 0 })
     const check = find(dmxReadiness(status(), [artnet], NOW), 'dmx-mapping')
     expect(check?.detail).toBe('Art-Net 0 → plot universe 1')
-    expect(check?.fix).toContain('CREWBOX_DMX_ARTNET_BASE')
+    expect(check?.fix).toContain('Art-Net universe 0 is')
   })
 
   it('says nothing about mapping when only sACN is arriving', () => {

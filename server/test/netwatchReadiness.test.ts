@@ -87,7 +87,7 @@ describe('the clock line', () => {
     const silent = clock({ grandmasterId: null, since: null, changes: [] })
     const check = find(mediaReadiness(status(), silent, [], [], NOW), 'media-clock')
     expect(check?.state).toBe('limited')
-    expect(check?.fix).toContain('CREWBOX_WATCH_IFACE')
+    expect(check?.fix).toContain('Media network adapter')
   })
 })
 

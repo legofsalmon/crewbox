@@ -254,7 +254,7 @@ async function internetCheck(probes: Probes, outbound: boolean): Promise<EnvChec
         label: 'Internet',
         state: 'info',
         detail: 'Not checked — this box is configured to make no outbound connections.',
-        fix: 'Nothing here needs it. Unset CREWBOX_UPDATE_CHECK=0 if you want the box to look.',
+        fix: 'Nothing here needs it. Turn on Box settings → Use the internet if you want the box to look.',
       },
     ]
   }

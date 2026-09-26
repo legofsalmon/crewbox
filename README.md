@@ -32,7 +32,8 @@ lives at <https://crewbox.letissier.ie/docs>, built from
 ## Modules
 
 Crewbox is a shell (identity, chat, offline storage, routing) plus department
-modules. A box chooses which to run with `CREWBOX_MODULES`; chat is always on.
+modules. A box chooses which to run under Admin → Box settings (or
+`CREWBOX_MODULES`); chat is always on.
 
 Seven ship, and all seven are on unless a box says otherwise: the default is
 `schedule,patch,lighting,incident,video,network` on top of chat.
@@ -157,6 +158,15 @@ For a dedicated festival rig — HTTPS on your own domain so browsers get the
 mic and the installable app, local DNS, UPS and spare-box discipline —
 `deploy/` carries the pieces and `deploy/RUNBOOK.md` is the day-of checklist.
 
+Most of the settings below are also in **Admin → Box settings**, which is
+the way to set them on a Mac or Windows box started from the menu bar or the
+tray: the modules, the festival timezone, the Art-Net universe base, media
+network watching, the video adapter and SNMP community, internet use
+(`CREWBOX_UPDATE_CHECK`), the connectivity-probe responder and its port, how
+long sign-ins last and the backup interval. They are saved in the box's
+database (`server/src/boxSettings.ts`), read at start, and an environment
+variable set for one still outranks the panel.
+
 Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_URL`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`,
 `CREWBOX_BACKUP_HOURS` (hours between the box's own backups, 6 unless set,
@@ -177,7 +187,7 @@ them, and a LiveKit server with none configured hands out Google's and
 Twilio's public STUN servers; set its `rtc.stun_servers` or TURN if phones
 should not ask them. The box's own SFU tells phones to ask no STUN server.
 
-`CREWBOX_TZ` is worth setting on any box that was not set up on site. Crew
+`CREWBOX_TZ` (Box settings → Festival timezone) is worth setting on any box that was not set up on site. Crew
 phones read the running order against their own local time; without it the
 box reads it against its _process_ timezone, so a box imaged with UTC and
 driven to a field in July tells a production desk the headliner is on an hour

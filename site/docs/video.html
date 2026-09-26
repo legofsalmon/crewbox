@@ -57,7 +57,7 @@
 the probe eight different ways and never replied, although it answered its
 web API from the same machine. A sweep that finds nothing on a network with
 an MX40 on it is expected. Add those processors by address.</p></div>
-<p>Sweeping needs the box to know which adapter is on the video network (<code>CREWBOX_VIDEO_IFACE</code>). Without it the pane says so, and processors added by address still work.</p>
+<p>Sweeping needs the box to know which adapter is on the video network: pick it under <strong>Admin → Box settings → Video network adapter</strong> and restart the box. Without it the pane says so, and processors added by address still work.</p>
 <h2 id="what-a-row-tells-you"><a class="anchor" href="#what-a-row-tells-you">What a row tells you</a></h2>
 <p>Only what the processor actually said. A controller that did not report a temperature contributes no temperature, and the row reads &quot;couldn't tell&quot; rather than &quot;fine&quot; — a screens tech reading <em>fine</em> off a box that never asked the question is worse off than one reading <em>couldn't tell</em>.</p>
 <ul><li><strong>cabinets</strong> — how many are online, and how many are not</li><li><strong>temperature</strong> — the hottest cabinet, not an average. An average hides the one panel in the sun, which is the only one worth walking over to look at</li><li><strong>inputs</strong> — how many are live, and any that are connected with no signal. Unused connectors are not faults and are not counted as any</li><li><strong>blacked out / frozen</strong> — usually somebody's decision, so it is a note rather than an alarm. But a wall that is black when nobody meant it to be is exactly what you want to notice from across a site</li></ul>

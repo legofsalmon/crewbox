@@ -167,12 +167,12 @@ function privilegedPortFix(port: number): string {
   if (process.platform === 'linux') {
     return (
       `Only root may bind port ${port}. Either grant the binary the capability once ` +
-      "(sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox), or unset " +
-      'CREWBOX_CAPTIVE_PORT and let the box take an unprivileged port to redirect to.'
+      "(sudo setcap 'cap_net_bind_service=+ep' /path/to/crewbox), or " +
+      'clear the port under Box settings and let the box take an unprivileged port to redirect to.'
     )
   }
   return (
-    `This account may not bind port ${port}. Unset CREWBOX_CAPTIVE_PORT and the box ` +
+    `This account may not bind port ${port}. Clear the port under Box settings and the box ` +
     `takes port ${FALLBACK_PORT} instead, which one redirect rule can feed — the admin ` +
     'panel generates it.'
   )
@@ -299,7 +299,7 @@ export async function startCaptive(opts: {
     return {
       reason:
         `Something else is already listening on port ${opts.port}. Stop it, or set ` +
-        'CREWBOX_CAPTIVE_PORT to a free port and redirect port 80 to it.',
+        'a free port under Box settings and redirect port 80 to it.',
     }
   }
   return { reason: `Could not listen on port ${opts.port}: ${attempt.error.message}` }

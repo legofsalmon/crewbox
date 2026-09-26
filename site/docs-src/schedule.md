@@ -91,7 +91,7 @@ a TBC slot shouldn't silently become the answer to "who's on".
 
 ## Turning it off
 
-`CREWBOX_MODULES` without `schedule` removes the screen, the same as any
-other module. The running order itself is still there — it belongs to the
+Unticking **Running order** under **Admin → Box settings** (and restarting
+the box) removes the screen, the same as any other module. The running order itself is still there — it belongs to the
 event, not to the module that displays it — so anything else that reads it
 keeps working.

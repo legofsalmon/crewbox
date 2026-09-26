@@ -276,8 +276,8 @@ function LedWallsPane() {
             <h2 className={styles.sectionTitle}>Sweep for processors</h2>
             {!state.canScan ? (
               <p className={styles.sectionBlurb}>
-                This box has no video-network adapter set, so it has nothing to sweep. Set
-                CREWBOX_VIDEO_IFACE to the address of the card on the video network, or add
+                This box has no video-network adapter set, so it has nothing to sweep. Pick the card
+                on the video network under Admin → Box settings and restart the box, or add
                 processors by address above — those are read without it.
               </p>
             ) : (
