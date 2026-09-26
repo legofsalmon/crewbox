@@ -757,6 +757,7 @@ export function buildApp({
     ...(licence?.effects().watermark ? { unlicensed: true } : {}),
     // This box decides what buzzes a phone and serves /ws/alerts.
     alerts: ALERTS_VERSION,
+    ...(timeZone ? { timeZone } : {}),
   })
 
   /**

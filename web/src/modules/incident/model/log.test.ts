@@ -7,6 +7,8 @@ import {
   loggedLate,
   seriousCount,
   showDayOf,
+  clockOf,
+  typedTime,
   unsavedCopy,
   withCorrections,
 } from './log.ts'
@@ -117,6 +119,50 @@ describe('which night an entry belongs to', () => {
     const days = byShowDay([tonight, smallHours, tomorrow])
     expect(days.map((d) => d.day)).toEqual(['2026-08-12', '2026-08-11'])
     expect(days[1]?.lines.map((l) => l.entry.id)).toEqual([smallHours.id, tonight.id])
+  })
+})
+
+describe("reading the log in the festival's zone", () => {
+  // 21:10 BST on 11 August 2026 is 20:10 UTC. Explicit zones, so these hold
+  // whatever zone the machine running them is in.
+  const stop = Date.UTC(2026, 7, 11, 20, 10)
+
+  it("says the field's time, not the reader's", () => {
+    expect(clockOf(stop, 'Europe/London')).toBe('21:10')
+    expect(clockOf(stop, 'America/New_York')).toBe('16:10')
+  })
+
+  it("files an entry under the field's night, from a laptop anywhere", () => {
+    // 00:30 BST on the 12th: still the night of the 11th at the festival,
+    // though a reader in New York is at 19:30 on the 11th either way, and a
+    // reader in Sydney is on the 12th's morning.
+    const smallHours = Date.UTC(2026, 7, 11, 23, 30)
+    expect(showDayOf(smallHours, 'Europe/London')).toBe('2026-08-11')
+    expect(showDayOf(smallHours, 'Australia/Sydney')).toBe('2026-08-12')
+    const days = byShowDay([entry({ at: smallHours }), entry({ at: stop })], 'Europe/London')
+    expect(days.map((d) => d.day)).toEqual(['2026-08-11'])
+  })
+
+  it("falls back to the device's clock on an unreadable zone", () => {
+    expect(clockOf(stop, 'Not/AZone')).toBe(clockOf(stop))
+  })
+})
+
+describe('a typed time', () => {
+  const now = Date.UTC(2026, 7, 11, 21, 30) // 22:30 BST
+
+  it("is read in the festival's zone", () => {
+    expect(typedTime('22:10', now, 'Europe/London')).toBe(Date.UTC(2026, 7, 11, 21, 10))
+    expect(clockOf(typedTime('22:10', now, 'Europe/London'), 'Europe/London')).toBe('22:10')
+  })
+
+  it('is before midnight when it would otherwise be in the future', () => {
+    const justAfter = Date.UTC(2026, 7, 11, 23, 10) // 00:10 BST on the 12th
+    expect(typedTime('23:50', justAfter, 'Europe/London')).toBe(Date.UTC(2026, 7, 11, 22, 50))
+  })
+
+  it('is now when it cannot be read', () => {
+    expect(typedTime('soon', now, 'Europe/London')).toBe(now)
   })
 })
 

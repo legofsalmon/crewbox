@@ -1,9 +1,12 @@
 import {
-  DAY_ROLLS_AT,
+  calendarDayIn,
+  clockIn,
   INCIDENT_KIND_LABELS,
   type Incident,
   type IncidentKind,
   type IncidentSeverity,
+  showDate,
+  zonedInstant,
 } from '@crewbox/shared'
 
 /**
@@ -99,14 +102,7 @@ export function filterLog(entries: Incident[], filter: LogFilter): Incident[] {
  * 19:00, not to the following morning, and a log that splits them across two
  * headings makes a stage manager read the night in two halves.
  */
-export function showDayOf(at: number, now = new Date(at)): string {
-  const shifted = new Date(now.getTime())
-  if (shifted.getHours() * 60 + shifted.getMinutes() < DAY_ROLLS_AT) {
-    shifted.setDate(shifted.getDate() - 1)
-  }
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`
-}
+export const showDayOf = (at: number, timeZone?: string): string => showDate(new Date(at), timeZone)
 
 export interface LogDay {
   /** YYYY-MM-DD of the show day, for a heading. */
@@ -115,10 +111,10 @@ export interface LogDay {
 }
 
 /** The log, newest first, split into the nights it was written across. */
-export function byShowDay(entries: Incident[]): LogDay[] {
+export function byShowDay(entries: Incident[], timeZone?: string): LogDay[] {
   const days: LogDay[] = []
   for (const line of withCorrections(entries)) {
-    const day = showDayOf(line.entry.at)
+    const day = showDayOf(line.entry.at, timeZone)
     const last = days[days.length - 1]
     if (last?.day === day) last.lines.push(line)
     else days.push({ day, lines: [line] })
@@ -136,10 +132,7 @@ export function byShowDay(entries: Incident[]): LogDay[] {
  * ran from 19:00 to 01:00 is a genuine ambiguity, not a preference. The pane
  * and the show report share this so they can never disagree.
  */
-export const clockOf = (at: number): string => {
-  const d = new Date(at)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+export const clockOf = (at: number, timeZone?: string): string => clockIn(at, timeZone)
 
 /** How many entries in the log matter enough to put on a sidebar badge. */
 export const seriousCount = (entries: Incident[]): number =>
@@ -160,4 +153,23 @@ export function unsavedCopy(unsaved: number, waiting: number): string {
         : 'They aren’t'
       : `${unsaved} of them ${unsaved === 1 ? 'isn’t' : 'aren’t'}`
   return `${which} saved on this phone. Keep crewbox open until ${sends}.`
+}
+
+/** The day before a YYYY-MM-DD, by the calendar, whatever the clocks do. */
+const dayBefore = (day: string): string =>
+  new Date(Date.parse(`${day}T00:00:00Z`) - 24 * 60 * 60_000).toISOString().slice(0, 10)
+
+/**
+ * A typed HH:MM as an instant, read in the festival's zone (the device's when
+ * the box has none), so the log shows back the time that was typed.
+ */
+export function typedTime(time: string, now: number, timeZone?: string): number {
+  const [h, m] = time.split(':').map(Number)
+  if (h === undefined || m === undefined || Number.isNaN(h) || Number.isNaN(m)) return now
+  const today = calendarDayIn(now, timeZone)
+  const stamped = zonedInstant(today, h * 60 + m, timeZone) ?? now
+  // A time later than now is one from before midnight — 23:50 typed at
+  // 00:10 is twenty minutes ago, not twenty-three hours away.
+  if (stamped > now) return zonedInstant(dayBefore(today), h * 60 + m, timeZone) ?? now
+  return stamped
 }

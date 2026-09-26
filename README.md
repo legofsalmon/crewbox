@@ -181,6 +181,11 @@ box reads it against its _process_ timezone, so a box imaged with UTC and
 driven to a field in July tells a production desk the headliner is on an hour
 from when every phone says — during the show, with nothing saying why.
 
+The show log reads its entries in `CREWBOX_TZ` too, when it is set: the box
+sends it to every device, so a show report built at home the week after still
+says 22:10 for a stop at 22:10 in the field, and names the zone. Unset, each
+device reads the log in its own zone, which on site is the festival's.
+
 ## Load
 
 `node deploy/soak.mjs http://localhost:8787 50 60` runs 50 simulated crew

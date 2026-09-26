@@ -9,6 +9,7 @@ import {
   type IncidentSeverity,
 } from '@crewbox/shared'
 import { storageName } from '../../../lib/eventScope.ts'
+import { clockOf, typedTime } from '../model/log.ts'
 import { useAgenda } from '../../../shell/timetable/hooks.ts'
 import { useStore } from '../../../store.ts'
 import styles from './Incident.module.css'
@@ -64,11 +65,6 @@ const rememberStage = (stage: string): void => {
   }
 }
 
-const hhmm = (at: number): string => {
-  const d = new Date(at)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
 export interface LogEntryFormProps {
   /** Set when this entry corrects another; the form says so and links it. */
   amends?: { id: string; body: string }
@@ -77,6 +73,7 @@ export interface LogEntryFormProps {
 
 export default function LogEntryForm({ amends, onDone }: LogEntryFormProps) {
   const logIncident = useStore((s) => s.logIncident)
+  const timeZone = useStore((s) => s.config.timeZone)
   const { stages } = useAgenda()
 
   const [kind, setKind] = useState<IncidentKind>('note')
@@ -90,14 +87,7 @@ export default function LogEntryForm({ amends, onDone }: LogEntryFormProps) {
   const at = (): number => {
     const now = Date.now()
     if (!time) return now - offset * 60_000
-    const [h, m] = time.split(':').map(Number)
-    if (h === undefined || m === undefined || Number.isNaN(h) || Number.isNaN(m)) return now
-    const stamped = new Date()
-    stamped.setHours(h, m, 0, 0)
-    // A time later than now is one from before midnight — 23:50 typed at
-    // 00:10 is twenty minutes ago, not twenty-three hours away.
-    if (stamped.getTime() > now) stamped.setDate(stamped.getDate() - 1)
-    return stamped.getTime()
+    return typedTime(time, now, timeZone)
   }
 
   const submit = (event: FormEvent) => {
@@ -224,7 +214,7 @@ export default function LogEntryForm({ amends, onDone }: LogEntryFormProps) {
           value={time}
           onChange={(e) => setTime(e.target.value)}
         />
-        <span className={styles.stamp}>Stamped {hhmm(at())}</span>
+        <span className={styles.stamp}>Stamped {clockOf(at(), timeZone)}</span>
       </div>
 
       <div className={styles.formActions}>

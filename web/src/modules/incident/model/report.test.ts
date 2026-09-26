@@ -31,6 +31,21 @@ const report = (entries: Incident[], eventName = 'Ashton Court 2026') =>
   showReportHtml({ eventName, entries, generatedAt: at(2, 0, 12) })
 
 describe('the show report', () => {
+  it("reads in the festival's zone and says which", () => {
+    const stop = Date.UTC(2026, 7, 11, 20, 10) // 21:10 BST
+    const html = showReportHtml({
+      eventName: 'Ashton Court 2026',
+      entries: [entry({ at: stop, loggedAt: stop })],
+      generatedAt: Date.UTC(2026, 7, 12, 1, 0),
+      timeZone: 'Europe/London',
+    })
+    expect(html).toContain('21:10')
+    expect(html).toContain('(Europe/London)')
+    expect(reportFilename('Ashton Court 2026', Date.UTC(2026, 7, 12, 1, 0), 'Europe/London')).toBe(
+      'ashton-court-2026-show-report-2026-08-11.html'
+    )
+  })
+
   it('is a whole file with nothing to fetch', () => {
     const html = report([entry()])
     expect(html.startsWith('<!doctype html>')).toBe(true)
