@@ -63,6 +63,8 @@ export default function Sidebar() {
   const toggleSounds = useStore((s) => s.toggleSounds)
   const setAdminOpen = useStore((s) => s.setAdminOpen)
   const setFeedbackOpen = useStore((s) => s.setFeedbackOpen)
+  const setAlertSettingsOpen = useStore((s) => s.setAlertSettingsOpen)
+  const boxDecidesAlerts = useStore((s) => Boolean(s.config.alerts))
   const latencyMs = useStore((s) => s.latencyMs)
   const configModules = useStore((s) => s.config.modules)
   const eventName = useStore((s) => displayName(s.config.eventName))
@@ -148,6 +150,11 @@ export default function Sidebar() {
       <div className="sidebar-footer-links">
         {/* Beside the version, where "about this app" lives: a bug, an idea,
             a question or praise, to the people who make Crewbox. */}
+        {me && boxDecidesAlerts && (
+          <button className="feedback-link" onClick={() => setAlertSettingsOpen(true)}>
+            Alerts…
+          </button>
+        )}
         {me && (
           <button className="feedback-link" onClick={() => setFeedbackOpen(true)}>
             Send feedback…

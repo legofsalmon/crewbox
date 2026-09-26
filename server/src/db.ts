@@ -334,6 +334,41 @@ const MIGRATIONS: Migration[] = [
     if (columns.some((column) => column.name === 'renews')) return
     db.exec('ALTER TABLE sessions ADD COLUMN renews TEXT')
   },
+  // v14: what the box needs to decide who a phone buzzes for (docs/ALERTS.md).
+  //
+  // - `messages.origin`: 'desk' for a message the production desk posted
+  //   through the control API. Those are system messages, which never
+  //   alerted anybody, so the button that tells the crew a changeover has
+  //   started told nobody's pocket. The box's own system messages ("#foh
+  //   created by Sam") stay NULL and never alert.
+  // - `channel_members.alerts`: each person's setting for each channel,
+  //   'all', 'mentions' or 'muted', beside their read position. NULL is the
+  //   default, Mentions, so no row has to be written until somebody changes
+  //   one.
+  // - `alert_stages`: the stages each person follows, by name, because the
+  //   running order has no stage ids.
+  //
+  // Guarded column by column, as v13 is, so a database walked up again from
+  // an older number doesn't stop the box from starting.
+  (db) => {
+    // A column is added only to a table that is there and lacks it: a
+    // database rebuilt by hand from a partial copy may have neither.
+    const lacks = (table: string, column: string) => {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+      return columns.length > 0 && !columns.some((row) => row.name === column)
+    }
+    if (lacks('messages', 'origin')) db.exec('ALTER TABLE messages ADD COLUMN origin TEXT')
+    if (lacks('channel_members', 'alerts')) {
+      db.exec('ALTER TABLE channel_members ADD COLUMN alerts TEXT')
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_stages (
+        user_id TEXT NOT NULL REFERENCES users(id),
+        stage   TEXT NOT NULL,
+        PRIMARY KEY (user_id, stage)
+      );
+    `)
+  },
 ]
 
 /**

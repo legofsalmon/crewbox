@@ -31,9 +31,10 @@ test('an entry filed on one phone is on every other phone', async ({ browser }) 
 
   // The author sees it without a reload...
   await expect(sm.getByText('Show stopped — wind reading over limit')).toBeVisible()
-  // ...and so does a device that was never told to look.
+  // ...and so does a device that was never told to look. In the log itself:
+  // a show stop is also announced on every other phone's banner.
   await openLog(lx)
-  await expect(lx.getByText('Show stopped — wind reading over limit')).toBeVisible()
+  await expect(lx.locator('main').getByText('Show stopped — wind reading over limit')).toBeVisible()
   await expect(lx.getByText('Log SM', { exact: false }).first()).toBeVisible()
 })
 

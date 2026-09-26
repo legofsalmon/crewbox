@@ -53,6 +53,44 @@ describe('the iPhone app’s sign-ins', () => {
   it('are under a Keychain service that reaches phones, so it keeps its name', () => {
     expect(plugin).toContain('static let service = "com.colmhewson.crewbox.sessions"')
   })
+
+  it('are added to the App Group the Local Push provider shares', () => {
+    // An App Group is never the default Keychain group, so an add that
+    // doesn't name it lands where the provider can't read it.
+    expect(plugin).toContain('static let appGroup = "group.com.colmhewson.crewbox"')
+    const code = plugin.replace(/\/\/.*$/gm, '')
+    const save = /@objc func save[\s\S]*?\n {4}\}\n/.exec(code)?.[0] ?? ''
+    expect(save).toMatch(
+      /added\[kSecAttrAccessGroup as String\] = SessionsPlugin\.appGroup[\s\S]*?status = SecItemAdd\(added as CFDictionary, nil\)/
+    )
+    // Each search and change in the page's calls names no group, so it finds
+    // a sign-in not moved yet as well as one that has been.
+    for (const method of ['load', 'forget']) {
+      const body = new RegExp(`@objc func ${method}[\\s\\S]*?\\n {4}\\}\\n`).exec(code)?.[0] ?? ''
+      expect(body, method).not.toContain('kSecAttrAccessGroup')
+    }
+    expect(save.match(/kSecAttrAccessGroup/g)).toHaveLength(2)
+  })
+
+  it('from before the App Group are moved into it: copied, checked, then the old one deleted by its group', () => {
+    const code = plugin.replace(/\/\/.*$/gm, '')
+    expect(code).toMatch(
+      /@objc func load\(_ call: CAPPluginCall\) \{\s*SessionsPlugin\.moveIntoAppGroup\(\)/
+    )
+    const move = /static func moveIntoAppGroup\(\) \{[\s\S]*?\n {4}\}\n/.exec(code)?.[0] ?? ''
+    const add = move.indexOf('SecItemAdd(copy as CFDictionary, nil)')
+    const check = move.indexOf('data(of: shared) == token')
+    const remove = move.indexOf('SecItemDelete(old as CFDictionary)')
+    expect(add).toBeGreaterThan(-1)
+    expect(check).toBeGreaterThan(add)
+    expect(remove).toBeGreaterThan(check)
+    // The old one is named by its own group: a delete naming none would
+    // search every group and take the new copy too.
+    expect(move).toMatch(
+      /let old: \[String: Any\] = \[[^\]]*kSecAttrAccessGroup as String: group,\s*\]/
+    )
+    expect(move).toContain('kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly')
+  })
 })
 
 describe('the Android app’s sign-ins', () => {
@@ -83,7 +121,7 @@ describe('the Android app’s sign-ins', () => {
     expect(service).not.toMatch(/putString\(PREF_(?:OLD_)?TOKEN/)
     expect(service.match(/\.remove\(PREF_OLD_TOKEN\)/g)).toHaveLength(2)
     expect(read(`${JAVA}/AlertsPlugin.java`)).toMatch(
-      /String session = call\.getString\("session", ""\);[\s\S]*AlertsService\.start\(getContext\(\), serverUrl, token, session, myName\);/
+      /String session = call\.getString\("session", ""\);[\s\S]*AlertsService\.start\(getContext\(\), serverUrl, token, session, myName, eventId, eventKey\);/
     )
     // And the page names it (web/src/store.ts).
     expect(read('web/src/store.ts')).toContain('session: storageName(TOKEN_KEY)')

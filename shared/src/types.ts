@@ -50,6 +50,13 @@ export interface Message {
   file?: FileMeta
   /** Present on messages that originated from a client send (for dedupe). */
   clientMsgId?: string
+  /**
+   * `desk` on a message the production desk posted through the control API.
+   * It is a system message with no author, and unlike the box's own ("#foh
+   * created by Sam") it alerts like `@channel` (docs/ALERTS.md). Optional:
+   * older boxes never send it, and older screens ignore it.
+   */
+  origin?: 'desk'
   createdAt: number
 }
 

@@ -2,27 +2,28 @@
 title: Phones and platforms
 section: Running the box
 order: 40
-blurb: What each platform genuinely can and can't do — Android's lock-screen alerts, iOS's honest limit, the desktop helpers.
+blurb: What each platform genuinely can and can't do — Android's lock-screen alerts, what the iPhone is waiting on, the desktop helpers.
 ---
 
 # Phones and platforms
 
 The web app runs everywhere. The native apps exist for the things a browser
-can't do — and one thing no app can do, stated plainly so nobody promises
-it to a stage manager.
+can't do — and one thing the iPhone can't do yet, stated plainly so nobody
+promises it to a stage manager.
 
 ## The capability table
 
-|                                   | Browser / installed web app | Android app           | iOS app             |
-| --------------------------------- | --------------------------- | --------------------- | ------------------- |
-| Chat, patch, lighting, network    | yes                         | yes                   | yes                 |
-| Works offline                     | yes                         | yes                   | yes                 |
-| Voice: listen                     | yes                         | yes                   | yes                 |
-| Voice: talk on plain HTTP         | no — needs HTTPS            | **yes**               | **yes**             |
-| Alerts, app open                  | yes                         | yes                   | yes                 |
-| Alerts, phone locked, no internet | no                          | **yes**               | **no — impossible** |
-| Exports and file downloads        | downloads to the device     | Downloads, then Share | the share sheet     |
-| Runs its box's version            | yes                         | once it's checked     | once it's checked   |
+|                                    | Browser / installed web app | Android app           | iOS app           |
+| ---------------------------------- | --------------------------- | --------------------- | ----------------- |
+| Chat, patch, lighting, network     | yes                         | yes                   | yes               |
+| Works offline                      | yes                         | yes                   | yes               |
+| Voice: listen                      | yes                         | yes                   | yes               |
+| Voice: talk on plain HTTP          | no — needs HTTPS            | **yes**               | **yes**           |
+| Alerts, app open                   | yes                         | yes                   | yes               |
+| Alerts, phone locked, no internet  | no                          | **yes**               | **not yet**       |
+| Stage countdown on the lock screen | no                          | yes                   | yes               |
+| Exports and file downloads         | downloads to the device     | Downloads, then Share | the share sheet   |
+| Runs its box's version             | yes                         | once it's checked     | once it's checked |
 
 The downloads row is worth a paragraph. A WebView has no download handler, so
 the ordinary "save this file" path does nothing at all inside either app —
@@ -45,10 +46,14 @@ claiming a save.
 ## The Android app
 
 The one with a superpower: a small always-on service holds its **own**
-connection to the box and raises notifications while the phone is locked —
-mentions and DMs buzz hard, ordinary messages quietly — entirely on the
-LAN, no internet, no push service. Give Android phones to the roles that
-must not miss a call.
+connection to the box and raises notifications while the phone is locked,
+entirely on the LAN, with no internet and no push service. The box decides
+what buzzes, the same for every phone: DMs, your name, `@channel` and the
+desk, a show stop or hold as it is logged, and the changeover calls for
+stages you follow ([Chat](/docs/chat#alerts), [Running order](/docs/schedule#changeover-calls)).
+A show stop rings on silent and through Do Not Disturb. The service comes
+back by itself after the phone restarts or the app updates. Give Android
+phones to the roles that must not miss a call.
 
 It's distributed from the box itself: the operator drops the APK into the
 box's data directory and `/connect` offers it
@@ -79,11 +84,26 @@ Native microphone permission, so **voice talk works over plain HTTP** —
 the main reason it exists. But read the locked-phone row of the table again:
 
 > [!WARNING]
-> **A locked iPhone on an offline network cannot be alerted.** Apple
-> notifications go through Apple's servers, which an offline event network
-> can't reach — no app can work around this. Alerts sound and show a banner
-> while the app is open. Don't promise lock-screen alerts on iOS; hand the
-> on-call radio roles an Android.
+> **A locked iPhone on an offline network can't be alerted yet.** Ordinary
+> iPhone notifications come through Apple's servers, which an offline event
+> network can't reach. Apple has one way round it, Local Push Connectivity,
+> made for exactly this: the app keeps its own connection to the box while
+> the phone is on the crew Wi-Fi. Crewbox has it built, and it needs Apple's
+> permission before it can go in the app. Until then alerts sound and show
+> a banner while the app is open. Don't promise lock-screen alerts on iOS;
+> hand the on-call radio roles an Android.
+
+Once it is in, the iPhone listens on the crew Wi-Fi by its name: the one set
+as **Wi-Fi network** on the box's setup page, or the network the phone was
+on when it signed in. The app asks once to send notifications, and says so
+in its alert settings if the answer was no. Show stops come through a Focus
+that lets Time Sensitive notifications through.
+
+A followed stage's countdown already works on the iPhone: **Show on the lock
+screen** beside it in the running order puts it there as a Live Activity.
+The iPhone lets only the app itself update one, so it catches up each time
+the app is opened, and a little after the next set is due on it asks to be
+opened rather than show times that may have moved.
 
 One rule about addresses, which iOS enforces inside the phone: **the iPhone
 app uses plain HTTP only with an IP address** like `192.168.8.1`, a `.local`

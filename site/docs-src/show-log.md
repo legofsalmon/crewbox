@@ -52,6 +52,15 @@ What was on stage at that moment is captured with the entry, so the log says
 "during Night Bus" — and keeps saying it even after somebody corrects the
 running order or deletes the act.
 
+## Who gets buzzed
+
+A **show stop** or a **hold** alerts every phone on the box but its
+writer's, as soon as it is logged. On Android it rings on silent and through
+Do Not Disturb. Only when it is written down within 15 minutes of when it
+happened, though: an entry at 02:00 about a stop at 22:10 is history, and
+buzzing every phone on site with "Show stop" at 02:00 would be wrong. Other
+kinds, and corrections, don't buzz anybody.
+
 ## Corrections, not edits
 
 **Nothing in the log can be edited or deleted.** That is the point of it.

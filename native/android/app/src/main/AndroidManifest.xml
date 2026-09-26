@@ -53,9 +53,10 @@
         </activity>
 
         <!--
-            specialUse, not dataSync: Android 14+ hard-caps dataSync
-            foreground services at ~6 hours per day, then stops them — and a
-            show day is 14+. specialUse has no timeout, and is exactly what
+            specialUse, not dataSync: for an app targeting Android 15 (API 35)
+            or later, as this one does, Android caps dataSync foreground
+            services at 6 hours in 24, then stops them — and a show day is
+            14+. dataSync also may not be started at boot. specialUse has no timeout, and is exactly what
             it exists for: a legitimately long-running service in an app
             distributed outside the Play Store (this APK is sideloaded from
             the box, so there is no Play review in the loop — only the OS's
@@ -70,6 +71,22 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Continuous crew-communications link to an offline event-site server: message alerts must arrive for the full length of a 14+ hour show day." />
         </service>
+
+        <!--
+            Alerts back after a restart and after an update, for a phone that
+            was signed in with them on: nobody has to open the app first.
+            Exported because only the system can send these two actions; the
+            boot one arrives after the first unlock, when the sign-in can be
+            read. specialUse may be started from both (BootReceiver).
+        -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Scan the join poster: the camera, full screen, until it reads the
              QR. Only this app starts it (ScannerPlugin). -->
@@ -164,6 +181,15 @@
     -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
+    <!--
+        The stage countdown may be promoted to a Live Update, a chip in the
+        status bar that counts down by itself, on Android 16 QPR2 and later.
+        A normal permission: granted at install, and the person can turn
+        promotion off for the app in Settings.
+    -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- The boot receiver above. A normal permission: granted at install. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

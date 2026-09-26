@@ -1423,6 +1423,8 @@ describe('settings & config', () => {
       eventId: store.dbEpoch(),
       // The key the box minted at startup, read back from the same database.
       eventKey: boxIdentity(store).publicKey,
+      // It decides what buzzes a phone (docs/ALERTS.md).
+      alerts: 1,
     })
 
     // A member cannot change settings.

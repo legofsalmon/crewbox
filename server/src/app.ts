@@ -8,7 +8,7 @@ import {
   readFileSync,
   rmSync,
 } from 'node:fs'
-import { createServer } from 'node:http'
+import { createServer, type IncomingMessage } from 'node:http'
 import { isIP } from 'node:net'
 import { rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -20,6 +20,8 @@ import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 import QRCode from 'qrcode-svg'
 import {
+  ALERTS_PATH,
+  ALERTS_VERSION,
   HOME_CHANNEL,
   MAX_MESSAGE_LENGTH,
   MAX_PROCESSOR_NAME,
@@ -87,7 +89,9 @@ import {
   Tally,
   TIMETABLE_ROOM,
 } from './control.ts'
-import { DELETION_REPLAY_MS, Hub, isPrivateIp } from './hub.ts'
+import { StageCalls } from './alertCalls.ts'
+import { AlertsHub } from './alerts.ts'
+import { DELETION_REPLAY_MS, Hub, isPrivateIp, isRemoteConnection } from './hub.ts'
 import type { VideoService } from './video/service.ts'
 import type { UpdateChecker } from './update/check.ts'
 import type { UpdateService } from './update/service.ts'
@@ -435,6 +439,8 @@ export interface AppDeps {
    */
   adminPassword?: string
   /** Sessions idle past this stop working; omit for non-expiring (tests). */
+  /** How often the alerts socket beats; tests shorten it (docs/ALERTS.md). */
+  alertsBeatMs?: number
   sessionTtlMs?: number
   /** Trust X-Forwarded-For (behind cloudflared/Caddy) for client IPs. */
   trustProxy?: boolean
@@ -554,6 +560,13 @@ export interface AppDeps {
 
 export type App = FastifyInstance & {
   hub: Hub
+  /** The alerts socket and the rules it runs for each person (docs/ALERTS.md). */
+  alerts: AlertsHub
+  /** Its first frame for a socket that arrived with this challenge. */
+  alertsFirstFrame: (
+    req: IncomingMessage,
+    nonce: string
+  ) => { eventId: string; signature?: string; remote: boolean }
   docs: DocsRelay
   /** Resolve a session token to its user (docs WS upgrades reuse this). */
   authSession: (token: string) => User | undefined
@@ -586,6 +599,7 @@ export function buildApp({
   boundHost,
   network,
   sessionTtlMs,
+  alertsBeatMs,
   trustProxy = false,
   relayLimits = {},
   modules = ['chat'],
@@ -723,6 +737,8 @@ export function buildApp({
     ...continuesField(),
     // Only ever a mark. Nothing the crew use reads this to decide anything.
     ...(licence?.effects().watermark ? { unlicensed: true } : {}),
+    // This box decides what buzzes a phone and serves /ws/alerts.
+    alerts: ALERTS_VERSION,
   })
 
   /**
@@ -742,6 +758,11 @@ export function buildApp({
   void environment.refresh()
 
   const hub = new Hub(store, fastify.log, publicConfig, sessionTtlMs, trustProxy, dmx)
+  const alerts = new AlertsHub(store, fastify.log, {
+    sessionTtlMs,
+    ...(alertsBeatMs ? { beatMs: alertsBeatMs } : {}),
+  })
+  hub.setAlerts(alerts)
   // A licence entered, released or lapsed changes the drawer line on every
   // phone, so the config goes out again — the same message an event rename
   // sends, and nothing more.
@@ -753,6 +774,9 @@ export function buildApp({
     warn: (message) => fastify.log.warn(message),
   })
   fastify.addHook('onClose', () => docs.close())
+  // Changeover calls and the countdown, off the running order the relay
+  // carries, on the festival's clock (docs/ALERTS.md).
+  alerts.setStages(new StageCalls(docs, alerts, clock, timeZone))
 
   // The network audit's collector: strictly a reader over the state the
   // passive listeners already keep — it opens no sockets and sends nothing.
@@ -2486,7 +2510,7 @@ export function buildApp({
     if (!channel || channel.kind !== 'public' || channel.retired) {
       return reply.code(404).send({ error: `no channel "${parsed.data.channel}"` })
     }
-    const message = hub.systemMessage(channel.id, parsed.data.body)
+    const message = hub.systemMessage(channel.id, parsed.data.body, 'desk')
     return { ok: true, channelId: channel.id, channel: channel.name, seq: message.seq }
   })
 
@@ -3042,8 +3066,33 @@ export function buildApp({
       })
   })
 
+  /**
+   * The alerts socket's first frame: this event, signed over the phone's
+   * challenge exactly as GET /api/identity signs, when the box can sign for
+   * the address the socket arrived at (docs/ALERTS.md). No signature when it
+   * can't, and a phone that kept the event's key goes no further.
+   */
+  const alertsFirstFrame = (req: IncomingMessage, nonce: string) => {
+    const eventId = store.dbEpoch()
+    const asked = hostToSign(
+      req.headers.host,
+      {
+        localAddress: req.socket.localAddress,
+        tls: (req.socket as { encrypted?: boolean }).encrypted === true,
+      },
+      identityNames
+    )
+    return {
+      eventId,
+      ...('host' in asked ? { signature: identity.sign(eventId, asked.host, nonce) } : {}),
+      remote: isRemoteConnection(req, trustProxy),
+    }
+  }
+
   return Object.assign(fastify, {
     hub,
+    alerts,
+    alertsFirstFrame,
     docs,
     authSession: (token: string) => store.getSessionUser(token, sessionTtlMs),
     enabledModules: modules,
@@ -3080,6 +3129,9 @@ export function attachWs(app: App): WsHandles {
   const docsWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 })
   // Signalling frames are small; the cap is a guard, not a limit anyone hits.
   const voiceWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 })
+  // A phone sends a hello and beats; nothing it says is large.
+  const alertsWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 })
+  app.alerts.start()
   docsWss.on('connection', (ws, room: string) => app.docs.connect(ws, room))
 
   const reject = (socket: import('node:stream').Duplex, status: number, label: string) => {
@@ -3106,6 +3158,19 @@ export function attachWs(app: App): WsHandles {
     const { pathname } = url
     if (pathname === '/ws') {
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+      return
+    }
+    if (pathname === ALERTS_PATH) {
+      // The phone's challenge, which the first frame signs. Checked here, so
+      // nothing that isn't one is ever put in a signed statement.
+      const nonce = url.searchParams.get('nonce') ?? ''
+      if (!NONCE_RE.test(nonce)) {
+        reject(socket, 400, 'Bad Request')
+        return
+      }
+      alertsWss.handleUpgrade(req, socket, head, (ws) => {
+        app.alerts.accept(ws, app.alertsFirstFrame(req, nonce))
+      })
       return
     }
     if (isVoiceUpgrade(pathname)) {
@@ -3160,7 +3225,7 @@ export function attachWs(app: App): WsHandles {
   return {
     wss,
     terminateUpgraded: () => {
-      for (const server of [wss, docsWss, voiceWss]) {
+      for (const server of [wss, docsWss, voiceWss, alertsWss]) {
         for (const ws of server.clients) ws.terminate()
       }
     },

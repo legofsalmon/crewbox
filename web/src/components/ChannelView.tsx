@@ -7,6 +7,7 @@ import MessageFilterBar from './MessageFilterBar.tsx'
 import Composer from './Composer.tsx'
 import SignalBars from './SignalBars.tsx'
 import DrawerButton from '../shell/DrawerButton.tsx'
+import AlertLevelMenu from './AlertLevelMenu.tsx'
 
 export default function ChannelView({ channelId }: { channelId: string }) {
   const channel = useStore((s) => s.channels[channelId])
@@ -69,6 +70,7 @@ export default function ChannelView({ channelId }: { channelId: string }) {
             <span className="weak-signal-ms">{latencyMs} ms</span>
           </span>
         )}
+        <AlertLevelMenu channelId={channelId} name={label} dm={channel.kind === 'dm'} />
         {voiceEnabled && (
           <button
             className={`icon-btn voice-btn ${voice.channelId === channelId ? 'voice-active' : ''}`}

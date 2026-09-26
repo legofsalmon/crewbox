@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearJoinLink,
   currentJoinLink,
+  handleOpenLinks,
   installAppLinks,
+  readOpenLink,
   receiveLink,
   subscribeJoinLink,
 } from './appLinks.ts'
@@ -170,5 +172,41 @@ describe('an App plugin that cannot say how the app started', () => {
     installAppLinks()
     opened!({ url: LINK })
     expect(currentJoinLink()).toEqual({ origin: 'http://192.168.8.1', pin: '4821' })
+  })
+})
+
+describe('a tapped alert', () => {
+  it('names a channel, the show log or a stage, in one event', () => {
+    expect(readOpenLink('crewbox://open?event=evt-3f9c2a&channel=c-foh')).toEqual({
+      event: 'evt-3f9c2a',
+      to: 'channel',
+      channelId: 'c-foh',
+    })
+    expect(readOpenLink('crewbox://open?event=evt-3f9c2a&to=showlog')).toEqual({
+      event: 'evt-3f9c2a',
+      to: 'showlog',
+    })
+    // As the Android service writes it: a space as %20.
+    expect(readOpenLink('crewbox://open?event=evt-3f9c2a&stage=Main%20Stage')).toEqual({
+      event: 'evt-3f9c2a',
+      to: 'stage',
+      stage: 'Main Stage',
+    })
+  })
+
+  it('is nothing without an event or somewhere to go', () => {
+    expect(readOpenLink('crewbox://open?channel=c-foh')).toBeNull()
+    expect(readOpenLink('crewbox://open?event=evt-3f9c2a')).toBeNull()
+    expect(readOpenLink('crewbox://join?server=192.168.8.1')).toBeNull()
+  })
+
+  it('waits for the page to know its event when it started the app, and never fills the join form', () => {
+    receiveLink('crewbox://open?event=evt-3f9c2a&to=showlog')
+    expect(currentJoinLink()).toBeNull()
+    const taken: unknown[] = []
+    handleOpenLinks((link) => taken.push(link))
+    expect(taken).toEqual([{ event: 'evt-3f9c2a', to: 'showlog' }])
+    receiveLink('crewbox://open?event=evt-3f9c2a&channel=c-dm')
+    expect(taken).toHaveLength(2)
   })
 })
