@@ -31,6 +31,7 @@ import {
   type User,
 } from '@crewbox/shared'
 import { DocsRelay, type RelayLimits, parseRoomName } from './docs.ts'
+import { allowsOrigin } from './cors.ts'
 import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
 import { dnsConfigFile, dnsPlan, probesConfigFile } from './dnsconfig.ts'
 import { redirectConfigFile, redirectPlan } from './portredirect.ts'
@@ -935,12 +936,17 @@ export function buildApp({
     }
   }
   // Native wrappers load the bundle from the app package, so their requests
-  // are cross-origin. Auth is bearer-token (no cookies), so open CORS adds
-  // no CSRF surface on the crew LAN. The methods have to be named: left to
-  // itself @fastify/cors allows GET, HEAD and POST only, and a web view asks
-  // first and then refuses anything else, so deleting an account or a
-  // message and saving admin settings all failed in both apps.
-  void fastify.register(cors, { origin: true, methods: CORS_METHODS })
+  // are cross-origin. Which origins are answered is decided per request
+  // (cors.ts): the apps', and not every website's, or any page in a crew
+  // member's browser could read the event PIN from /connect. The methods
+  // have to be named: left to itself @fastify/cors allows GET, HEAD and POST
+  // only, and a web view asks first and then refuses anything else, so
+  // deleting an account or a message and saving admin settings all failed in
+  // both apps.
+  void fastify.register(cors, {
+    delegator: (req, done) =>
+      done(null, { origin: allowsOrigin(req.headers.origin, req.url), methods: CORS_METHODS }),
+  })
   // `fields`, `fieldSize` and `parts` as well as the file caps: the handler
   // reads exactly `width`, `height` and `thumb`, and busboy was otherwise
   // happy to buffer as many form fields as a client cared to send, each
