@@ -345,6 +345,23 @@ DATA_DIR="$DATA_ARG" "$BIN" --status >/dev/null 2>&1 ||
   fail "--status did not report a running box"
 pass "--status reports the running box"
 
+# The menu-bar item's "Open the admin panel", and `--admin` where there is no
+# menu: a link that opens the panel without the password, once, for whoever
+# can read this box's data directory. A Mac box has no console to print the
+# password to, so on the .app this is the way in. Spent here the way the page
+# spends it, from the fragment of the link the flag prints.
+admin_key="$(DATA_DIR="$DATA_ARG" "$BIN" --admin 2>/dev/null |
+  sed -n 's/.*#admin-key=\([A-Za-z0-9_-]*\).*/\1/p' | head -1)"
+[ -n "$admin_key" ] || fail "--admin printed no admin link"
+link_unlock="$(curl -fsS -X POST "$BASE/api/admin/unlock-link" \
+  -H 'content-type: application/json' -d "{\"key\":\"$admin_key\"}")" ||
+  fail "the admin link did not unlock the panel"
+contains "$link_unlock" '"adminToken"' || fail "the admin link unlocked nothing: $link_unlock"
+reused="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/admin/unlock-link" \
+  -H 'content-type: application/json' -d "{\"key\":\"$admin_key\"}")"
+[ "$reused" = "401" ] || fail "an admin link worked twice (answered $reused)"
+pass "--admin prints a link that unlocks the panel once"
+
 DATA_DIR="$DATA_ARG" "$BIN" --stop >/dev/null 2>&1 || fail "--stop failed"
 # Checked the moment it returns, with no grace period. `--stop` promises to
 # wait for the box to be gone — the caller's next move is usually to replace

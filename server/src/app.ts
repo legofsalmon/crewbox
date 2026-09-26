@@ -71,6 +71,7 @@ import {
   VOICE_PROXY_PATH,
 } from './voiceProxy.ts'
 import { APP_VERSION } from './version.ts'
+import { AdminLinkKey } from './adminLink.ts'
 import {
   AdminTokens,
   hashPin,
@@ -269,6 +270,11 @@ const controlMessageSchema = z.object({
 
 const unlockBodySchema = z.object({
   password: z.string().min(1).max(128),
+})
+
+/** An admin link's key as the page read it from its own address (adminLink.ts). */
+const unlockLinkBodySchema = z.object({
+  key: z.string().min(1).max(128),
 })
 
 /** A licence key as typed. Opaque: the service folds and checks it. */
@@ -532,6 +538,14 @@ export interface AppDeps {
    */
   onSettingsChanged?: () => void
   /**
+   * Told every admin link key as it is minted: at start, and each time one
+   * is used (adminLink.ts). The running box writes it to the data directory
+   * for the menu-bar item, the tray icon and `--admin`. A callback for the
+   * same reason as the one above; without it the link route still works,
+   * with a key nobody holds.
+   */
+  publishAdminLink?: (key: string) => void
+  /**
    * The box saying where it is on the crew network, so the apps can list it
    * (server/src/announce). Omit and the panel says nothing about it, which
    * is right for the unit tests, whose apps are not boxes on any network.
@@ -574,6 +588,8 @@ export type App = FastifyInstance & {
   enabledModules: string[]
   /** Which event this box is running (its database's ID; see PublicConfig.eventId). */
   eventId: () => string
+  /** Publish the current admin link key again, after an update gave the port back. */
+  republishAdminLink: () => void
   /** SFU port to proxy voice signalling to, when the box runs its own. */
   voiceProxyPort?: number
 }
@@ -617,6 +633,7 @@ export function buildApp({
   clock = () => new Date(),
   timeZone,
   onSettingsChanged = () => {},
+  publishAdminLink,
   announce,
   licence,
   reports,
@@ -874,6 +891,9 @@ export function buildApp({
   // Twelve hours: long enough that nobody retypes it during a shift, short
   // enough that a phone left on a flightcase overnight is locked by morning.
   const adminTokens = new AdminTokens(12 * 60 * 60_000)
+  // The one-time key behind the menu-bar item's "Open the admin panel".
+  // Minted here, so a box has one the moment it has routes to spend it on.
+  const adminLink = new AdminLinkKey(publishAdminLink)
   const limiterSweep = setInterval(() => {
     joinLimiter.sweep()
     pinLimiter.sweep()
@@ -2368,6 +2388,37 @@ export function buildApp({
     return { adminToken: adminTokens.issue() }
   })
 
+  /**
+   * Unlock the admin panel with the box's own admin link (adminLink.ts).
+   *
+   * Two things the password route has are left off on purpose.
+   *
+   * **No session.** The page spends the key as it loads, before anybody has
+   * joined, so the key is dead within a second of the link being opened
+   * rather than live in a browser's history for as long as the join takes.
+   * The token it gets back opens nothing on its own: every admin route asks
+   * for a signed-in crew member as well (authAdmin), so an unlock still
+   * belongs to somebody by the time it is used.
+   *
+   * **No rate limit.** The limiter is there to make guessing a password
+   * hopeless, and a 256-bit key already is. Sharing the password's limiter
+   * would be worse than useless: through the remote-support tunnel every
+   * visitor arrives from localhost, which is also where the box's own
+   * browser is, so ten wrong keys from the internet would lock the box's
+   * own menu item out.
+   */
+  fastify.post('/api/admin/unlock-link', async (req, reply) => {
+    const parsed = unlockLinkBodySchema.safeParse(req.body)
+    if (!parsed.success || !adminLink.redeem(parsed.data.key)) {
+      return reply.code(401).send({
+        error:
+          'That admin link has already been used. Open the admin panel from the Crewbox menu on the box again for a new one.',
+      })
+    }
+    fastify.log.info('admin panel unlocked with the admin link on the box itself')
+    return { adminToken: adminTokens.issue() }
+  })
+
   // -- control surface -------------------------------------------------------
   //
   // Keyed, and deliberately not the admin password. See control.ts.
@@ -3097,6 +3148,7 @@ export function buildApp({
     authSession: (token: string) => store.getSessionUser(token, sessionTtlMs),
     enabledModules: modules,
     eventId: () => store.dbEpoch(),
+    republishAdminLink: () => adminLink.republish(),
     voiceProxyPort: livekit?.embedded ? (livekit.port ?? LIVEKIT_PORT) : undefined,
   })
 }
