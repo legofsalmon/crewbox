@@ -138,8 +138,8 @@ export default function BoxSettingsSection({
       }}
     >
       <p className="admin-hint">
-        These are read when the box starts. On a Mac or Windows box, restart it from the menu bar
-        or tray icon after saving.
+        These are read when the box starts. On a Mac or Windows box, restart it from the menu bar or
+        tray icon after saving.
       </p>
       {data.restartNeeded && (
         <p className="admin-note">
