@@ -99,8 +99,9 @@ the processor once it's added.
 > web API from the same machine. A sweep that finds nothing on a network with
 > an MX40 on it is expected. Add those processors by address.
 
-Sweeping needs the box to know which adapter is on the video network
-(`CREWBOX_VIDEO_IFACE`). Without it the pane says so, and processors added by
+Sweeping needs the box to know which adapter is on the video network:
+pick it under **Admin → Box settings → Video network adapter** and restart
+the box. Without it the pane says so, and processors added by
 address still work.
 
 ## What a row tells you

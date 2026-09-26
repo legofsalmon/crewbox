@@ -50,7 +50,7 @@ Chat, voice and every module go down for about 20 seconds while the box restarts
 <ul><li>The database is copied first, so going back is possible.</li><li>The old binary is kept, not deleted.</li><li>The old program stays running until the new one answers.</li><li>If the new one never answers, the old one comes back and the box carries on.</li></ul>
 <p>You do not have to do anything for that last part. It is not a recovery procedure, it is what happens.</p>
 <h2 id="turning-it-off"><a class="anchor" href="#turning-it-off">Turning it off</a></h2>
-<p>A box on a network that must make no outbound connections at all: set <code>CREWBOX_UPDATE_CHECK=0</code> and it never contacts anything. The tray never mentions updates and the panel shows nothing.</p>
+<p>A box on a network that must make no outbound connections at all: set <strong>Admin → Box settings → Use the internet when there is some</strong> to <strong>Off</strong> and restart, and it never contacts anything. The tray never mentions updates and the panel shows nothing.</p>
 <p>The check is one HTTPS request a day, asking GitHub for the newest release number. It carries this box's IP address and nothing else — no event name, no crew, no history. See <a href="/docs/privacy">Privacy</a>.</p>
 <h2 id="checking-a-build-yourself"><a class="anchor" href="#checking-a-build-yourself">Checking a build yourself</a></h2>
 <p>Every release carries a <code>SHA256SUMS-&lt;version&gt;</code> file listing every download's fingerprint, and a signature over it. The box checks both automatically — the signature against keys built into the program, so a stranger who got hold of our GitHub account still couldn't publish something a box would run.</p>

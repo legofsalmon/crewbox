@@ -117,8 +117,8 @@ certificate and the Android APK. Choose where under **Admin → Backups**:
 until you do, backups go to the data folder's own `backups`, which a dead
 disk takes with it, so point it at a USB stick. **Back up now** takes one
 there and then, and **Admin → This box** shows a **Backup** row saying how
-long ago the last one was. `CREWBOX_BACKUP_HOURS` changes the interval (`0`
-for none on a timer). A rig installed from source can still run
+long ago the last one was. **Admin → Box settings → Back up every** changes
+the interval (`0` for none on a timer). A rig installed from source can still run
 `deploy/backup.sh`, which writes the same thing.
 
 To restore one by hand, on any platform: quit Crewbox, rename its data folder

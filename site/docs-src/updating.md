@@ -77,7 +77,8 @@ procedure, it is what happens.
 ## Turning it off
 
 A box on a network that must make no outbound connections at all: set
-`CREWBOX_UPDATE_CHECK=0` and it never contacts anything. The tray never
+**Admin → Box settings → Use the internet when there is some** to **Off**
+and restart, and it never contacts anything. The tray never
 mentions updates and the panel shows nothing.
 
 The check is one HTTPS request a day, asking GitHub for the newest release

@@ -118,6 +118,36 @@ iPhones abandoning the crew Wi-Fi for mobile data — see
 [the "no internet" problem](/docs/phones-and-platforms#the-no-internet-problem)
 for what that failure looks like and why it's worth doing.
 
+## Box settings
+
+The settings a box reads when it starts, which used to need environment
+variables. Save, then restart the box (from the Mac menu bar or the Windows
+tray) to apply them; the section says when saved values are waiting for a
+restart.
+
+- **Modules crew see** — which departments are on. Chat is always on.
+- **Festival timezone** — where the show is, like `Europe/Dublin`. The
+  running order and the show log read times on this clock. Leave it blank
+  when the box's own clock is already local time.
+- **Art-Net universe 0 is** — plot universe 1 (the usual) or 0.
+- **Watch the media network**, and its adapter — the PTP clock, Dante and
+  NDI devices and AES67 streams, listened to and never sent to.
+- **Video network adapter** and **SNMP community** — what the LED processor
+  sweep uses. Processors added by address work without an adapter.
+- **Use the internet when there is some** — update checks, crash reports
+  you allow and licence check-ins. Off, the box makes no outbound
+  connections at all.
+- **Answer phones' internet checks**, and the port for them — the responder
+  that keeps phones on a crew Wi-Fi with no internet.
+- **Keep crew signed in for** — days before an unused phone has to join
+  again (60 unless set).
+- **Back up every** — hours between the box's own backups; `0` for none on
+  a timer.
+
+Each one still has an environment variable, for a Linux box run as a
+service. One set there outranks the panel, which then names it and shows no
+field.
+
 ## Licence
 
 A licence belongs to the **box**, never to a crew phone: one seat, and the box
@@ -146,8 +176,8 @@ anything after `?` in a web address are removed on the box before it is
 saved. It never holds messages, names, files, the event or the licence.
 
 Reports wait on the box and go when it next has internet — that may be
-after the show, and that's fine. A box set with `CREWBOX_UPDATE_CHECK=0`
-makes no outbound connections, so its reports stay on the box. They are
+after the show, and that's fine. A box with **Use the internet when there is some** turned off (Box
+settings, below) makes no outbound connections, so its reports stay on the box. They are
 plain files in the `reports` folder of the box's data directory, if you want
 to read or delete one.
 
