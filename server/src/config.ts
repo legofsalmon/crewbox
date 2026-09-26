@@ -219,6 +219,15 @@ export const config = {
   timeZone: process.env.CREWBOX_TZ?.trim() || undefined,
 
   /**
+   * Hours between the box's own backups (server/src/autobackup.ts); 0 for
+   * none on a timer. An admin's "Back up now" works either way.
+   */
+  backupHours: (() => {
+    const hours = Number(process.env.CREWBOX_BACKUP_HOURS ?? '6')
+    return Number.isFinite(hours) && hours >= 0 ? hours : 6
+  })(),
+
+  /**
    * Licensing against a deployment other than letissier.ie — the e2e suite's
    * test key, or a staging service. Unset, the live key compiled into
    * server/src/licence/sdk.ts and the live service are used.

@@ -296,6 +296,14 @@ not in a field.
 
 ## Backups and the swap
 
+**The box backs itself up every 6 hours** (`CREWBOX_BACKUP_HOURS`, `0` for
+none on a timer), into the folder set under **Admin → Backups**, and **Back
+up now** there takes one on demand. It writes exactly what `deploy/backup.sh`
+writes, laid out the same way, so `deploy/restore.sh` reads either: set
+**Backup folder** to `/media/usb/crewbox-backups` and the two share a folder.
+Until a folder is set, its backups go to `backups/` in the data directory,
+which does not survive the disk.
+
 `deploy/backup.sh` copies everything a spare machine needs to become this
 box: the database (a WAL-safe snapshot of a _running_ box, not a `cp`), the
 uploaded files, the TLS certificate and key, and the Android APK. It leaves a
@@ -401,7 +409,8 @@ licence is reinstated, the next check-in with the kept key restores it.
 
 ## Teardown
 
-1. `deploy/backup.sh` once more; pocket the USB stick.
+1. **Admin → Backups → Back up now** (or `deploy/backup.sh`) once more;
+   pocket the USB stick.
 2. Export anything needed for incident reports before wiping user data.
 
 ## Platform truths (so nobody promises otherwise)

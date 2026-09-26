@@ -8,6 +8,7 @@ import { adapterMissing, describeAnnounce, listeningMode } from '../lib/adminnet
 import UpdateSection from './UpdateSection.tsx'
 import LicenceSection from './LicenceSection.tsx'
 import BinSection from './BinSection.tsx'
+import BackupSection from './BackupSection.tsx'
 import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
 import { addressOf } from '../lib/discovery.ts'
@@ -169,6 +170,10 @@ export default function AdminPanel() {
           <section>
             <h3 className="admin-section-title">This box</h3>
             <ServerSection onNote={setNote} locked={licence?.locked ?? false} />
+          </section>
+          <section>
+            <h3 className="admin-section-title">Backups</h3>
+            <BackupSection auth={auth} onNote={setNote} />
           </section>
           <section>
             <h3 className="admin-section-title">This network</h3>

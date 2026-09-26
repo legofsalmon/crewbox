@@ -159,6 +159,8 @@ mic and the installable app, local DNS, UPS and spare-box discipline —
 
 Environment (see `deploy/systemd/crewbox.service`): `CREWBOX_PORT`, `DATA_DIR`,
 `WEB_DIST`, `EVENT_PIN`, `LIVEKIT_URL`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`,
+`CREWBOX_BACKUP_HOURS` (hours between the box's own backups, 6 unless set,
+`0` for none on a timer; the folder is chosen in Admin → Backups),
 `CREWBOX_MODULES` (module ids to enable beyond chat, comma-separated;
 defaults to every department module the build ships, and chat is always on),
 `CREWBOX_CAPTIVE` (`0` turns the connectivity-probe responder off; it is on

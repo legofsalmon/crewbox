@@ -40,6 +40,7 @@ import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
 import { lanAdapters, lanIps, latestApk } from './box.ts'
 import { boxReadiness, freeBytes, worstState } from './readiness.ts'
 import { lastBackup } from './backupmark.ts'
+import { AutoBackup, checkBackupDir } from './autobackup.ts'
 import { readPower } from './power.ts'
 import { parseUniverseList, type DmxListener } from './dmx/listener.ts'
 import { dmxReadiness } from './dmx/readiness.ts'
@@ -458,6 +459,12 @@ export interface AppDeps {
   /** Data directory root; /connect offers the newest crewbox*.apk from here. */
   dataDir?: string
   /**
+   * Hours between the box's own backups of `dataDir` (autobackup.ts). Unset
+   * or 0, none on a timer, which is what a test wants; an admin can still
+   * take one.
+   */
+  backupHours?: number
+  /**
    * The folder of screens this box serves: on a box, the copy extracted for
    * its own version. index.ts serves the files; here it is only where
    * `/api/app/screens` finds their signed list. Omit for none (tests).
@@ -621,6 +628,7 @@ export function buildApp({
   relayLimits = {},
   modules = ['chat'],
   dataDir,
+  backupHours = 0,
   webDist,
   tls,
   probes,
@@ -793,6 +801,22 @@ export function buildApp({
     warn: (message) => fastify.log.warn(message),
   })
   fastify.addHook('onClose', () => docs.close())
+
+  // The box backs itself up (autobackup.ts), into the folder an admin chose
+  // or the data folder's own backups/, which the panel says is not enough.
+  const backups = dataDir
+    ? new AutoBackup({
+        dataDir,
+        chosenDir: () => store.getSetting('backupDir') || undefined,
+        everyHours: backupHours,
+        warn: (message) => fastify.log.warn(message),
+        info: (message) => fastify.log.info(message),
+      })
+    : null
+  backups?.start()
+  const sameDiskAsLast = (b: AutoBackup, mark: { dest?: string } | null): boolean =>
+    mark?.dest ? b.sameDisk(mark.dest) === true : false
+  fastify.addHook('onClose', () => backups?.stop())
   // Changeover calls and the countdown, off the running order the relay
   // carries, on the festival's clock (docs/ALERTS.md).
   alerts.setStages(new StageCalls(docs, alerts, clock, timeZone))
@@ -2925,6 +2949,10 @@ export function buildApp({
       // null rather than undefined when there is no marker: the box looked,
       // and "never backed up" is the answer worth printing.
       ...(dataDir ? { backup: lastBackup(dataDir) } : {}),
+      // Of the last backup's own folder, which may be backup.sh's stick.
+      ...(backups && dataDir
+        ? { backupSameDisk: sameDiskAsLast(backups, lastBackup(dataDir)) }
+        : {}),
       // Live, not from startup: adapters come and go on site (a cable pulled,
       // Wi-Fi re-joined), and the panel exists to say what is true now.
       iface: effectiveIface(),
@@ -3106,6 +3134,41 @@ export function buildApp({
       network: networkPayload(),
       ...(reissued ? { adminToken: reissued } : {}),
     }
+  })
+
+  // The box's own backups: where they go, the last one, and one now.
+  fastify.get('/api/admin/backup', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    if (!backups) return reply.code(404).send({ error: 'This box has no data folder to back up.' })
+    return { backup: backups.state() }
+  })
+
+  fastify.post('/api/admin/backup/folder', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    if (!backups || !dataDir) {
+      return reply.code(404).send({ error: 'This box has no data folder to back up.' })
+    }
+    const parsed = z.object({ dir: z.string().trim().max(1024) }).safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'dir required' })
+    const dir = parsed.data.dir
+    const problem = dir ? checkBackupDir(dir, dataDir) : null
+    if (problem) return reply.code(400).send({ error: problem })
+    store.setSetting('backupDir', dir)
+    return { backup: backups.state() }
+  })
+
+  fastify.post('/api/admin/backup/run', async (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    if (!backups) return reply.code(404).send({ error: 'This box has no data folder to back up.' })
+    try {
+      await backups.run()
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      return reply
+        .code(500)
+        .send({ error: `Could not back up: ${reason}.`, backup: backups.state() })
+    }
+    return { backup: backups.state() }
   })
 
   // Deleted sheets, plots and screen maps, kept a week (docs.ts, `BIN_MS`).
