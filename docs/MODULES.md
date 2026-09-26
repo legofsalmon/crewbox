@@ -242,7 +242,7 @@ Every top-level view a module renders **must** include the shell's
 `<DrawerButton />` at the start of its header. Navigating to a module closes
 the sidebar drawer, so a pane without one strands a phone user inside it
 with no way back to chat or to any other module. The button hides itself
-above 900px. `e2e/lighting.spec.ts` guards this for both modules.
+above 900px. Each module's e2e spec guards its own pane on a phone viewport (for example `e2e/incident.spec.ts`, "the show log pane carries the shell drawer on a phone").
 
 ### 4. Register
 

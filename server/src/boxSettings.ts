@@ -88,6 +88,7 @@ export const BOX_SETTINGS = {
   CREWBOX_CAPTIVE: oneOf(['0', '1'], 'Answering phone checks is on or off.'),
   CREWBOX_CAPTIVE_PORT: wholeNumber(1, 65535, 'A port is a number from 1 to 65535.'),
   SESSION_TTL_DAYS: wholeNumber(1, 3650, 'Sign-ins last from 1 to 3650 days.'),
+  CREWBOX_BACKUP_HOURS: wholeNumber(0, 720, 'Backups run every 0 (never) to 720 hours.'),
 } satisfies Record<string, (v: string) => string | null>
 
 export type BoxSettingName = keyof typeof BOX_SETTINGS

@@ -369,6 +369,21 @@ const MIGRATIONS: Migration[] = [
       );
     `)
   },
+  // v15: a bin for deleted shared documents.
+  //
+  // Any crew member can delete a patch sheet, plot or screen map, and the box
+  // used to wipe its copy there and then, so one wrong tap lost it for
+  // everybody. A deleted document now waits here for a week, restorable by
+  // an admin, and is then wiped as before. `entry` is its index row as JSON
+  // (title and whatever its module lists), so a restore lists it again.
+  `
+  CREATE TABLE IF NOT EXISTS doc_bin (
+    room       TEXT PRIMARY KEY,
+    entry      TEXT NOT NULL,
+    data       BLOB NOT NULL,
+    deleted_at INTEGER NOT NULL
+  );
+  `,
 ]
 
 /**

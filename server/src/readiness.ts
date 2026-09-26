@@ -89,8 +89,10 @@ export interface ReadinessInput {
    * them and nobody notices a thing.
    */
   voiceQuality?: { concealedPct: number; lossPct: number; devices: number } | null
-  /** When backup.sh last finished here, if it ever has. */
+  /** When a backup (the box's own, or backup.sh) last finished here, if one ever has. */
   backup?: { at: number; dest?: string } | null
+  /** Whether the box's backups go to the disk its data is on, which dies with it. */
+  backupSameDisk?: boolean
   /** Clock for the backup age. Injected so the check stays pure. */
   now?: number
   /**
@@ -370,22 +372,36 @@ function powerCheck(power: PowerReading): ReadinessCheck {
  * stopped three events ago looks exactly like a working one from here, right
  * up until the box dies.
  */
-function backupCheck(mark: { at: number; dest?: string }, now: number): ReadinessCheck {
+function backupCheck(
+  mark: { at: number; dest?: string },
+  now: number,
+  sameDisk = false
+): ReadinessCheck {
   const base = { id: 'backup', label: 'Backup' }
   const ageMinutes = Math.max(0, Math.round((now - mark.at) / 60_000))
   const where = mark.dest ? ` to ${mark.dest}` : ''
-  // A day is the right line: backup.sh is meant to run nightly, and an event
-  // that has been up longer than that with no backup has real work in it.
+  // A day is the right line: the box backs itself up every few hours, and an
+  // event that has been up longer than that with no backup has real work in it.
   const stale = ageMinutes > 24 * 60
-  return {
-    ...base,
-    state: stale ? 'limited' : 'ok',
-    detail: `Last backup ${duration(ageMinutes)} ago${where}.`,
-    fix: stale
-      ? // Only backup.sh leaves the mark, so whoever sees this has it.
-        'Run deploy/backup.sh again. Chat history, accounts, uploads and the event PIN live only in this box until it has run.'
-      : undefined,
+  const detail = `Last backup ${duration(ageMinutes)} ago${where}.`
+  if (stale) {
+    return {
+      ...base,
+      state: 'limited',
+      detail,
+      fix: 'Open Backups below and choose Back up now; if it fails, it says why. Chat history, accounts, uploads and the event PIN live only in this box until a backup has run.',
+    }
   }
+  // A copy on the disk that is about to fail is a second file, not a backup.
+  if (sameDisk) {
+    return {
+      ...base,
+      state: 'limited',
+      detail: `${detail} That is the same disk as the box's data, so it does not survive the box.`,
+      fix: 'Plug in a USB stick and choose a folder on it under Backups below.',
+    }
+  }
+  return { ...base, state: 'ok', detail }
 }
 
 /**
@@ -692,20 +708,18 @@ export function boxReadiness(input: ReadinessInput): ReadinessCheck[] {
   if (input.backup !== undefined) {
     checks.push(
       input.backup
-        ? backupCheck(input.backup, input.now ?? Date.now())
+        ? backupCheck(input.backup, input.now ?? Date.now(), input.backupSameDisk)
         : {
             id: 'backup',
             label: 'Backup',
             state: 'limited',
-            detail: 'No backup has ever been taken from this box.',
-            // The release downloads are one file each, so deploy/backup.sh is
-            // only on rigs installed from source. Copying the data folder
-            // with the box stopped is the backup every box can take; this line
-            // cannot see that one, and says so rather than looking broken.
+            detail: 'No backup has been taken from this box yet.',
+            // The box takes its first ten minutes after it starts, and then
+            // every few hours; this is the gap before that, or a box whose
+            // backups keep failing, which Backups says the reason for.
             fix:
-              `Quit Crewbox and copy its data folder, ${input.dataDir}, onto a USB stick — before the event rather than during it. ` +
-              'Chat history, accounts, uploads and the event PIN exist nowhere else. ' +
-              'A rig installed from source has deploy/backup.sh, which copies it without stopping the box; only its backups show up here.',
+              'Choose a folder on a USB stick under Backups below and press Back up now. ' +
+              'Chat history, accounts, uploads and the event PIN exist nowhere else.',
           }
     )
   }

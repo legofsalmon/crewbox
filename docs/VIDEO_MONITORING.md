@@ -263,6 +263,15 @@ plan**, and novasun's investigation is what killed it:
   driving the show and probed **zero** times. It discovers on user action, not
   on a timer (**OBSERVED** for VMP; NovaLCT's cadence is still **UNKNOWN**).
 
+- **A COEX controller does not answer the probe at all.** An MX40 Pro drew
+  no reply to eight `rqProMI:` probes — unicast, subnet broadcast, multicast
+  and limited broadcast — from a host reading its HTTP API without trouble,
+  while a UHD Jr answers within milliseconds (**OBSERVED**, 2026-09-11, one
+  unit and firmware; novasun `docs/read-only-monitoring.md`). How VMP finds
+  one is **UNKNOWN**. So an empty sweep says nothing about MX-class hardware:
+  the pane says so when a sweep comes back empty, and those processors are
+  added by address.
+
 So crewbox sends the probe itself, once, when an admin asks. The packet is the
 eight ASCII bytes `rqProMI:` — a broadcast UDP read with no addressed target,
 no register address and no write bit. It cannot change controller state.
@@ -387,19 +396,17 @@ dark. So:
 - Endpoints that did not answer are listed on the row, so a gap looks like a
   gap rather than like good news.
 
-## The first day with hardware
+## What hardware has settled, and what is left
 
-novasun names two things worth doing, in order, and both would change this
-document:
+novasun named two things for the first day with hardware. Both are done:
 
-1. **Capture one `rpProMI:` reply.** It settles whether replies are unicast
-   (and so whether passive discovery is possible at all) and what the payload
-   after the prefix actually contains. `python -m novasun listen` transmits
-   nothing.
-2. **Check whether SNMP is enabled.** If it is, most of the pane is already
-   available through an interface designed for exactly this.
+1. **One `rpProMI:` reply is captured** (UHD Jr): unicast, 16 bytes, no
+   model and no name (§Discovery). The MX40 Pro sent none at all.
+2. **SNMP was off** on the MX40 Pro (`snmpstate` false, above), and
+   switching it on is a write. So the HTTP API is the reader on COEX
+   hardware, and SNMP stays the reader for a box that already has it on.
 
-Beyond those: run a COEX poll at 1 Hz for ten minutes with VMP connected and
+Still open: run a COEX poll at 1 Hz for ten minutes with VMP connected and
 doing something visible. If VMP does not stutter and no `Busying` appears,
 polling at 0.05 Hz is not going to be the thing that breaks a show — and the
 "REASONED, unverified" on §COEX HTTP above can become an observation.

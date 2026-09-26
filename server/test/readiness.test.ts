@@ -381,12 +381,10 @@ describe('backup', () => {
     const box = input({ backup: null })
     const check = find(boxReadiness(box), 'backup')
     expect(check.state).toBe('limited')
-    expect(check.detail).toMatch(/No backup has ever been taken/)
-    // The release downloads carry no deploy/ folder, so the first thing it
-    // asks has to be something a box from a download can do.
-    expect(check.fix).toMatch(/^Quit Crewbox and copy its data folder/)
-    expect(check.fix).toContain(box.dataDir)
-    expect(check.fix).toMatch(/installed from source has deploy\/backup\.sh/)
+    expect(check.detail).toMatch(/No backup has been taken/)
+    // Something any box can do from the panel, download or source.
+    expect(check.fix).toMatch(/USB stick under Backups below/)
+    expect(check.fix).toMatch(/Back up now/)
   })
 
   it('is content with a backup from last night', () => {
@@ -405,7 +403,23 @@ describe('backup', () => {
     // in it that exists nowhere but this box.
     const check = find(boxReadiness(input({ backup: { at: now - 50 * 3600_000 }, now })), 'backup')
     expect(check.state).toBe('limited')
-    expect(check.fix).toMatch(/backup\.sh/)
+    expect(check.fix).toMatch(/Back up now/)
+  })
+
+  it('says a backup on the box’s own disk is not one', () => {
+    const check = find(
+      boxReadiness(
+        input({
+          backup: { at: now - 3600_000, dest: '/data/backups/x' },
+          backupSameDisk: true,
+          now,
+        })
+      ),
+      'backup'
+    )
+    expect(check.state).toBe('limited')
+    expect(check.detail).toMatch(/same disk/)
+    expect(check.fix).toMatch(/USB stick/)
   })
 
   it('leaves the row off when nobody looked', () => {

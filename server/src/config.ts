@@ -65,6 +65,14 @@ export function boxTunables(get: (name: string) => string | undefined = (n) => p
       community: get('CREWBOX_VIDEO_SNMP_COMMUNITY')?.trim() || 'public',
     },
     timeZone: get('CREWBOX_TZ')?.trim() || undefined,
+    /**
+     * Hours between the box's own backups (server/src/autobackup.ts); 0 for
+     * none on a timer. An admin's "Back up now" works either way.
+     */
+    backupHours: (() => {
+      const hours = Number(get('CREWBOX_BACKUP_HOURS') ?? '6')
+      return Number.isFinite(hours) && hours >= 0 ? hours : 6
+    })(),
     captive: {
       enabled: captive === '1' ? true : captive === '0' ? false : undefined,
       /**
@@ -249,6 +257,12 @@ export const config = {
    * place to say so once.
    */
   timeZone: envTunables.timeZone,
+
+  /**
+   * Hours between the box's own backups (server/src/autobackup.ts); 0 for
+   * none on a timer. An admin's "Back up now" works either way.
+   */
+  backupHours: envTunables.backupHours,
 
   /**
    * Licensing against a deployment other than letissier.ie — the e2e suite's

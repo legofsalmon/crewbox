@@ -282,6 +282,21 @@ export default function BoxSettingsSection({
         'A phone unused for longer than this has to join again.'
       )}
 
+      <h3 className="admin-subhead">Backups</h3>
+      {field(
+        'CREWBOX_BACKUP_HOURS',
+        'Back up every (hours)',
+        <input
+          id="box-CREWBOX_BACKUP_HOURS"
+          value={form.CREWBOX_BACKUP_HOURS}
+          inputMode="numeric"
+          placeholder="6"
+          maxLength={3}
+          onChange={(e) => set('CREWBOX_BACKUP_HOURS', e.target.value)}
+        />,
+        '0 turns the timer off. Back up now, above, works either way.'
+      )}
+
       <button className="admin-btn" type="submit" disabled={locked || saving || !dirty}>
         {saving ? 'Saving…' : 'Save box settings'}
       </button>

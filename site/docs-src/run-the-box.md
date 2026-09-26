@@ -111,10 +111,19 @@ valid across versions.
 ## Data, backup, updates
 
 Everything lives in `~/.crewbox/data` — one directory to back up, one to
-restore. `deploy/backup.sh` does it properly (a WAL-safe database snapshot,
-the uploads, the certificate and the Android APK); **Admin → This box** then
-shows a **Backup** row saying how long ago that last ran, so a regime that
-quietly stopped is visible rather than discovered. `deploy/restore.sh` goes
+restore. **The box backs itself up every 6 hours**, ten minutes after it
+starts and then on the clock: a WAL-safe database snapshot, the uploads, the
+certificate and the Android APK. Choose where under **Admin → Backups**:
+until you do, backups go to the data folder's own `backups`, which a dead
+disk takes with it, so point it at a USB stick. **Back up now** takes one
+there and then, and **Admin → This box** shows a **Backup** row saying how
+long ago the last one was. `CREWBOX_BACKUP_HOURS` changes the interval (`0`
+for none on a timer). A rig installed from source can still run
+`deploy/backup.sh`, which writes the same thing.
+
+To restore one by hand, on any platform: quit Crewbox, rename its data folder
+out of the way, make a new empty one, copy everything inside the newest
+backup folder into it, and start Crewbox again. `deploy/restore.sh` goes
 the other way, onto the spare: it picks the newest backup that actually
 finished and whose database reads, and passes over — out loud — any that
 does not. A spare restored from a backup is the same event to every phone,

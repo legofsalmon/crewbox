@@ -690,6 +690,7 @@ async function main(): Promise<void> {
     // So the control API reads the running order against the festival's wall
     // clock rather than the box's process timezone. See CREWBOX_TZ.
     ...(tuned.timeZone ? { timeZone: tuned.timeZone } : {}),
+    backupHours: tuned.backupHours,
     wifiSsid: config.wifiSsid,
     ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
     filesDir,

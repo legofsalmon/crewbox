@@ -55,11 +55,12 @@ function Entry({
 }) {
   const late = loggedLate(entry)
   const where = [entry.stage, entry.actName].filter(Boolean).join(' · ')
+  const timeZone = useStore((s) => s.config.timeZone)
 
   return (
     <li className={`${styles.entry} ${styles[entry.severity]}`}>
       <div className={styles.entryHead}>
-        <span className={styles.time}>{clockOf(entry.at)}</span>
+        <span className={styles.time}>{clockOf(entry.at, timeZone)}</span>
         <span className={styles.kind}>{INCIDENT_KIND_LABELS[entry.kind]}</span>
         {entry.severity !== 'note' && (
           <span className={`${styles.sev} ${styles[`sev-${entry.severity}`]}`}>
@@ -85,7 +86,7 @@ function Entry({
           <p className={styles.entryBody}>{correction.body}</p>
           <div className={styles.entryFoot}>
             <span>
-              Correction at {clockOf(correction.at)}
+              Correction at {clockOf(correction.at, timeZone)}
               {correction.authorName ? ` · ${correction.authorName}` : ''}
             </span>
           </div>
@@ -103,6 +104,7 @@ export default function IncidentMain() {
   const loadEarlierIncidents = useStore((s) => s.loadEarlierIncidents)
   const loadWholeLog = useStore((s) => s.loadWholeLog)
   const eventName = useStore((s) => s.config.eventName)
+  const timeZone = useStore((s) => s.config.timeZone)
   const toast = useStore((s) => s.toast)
 
   const [filing, setFiling] = useState(false)
@@ -124,7 +126,10 @@ export default function IncidentMain() {
     void loadIncidents()
   }, [loadIncidents])
 
-  const days = useMemo(() => byShowDay(filterLog(incidents, filter)), [incidents, filter])
+  const days = useMemo(
+    () => byShowDay(filterLog(incidents, filter), timeZone),
+    [incidents, filter, timeZone]
+  )
   const stages = useMemo(
     () => [...new Set(incidents.map((e) => e.stage.trim()).filter(Boolean))],
     [incidents]
@@ -144,8 +149,12 @@ export default function IncidentMain() {
     try {
       await loadWholeLog()
       const entries = useStore.getState().incidents
-      const html = showReportHtml({ eventName, entries, generatedAt: Date.now() })
-      const result = await deliverText(reportFilename(eventName, Date.now()), 'text/html', html)
+      const html = showReportHtml({ eventName, entries, generatedAt: Date.now(), timeZone })
+      const result = await deliverText(
+        reportFilename(eventName, Date.now(), timeZone),
+        'text/html',
+        html
+      )
       // `toast` defaults to the error style, which a report that downloaded
       // is not.
       const note = deliveredNote(result, 'Show report')

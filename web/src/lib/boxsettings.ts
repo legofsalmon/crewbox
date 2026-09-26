@@ -32,6 +32,7 @@ export function formFrom(data: BoxSettings): BoxForm {
     CREWBOX_CAPTIVE: value('CREWBOX_CAPTIVE'),
     CREWBOX_CAPTIVE_PORT: value('CREWBOX_CAPTIVE_PORT'),
     SESSION_TTL_DAYS: value('SESSION_TTL_DAYS'),
+    CREWBOX_BACKUP_HOURS: value('CREWBOX_BACKUP_HOURS'),
   }
 }
 

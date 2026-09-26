@@ -112,8 +112,10 @@ fails until the account has the entitlement. Once Apple grants it:
 - The docs site deploys to Vercel from `site/` (see `site/README.md`), and
   serves the policy at `https://crewbox.letissier.ie/docs/privacy-policy` with
   the rest of the docs. There is nothing separate to host.
-- Edit `site/docs/privacy-policy.html`: replace **[YOUR SUPPORT EMAIL]** with a
-  real contact address before submitting. App Review opens the policy.
+- The policy's contact address is `info@letissier.ie`, in
+  `site/docs/privacy-policy.html` (a hand-written page, not built from
+  `site/docs-src`). App Review opens the policy, so keep that address
+  answered.
 
 ## In App Store Connect (manual)
 
