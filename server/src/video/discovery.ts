@@ -5,13 +5,20 @@ import { DISCOVERY_PORT, isIpv4 } from '@crewbox/shared'
 /**
  * The one scan, and only when an admin has confirmed it twice.
  *
- * NovaLCT and VMP find controllers by broadcasting eight ASCII bytes,
- * `rqProMI:`, on UDP 3800 and reading what answers. That is what this does,
- * once, on demand.
+ * NovaLCT finds controllers by broadcasting eight ASCII bytes, `rqProMI:`, on
+ * UDP 3800 and reading what answers. That is what this does, once, on demand.
  *
- * Why it is a send at all, given the rest of this module reads: listening
- * silently instead does not work, and that is now measured rather than
- * suspected. Probes are always visible on the segment, but **the reply is
+ * **COEX controllers don't answer it** — an MX40 Pro and an MX30 both ignored
+ * eight probes each (OBSERVED) — so the same listening window also hears the
+ * other way a controller can be found: an MX30 **announces itself** every
+ * 3.0 s, unsolicited, to the subnet broadcast on UDP 54622, 54623, 54624 and
+ * 54700 (OBSERVED, one unit, V1.5.1). That half transmits nothing, and it is
+ * how VMP finds an MX30: it sent no probe at all, and connected 5 ms after an
+ * announcement. Whether an MX40 Pro announces is UNKNOWN.
+ *
+ * Why the probe is still a send, given the rest of this module reads: on
+ * UDP 3800 listening silently instead does not work, and that is measured
+ * rather than suspected. Probes are always visible on the segment, but **the reply is
  * unicast back to the requester** at both layer 2 and layer 3 — OBSERVED, in
  * a packet capture of the exchange — so a switch forwards it to no other
  * port and a silent listener sees NovaLCT scanning and never sees what
@@ -45,8 +52,20 @@ export const REPLY_PREFIX = Buffer.from('rpProMI:', 'ascii')
 /** NovaStar's discovery multicast group, alongside the subnet broadcast. */
 export const DISCOVERY_GROUP = '224.224.125.119'
 
-/** How long replies are collected after the probe goes out. */
-export const LISTEN_MS = 3_000
+/**
+ * How long replies are collected after the probe goes out.
+ *
+ * A little over the MX30's 3.0 s announcement interval, so the window always
+ * holds one: at exactly 3 s an announcement landing just outside it was a
+ * coin toss.
+ */
+export const LISTEN_MS = 3_500
+
+/**
+ * Where an MX30's announcements arrive. The first of the four ports it sends
+ * to, and the one novasun's receive-only listener uses (OBSERVED).
+ */
+export const ANNOUNCE_PORT = 54622
 
 /** A scan that finds more than this is looking at something that isn't a wall. */
 export const MAX_FOUND = 64
@@ -70,6 +89,35 @@ export interface DiscoveredProcessor {
    * SNMP, and a wrong label on a screen is worse than a blank.
    */
   payload?: string
+}
+
+/**
+ * An MX30's announcement, or null for anything else on the port.
+ *
+ * 96 bytes of JSON, byte-identical every time:
+ * `{"data":[{"apiPort":"8001","mac":"…","authType":0,"workMode":0,"https":"9001"}]}`
+ * (OBSERVED). No model, name or state — it shows that the controller is
+ * there, not what it is or whether the wall behind it is connected; it went
+ * on arriving with every output line unplugged. So only the API port is
+ * kept, for the row; identity comes from `/api/v1/device/hw` once somebody
+ * chooses to watch it.
+ */
+export function parseAnnouncement(buf: Buffer): { apiPort: string } | null {
+  if (buf.length > 1024) return null
+  try {
+    const parsed = JSON.parse(buf.toString('utf8')) as unknown
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const data = (parsed as { data?: unknown }).data
+    const first: unknown = Array.isArray(data) ? data[0] : undefined
+    if (typeof first !== 'object' || first === null) return null
+    const port = (first as { apiPort?: unknown }).apiPort
+    const mac = (first as { mac?: unknown }).mac
+    if (typeof port !== 'string' || !/^\d{1,5}$/.test(port)) return null
+    if (typeof mac !== 'string') return null
+    return { apiPort: port }
+  } catch {
+    return null
+  }
 }
 
 export interface ScanResult {
@@ -178,6 +226,30 @@ export async function scan(interfaceIp: string, io: ScanIo): Promise<ScanResult>
     return { found: [], sent, errors }
   }
 
+  // Ears first, so an announcement that lands while the probe goes out is
+  // heard. Receive-only: nothing is ever sent from this socket.
+  const announcements = io.createSocket({ type: 'udp4', reuseAddr: true })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      announcements.once('error', reject)
+      announcements.bind(ANNOUNCE_PORT, () => resolve())
+    })
+    announcements.on('message', (buf, rinfo) => {
+      if (found.size >= MAX_FOUND || found.has(rinfo.address)) return
+      if (interfaceIp && !onSameSubnet(rinfo.address, interfaceIp, io)) return
+      const heard = parseAnnouncement(buf)
+      if (!heard) return
+      found.set(rinfo.address, {
+        host: rinfo.address,
+        payload: `announced itself (API port ${heard.apiPort})`,
+      })
+    })
+  } catch (err) {
+    // Not fatal: the probe half still works. Most likely something else on
+    // the box already holds the port.
+    errors.push(`could not listen for announcements on ${ANNOUNCE_PORT}: ${String(err)}`)
+  }
+
   const socket = io.createSocket({ type: 'udp4', reuseAddr: true })
   try {
     await new Promise<void>((resolve, reject) => {
@@ -201,6 +273,8 @@ export async function scan(interfaceIp: string, io: ScanIo): Promise<ScanResult>
       // processor this box was asked about.
       if (interfaceIp && !onSameSubnet(rinfo.address, interfaceIp, io)) return
       if (!buf.subarray(0, REPLY_PREFIX.length).equals(REPLY_PREFIX)) return
+      // A probe reply outranks an announcement from the same address: it is
+      // the more specific answer, and replacing keeps one row per host.
       const tail = buf.subarray(REPLY_PREFIX.length)
       const text = tail
         .toString('utf8')
@@ -247,10 +321,12 @@ export async function scan(interfaceIp: string, io: ScanIo): Promise<ScanResult>
   } catch (err) {
     errors.push(err instanceof Error ? err.message : 'scan failed')
   } finally {
-    try {
-      socket.close()
-    } catch {
-      // Never bound, or already closed. Either way there is nothing to close.
+    for (const s of [socket, announcements]) {
+      try {
+        s.close()
+      } catch {
+        // Never bound, or already closed. Either way there is nothing to close.
+      }
     }
   }
 
