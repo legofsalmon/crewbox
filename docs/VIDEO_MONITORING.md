@@ -9,10 +9,10 @@ double-confirmation gate, the poller and the pane.
 
 **Crewbox itself has still never met a NovaStar processor** — not one packet in
 this test suite came off a wire. But the sister project the protocol facts come
-from has now read two: a NovaPro UHD Jr on a bench, and a NovaPro MX40 Pro
-mid-show. Its findings arrive here as a fixture of that controller's real
-response shapes, which the reader is driven against, and they changed most of
-what this document used to say about the HTTP API.
+from has now read three: a NovaPro UHD Jr on a bench, a NovaPro MX40 Pro
+mid-show, and an MX30 after a show. Its findings arrive here as fixtures of
+those controllers' real response shapes, which the reader is driven against,
+and they changed most of what this document used to say about the HTTP API.
 
 Every claim below carries where it came from, and a claim without a source is
 a bug in this document.
@@ -101,17 +101,23 @@ Confidence labels, matching the ones novasun uses:
 | **UNKNOWN**  | Not established. Needs a bench. Do not design around it |
 
 This module was written without hardware, and for a long time nothing in it
-was marked OBSERVED. Two units have since been read: a **NovaPro UHD Jr** on a
-bench, and a **NovaPro MX40 Pro** mid-show on 2026-09-11. What they settled is
-marked OBSERVED below, with the scope it deserves — two processors, two
-models, not a fleet.
+was marked OBSERVED. Three units have since been read: a **NovaPro UHD Jr** on
+a bench, a **NovaPro MX40 Pro** mid-show on 2026-09-11, and an **MX30**
+(firmware V1.5.1) after a show on 2026-09-26, read-only at first and then with
+the operator at the wall freezing, blacking out, unplugging and switching it
+off. What they settled is marked OBSERVED below, with the scope it deserves —
+three processors, three models, not a fleet. An MX30 fact is a fact about that
+one unit on that firmware.
 
 The MX40 Pro's whole API is checked in at
 `server/test/fixtures/mx40ProApi.json`: one object per endpoint path, real
 structure, synthetic values, three cabinets standing in for its 288, and the
 endpoints that answered 404 marked as 404s. `server/test/videoMx40.test.ts`
-drives the reader with it. That fixture is a record of what a controller
-returned, so it is not a file to edit when a test goes red.
+drives the reader with it. The MX30's is `mx30Api.json`, beside it, with
+`mx30UnpluggedApi.json` — the same unit with every output line pulled — and
+`mx30Announcement.json`; `server/test/videoMx30.test.ts` drives those. The
+fixtures are records of what a controller returned, vendored from novasun's
+`tests/fixtures/`, so they are not files to edit when a test goes red.
 
 **The source of truth is `legofsalmon/novasun`**, specifically
 `docs/read-only-monitoring.md` and `src/novasun/snmp.py`. That repository
@@ -128,6 +134,20 @@ transcription. When two accounts of a protocol fact disagree, take the one
 carrying its provenance.
 
 ### What was withdrawn
+
+**"A cabinet listed in `monitor/info` with a reporting card is online."** This
+reader was built on it (REASONED), and novasun withdrew it on 2026-09-26: with
+every output line unplugged and the unit powered, an MX30's `monitor/info`
+went on listing all 72 cabinets, links up and temperatures reading, for the
+8.5 minutes until power-off (**OBSERVED**). Driven with a fixture of that
+state, this reader graded the dark wall **`ok, "3 cabinets, 44°C"`** on every
+poll. It now reads the connected-cabinet count and the output links; see
+§COEX HTTP.
+
+**"Display state is not observable on the MX30"** was novasun's claim for a
+few hours the same day, from a sweep that missed the endpoint. It never
+reached this code, which kept asking the manual's path — and that path is the
+one that never moves. See §COEX HTTP.
 
 An earlier novasun note said the discovery reply "appears to carry model and
 name information". That was inferred from a published client discarding bytes
@@ -169,6 +189,35 @@ attempted:
 
 Applies to MX40 Pro, MX30, MX20, KU20, MX6000 Pro, CX40 Pro (VMP 1.4.0+).
 
+**Exercised once, on an MX30** (V1.5.1, VMP closed, SNMP switched on by novasun
+for the purpose and off again; one walk of the enterprise arc). Both COEX
+units were found with SNMP **off**. What the walk means for this reader, whose
+code was read against it rather than run:
+
+- **Temperature is in hundredths.** The main board read `3100`, which this
+  reader printed as "3100°C" and graded hot. x100 is **REASONED** (HTTP read
+  the board at 32 °C; the voltage point matched HTTP's 11.56 V to the digit).
+  `celsius()` in `snmp.ts` divides only a value no rack could reach in
+  degrees, 200 or more, so a firmware reporting whole degrees is untouched.
+- **`CONTROLLER_ROLE` read 1 — "backup" in the document — on a unit driving
+  the wall alone** (**OBSERVED**, meaning **UNKNOWN**). It is still asked and
+  no longer read; the pane never says "backup controller" from it.
+- **Status values are 64-bit bitmasks**, and `OUTPUT_SLOT_STATUS` read
+  `0xFFFFFFFFFFFFFFFE`. A conformant encoding of that is nine bytes, which
+  `ber.ts` used to refuse — and one undecodable varbind drops the whole reply,
+  which in the identity round meant SNMP read as absent. Whether the firmware
+  sends nine bytes is **UNKNOWN** (net-snmp decoded it; the wire bytes were not
+  kept). `decodeInteger` now takes a nine-byte value with a leading zero, and
+  the identity round no longer asks that OID, which nothing read.
+- **The documented per-card receiving-card status OIDs were absent**; this
+  firmware keeps one bitmask per port instead, with a bit order that is
+  **UNKNOWN**. The reader still asks the documented form and shows no status
+  when nothing comes back. Whether `RECEIVING_CARDS_ONLINE` follows a pulled
+  cable or stays stale like `monitor/info` is **UNKNOWN** — SNMP was off
+  through the unplug test.
+- The MIB-2 system group is not served (`sysDescr` → `noSuchName`); this
+  reader never asked it.
+
 **Why the codec is hand-rolled.** novasun ships the OID map and deliberately
 no SNMP client, on the grounds that a hand-rolled ASN.1 encoder is a liability
 and every platform has a good one. That is right for a Python investigation
@@ -191,7 +240,7 @@ returns, it reported a live wall as `ok, "3 cabinets online"` with no
 temperature anywhere, no identity, and every input reading not-connected while
 HDMI 1 was carrying the show.
 
-What a real controller returns, all **OBSERVED** on that unit:
+What a real controller returns, all **OBSERVED** on the MX40 Pro:
 
 | Endpoint                       | What it actually does                                                                                                                                                                |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -203,7 +252,50 @@ What a real controller returns, all **OBSERVED** on that unit:
 | `/api/v1/device/input/sources` | A bare list. Signal is **`sourceStatus`** — 1 feeding the show, 0 elsewhere. `type` is an int code nobody has mapped. A disconnected input still reports a resolution (EDID default) |
 | `/api/v1/device/snmpstate`     | `{"state": false}` — SNMP was **off**, and switching it on is a write                                                                                                                |
 
-Three of those shape the reader more than the field names do:
+An **MX30** (V1.5.1) answers the same skeleton, with these differences, all
+**OBSERVED** on that unit:
+
+| Endpoint                              | On the MX30                                                                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any path it doesn't have              | **HTTP 200 with an empty body** — no `Content-Type`, no envelope, as fast as a real answer. `/api/v1/device` and `displaymode` both answer this way |
+| `/api/v1/device/hw`                   | Identity: `name` "MX30", `modelID` 5138, `hwVersion` "V1.5.1", `sn`, `mac`, `customName` — **and `randomPassword`**, served to any GET              |
+| `/api/v1/screen/output/display/state` | `displayState[].displayMode` per canvas: **0 live, 2 through a front-panel freeze, 1 through a front-panel blackout**                               |
+| `/api/v1/screen/cabinet/count`        | `list[].CabinetCount`: cabinets connected **now**. 72 → 0 as the lines were pulled                                                                  |
+| `/api/v1/device/cabinet`              | Also connected-now, not the configured wall: **it emptied** with the lines out                                                                      |
+| `/api/v1/device/monitor/info`         | Last-known, not live: **kept every cabinet, linked and reading, with every line out**. `outputStatus[].linkStatus` did go false per output          |
+| `/api/v1/device/hw/lock`              | `{ locked, ip }`: the lock VMP takes as it opens. Readable; the PUT that takes it is VMP's                                                          |
+| `monitor/info.name`                   | A plain word, the operator's label. **No model can be read from it**                                                                                |
+
+What the reader does with that:
+
+- **Absent is spelled two ways**, 404 and an empty 200, and both count towards
+  latching an endpoint as missing. Before, the empty 200 read as "no answer"
+  on every poll for as long as the box ran.
+- **Cabinets connected come from the count**, compared with the cabinets being
+  reported on. A shortfall is a fault ("no cabinets connected", "2 of 72
+  cabinets not connected") whatever `monitor/info` says. An output that
+  carries cabinets and reports its link down takes those cabinets offline by
+  name — unless the count says they are all still there, which is most likely
+  a redundant loop running on its backup port, and grades a warning instead.
+  Outputs with nothing behind them are ignored: on the MX30, 2049 and 2051 are
+  backup ports that link with no cabinets on them (**OBSERVED**).
+- **Display state comes from `display/state`**; the manual's `displaymode` is
+  asked only when that path gives nothing. A canvas blacked out wins over one
+  frozen, and anything unmapped is unknown, never normal.
+- **Identity comes from `/device/hw`**, four fields copied out by name.
+  `randomPassword` (purpose **UNKNOWN**) never leaves `identityFromHw`, and a
+  test looks for it in the reading. `/api/v1/device` is asked only when
+  `/device/hw` gave no model.
+- **Who holds the lock** shows on the row as "held by 10.0.30.12".
+- **A refused connection is not silence.** Switched off at its front panel,
+  the MX30 refused every connection for the 7.5 minutes it was watched, never
+  timing out (**OBSERVED**): a standby with the network still up (**REASONED**,
+  well supported). An unpowered or unplugged unit should time out instead
+  (**REASONED**, never tried). The row says "refusing connections (standby?)"
+  rather than "no answer" when every request was refused.
+
+Three things about the MX40 Pro shape the reader more than the field names
+do:
 
 - **Every reading is an object** — `{ name, nameEn, status, value }`, never a
   bare number. `metric()` in `coex.ts` exists for that, and novasun records a
@@ -216,22 +308,27 @@ Three of those shape the reader more than the field names do:
   **UNKNOWN** and nothing reads them: a working card carries
   `errorBit[0].status: 1` while a working fan carries `status: 0`.
 - **There is no online flag anywhere.** A cabinet that drops off the chain
-  stops being listed, and that is the only signal. The reader joins the stable
-  `/api/v1/device/cabinet` list against each poll's receiving cards and marks
+  may stop being listed. The reader joins the `/api/v1/device/cabinet` list
+  from the last topology sweep against each poll's receiving cards and marks
   the difference offline (**REASONED** from the absence, guarded on the two id
-  sets overlapping at all).
+  sets overlapping at all). That list was taken to be the configured wall; on
+  the MX30 it is what is connected now (above), so this check only catches a
+  cabinet lost since the last sweep, and the count and links do the rest.
 
 Everything the manual said is still tried first, so a firmware that follows it
 — and `coexsim` — keeps working. `server/test/videoCoex.test.ts` pins the
 manual's shapes; `server/test/videoMx40.test.ts` pins the real one.
 
-Safe to poll while VMP is connected: **REASONED, very probably, unverified.**
-The API is documented for third-party integration, it is a different port and
-a stateless protocol from the register bus, it has a `Busying` error code (5)
-which implies it expects concurrent callers, and it has no authentication or
-session for a poller to hold. What is not established is whether a GET can
-slow VMP's own operations, whether any GET has side effects despite the verb,
-or what rate a controller tolerates.
+Safe to poll: **OBSERVED on the controller side, at twenty times this
+reader's rate.** One burst of eight GETs mid-show on the MX40 Pro had no effect
+on the show; ten minutes at 1 Hz after it (1,791 GETs) and five minutes at
+1 Hz on the MX30 (900 GETs) drew no errors, no `Busying` and no drift. Whether
+a poll disturbs an operator mid-cue is still **REASONED**: VMP was not being
+driven through either. And a capture of VMP opening an MX30 showed it makes
+218 GETs and four PUTs as it opens, then no HTTP at all — a websocket and a
+preview stream instead — so after that there is nothing of VMP's for a poller
+to contend with (**REASONED** from one capture). One of those PUTs takes the
+lock above; nothing here ever sends one.
 
 The policy follows novasun's recommendation: status every 20 s, topology every
 tenth poll, 200 ms between requests, and a five-second back-off on code 5.
@@ -255,10 +352,11 @@ plan**, and novasun's investigation is what killed it:
   to no other port, so a listener on a third host sees every probe and never
   sees a single answer. **Passive discovery cannot yield an inventory.** This
   was the guess the design was built on; it is now a measurement.
-- A controller announces nothing unsolicited: a listener sat for thirty
+- Nothing arrives unsolicited **on UDP 3800**: a listener sat for thirty
   minutes on a live-show segment with an MX40 on it and heard nothing
   (**OBSERVED**, with the caveat that broadcast filtering on the show switch
-  was not ruled out).
+  was not ruled out). That was the only port anybody listened on — see the
+  MX30 below.
 - And the wait really is unbounded: through those same thirty minutes VMP was
   driving the show and probed **zero** times. It discovers on user action, not
   on a timer (**OBSERVED** for VMP; NovaLCT's cadence is still **UNKNOWN**).
@@ -267,12 +365,26 @@ plan**, and novasun's investigation is what killed it:
   no reply to eight `rqProMI:` probes — unicast, subnet broadcast, multicast
   and limited broadcast — from a host reading its HTTP API without trouble,
   while a UHD Jr answers within milliseconds (**OBSERVED**, 2026-09-11, one
-  unit and firmware; novasun `docs/read-only-monitoring.md`). How VMP finds
-  one is **UNKNOWN**. So an empty sweep says nothing about MX-class hardware:
-  the pane says so when a sweep comes back empty, and those processors are
-  added by address.
+  unit and firmware; novasun `docs/read-only-monitoring.md`). An MX30 left the
+  same eight unanswered (**OBSERVED**, 2026-09-26).
+- **But an MX30 announces itself.** Every 3.0 s, unsolicited, from UDP 54650
+  to the subnet broadcast on UDP 54622, 54623, 54624 and 54700: 96 bytes of
+  JSON, `{"data":[{"apiPort":"8001","mac":…,"https":"9001"}]}`, with no model,
+  name or state (**OBSERVED**, one unit, before, during and after VMP). That is
+  how VMP finds it: VMP sent no probe and connected 5 ms after an
+  announcement (**REASONED**, strongly). The announcements kept coming with
+  every output line unplugged, so they say the controller is there, not that
+  the wall is; they stopped at once at a front-panel power-off. Whether an MX40
+  Pro announces is **UNKNOWN**.
 
-So crewbox sends the probe itself, once, when an admin asks. The packet is the
+So a sweep also binds a receive-only socket on UDP 54622 for its listening
+window — 3.5 s, just over the announcement interval — and lists an MX30 it
+hears as "announced itself (API port 8001)". That half transmits nothing. An
+empty sweep still says nothing about an MX40 Pro: the pane says so, and those
+are added by address.
+
+For register-bus hardware, crewbox sends the probe itself, once, when an
+admin asks. The packet is the
 eight ASCII bytes `rqProMI:` — a broadcast UDP read with no addressed target,
 no register address and no write bit. It cannot change controller state.
 
@@ -406,10 +518,22 @@ novasun named two things for the first day with hardware. Both are done:
    switching it on is a write. So the HTTP API is the reader on COEX
    hardware, and SNMP stays the reader for a box that already has it on.
 
-Still open: run a COEX poll at 1 Hz for ten minutes with VMP connected and
-doing something visible. If VMP does not stutter and no `Busying` appears,
-polling at 0.05 Hz is not going to be the thing that breaks a show — and the
-"REASONED, unverified" on §COEX HTTP above can become an observation.
+Since then, an MX30 settled most of what was open about COEX hardware:
+polling at 1 Hz is clean on the controller side, display state is readable,
+identity is readable, absent endpoints answer an empty 200, the unit announces
+itself, and `monitor/info` cannot be trusted to notice a pulled cable
+(§COEX HTTP, §Discovery).
+
+Still open:
+
+- Polling with VMP connected **and being driven** — both 1 Hz runs were after
+  the show.
+- Everything on the MX30 list for the **MX40 Pro**: whether it has
+  `display/state`, `/device/hw` and `cabinet/count`, whether its
+  `monitor/info` goes stale the same way, and whether it announces.
+- Whether SNMP's `RECEIVING_CARDS_ONLINE` follows a pulled cable.
+- A mains cut or a pulled controller cable, to confirm that looks like a
+  timeout rather than a refusal.
 
 ## Out of scope, for now
 
