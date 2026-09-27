@@ -212,14 +212,16 @@ describe('the COEX reader against a real MX40 Pro', () => {
   })
 
   it('stops asking for endpoints this firmware does not have', async () => {
-    // Three of the eight endpoints 404 on this unit. Asking every poll puts
-    // traffic on the video network for an answer that will not change, and
-    // fills the pane with the same two failures for the length of the show.
+    // `/device`, `audio` and `displaymode` 404 on this unit (OBSERVED; the
+    // fixture used to show `backup` as absent too, until it was read after
+    // the show and answered). Asking every poll puts traffic on the video
+    // network for an answer that will not change, and fills the pane with
+    // the same failures for the length of the show.
     const { io, requests } = harness()
     const reader = new CoexReader('192.0.2.1', io)
     for (let i = 0; i < 5; i++) await reader.poll()
 
-    const absent = '/api/v1/device/backup'
+    const absent = '/api/v1/device/screen/displaymode'
     expect(requests.filter((r) => r.endsWith(absent)).length).toBeLessThan(5)
 
     const last = await reader.poll()
@@ -236,7 +238,7 @@ describe('the COEX reader against a real MX40 Pro', () => {
     for (let i = 0; i < TOPOLOGY_EVERY * 2 + 1; i++) await reader.poll()
 
     // Three to latch, then one re-probe on each of the two topology sweeps.
-    const asked = requests.filter((r) => r.endsWith('/api/v1/device/backup')).length
+    const asked = requests.filter((r) => r.endsWith('/api/v1/device/screen/displaymode')).length
     expect(asked).toBe(ABSENT_AFTER + 2)
   })
 })

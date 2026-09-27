@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import type dgram from 'node:dgram'
 import { describe, expect, it } from 'vitest'
 import {
+  ANNOUNCE_PORT,
   DISCOVERY_GROUP,
   PROBE,
   REPLY_PREFIX,
@@ -232,6 +233,34 @@ describe('scanning', () => {
     expect(result.sent).toEqual([
       '8 bytes "rqProMI:" to 10.0.30.255:3800 (UDP)',
       '8 bytes "rqProMI:" to 224.224.125.119:3800 (UDP)',
+    ])
+  })
+
+  it('hears an MX30 announcing itself, which answers no probe', async () => {
+    // Every 3.0 s, unsolicited, to the subnet broadcast on UDP 54622 (and
+    // three other ports), 96 bytes of JSON with no model or name (OBSERVED,
+    // one MX30). Heard on a receive-only socket bound before the probe goes.
+    const socket = new FakeSocket()
+    const announcement = Buffer.from(
+      '{"data":[{"apiPort":"8001","mac":"00:00:5e:00:53:30","authType":0,"workMode":0,"https":"9001"}]}',
+      'ascii'
+    )
+    const binds: number[] = []
+    const bind = socket.bind.bind(socket)
+    socket.bind = (port, address, cb) => {
+      binds.push(port)
+      bind(port, address, cb)
+    }
+    const result = await scan(
+      '10.0.30.9',
+      fakeIo(socket, [
+        { from: '10.0.30.40', buf: announcement },
+        { from: '192.168.1.40', buf: announcement },
+      ])
+    )
+    expect(binds).toEqual([ANNOUNCE_PORT, 3800])
+    expect(result.found).toEqual([
+      { host: '10.0.30.40', payload: 'announced itself (API port 8001)' },
     ])
   })
 

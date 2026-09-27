@@ -1,11 +1,17 @@
 {
-  "__about__": "The COEX HTTP API as OBSERVED on a NovaPro MX40 Pro running a live show, 2026-09-11: real response structure, synthetic values. Three cabinets stand in for 288. Endpoints marked __http_status__ 404 answered exactly that on the unit. displaymode and backup were not requested and are absent here. Generated from tests/conftest.py; tests/test_fixtures.py asserts they agree.",
-  "__source__": "Vendored from legofsalmon/novasun, tests/fixtures/mx40_like_api.json (branch hardware-bringup-uhd-jr, commit 23bf080). novasun holds the provenance for every protocol fact in the crewbox video module; this is the first one it measured rather than derived. Do not edit it to make a test pass: it is a record of what one controller returned.",
+  "__about__": "The COEX HTTP API as OBSERVED on a NovaPro MX40 Pro running a live show, 2026-09-11: real response structure, synthetic values. Three cabinets stand in for 288. Endpoints marked __http_status__ 404 answered exactly that on the unit. displaymode answered 404 and backup, multifunc-card and hw/mode answered as shown, all read after the show. Generated from tests/conftest.py; tests/test_fixtures.py asserts they agree.",
+  "__source__": "Vendored from legofsalmon/novasun, tests/fixtures/mx40_like_api.json (branch hardware-bringup-uhd-jr, commit 7243b09). novasun holds the provenance for every protocol fact in the crewbox video module; this is the first one it measured rather than derived. Do not edit it to make a test pass: it is a record of what one controller returned.",
   "/api/v1/device": {
     "__http_status__": 404
   },
   "/api/v1/device/audio": {
     "__http_status__": 404
+  },
+  "/api/v1/device/backup": {
+    "backup": "",
+    "backupName": "",
+    "master": "",
+    "masterName": ""
   },
   "/api/v1/device/cabinet": [
     {
@@ -111,6 +117,9 @@
       "voltage": 5
     }
   ],
+  "/api/v1/device/hw/mode": {
+    "mode": 3
+  },
   "/api/v1/device/input/sources": [
     {
       "actualRefreshRate": 50,
@@ -402,6 +411,10 @@
     "temperatureInfos": null,
     "totalRuntime": 986580,
     "voltageInfos": null
+  },
+  "/api/v1/device/multifunc-card/detailinfo": [],
+  "/api/v1/device/screen/displaymode": {
+    "__http_status__": 404
   },
   "/api/v1/device/snmpstate": {
     "state": false

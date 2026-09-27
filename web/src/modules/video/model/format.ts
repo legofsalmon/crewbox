@@ -51,7 +51,14 @@ export function detailOf(reading: ProcessorReading | null): string {
   if (!reading) return ''
   const parts: string[] = []
 
-  if (reading.cabinets.length > 0) {
+  if (
+    reading.connectedCabinets !== undefined &&
+    reading.connectedCabinets < reading.cabinets.length
+  ) {
+    // The controller's own count of what is connected now, which is the one
+    // that follows a pulled cable. See `ProcessorReading.connectedCabinets`.
+    parts.push(`${reading.connectedCabinets}/${reading.cabinets.length} cabinets connected`)
+  } else if (reading.cabinets.length > 0) {
     const offline = reading.cabinets.filter((c) => !c.online).length
     parts.push(
       offline > 0
@@ -84,6 +91,7 @@ export function detailOf(reading: ProcessorReading | null): string {
 
   if (reading.brightness !== undefined) parts.push(`${Math.round(reading.brightness)}% brightness`)
   if (reading.isBackup) parts.push('backup controller')
+  if (reading.lockedBy !== undefined) parts.push(`held by ${reading.lockedBy}`)
 
   return parts.join(' · ')
 }

@@ -94,10 +94,13 @@ and no name, so crewbox doesn't pretend to read one. Those come from reading
 the processor once it's added.
 
 > [!WARNING]
-> **MX and CX series processors don't answer a sweep.** An MX40 Pro was sent
-> the probe eight different ways and never replied, although it answered its
-> web API from the same machine. A sweep that finds nothing on a network with
-> an MX40 on it is expected. Add those processors by address.
+> **MX and CX series processors don't answer the probe.** An MX40 Pro and an
+> MX30 were each sent it eight ways and never replied, although both answered
+> their web API from the same machine. An MX30 does **announce itself** every
+> three seconds, though, and a sweep listens for that too without sending
+> anything more, so an MX30 on the video network shows up as "announced
+> itself". Whether an MX40 Pro announces is not known: if a sweep finds
+> nothing on a network with one on it, add it by address.
 
 Sweeping needs the box to know which adapter is on the video network:
 pick it under **Admin → Box settings → Video network adapter** and restart
@@ -111,14 +114,29 @@ temperature contributes no temperature, and the row reads "couldn't tell"
 rather than "fine" — a screens tech reading _fine_ off a box that never asked
 the question is worse off than one reading _couldn't tell_.
 
-- **cabinets** — how many are online, and how many are not
+- **cabinets** — how many are connected, and how many are not. This comes
+  from the processor's own count of what is plugged in now, because its
+  per-cabinet readings can go on showing a pulled cable's cabinets as fine: an
+  MX30 did for eight and a half minutes with every line out
+- **output link down** — a line to some cabinets has dropped but they are all
+  still there, most likely running on a backup loop. Nothing is dark yet; one
+  more cable and it will be
 - **temperature** — the hottest cabinet, not an average. An average hides the
   one panel in the sun, which is the only one worth walking over to look at
 - **inputs** — how many are live, and any that are connected with no signal.
   Unused connectors are not faults and are not counted as any
 - **blacked out / frozen** — usually somebody's decision, so it is a note
   rather than an alarm. But a wall that is black when nobody meant it to be is
-  exactly what you want to notice from across a site
+  exactly what you want to notice from across a site. Both have been seen
+  working on an MX30, set from its front panel
+- **held by** — the address of a computer holding the processor's control
+  lock. VMP takes it when it opens, so this is usually whoever is driving
+  the wall
+
+When a processor stops answering, the row says **no answer**, or **refusing
+connections (standby?)** when it is still on the network but turning the box
+away. An MX30 switched off at its front-panel button did that: it is on
+standby rather than unplugged, so the front panel is the place to look.
 
 ## "SNMP is switched off"
 
@@ -145,10 +163,13 @@ operator using it.
 ## Worth knowing
 
 The protocol details behind this module came from reverse-engineering work in
-a separate project, and **no NovaStar hardware has been in front of any of
-it**. The interfaces are documented by the manufacturer; the exact field names
-in the HTTP responses are not confirmed against firmware.
+a separate project. That project has read three processors so far — a NovaPro
+UHD Jr on a bench, an MX40 Pro at a show and an MX30 after one — and the MX
+controllers corrected much of what the manufacturer's manual says. crewbox
+itself is tested against recordings of what those units returned, not yet
+against one on a wire.
 
-That is why the pane leaves blanks where a controller said something it did
-not recognise, rather than filling them in. If a row looks sparse, that is the
-box being honest about what it read.
+Other models and firmware may still answer differently. That is why the pane
+leaves blanks where a controller said something it did not recognise, rather
+than filling them in. If a row looks sparse, that is the box being honest
+about what it read.
