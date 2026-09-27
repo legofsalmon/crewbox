@@ -19,6 +19,38 @@ describe('local DNS config', () => {
     expect(plan.dnsmasq).toBe('address=/chat.letissier.ie/192.168.1.50')
   })
 
+  it('writes RouterOS commands that replace the entry instead of stacking one', () => {
+    // A MikroTik has no dnsmasq. Pasting again after the box's address moved
+    // must leave one answer, not last event's beside this one. The short TTL
+    // is what gets the fix to phones that already asked: RouterOS would
+    // otherwise tell them to keep the old answer for a day.
+    expect(plan.routeros).toBe(
+      '/ip dns static remove [find name=chat.letissier.ie]\n' +
+        '/ip dns static add name=chat.letissier.ie address=192.168.1.50 ttl=1m comment=crewbox'
+    )
+    // match-subdomain would make a RouterOS 6 router reject the line.
+    expect(plan.routeros).not.toMatch(/match-subdomain/)
+  })
+
+  it('gives RouterOS a paste that is nothing but RouterOS', () => {
+    // The section is pasted into a terminal as it stands, so a dnsmasq or
+    // hosts line leaking into it is an error on the router. It also turns on
+    // answering the LAN, or the entries exist and no phone can ask for them.
+    const section = (file: string, header: string) => {
+      const start = file.indexOf(header)
+      return file.slice(start, file.indexOf('\n\n', start)).split('\n').slice(1)
+    }
+    for (const lines of [
+      section(dnsConfigFile(plan), '# --- MikroTik RouterOS'),
+      section(dnsConfigFile(plan), '# --- RouterOS (MikroTik)'),
+      section(probesConfigFile('192.168.1.50'), '# --- RouterOS (MikroTik)'),
+    ]) {
+      expect(lines.length).toBeGreaterThan(0)
+      for (const line of lines) expect(line).toMatch(/^(#|\/ip dns )/)
+      expect(lines).toContain('/ip dns set allow-remote-requests=yes')
+    }
+  })
+
   it('writes a hosts line for the laptop that needs it before the router does', () => {
     expect(plan.hosts).toBe('192.168.1.50\tchat.letissier.ie')
   })
@@ -30,6 +62,7 @@ describe('local DNS config', () => {
   it('produces a file that carries every form plus why it is local', () => {
     const file = dnsConfigFile(plan)
     expect(file).toContain(plan.dnsmasq)
+    expect(file).toContain(plan.routeros)
     expect(file).toContain(plan.hosts)
     expect(file).toContain(plan.zone)
     // The reasoning is the part that stops this being undone later.
@@ -45,6 +78,9 @@ describe('local DNS config', () => {
     // it. Every hostname gets the box's address, not the certificate's name.
     for (const host of plan.probes.hostnames) {
       expect(plan.probes.dnsmasq).toContain(`address=/${host}/192.168.1.50`)
+      expect(plan.probes.routeros).toContain(
+        `/ip dns static add name=${host} address=192.168.1.50 ttl=1m comment=crewbox`
+      )
       expect(plan.probes.hosts).toContain(`192.168.1.50\t${host}`)
     }
     const file = dnsConfigFile(plan)

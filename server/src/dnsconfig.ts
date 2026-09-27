@@ -36,6 +36,8 @@ export interface DnsPlan {
   address: string
   /** dnsmasq: OpenWRT, Pi-hole, most Linux routers, and the deploy/ config. */
   dnsmasq: string
+  /** RouterOS (MikroTik) terminal commands. Safe to paste again: see routerosEntry. */
+  routeros: string
   /** A hosts file, for one laptop that needs to work before the router does. */
   hosts: string
   /** BIND-style zone line, for a venue that runs its own resolver. */
@@ -48,6 +50,7 @@ export interface DnsPlan {
   probes: {
     hostnames: readonly string[]
     dnsmasq: string
+    routeros: string
     hosts: string
   }
 }
@@ -60,15 +63,49 @@ export function dnsPlan(hostname: string, address: string): DnsPlan {
     // any upstream answer — which is the point, since the upstream will
     // usually answer with a wildcard.
     dnsmasq: `address=/${hostname}/${address}`,
+    routeros: routerosEntry(hostname, address),
     hosts: `${address}\t${hostname}`,
     zone: `${hostname}.\tIN\tA\t${address}`,
     probes: {
       hostnames: PROBE_HOSTS,
       dnsmasq: PROBE_HOSTS.map((host) => `address=/${host}/${address}`).join('\n'),
+      routeros: PROBE_HOSTS.map((host) => routerosEntry(host, address)).join('\n'),
       hosts: PROBE_HOSTS.map((host) => `${address}\t${host}`).join('\n'),
     },
   }
 }
+
+/**
+ * One RouterOS static entry, written to be pasted more than once.
+ *
+ * `add` alone, pasted again after the box's address has moved, would either
+ * fail or leave last event's entry beside the new one. Removing the name
+ * first makes each paste the whole truth for that name, the way dnsmasq's
+ * single line already is.
+ *
+ * A one-minute TTL, where RouterOS defaults to a day. dnsmasq answers its
+ * own entries with a TTL of zero, so a fixed entry reaches phones at once; a
+ * day would leave them on last event's address long after the router was
+ * put right.
+ *
+ * Exact names, where dnsmasq's `address=/name/` also covers everything under
+ * the name. Nothing under these names is ever asked for, and the RouterOS
+ * equivalent (`match-subdomain=yes`) only exists on RouterOS 7: a router
+ * still on 6 would reject the whole line.
+ */
+function routerosEntry(host: string, address: string): string {
+  return (
+    `/ip dns static remove [find name=${host}]\n` +
+    `/ip dns static add name=${host} address=${address} ttl=1m comment=crewbox`
+  )
+}
+
+/**
+ * Lets RouterOS answer DNS from the LAN at all: without it the static entries
+ * exist and no phone can ask for them. Off unless the router's default config
+ * turned it on, and setting it again changes nothing.
+ */
+const ROUTEROS_ANSWER = '/ip dns set allow-remote-requests=yes'
 
 /** A file an admin can drop straight onto a router, comments and all. */
 export function dnsConfigFile(plan: DnsPlan): string {
@@ -109,6 +146,15 @@ function nameBlock(plan: DnsPlan): string {
 # Save as /etc/dnsmasq.d/crewbox.conf (OpenWRT: /etc/dnsmasq.d/), then
 # restart dnsmasq. Make sure DHCP hands out this router as the DNS server.
 ${plan.dnsmasq}
+
+# --- MikroTik RouterOS ----------------------------------------------------
+# Paste into the router's terminal (Winbox: New Terminal, or SSH). Pasting
+# again after the box's address changes replaces the entry. DHCP must hand
+# out this router as the DNS server: IP > DHCP Server > Networks > DNS
+# Servers. The first line lets the router answer phones at all; on a router
+# that also has an internet uplink, check its firewall drops DNS from there.
+${ROUTEROS_ANSWER}
+${plan.routeros}
 
 # --- A single machine, before the router is set up ------------------------
 # Append to /etc/hosts (macOS and Linux), or
@@ -151,6 +197,10 @@ function probeBlock(probes: DnsPlan['probes']): string {
 
 # --- dnsmasq (OpenWRT, Pi-hole) -------------------------------------------
 ${probes.dnsmasq}
+
+# --- RouterOS (MikroTik), pasted into the router's terminal ---------------
+${ROUTEROS_ANSWER}
+${probes.routeros}
 
 # --- hosts file -----------------------------------------------------------
 ${probes.hosts}
