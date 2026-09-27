@@ -272,6 +272,51 @@ describe('when a processor goes quiet', () => {
     expect(watcher.statuses()[0].state).toBe('unreachable')
   })
 
+  it('tells a controller refusing connections from one that went silent', async () => {
+    // An MX30 switched off at its front panel refused every connection for
+    // as long as it was watched (OBSERVED): powered and on the network, on
+    // standby. Silence is the other case, and gets the other words.
+    const hosts: Record<string, 'snmp' | 'http'> = { '10.0.30.11': 'http' }
+    const log: string[] = []
+    const rows = new Map<string, string>()
+    const store = new VideoStore(
+      { getSetting: (k) => rows.get(k), setSetting: (k, v) => void rows.set(k, v) },
+      () => 1_000
+    )
+    const io = fakeIo(hosts, log)
+    let refusing = false
+    const inner = io.coex.fetch
+    const watcher = new VideoWatcher({
+      store,
+      io: {
+        ...io,
+        coex: {
+          ...io.coex,
+          fetch: (url, init) =>
+            refusing
+              ? Promise.reject(
+                  Object.assign(new TypeError('fetch failed'), {
+                    cause: { code: 'ECONNREFUSED' },
+                  })
+                )
+              : inner(url, init),
+        },
+      },
+    })
+    arm(store, '10.0.30.11')
+    await watcher.tick()
+
+    refusing = true
+    for (let n = 0; n < MISSES_BEFORE_UNREACHABLE; n++) await watcher.tick()
+    expect(watcher.statuses()[0].state).toBe('unreachable')
+    expect(watcher.statuses()[0].summary).toBe('refusing connections (standby?)')
+
+    refusing = false
+    delete hosts['10.0.30.11']
+    for (let n = 0; n < MISSES_BEFORE_UNREACHABLE; n++) await watcher.tick()
+    expect(watcher.statuses()[0].summary).toBe('no answer')
+  })
+
   it('keeps the last good reading, and says when it was', async () => {
     const hosts: Record<string, 'snmp' | 'http'> = { '10.0.30.11': 'http' }
     const log: string[] = []

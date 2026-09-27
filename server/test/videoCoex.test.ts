@@ -47,10 +47,30 @@ function fakeIo(routes: Record<string, unknown>, recorded: Recorded[] = []): Coe
   }
 }
 
+/**
+ * A controller that answers every path the reader asks.
+ *
+ * Identity is served twice, the manual's way at `/api/v1/device` and the way
+ * an MX30 does it at `/api/v1/device/hw`; the reader takes the second and
+ * only falls back to the first (see "falls back to the manual's identity").
+ */
 const FULL = {
+  '/api/v1/device/hw': {
+    code: 0,
+    data: { name: 'MX40 Pro', customName: 'Main wall', sn: 'SN-42', hwVersion: 'v1.4.0' },
+  },
   '/api/v1/device': {
     code: 0,
     data: { model: 'MX40 Pro', name: 'Main wall', sn: 'SN-42', version: 'v1.4.0' },
+  },
+  '/api/v1/device/hw/lock': { code: 0, data: { locked: 0, ip: '' } },
+  '/api/v1/screen/cabinet/count': {
+    code: 0,
+    data: { list: [{ ScreenID: '{1}', CabinetCount: 2, CabinetCountInBlackList: 0 }] },
+  },
+  '/api/v1/screen/output/display/state': {
+    code: 0,
+    data: { displayState: [{ canvasID: 2048, displayMode: 0 }] },
   },
   '/api/v1/device/cabinet': {
     code: 0,
@@ -177,8 +197,29 @@ describe('polling', () => {
     const recorded: Recorded[] = []
     const reader = new CoexReader('10.0.30.11', fakeIo(FULL, recorded))
     for (let i = 0; i < TOPOLOGY_EVERY; i++) await reader.poll()
-    const identityReads = recorded.filter((r) => r.url.endsWith('/api/v1/device')).length
+    const identityReads = recorded.filter((r) => r.url.endsWith('/api/v1/device/hw')).length
     expect(identityReads).toBe(1)
+  })
+
+  it("falls back to the manual's identity when /device/hw is not there", async () => {
+    const manual: Record<string, unknown> = { ...FULL }
+    delete manual['/api/v1/device/hw']
+    const recorded: Recorded[] = []
+    const reading = await new CoexReader('10.0.30.11', fakeIo(manual, recorded)).poll()
+    expect(reading.model).toBe('MX40 Pro')
+    expect(reading.firmware).toBe('v1.4.0')
+    expect(recorded.some((r) => r.url.endsWith('/api/v1/device'))).toBe(true)
+  })
+
+  it("asks the manual's display-mode path only when display/state gave nothing", async () => {
+    const recorded: Recorded[] = []
+    await new CoexReader('10.0.30.11', fakeIo(FULL, recorded)).poll()
+    expect(recorded.some((r) => r.url.endsWith('/screen/displaymode'))).toBe(false)
+
+    const manual: Record<string, unknown> = { ...FULL }
+    delete manual['/api/v1/screen/output/display/state']
+    const reading = await new CoexReader('10.0.30.11', fakeIo(manual)).poll()
+    expect(reading.displayMode).toBe('normal')
   })
 
   it('keeps the last topology on a status-only poll', async () => {
