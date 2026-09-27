@@ -110,7 +110,9 @@ can reach the box by its name, certificate expiry, and clock sanity.
 **Download DNS config** gives a ready-made `crewbox-dns.conf` for the venue
 router — hand it to whoever runs the router instead of explaining DNS at the
 production desk. On a box with a certificate it points the name at the box;
-on one without, it carries only the optional block below.
+on one without, it carries only the optional block below. Each entry comes
+in dnsmasq form (OpenWRT, GL.iNet, Pi-hole), as RouterOS commands to paste
+into a MikroTik's terminal, and as `hosts` and zone-file lines.
 
 That file carries a second, clearly-marked **optional** block: the addresses
 phones fetch to decide whether a network has internet. Adding it stops

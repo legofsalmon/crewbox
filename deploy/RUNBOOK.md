@@ -6,11 +6,11 @@ The one document to print and keep in the production office.
 
 - Server box (mini-PC, e.g. Intel N100 — fanless is nice in dust) + spare
 - UPS (even a small one rides out generator switchovers)
-- Router **running dnsmasq** — OpenWRT, or a GL.iNet unit, which ships it.
-  This is not a preference: the box generates its local DNS entry in dnsmasq
-  form (Admin → This network), and that entry is what lets crew reach the box
-  by the name on its certificate. A router without a DNS override means no
-  HTTPS by name, and so no microphone in the browser.
+- Router **running dnsmasq or RouterOS** — OpenWRT, a GL.iNet unit (which
+  ships dnsmasq), or a MikroTik. This is not a preference: the box generates
+  its local DNS entry for both (Admin → This network), and that entry is what
+  lets crew reach the box by the name on its certificate. A router without a
+  DNS override means no HTTPS by name, and so no microphone in the browser.
   With no uplink to use, a two-port travel router's WAN port can be
   reassigned as a second LAN port — but plan a small switch in anyway.
 - Enough Wi-Fi APs to cover stages/gates (wired backhaul if possible). A
@@ -176,7 +176,8 @@ deployment choice.
 
 1. Power order: router → APs → server box (all on the UPS).
 2. Router: static IP for the server; `deploy/dnsmasq.conf` installed so
-   `chat.<yourdomain>` → server IP; DHCP hands out the router as DNS.
+   `chat.<yourdomain>` → server IP (on a MikroTik, paste the RouterOS lines
+   from **Admin → This network** instead); DHCP hands out the router as DNS.
 3. `systemctl status crewbox` — green. There is no separate voice service:
    the SFU starts and stops with the box. The packaged box carries its own;
    a rig installed from source needs `livekit-server` on the machine and
