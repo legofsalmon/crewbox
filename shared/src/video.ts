@@ -107,6 +107,14 @@ export interface CabinetReading {
    * the pane should not print one as the other.
    */
   tempStatus?: 'normal' | 'abnormal'
+  /**
+   * The controller output this cabinet hangs off, when the firmware says.
+   *
+   * Kept so an output whose link has dropped can take its own cabinets with
+   * it, rather than the whole wall or none of it. See
+   * `ProcessorReading.outputsDown`.
+   */
+  output?: string
 }
 
 export type InputSignal = 'present' | 'no-signal' | 'not-connected'
@@ -159,6 +167,35 @@ export interface ProcessorReading {
   /** True when this controller is the backup of a redundant pair. */
   isBackup?: boolean
   displayMode?: DisplayMode
+  /**
+   * Cabinets the controller says are connected right now.
+   *
+   * Not the same as `cabinets.length`, and the gap between them is the
+   * point. On an MX30 the per-cabinet monitoring kept listing all 72
+   * cabinets, links up and temperatures reading, for eight and a half
+   * minutes with every output line unplugged, while this count (from
+   * `/api/v1/screen/cabinet/count`) went to 0 within a poll (OBSERVED, one
+   * unit, firmware V1.5.1). The monitoring is last-known; this is now.
+   */
+  connectedCabinets?: number
+  /**
+   * Outputs that carry cabinets and report their link down.
+   *
+   * Only outputs that cabinets hang off count: the MX30 has backup ports that
+   * are normally linked with nothing behind them, and ten or more outputs
+   * that are unused on any given wall, so "an output is down" on its own
+   * means nothing. Went false within one 2 s poll of a line being pulled
+   * (OBSERVED, MX30).
+   */
+  outputsDown?: string[]
+  /**
+   * The address of a control application holding the controller's lock.
+   *
+   * VMP takes it when it opens (OBSERVED once, MX30). Read, never taken:
+   * crewbox has no route to the PUT that sets it. Useful on a show day as
+   * "somebody at 10.0.30.12 is driving this wall".
+   */
+  lockedBy?: string
   /** 0–100. Read-back: crewbox has no way to change it. */
   brightness?: number
   cabinets: CabinetReading[]
@@ -330,6 +367,29 @@ export function gradeReading(reading: ProcessorReading | null): {
 } {
   if (!reading) return { health: 'unknown', summary: 'not contacted' }
 
+  /**
+   * The count of cabinets connected now, against the ones being reported on.
+   *
+   * First, because the per-cabinet list can lie by omission in the worst
+   * direction: an MX30 with every output line out kept every cabinet in its
+   * monitoring, linked and reading temperatures, and this function graded
+   * that **`ok, "3 cabinets, 44°C"`** — a dark wall, called healthy. Measured
+   * in novasun's harness against a fixture of the unplugged unit, and pinned
+   * in `server/test/videoMx30.test.ts`. A count below the list is a
+   * cabinet that has gone, whatever the list says about it.
+   */
+  const listed = reading.cabinets.length
+  if (reading.connectedCabinets !== undefined && reading.connectedCabinets < listed) {
+    const missing = listed - reading.connectedCabinets
+    return {
+      health: 'fault',
+      summary:
+        reading.connectedCabinets === 0
+          ? 'no cabinets connected'
+          : `${missing} of ${listed} cabinets not connected`,
+    }
+  }
+
   const offline = reading.cabinets.filter((c) => !c.online)
   if (offline.length > 0) {
     return {
@@ -347,6 +407,19 @@ export function gradeReading(reading: ProcessorReading | null): {
       health: 'fault',
       summary:
         dark.length === 1 ? `no signal on ${dark[0].name ?? dark[0].id}` : 'inputs with no signal',
+    }
+  }
+
+  // An output carrying cabinets has lost its link, but the count says they
+  // are all still there: most likely a redundant loop running on its backup
+  // port. Nothing is dark yet, and one more cable is the difference.
+  if (reading.outputsDown && reading.outputsDown.length > 0) {
+    return {
+      health: 'warn',
+      summary:
+        reading.outputsDown.length === 1
+          ? `output ${reading.outputsDown[0]} link down`
+          : `${reading.outputsDown.length} output links down`,
     }
   }
 

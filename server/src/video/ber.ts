@@ -189,6 +189,17 @@ export function readSequence(value: Buffer): Tlv[] {
  */
 export function decodeInteger(value: Buffer): number {
   if (value.length === 0) return 0
+  // A Counter64 with its top bit set needs a ninth, leading zero byte to stay
+  // positive in BER. An MX30 serves several — 0xFFFFFFFFFFFFFFFE among them
+  // (OBSERVED as values; the wire bytes were not captured) — so a strict
+  // eight-byte limit could throw on a legitimate reply and lose every varbind
+  // in it. The result is approximate above 2^53, which is fine: nothing here
+  // does arithmetic on a bitmask.
+  if (value.length === 9 && value[0] === 0) {
+    let n = 0
+    for (const byte of value) n = n * 256 + byte
+    return n
+  }
   if (value.length > 8) throw new BerError('integer too wide')
   if ((value[0] & 0x80) === 0) {
     let n = 0

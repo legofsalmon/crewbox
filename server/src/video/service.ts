@@ -8,7 +8,7 @@ import {
 import { Intents } from './intents.ts'
 import { VideoStore, type SettingsIo } from './store.ts'
 import { VideoWatcher, type WatcherIo } from './watcher.ts'
-import { LISTEN_MS, realScanIo, scan, type ScanIo } from './discovery.ts'
+import { ANNOUNCE_PORT, LISTEN_MS, realScanIo, scan, type ScanIo } from './discovery.ts'
 
 /**
  * Everything the video module owns, behind one object.
@@ -115,7 +115,7 @@ export class VideoService {
           willSend: [
             'One 8-byte UDP packet, "rqProMI:", to the subnet broadcast address on port 3800',
             'The same packet to the multicast group 224.224.125.119 on port 3800',
-            `Then ${LISTEN_MS / 1000} seconds of listening. Nothing else is sent`,
+            `Then ${LISTEN_MS / 1000} seconds of listening, for replies and for controllers announcing themselves on UDP ${ANNOUNCE_PORT}. Nothing else is sent`,
           ],
         }),
       }

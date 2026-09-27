@@ -288,6 +288,24 @@ const asString = (v: string | number | null | undefined): string | undefined =>
       ? String(v)
       : undefined
 
+/**
+ * A temperature point, in degrees.
+ *
+ * An MX30 on V1.5.1 reported its main board as **3100** (OBSERVED), which
+ * this reader printed as "3100°C" and graded as a hot processor. Hundredths
+ * of a degree — 31.00 °C — is REASONED: the HTTP API read the same board at
+ * 32 °C, and the voltage point beside it (1156) matched HTTP's 11.56 V to the
+ * digit. The document gives no scale.
+ *
+ * So the scale is applied only where a reading cannot be degrees: nothing in
+ * a rack runs at 200 °C, and nothing scaled by 100 reads under it unless it
+ * is below 2 °C, where either reading says "cold". A firmware that does
+ * report whole degrees is left alone.
+ */
+export function celsius(value: number): number {
+  return Math.abs(value) >= 200 ? value / 100 : value
+}
+
 /** Clamp a count that came off the wire before it is used to build requests. */
 const bounded = (value: number | undefined, max: number): number =>
   value === undefined || value < 0 ? 0 : Math.min(Math.floor(value), max)
@@ -319,7 +337,12 @@ export async function readOverSnmp(session: SnmpSession, now: number): Promise<P
       oid.FAN_COUNT,
       oid.SCREEN_COUNT,
       oid.INPUT_SLOT_COUNT,
-      oid.OUTPUT_SLOT_STATUS,
+      // Not OUTPUT_SLOT_STATUS, which used to end this list and was never
+      // read. On an MX30 it is a Counter64 bitmask, 0xFFFFFFFFFFFFFFFE
+      // (OBSERVED via net-snmp); a conformant encoding of that is nine bytes,
+      // and one undecodable varbind drops the whole reply as "not ours" — the
+      // round that decides whether SNMP is a read path at all. `ber.ts` now
+      // decodes it, but a value nothing uses has no business in this batch.
     ])
   } catch (err) {
     errors.push(`identity: ${err instanceof Error ? err.message : 'failed'}`)
@@ -335,12 +358,14 @@ export async function readOverSnmp(session: SnmpSession, now: number): Promise<P
   const name = asString(identity.get(oid.CONTROLLER_NAME))
   const serial = asString(identity.get(oid.CONTROLLER_SERIAL))
   const firmware = asString(identity.get(oid.CONTROLLER_FIRMWARE))
-  const role = asNumber(identity.get(oid.CONTROLLER_ROLE))
   if (model) reading.model = model
   if (name) reading.reportedName = name
   if (serial) reading.serial = serial
   if (firmware) reading.firmware = firmware
-  if (role !== undefined) reading.isBackup = role === 1
+  // CONTROLLER_ROLE is still asked, and deliberately not read. The document
+  // says 1 is "backup"; an MX30 reported 1 while it drove the wall alone, with
+  // its HTTP backup settings empty (OBSERVED). "Backup controller" on the one
+  // processor running the show is the wrong thing to put on a screen.
   // We got an answer over SNMP, so it is on by definition.
   reading.snmpEnabled = true
 
@@ -370,7 +395,7 @@ export async function readOverSnmp(session: SnmpSession, now: number): Promise<P
   const temps: number[] = []
   for (let n = 1; n <= tempPoints; n++) {
     const value = asNumber(sizes.get(oid.at(oid.TEMPERATURE_POINT_VALUE, n)))
-    if (value !== undefined) temps.push(value)
+    if (value !== undefined) temps.push(celsius(value))
   }
   if (temps.length > 0) reading.temperature = Math.max(...temps)
 

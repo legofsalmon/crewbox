@@ -88,6 +88,8 @@ interface Watched {
   reading: ProcessorReading | null
   lastHeard: number | null
   misses: number
+  /** The last miss was HTTP refusing every connection, rather than silence. */
+  refusing: boolean
 }
 
 export interface WatcherOptions {
@@ -190,6 +192,7 @@ export class VideoWatcher {
       reading: null,
       lastHeard: null,
       misses: 0,
+      refusing: false,
     }
     this.watched.set(processor.id, fresh)
     return fresh
@@ -205,20 +208,29 @@ export class VideoWatcher {
     // answer is then cached.
     const order: VideoReadPath[] = entry.path === 'http' ? ['http', 'snmp'] : ['snmp', 'http']
 
+    let refusing = false
     for (const path of order) {
       const reading =
         path === 'snmp'
           ? await readOverSnmp(entry.session, this.io.now())
           : await entry.reader.poll()
-      if (readingIsEmpty(reading)) continue
+      if (readingIsEmpty(reading)) {
+        if (path === 'http') {
+          refusing =
+            reading.errors.length > 0 && reading.errors.every((e) => e.endsWith(' refused'))
+        }
+        continue
+      }
       entry.path = path
       entry.reading = reading
       entry.lastHeard = reading.at
       entry.misses = 0
+      entry.refusing = false
       return
     }
 
     entry.misses++
+    entry.refusing = refusing
     // The last good reading is kept: "eight cabinets, last heard 21:40" is
     // more use at 21:45 than an empty row, and the state says it is stale.
     // Only an address that has never answered has nothing worth keeping.
@@ -236,7 +248,7 @@ export class VideoWatcher {
         processor,
         state,
         health: state === 'unreachable' || state === 'no-read-path' ? 'fault' : graded.health,
-        summary: this.summaryOf(state, graded.summary),
+        summary: this.summaryOf(state, graded.summary, entry?.refusing ?? false),
         reading,
         lastHeard: entry?.lastHeard ?? null,
         misses: entry?.misses ?? 0,
@@ -254,9 +266,14 @@ export class VideoWatcher {
     return entry.lastHeard === null ? 'no-read-path' : 'unreachable'
   }
 
-  private summaryOf(state: ProcessorState, graded: string): string {
+  private summaryOf(state: ProcessorState, graded: string, refusing: boolean): string {
     if (state === 'listed') return 'not being watched'
-    if (state === 'unreachable') return 'no answer'
+    // Refused is not gone. An MX30 put to standby from its front panel kept
+    // refusing connections for as long as it was watched (OBSERVED), so the
+    // unit is powered and on the network; a pulled cable or a mains cut would
+    // be silence instead (REASONED). Worth the different words to somebody
+    // deciding whether to walk to the rack or to the front panel.
+    if (state === 'unreachable') return refusing ? 'refusing connections (standby?)' : 'no answer'
     // The honest version: crewbox cannot tell an absent processor from a
     // VX4S, because telling them apart means opening the register bus.
     if (state === 'no-read-path') return 'nothing to read — see the note'

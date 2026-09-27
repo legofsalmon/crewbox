@@ -68,7 +68,16 @@ describe('integers', () => {
   })
 
   it('refuses an integer wider than 8 bytes', () => {
-    expect(() => decodeInteger(Buffer.alloc(9))).toThrow(BerError)
+    expect(() => decodeInteger(Buffer.alloc(10))).toThrow(BerError)
+    expect(() => decodeInteger(Buffer.from([1, 0, 0, 0, 0, 0, 0, 0, 0]))).toThrow(BerError)
+  })
+
+  it('reads a Counter64 with its top bit set, in the nine bytes BER needs', () => {
+    // OUTPUT_SLOT_STATUS on an MX30 is 0xFFFFFFFFFFFFFFFE (OBSERVED via
+    // net-snmp). Encoded conformantly that is a zero byte and eight 0xFF-ish
+    // bytes, and throwing on it used to drop the whole reply.
+    const wire = Buffer.from([0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe])
+    expect(decodeInteger(wire)).toBeGreaterThan(2 ** 63)
   })
 })
 

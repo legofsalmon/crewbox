@@ -78,6 +78,15 @@ export interface CoexResponse {
   ok: boolean
   status: number
   json: () => Promise<unknown>
+  /**
+   * The raw body, when the adapter can give it. `fetch`'s `Response` can.
+   *
+   * Wanted for one reason: an MX30 answers a path it doesn't have with
+   * **HTTP 200 and an empty body** — no `Content-Type`, no envelope, in the
+   * same ~2 ms as a real endpoint (OBSERVED with `curl -i`, firmware V1.5.1).
+   * Status and timing can't tell that from an answer; only the body can.
+   */
+  text?: () => Promise<string>
 }
 
 export interface CoexIo {
@@ -109,7 +118,14 @@ export const REQUEST_TIMEOUT_MS = 4_000
 export const TOPOLOGY_EVERY = 10
 
 /**
- * Consecutive 404s before an endpoint is taken as absent from the firmware.
+ * Consecutive "not here" answers before an endpoint is taken as absent.
+ *
+ * "Not here" is spelled two ways. An MX40 Pro answers HTTP 404 (OBSERVED).
+ * An MX30 on V1.5.1 answers **HTTP 200 with an empty body** for documented
+ * and made-up paths alike (OBSERVED), which `res.json()` turns into a
+ * `SyntaxError` — and this reader used to report that as "no answer" on
+ * every poll, forever, because only a 404 counted towards latching. Both
+ * count now.
  *
  * Three of the eight endpoints below answer 404 on an MX40 Pro (OBSERVED):
  * `/api/v1/device`, `/api/v1/device/audio`, and — by the conservative reading
@@ -124,16 +140,35 @@ export const TOPOLOGY_EVERY = 10
  */
 export const ABSENT_AFTER = 3
 
-/** Endpoints, split by how often they are worth asking. OFFICIAL paths. */
+/**
+ * Endpoints, split by how often they are worth asking.
+ *
+ * Paths are OFFICIAL except where marked; the two marked ones were first seen
+ * in a capture of VMP opening an MX30 and are OBSERVED there. The manual's
+ * `displaymode` and `device` are kept as fallbacks, asked only when the path
+ * that works on real hardware gave nothing, so a firmware that does follow the
+ * manual still reads.
+ */
 export const STATUS_ENDPOINTS = [
   '/api/v1/device/monitor/info',
+  // How many cabinets are connected now. Every poll, because it is the one
+  // signal that follows a pulled cable (see `ProcessorReading.connectedCabinets`).
+  '/api/v1/screen/cabinet/count',
+  // OBSERVED on an MX30: 0 live, 1 through a front-panel blackout, 2 through a
+  // front-panel freeze. The manual's path below never moved.
+  '/api/v1/screen/output/display/state',
   '/api/v1/device/screen/displaymode',
   '/api/v1/device/input/sources',
   '/api/v1/device/backup',
 ] as const
 
 export const TOPOLOGY_ENDPOINTS = [
+  // OBSERVED on an MX30: model, firmware and serial. Carries a secret-shaped
+  // field too — see `identityFromHw`.
+  '/api/v1/device/hw',
   '/api/v1/device',
+  // Who holds the controller's lock. GET only; the PUT that takes it is VMP's.
+  '/api/v1/device/hw/lock',
   '/api/v1/device/cabinet',
   '/api/v1/screen',
   '/api/v1/device/snmpstate',
@@ -322,14 +357,24 @@ export function parseCabinets(payload: unknown): CabinetReading[] {
  */
 export function parseMonitorCabinets(payload: unknown): CabinetReading[] {
   const list = arr(pick(payload, ['cabinets', 'cabinetList']) ?? [])
-  const cards = list.flatMap((raw) => arr(pick(raw, ['rvCards'])).filter((c) => isObject(c)))
+  const cards = list.flatMap((raw) =>
+    arr(pick(raw, ['rvCards']))
+      .filter((c) => isObject(c))
+      // The output the card hangs off: its own `netPortIndex`, or the entry's
+      // `outPutID` (sic). Equal to each other 72/72 on an MX30 (OBSERVED).
+      .map((card) => ({
+        card,
+        output: idOf(pick(card, ['netPortIndex'])) ?? idOf(pick(raw, ['outPutID', 'outputID'])),
+      }))
+  )
   if (cards.length === 0) return parseCabinets(payload)
 
-  const ids = cabinetIds(cards)
-  return cards.map((card, index) => {
+  const ids = cabinetIds(cards.map((c) => c.card))
+  return cards.map(({ card, output }, index) => {
     const temperature = metric(pick(card, ['temperature']))
     return {
       id: ids[index] ?? String(index + 1),
+      ...(output !== undefined ? { output } : {}),
       // A reporting card is the working definition of online here, because
       // this firmware has no flag for it and expresses "offline" by leaving
       // the cabinet out of the list entirely. `CoexReader.poll` is where that
@@ -339,6 +384,88 @@ export function parseMonitorCabinets(payload: unknown): CabinetReading[] {
       ...(temperature !== undefined ? { temperature } : {}),
     }
   })
+}
+
+/**
+ * Display state, from `/api/v1/screen/output/display/state`.
+ *
+ * `{ displayState: [{ canvasID, displayMode }] }`, one entry per canvas.
+ * OBSERVED on an MX30, V1.5.1: 0 for the whole of normal running, **2 for
+ * the whole of a front-panel freeze** (twice) and **1 for a front-panel
+ * blackout** (once) — the COEX numbering `MODE_BY_CODE` already had.
+ *
+ * Per canvas, so a unit could be frozen on one canvas and live on another
+ * (REASONED from the shape; the unit seen had one). A pane has one word for
+ * the row, so the canvas worth walking over for wins: blackout, then freeze.
+ * Anything unmapped, or no canvases at all, is unknown — never normal.
+ */
+export function parseDisplayState(payload: unknown): DisplayMode | undefined {
+  const modes = arr(pick(payload, ['displayState'])).map((entry) =>
+    displayModeOf(pick(entry, ['displayMode', 'mode']))
+  )
+  if (modes.length === 0) return undefined
+  if (modes.includes('blackout')) return 'blackout'
+  if (modes.includes('freeze')) return 'freeze'
+  return modes.every((m) => m === 'normal') ? 'normal' : undefined
+}
+
+/**
+ * Cabinets connected now, from `/api/v1/screen/cabinet/count`.
+ *
+ * `{ list: [{ ScreenID, CabinetCount, CabinetCountInBlackList }] }`, one
+ * entry per screen, summed. Went from 72 to 0 as an MX30's lines were pulled,
+ * in step with the unit's own push events (OBSERVED). Undefined when no entry
+ * carries a count, so a payload this doesn't recognise never reads as "0
+ * connected".
+ */
+export function parseCabinetCount(payload: unknown): number | undefined {
+  const counts = arr(pick(payload, ['list']) ?? payload)
+    .map((entry) => num(pick(entry, ['CabinetCount', 'cabinetCount'])))
+    .filter((n): n is number => n !== undefined)
+  return counts.length > 0 ? counts.reduce((a, b) => a + b, 0) : undefined
+}
+
+/**
+ * Outputs whose link is down, out of the ones that carry cabinets.
+ *
+ * `monitor/info.outputStatus[].linkStatus` went false per output within one
+ * 2 s poll of its line being pulled, on an MX30 (OBSERVED). The MX40 Pro's
+ * record has no `linkStatus` at all, which reads as nothing down rather than
+ * everything.
+ */
+export function outputsDownOf(monitor: unknown, cabinets: CabinetReading[]): string[] {
+  const carrying = new Set(cabinets.map((c) => c.output).filter((o) => o !== undefined))
+  const down: string[] = []
+  for (const entry of arr(pick(monitor, ['outputStatus']))) {
+    const id = idOf(pick(entry, ['outputID', 'outPutID', 'id']))
+    const link = bool(pick(entry, ['linkStatus']))
+    if (id !== undefined && link === false && carrying.has(id)) down.push(id)
+  }
+  return down
+}
+
+/**
+ * Identity from `/api/v1/device/hw`, and only the fields named here.
+ *
+ * On an MX30 this is where the model lives — `name` "MX30", `hwVersion`
+ * "V1.5.1", `sn` (OBSERVED) — while `monitor/info.name` is an operator's
+ * label that no model can be read from. The same reply carries
+ * **`randomPassword`**, served to anyone who asks, purpose unknown. Nothing
+ * from this endpoint is spread, stored or logged whole: four strings are
+ * copied out by name and the payload goes no further than this function, so
+ * that field never reaches a reading, the database or a screen.
+ */
+export function identityFromHw(payload: unknown): Partial<ProcessorReading> {
+  const out: Partial<ProcessorReading> = {}
+  const model = str(pick(payload, ['name', 'modelName']))
+  const firmware = str(pick(payload, ['hwVersion']))
+  const serial = str(pick(payload, ['sn']))
+  const label = str(pick(payload, ['customName']))
+  if (model) out.model = model
+  if (firmware) out.firmware = firmware
+  if (serial) out.serial = serial
+  if (label) out.reportedName = label
+  return out
 }
 
 export function parseInputs(payload: unknown): InputReading[] {
@@ -415,7 +542,13 @@ export class CoexReader {
     return this.io.now() < this.nextAllowedAt
   }
 
-  private async get(path: string): Promise<{ data: unknown; error?: string; status?: number }> {
+  private async get(path: string): Promise<{
+    data: unknown
+    error?: string
+    status?: number
+    /** The firmware's way of saying it has no such endpoint. */
+    absent?: boolean
+  }> {
     const wait = this.nextAllowedAt - this.io.now()
     if (wait > 0) await this.io.wait(wait)
     this.nextAllowedAt = this.io.now() + REQUEST_GAP_MS
@@ -429,9 +562,31 @@ export class CoexReader {
         signal: controller.signal,
       })
       if (!res.ok) {
-        return { data: null, error: `${path} answered ${res.status}`, status: res.status }
+        return {
+          data: null,
+          error: `${path} answered ${res.status}`,
+          status: res.status,
+          absent: res.status === 404,
+        }
       }
-      const payload: unknown = await res.json()
+      let payload: unknown
+      if (res.text) {
+        const body = await res.text()
+        if (body.trim() === '') return { data: null, error: `${path} answered empty`, absent: true }
+        payload = JSON.parse(body) as unknown
+      } else {
+        try {
+          payload = await res.json()
+        } catch (err) {
+          // What `json()` does on an empty body. Without `text()` it can't be
+          // told from a truncated one, and "absent" is the better guess of
+          // the two: a LAN does not truncate responses every poll.
+          if (err instanceof SyntaxError) {
+            return { data: null, error: `${path} answered empty`, absent: true }
+          }
+          throw err
+        }
+      }
       const { data, busy } = unwrap(payload)
       if (busy) {
         this.nextAllowedAt = this.io.now() + BUSY_BACKOFF_MS
@@ -439,7 +594,12 @@ export class CoexReader {
       }
       return { data }
     } catch (err) {
-      const why = err instanceof Error && err.name === 'AbortError' ? 'timed out' : 'no answer'
+      const why =
+        err instanceof Error && err.name === 'AbortError'
+          ? 'timed out'
+          : refused(err)
+            ? 'refused'
+            : 'no answer'
       return { data: null, error: `${path} ${why}` }
     } finally {
       clearTimeout(timer)
@@ -498,7 +658,7 @@ export class CoexReader {
       if (this.absent.has(path)) return undefined
       const res = await this.get(path)
       if (res.error !== undefined) {
-        if (res.status === 404) {
+        if (res.absent) {
           const seen = (this.notFound.get(path) ?? 0) + 1
           this.notFound.set(path, seen)
           if (seen >= ABSENT_AFTER) {
@@ -518,7 +678,11 @@ export class CoexReader {
 
     if (wantTopology) {
       const fresh: Partial<ProcessorReading> = {}
-      const device = await ask('/api/v1/device')
+      const hw = await ask('/api/v1/device/hw')
+      if (hw !== undefined) Object.assign(fresh, identityFromHw(hw))
+      // The manual's identity endpoint, only when the real one gave nothing.
+      // It is 404 on an MX40 Pro and an empty 200 on an MX30 (both OBSERVED).
+      const device = fresh.model === undefined ? await ask('/api/v1/device') : undefined
       if (device !== undefined) {
         const model = str(pick(device, ['model', 'deviceModel', 'productName']))
         const name = str(pick(device, ['name', 'deviceName', 'alias']))
@@ -530,6 +694,16 @@ export class CoexReader {
         if (firmware) fresh.firmware = firmware
       }
 
+      // `{ locked, ip }`, `locked` 0 and `ip` "" when nobody holds it
+      // (OBSERVED, MX30). Read here, in the slow tier: VMP takes it once, as
+      // it opens, and keeps it.
+      const lock = await ask('/api/v1/device/hw/lock')
+      if (lock !== undefined && bool(pick(lock, ['locked'])) === true) {
+        fresh.lockedBy = str(pick(lock, ['ip'])) ?? 'another application'
+      }
+
+      // The cabinets connected *now*, not the configured wall: it emptied as
+      // an MX30's lines were pulled (OBSERVED). See the note in `poll` below.
       const cabinet = await ask('/api/v1/device/cabinet')
       if (cabinet !== undefined) {
         fresh.cabinets = parseCabinets(cabinet)
@@ -592,10 +766,10 @@ export class CoexReader {
       if (speeds.length > 0) reading.fanRpm = Math.max(...speeds)
 
       // Identity, when `/api/v1/device` isn't there to give it. `name` on a
-      // real controller is "MX40 Pro_000001" — its own name for itself, which
-      // is exactly what `reportedName` is for. No model is derived from it:
-      // splitting that string on an underscore is a guess about a format
-      // seen once, and the pane shows the name either way.
+      // real controller is "MX40 Pro_000001" on one unit and a plain word on
+      // another (both OBSERVED) — a label, which is exactly what
+      // `reportedName` is for. No model is derived from it: the second unit
+      // shows there is none in it to find. The model is at `/device/hw`.
       const called = str(pick(monitor, ['name', 'deviceName']))
       if (called !== undefined) reading.reportedName = called
 
@@ -603,12 +777,31 @@ export class CoexReader {
       // the layout. Prefer whatever this poll actually saw.
       const cabinets = parseMonitorCabinets(monitor)
       if (cabinets.length > 0) reading.cabinets = cabinets
+      const down = outputsDownOf(monitor, cabinets)
+      if (down.length > 0) reading.outputsDown = down
     }
 
-    const mode = await ask('/api/v1/device/screen/displaymode')
-    if (mode !== undefined) {
-      const value = displayModeOf(pick(mode, ['mode', 'displayMode', 'value']) ?? mode)
+    const count = await ask('/api/v1/screen/cabinet/count')
+    if (count !== undefined) {
+      const connected = parseCabinetCount(count)
+      if (connected !== undefined) reading.connectedCabinets = connected
+    }
+
+    const state = await ask('/api/v1/screen/output/display/state')
+    if (state !== undefined) {
+      const value = parseDisplayState(state)
       if (value) reading.displayMode = value
+    }
+    // The manual's path, for a firmware that follows the manual. Not asked
+    // when the path above answered at all, even with a value we couldn't map:
+    // "unknown" from the endpoint that works beats a guess from one that
+    // never moved through a freeze.
+    if (state === undefined) {
+      const mode = await ask('/api/v1/device/screen/displaymode')
+      if (mode !== undefined) {
+        const value = displayModeOf(pick(mode, ['mode', 'displayMode', 'value']) ?? mode)
+        if (value) reading.displayMode = value
+      }
     }
 
     const inputs = await ask('/api/v1/device/input/sources')
@@ -652,11 +845,13 @@ export class CoexReader {
      * that is invisible: 287 cabinets, all "online", no fault. A screens tech
      * finds out when somebody looks at the wall.
      *
-     * `/api/v1/device/cabinet` is the other half. It is the configured
-     * layout, it keeps a stable order, and it still lists a panel that has
-     * gone quiet — so the ids it has that this poll's monitoring doesn't are
-     * the cabinets that are missing, and that is a reported state rather than
-     * an assumed one.
+     * `/api/v1/device/cabinet` is the other half. It keeps a stable order,
+     * and read at the last topology sweep it lists what was connected then —
+     * so the ids it has that this poll's monitoring doesn't are cabinets that
+     * have gone since, and that is a reported state rather than an assumed
+     * one. It is *not* the configured wall, which was believed until an MX30
+     * emptied it as its lines were pulled (OBSERVED); the connected count and
+     * the output links below are what catch that case.
      *
      * Guarded on the two lists sharing a namespace at all: if not one live id
      * appears in the layout, these are not the same identifiers and the
@@ -676,8 +871,53 @@ export class CoexReader {
         })
       }
     }
+
+    /**
+     * A dropped output link takes its cabinets with it.
+     *
+     * The layout comparison above cannot see an unplugged line on an MX30:
+     * `monitor/info` goes on listing the cabinets behind it (last-known, not
+     * live), and `/device/cabinet` — which it compares against — holds the
+     * cabinets connected *now*, so after a pull the two stop sharing ids and
+     * the guard switches the check off. Both OBSERVED, and the reason this
+     * reader called an unplugged wall "ok, 3 cabinets, 44°C".
+     *
+     * The link flag is per output, so it can say which cabinets. Unless the
+     * connected count says they are all still there — a redundant loop
+     * carrying them from its backup port — in which case they stay online and
+     * `gradeReading` warns about the link instead.
+     */
+    const down = new Set(reading.outputsDown ?? [])
+    const allThere =
+      reading.connectedCabinets !== undefined &&
+      reading.connectedCabinets >= reading.cabinets.length
+    if (down.size > 0 && !allThere) {
+      reading.cabinets = reading.cabinets.map((c) => {
+        if (c.output === undefined || !down.has(c.output)) return c
+        // Said, not assumed: the controller reported this output's link down.
+        const { onlineAssumed: _assumed, ...said } = c
+        return { ...said, online: false }
+      })
+    }
     return reading
   }
+}
+
+/**
+ * Whether a failed request was a refused connection.
+ *
+ * Worth telling apart from silence. An MX30 switched off at its front panel
+ * went on answering TCP with resets — connection refused, never a timeout —
+ * for the 7.5 minutes it was watched (OBSERVED): a standby with the network
+ * still up (REASONED, well supported). A unit that is unpowered or unplugged
+ * should time out instead (REASONED, never observed). Node's `fetch` wraps the
+ * socket error, so the code is on `cause`.
+ */
+function refused(err: unknown): boolean {
+  const cause = err instanceof Error ? (err as Error & { cause?: unknown }).cause : undefined
+  const code = (e: unknown) =>
+    typeof e === 'object' && e !== null ? (e as { code?: unknown }).code : undefined
+  return code(err) === 'ECONNREFUSED' || code(cause) === 'ECONNREFUSED'
 }
 
 /**
