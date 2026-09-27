@@ -1,5 +1,6 @@
 import dgram from 'node:dgram'
 import { afterEach, describe, expect, it } from 'vitest'
+import { gradeReading } from '@crewbox/shared'
 import {
   TAG_SEQUENCE,
   decodeInteger,
@@ -171,7 +172,8 @@ describe('reading a controller', () => {
     expect(reading.model).toBe('MX40 Pro')
     expect(reading.reportedName).toBe('Main wall')
     expect(reading.serial).toBe('SN-00042')
-    expect(reading.isBackup).toBe(false)
+    // Role is asked but never read: see the MX30 case below.
+    expect(reading.isBackup).toBeUndefined()
     expect(reading.snmpEnabled).toBe(true)
     // The hottest point, not the first or an average: one point over the line
     // is the thing worth walking over to look at.
@@ -183,6 +185,30 @@ describe('reading a controller', () => {
       { id: '1.2', signal: 'no-signal', connector: 'HDMI 2.0' },
     ])
     expect(reading.errors).toEqual([])
+  })
+
+  it('reads an MX30 as it answered: hundredths of a degree, and role 1 alone', async () => {
+    // The OID map's one outing on hardware (novasun, 2026-09-26, V1.5.1):
+    // the main board read 3100 while HTTP read it at 32 °C, and role read 1
+    // on a unit driving the wall alone. This reader showed "3100°C", graded
+    // the processor hot, and called it a backup controller.
+    agent = await startAgent({
+      [oid.CONTROLLER_MODEL]: 'MX30',
+      [oid.CONTROLLER_FIRMWARE]: 'V1.5.1',
+      [oid.CONTROLLER_ROLE]: 1,
+      [oid.TEMPERATURE_POINT_COUNT]: 1,
+      [oid.FAN_COUNT]: 0,
+      [oid.SCREEN_COUNT]: 0,
+      [oid.INPUT_SLOT_COUNT]: 0,
+      [oid.at(oid.TEMPERATURE_POINT_VALUE, 1)]: 3100,
+      [oid.at(oid.ETHERNET_PORT_COUNT, 1)]: 0,
+    })
+    const session = new SnmpSession('127.0.0.1', io, 'public', agent.port)
+    const reading = await readOverSnmp(session, 1_000)
+    expect(reading.model).toBe('MX30')
+    expect(reading.temperature).toBe(31)
+    expect(reading.isBackup).toBeUndefined()
+    expect(gradeReading(reading).health).not.toBe('warn')
   })
 
   it('reports receiving cards per port, with status rather than degrees', async () => {
