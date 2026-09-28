@@ -16,8 +16,8 @@ for the plan and roadmap, [docs/MODULES.md](docs/MODULES.md) for how to add
 a module for another department,
 [docs/DMX_MONITORING.md](docs/DMX_MONITORING.md) for the read-only Art-Net
 and sACN listener, [docs/NETWATCH.md](docs/NETWATCH.md) for the
-audio/media-network watchers (PTP clock health, Dante/NDI rosters, AES67
-streams — same read-only guarantee), and
+audio/media-network watchers (PTP clock health, Dante/NDI/NMOS rosters, AES67
+and ST 2110 streams, and the ST 2110 checks — same read-only guarantee), and
 [docs/VIDEO_MONITORING.md](docs/VIDEO_MONITORING.md) for reading NovaStar LED
 processors without any way to control them,
 [docs/SCREEN_MAPS.md](docs/SCREEN_MAPS.md) for Resolume screen setups shared
@@ -46,7 +46,7 @@ Seven ship, and all seven are on unless a box says otherwise: the default is
 | **Lighting**      | `lighting` | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import.                                          |
 | **Show log**      | `incident` | The record of what happened and when — append-only, corrected underneath rather than edited, exported as the show report.                                                                                                                |
 | **Video**         | `video`    | Read-only monitoring of LED processors: temperatures, fans, cabinets. It watches walls; it never drives them. Screen maps: Resolume Advanced Output presets shared with the crew, each screen tied to the processor input that feeds it. |
-| **Network**       | `network`  | A continuous audit of the networks the box can see, graded for A/V use, with a report for venue IT.                                                                                                                                      |
+| **Network**       | `network`  | A continuous audit of the networks the box can see, graded for A/V use, with a report for venue IT. ST 2110 checks of SDP files and packet captures, run on the device.                                                                  |
 
 ## Why it's built the way it is
 
@@ -79,6 +79,8 @@ site/     the public download page + install.sh (deployed to Vercel)
 shared/   protocol types + zod schemas (used by both sides)
 server/   Fastify + WebSocket + node:sqlite (no native deps)
 web/      React + Vite PWA — shell + modules
+st2110/   the ST 2110 checks from legofsalmon/st2110, as WebAssembly
+          (generated and committed; st2110/README.md)
 native/   Capacitor wrappers (Android with offline lock-screen alerts, iOS),
           and the Mac menu-bar and Windows tray helpers for a packaged box
 deploy/   systemd unit, dnsmasq config, cert-renew.sh, backup.sh,

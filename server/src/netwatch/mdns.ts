@@ -1,7 +1,8 @@
 /**
  * mDNS, overheard — the roster of who is on the media network.
  *
- * Dante devices and NDI sources announce themselves over multicast DNS
+ * Dante devices, NDI sources and NMOS registries and nodes (the discovery
+ * ST 2110 kit uses) announce themselves over multicast DNS
  * (224.0.0.251:5353) as DNS-SD services. Announcements are multicast to the
  * whole group, so listening — which is all this does — sees every device
  * that speaks, with no query ever sent. What falls out is the roster an
@@ -25,6 +26,7 @@ export const MDNS_GROUP = '224.0.0.251'
 
 const TYPE_A = 1
 const TYPE_PTR = 12
+const TYPE_TXT = 16
 const TYPE_SRV = 33
 
 export interface MdnsRecord {
@@ -33,6 +35,23 @@ export interface MdnsRecord {
   ttl: number
   /** PTR: the target name. SRV: the host. A: the address. Otherwise ''. */
   value: string
+  /** SRV: the port. */
+  port?: number
+  /** TXT: its strings, such as "api_ver=v1.2,v1.3". */
+  txt?: string[]
+}
+
+/** The strings of a TXT record's data: each one length-prefixed. */
+function readTxt(buf: Buffer, start: number, end: number): string[] {
+  const strings: string[] = []
+  let at = start
+  while (at < end) {
+    const length = buf[at]!
+    if (at + 1 + length > end) break
+    if (length > 0) strings.push(buf.toString('utf8', at + 1, at + 1 + length))
+    at += 1 + length
+  }
+  return strings
 }
 
 /**
@@ -109,6 +128,13 @@ export function parseMdns(buf: Buffer): MdnsRecord[] {
       value = readName(buf, rdata)?.name ?? ''
     } else if (type === TYPE_SRV && rdlength >= 7) {
       value = readName(buf, rdata + 6)?.name ?? ''
+      out.push({ name: n.name, type, ttl, value, port: buf.readUInt16BE(rdata + 4) })
+      at = rdata + rdlength
+      continue
+    } else if (type === TYPE_TXT) {
+      out.push({ name: n.name, type, ttl, value, txt: readTxt(buf, rdata, rdata + rdlength) })
+      at = rdata + rdlength
+      continue
     } else if (type === TYPE_A && rdlength === 4) {
       value = [...buf.subarray(rdata, rdata + 4)].join('.')
     }
@@ -118,7 +144,20 @@ export function parseMdns(buf: Buffer): MdnsRecord[] {
   return out
 }
 
-export type MediaServiceKind = 'dante' | 'ndi'
+export type MediaServiceKind = 'dante' | 'ndi' | 'nmos'
+
+/** The NMOS APIs announced over DNS-SD (AMWA IS-04 §3.1), by service type. */
+const NMOS_APIS = {
+  'nmos-query': 'query',
+  'nmos-register': 'registration',
+  // The name IS-04 v1.0 to v1.2 registries announce.
+  'nmos-registration': 'registration',
+  'nmos-node': 'node',
+} as const
+
+export type NmosApi = (typeof NMOS_APIS)[keyof typeof NMOS_APIS]
+
+const NMOS_TYPE = /(?:^|\.)_(nmos-(?:query|register|registration|node))\._tcp\.local$/
 
 /** Which roster a DNS-SD service type belongs to, or null to ignore it. */
 export function serviceKind(serviceName: string): MediaServiceKind | null {
@@ -126,7 +165,21 @@ export function serviceKind(serviceName: string): MediaServiceKind | null {
   // -cmc, -chan); any of them proves the device. NDI is one.
   if (/(^|\.)_netaudio-[a-z]+\._udp\.local$/.test(serviceName)) return 'dante'
   if (/(^|\.)_ndi\._tcp\.local$/.test(serviceName)) return 'ndi'
+  if (NMOS_TYPE.test(serviceName)) return 'nmos'
   return null
+}
+
+/** An NMOS API, as its DNS-SD records describe it. */
+export interface NmosService {
+  api: NmosApi
+  /** From the SRV record; 0 until one has been heard. */
+  port: number
+  /** TXT `api_proto`: "http" or "https". */
+  proto: string
+  /** TXT `api_ver`: the IS-04 versions it serves, such as ["v1.2", "v1.3"]. */
+  versions: string[]
+  /** TXT `pri`: lower is preferred, and 100 or more is for testing. */
+  priority: number | null
 }
 
 export interface MediaService {
@@ -139,6 +192,8 @@ export interface MediaService {
   lastSeen: number
   /** The device unregistered on purpose (TTL-0 goodbye) — not a timeout. */
   saidGoodbye: boolean
+  /** For NMOS services: which API, and where. */
+  nmos?: NmosService
 }
 
 /**
@@ -175,12 +230,17 @@ export class MdnsState {
       if (record.type === TYPE_A && record.value) addresses.set(record.name, record.value)
     }
 
+    // PTRs first: they create the entries the SRV and TXT records describe,
+    // and a responder may put those records ahead of the PTR in a packet.
     for (const record of records) {
-      if (record.type === TYPE_PTR) {
-        const kind = serviceKind(record.name)
-        if (!kind || !record.value) continue
-        this.notePtr(kind, record.value, record.ttl, now)
-      } else if (record.type === TYPE_SRV) {
+      if (record.type !== TYPE_PTR) continue
+      const kind = serviceKind(record.name)
+      if (!kind || !record.value) continue
+      this.notePtr(kind, record.value, record.ttl, now)
+    }
+
+    for (const record of records) {
+      if (record.type === TYPE_SRV) {
         const kind = serviceKind(record.name.replace(/^[^.]+\./, ''))
         if (!kind) continue
         const key = `${kind}:${record.name}`
@@ -190,6 +250,10 @@ export class MdnsState {
           const address = addresses.get(record.value)
           if (address) service.address = address
         }
+        if (service?.nmos && record.port !== undefined) service.nmos.port = record.port
+      } else if (record.type === TYPE_TXT && record.txt) {
+        const service = this.services.get(`nmos:${record.name}`)
+        if (service?.nmos) readNmosTxt(service.nmos, record.txt)
       }
     }
 
@@ -211,13 +275,26 @@ export class MdnsState {
         return
       }
       service = {
-        name: instance.replace(/\._(netaudio-[a-z]+\._udp|ndi\._tcp)\.local$/, ''),
+        name: instance.replace(
+          /\._(netaudio-[a-z]+\._udp|ndi\._tcp|nmos-[a-z]+\._tcp)\.local$/,
+          ''
+        ),
         kind,
         address: '',
         host: '',
         firstSeen: now,
         lastSeen: now,
         saidGoodbye: false,
+      }
+      const nmos = NMOS_TYPE.exec(instance)?.[1] as keyof typeof NMOS_APIS | undefined
+      if (nmos) {
+        service.nmos = {
+          api: NMOS_APIS[nmos],
+          port: 0,
+          proto: 'http',
+          versions: [],
+          priority: null,
+        }
       }
       this.services.set(key, service)
     }
@@ -257,12 +334,31 @@ export class MdnsState {
   /** The roster, most recently heard first. */
   roster(): MediaService[] {
     return [...this.services.values()]
-      .map(({ host: _host, ...service }) => service)
+      .map(({ host: _host, nmos, ...service }) =>
+        nmos ? { ...service, nmos: { ...nmos } } : service
+      )
       .sort((a, b) => b.lastSeen - a.lastSeen || a.name.localeCompare(b.name))
   }
 
   clear(): void {
     this.services.clear()
     this.overflowed = 0
+  }
+}
+
+/** The TXT keys IS-04 §3.1 defines, into what an NMOS service keeps of them. */
+function readNmosTxt(service: NmosService, strings: string[]): void {
+  for (const entry of strings) {
+    const at = entry.indexOf('=')
+    if (at < 0) continue
+    const key = entry.slice(0, at).toLowerCase()
+    const value = entry.slice(at + 1).trim()
+    if (key === 'api_proto' && (value === 'http' || value === 'https')) service.proto = value
+    else if (key === 'api_ver')
+      service.versions = value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean)
+    else if (key === 'pri' && /^\d{1,5}$/.test(value)) service.priority = Number(value)
   }
 }

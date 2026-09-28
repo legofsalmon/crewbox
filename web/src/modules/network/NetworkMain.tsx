@@ -9,6 +9,7 @@ import EventStrip from './ui/EventStrip.tsx'
 import ExportBar from './ui/ExportBar.tsx'
 import NetworkCard from './ui/NetworkCard.tsx'
 import ProbePanel from './ui/ProbePanel.tsx'
+import St2110Checks from './ui/St2110Checks.tsx'
 import styles from './NetworkMain.module.scss'
 
 /**
@@ -138,22 +139,26 @@ export default function NetworkMain(_props: { subpath: string }) {
       */}
       {error && <p className={styles.note}>Waiting for the box: {error}</p>}
 
-      {payload && (
-        <div className={styles.body}>
-          <ExportBar payload={payload} series={series} />
-          <div className={styles.cards}>
-            {payload.report.networks.map((network) => (
-              <NetworkCard key={network.id} network={network} series={series} />
-            ))}
-          </div>
-          <EventStrip events={payload.events} now={payload.report.generatedAt} />
-          <ProbePanel
-            probe={payload.probe}
-            probeRunning={payload.probeRunning}
-            onStarted={() => void load()}
-          />
-        </div>
-      )}
+      <div className={styles.body}>
+        {payload && (
+          <>
+            <ExportBar payload={payload} series={series} />
+            <div className={styles.cards}>
+              {payload.report.networks.map((network) => (
+                <NetworkCard key={network.id} network={network} series={series} />
+              ))}
+            </div>
+            <EventStrip events={payload.events} now={payload.report.generatedAt} />
+            <ProbePanel
+              probe={payload.probe}
+              probeRunning={payload.probeRunning}
+              onStarted={() => void load()}
+            />
+          </>
+        )}
+        {/* Checks of a file this device holds: no box needed, so no report either. */}
+        <St2110Checks />
+      </div>
     </div>
   )
 }

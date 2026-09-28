@@ -134,8 +134,13 @@ restart.
   running order and the show log read times on this clock. Leave it blank
   when the box's own clock is already local time.
 - **Art-Net universe 0 is** — plot universe 1 (the usual) or 0.
-- **Watch the media network**, and its adapter — the PTP clock, Dante and
-  NDI devices and AES67 streams, listened to and never sent to.
+- **Watch the media network**, and its adapter — the PTP clock, Dante,
+  NDI and NMOS devices, and AES67 and ST 2110 streams, listened to and
+  never sent to. ST 2110 streams' SDP files and the video clock are checked
+  against the standards.
+- **NMOS registry** — only if the ST 2110 kit's registry doesn't announce
+  itself: its address, like `http://10.20.0.5:8080`. The
+  [deep probe](network.html#the-deep-probe) reads it.
 - **Video network adapter** and **SNMP community** — what the LED processor
   sweep uses. Processors added by address work without an adapter.
 - **Use the internet when there is some** — update checks, crash reports

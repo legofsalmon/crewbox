@@ -72,6 +72,9 @@ the sparkline is drawn beside it. Notable inferences:
 - **Sustained loss** is judged over 15 minutes, not one glance, and a
   universe whose loss cannot be measured (Art-Net with sequencing off)
   is never counted as 0%.
+- **ST 2110** (docs/NETWATCH.md): announced SDP files that break the
+  standards, a video clock off the ST 2059-2 profile, and what the deep
+  probe found in the NMOS registry, each on the media card with its fix.
 
 ## The deep probe — the one time crewbox transmits
 
@@ -81,16 +84,21 @@ unlocked admin can start one. Each probe records a `sent` line in the
 report — exactly what was transmitted, so a venue can verify it against a
 packet capture.
 
-| Probe             | Transmits                                                                                   | Where                                                                                                                 | Why it's safe                                                                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Uplink            | TCP connects to 1.1.1.1:443 / 8.8.8.8:443, one HTTP request to gstatic `generate_204`       | crew uplink                                                                                                           | identical to the existing admin environment check; skipped, sending nothing, when `CREWBOX_UPDATE_CHECK=0` says no outbound connections |
-| Venue DNS         | one A query for the certificate hostname                                                    | system resolver                                                                                                       | one DNS packet                                                                                                                          |
-| Art-Net inventory | **one** ArtPoll (14 bytes, opcode 0x2000, no diagnostics requested) broadcast to :6454      | **only** the explicitly configured lighting interface; **skipped otherwise**                                          | ArtPoll is the discovery packet every console already broadcasts every ~3 s; one more per manual push is less than ambient traffic      |
-| mDNS roster       | one one-shot query (PTR `_netaudio-arc._udp.local` + `_ndi._tcp.local`) to 224.0.0.251:5353 | the media-watch interface when `CREWBOX_WATCH_IFACE` sets one; otherwise whichever adapter the OS picks for multicast | the same query every phone on the network performs continuously (RFC 6762 §5.1)                                                         |
+| Probe             | Transmits                                                                                                                                                               | Where                                                                                                                                 | Why it's safe                                                                                                                                                                                                                                                                          |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Uplink            | TCP connects to 1.1.1.1:443 / 8.8.8.8:443, one HTTP request to gstatic `generate_204`                                                                                   | crew uplink                                                                                                                           | identical to the existing admin environment check; skipped, sending nothing, when `CREWBOX_UPDATE_CHECK=0` says no outbound connections                                                                                                                                                |
+| Venue DNS         | one A query for the certificate hostname                                                                                                                                | system resolver                                                                                                                       | one DNS packet                                                                                                                                                                                                                                                                         |
+| Art-Net inventory | **one** ArtPoll (14 bytes, opcode 0x2000, no diagnostics requested) broadcast to :6454                                                                                  | **only** the explicitly configured lighting interface; **skipped otherwise**                                                          | ArtPoll is the discovery packet every console already broadcasts every ~3 s; one more per manual push is less than ambient traffic                                                                                                                                                     |
+| mDNS roster       | one one-shot query (PTR `_netaudio-arc._udp.local`, `_ndi._tcp.local` and `_nmos-query._tcp.local`) to 224.0.0.251:5353                                                 | the media-watch interface when `CREWBOX_WATCH_IFACE` sets one; otherwise whichever adapter the OS picks for multicast                 | the same query every phone on the network performs continuously (RFC 6762 §5.1)                                                                                                                                                                                                        |
+| NMOS registry     | HTTP GETs of the registry's IS-04 Query API: its versions, then each list of resources a page at a time, then each RTP sender's SDP file from the device that serves it | the registry the mDNS query found, or the one Box settings → NMOS registry names; from `CREWBOX_WATCH_IFACE`'s address when it is set | reads what every NMOS controller reads all day, and never writes: no registration, no IS-05 connection request. Bounded: 3 s a request, 50 pages a list, 200 SDP files fetched 8 at a time, and none once the read has taken 30 s. Skipped, sending nothing, when there is no registry |
 
 Probe sockets are created inside the sweep and closed when it ends; the
 replies they solicit arrive on the existing **receive-only** listeners,
-which keeps that guarantee structurally intact.
+which keeps that guarantee structurally intact. The registry read is the
+exception, being HTTP: its connections are the sweep's own and close with
+their replies. Its `sent` line counts the requests and names the hosts, and
+what the checks found in the registry is listed under its result, one line
+each.
 
 ### What the probe will never do, and why
 
@@ -125,7 +133,9 @@ lifecycle is unit-tested with fakes. What still needs a real rig:
 
 - [ ] ArtPoll against a physical Art-Net node (does the inventory grow?)
 - [ ] the mDNS query against a Dante device (does the roster grow?)
+- [ ] the registry read against a real NMOS registry (is it found, and read
+      to the end?)
 
-Until those boxes are ticked, treat the two discovery probes as
+Until those boxes are ticked, treat the discovery probes as
 unverified-on-hardware — the failure mode is a probe that finds nothing,
 not one that disturbs anything.

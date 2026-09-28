@@ -163,6 +163,8 @@ describe('the panel', () => {
   it.each([
     ['CREWBOX_MODULES', 'schedule,karaoke'],
     ['CREWBOX_WATCH_IFACE', '10.0.0.300'],
+    ['CREWBOX_NMOS_REGISTRY', 'registry.local:8080'],
+    ['CREWBOX_NMOS_REGISTRY', 'ftp://10.20.0.5'],
     ['CREWBOX_CAPTIVE_PORT', '70000'],
     ['SESSION_TTL_DAYS', '0'],
     ['CREWBOX_UPDATE_CHECK', 'yes'],

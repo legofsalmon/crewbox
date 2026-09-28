@@ -3,10 +3,14 @@ import { receiveOnly } from '../dmx/listener.ts'
 import { MDNS_GROUP, MDNS_PORT, MdnsState, parseMdns } from './mdns.ts'
 import { PTP_EVENT_PORT, PTP_GENERAL_PORT, PTP_GROUP, PtpState, parsePtp } from './ptp.ts'
 import { SAP_GROUP, SAP_PORT, SapState, parseSap } from './sap.ts'
+import { checkSdp } from './sdp.ts'
+import { VideoClockState } from './st2059.ts'
+import { loadSt2110, st2110, st2110Error } from '../st2110.ts'
 
 /**
- * The media-network watchers: PTP clock health, the mDNS device roster
- * (Dante, NDI), and the SAP stream directory (AES67/RAVENNA).
+ * The media-network watchers: PTP clock health (and, where a domain runs
+ * SMPTE ST 2059-2, the video clock), the mDNS device roster (Dante, NDI),
+ * and the SAP stream directory (AES67/RAVENNA, ST 2110).
  *
  * Everything here is overheard. All four sockets have `send` removed before
  * first use — the same structural guarantee the DMX listener makes, made by
@@ -48,17 +52,26 @@ export interface NetWatchStatus {
   mdns: WatcherStatus
   sap: WatcherStatus
   interfaceIp: string | null
+  /** Why the ST 2110 checks could not load, or null (server/src/st2110.ts). */
+  checks: string | null
 }
 
 export class NetWatch {
   readonly ptp = new PtpState()
   readonly mdns = new MdnsState()
-  readonly sap = new SapState()
+  readonly sap = new SapState({
+    check: (sdp) => {
+      const checks = st2110()
+      return checks ? checkSdp(sdp, checks) : null
+    },
+  })
+  /** The PTP messages above, held to ST 2059-2 where a domain runs it. */
+  readonly video = new VideoClockState({ decode: (buf) => st2110()?.decodePtp(buf) ?? null })
   private readonly options: NetWatchOptions
   private readonly create: (options: dgram.SocketOptions) => dgram.Socket
   private readonly sockets: dgram.Socket[] = []
   private sweepTimer: NodeJS.Timeout | null = null
-  private readonly status: NetWatchStatus
+  private readonly status: Omit<NetWatchStatus, 'checks'>
 
   constructor(options: NetWatchOptions = {}) {
     this.options = options
@@ -73,14 +86,19 @@ export class NetWatch {
 
   /** Never throws — a watcher that can't open is a status line, not a crash. */
   start(): void {
+    // Compiling the checks takes a moment, and the first announcements are
+    // seconds away at best: start now so they are ready when those arrive.
+    void loadSt2110()
     // PTP splits event and general messages across two ports; both matter
     // (Announce carries the grandmaster, Sync carries the beat) and both
-    // land in the one PtpState.
+    // land in the one PtpState, and in the video clock's checks.
     const ports = this.options.ports ?? {}
     const handlePtp = (buf: Buffer): boolean => {
+      const now = Date.now()
+      this.video.apply(buf, now)
       const message = parsePtp(buf)
       if (!message) return false
-      this.ptp.apply(message, Date.now())
+      this.ptp.apply(message, now)
       return true
     }
     this.open(ports.ptpEvent ?? PTP_EVENT_PORT, PTP_GROUP, this.status.ptp, handlePtp)
@@ -101,6 +119,7 @@ export class NetWatch {
     this.sweepTimer = setInterval(() => {
       const now = Date.now()
       this.ptp.sweep(now)
+      this.video.sweep(now)
       this.sap.sweep(now)
     }, 1000)
     this.sweepTimer.unref()
@@ -146,6 +165,7 @@ export class NetWatch {
       mdns: { ...this.status.mdns },
       sap: { ...this.status.sap },
       interfaceIp: this.status.interfaceIp,
+      checks: st2110Error(),
     }
   }
 
@@ -164,6 +184,7 @@ export class NetWatch {
     this.status.mdns.listening = false
     this.status.sap.listening = false
     this.ptp.clear()
+    this.video.clear()
     this.mdns.clear()
     this.sap.clear()
   }

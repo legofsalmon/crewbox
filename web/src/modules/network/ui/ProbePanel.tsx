@@ -21,6 +21,8 @@ interface ProbeResultRow {
   sent: string
   detail: string
   fix?: string
+  /** What the probe found, one line each: the NMOS registry's findings. */
+  items?: string[]
 }
 
 const ago = (ts: number, now: number): string => {
@@ -71,8 +73,8 @@ export default function ProbePanel({
         <div>
           <h2 className={styles.title}>Deep probe</h2>
           <p className={styles.blurb}>
-            One admin-triggered sweep: uplink, venue DNS, one Art-Net poll, one mDNS query.
-            Everything sent is listed below, verbatim.
+            One admin-triggered sweep: uplink, venue DNS, one Art-Net poll, one mDNS query, and a
+            read of the NMOS registry if there is one. Everything sent is listed below, verbatim.
           </p>
         </div>
         {adminToken ? (
@@ -97,6 +99,13 @@ export default function ProbePanel({
             {results.map((result) => (
               <li key={result.id} className={styles.result}>
                 <div className={styles.detail}>{result.detail}</div>
+                {Array.isArray(result.items) && result.items.length > 0 && (
+                  <ul className={styles.items}>
+                    {result.items.map((item, i) => (
+                      <li key={i}>{item}</li>
+                    ))}
+                  </ul>
+                )}
                 {result.fix && <div className={styles.fix}>{result.fix}</div>}
                 <div className={styles.sent}>sent: {result.sent}</div>
               </li>

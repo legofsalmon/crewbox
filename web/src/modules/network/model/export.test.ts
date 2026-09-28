@@ -61,6 +61,14 @@ const payload: AuditPayload = {
           sent: 'one ArtPoll broadcast to 255.255.255.255:6454',
           detail: '12 Art-Net nodes',
         },
+        {
+          id: 'nmos-registry',
+          network: 'media',
+          state: 'limited',
+          sent: '7 HTTP GET requests to the NMOS Query API on 10.20.0.5:8080',
+          detail: 'The registry on 10.20.0.5:8080 (IS-04 v1.3): 1 fault, listed below.',
+          items: ['Fault: CAM 1 <video> (sender): no a=ts-refclk (SDP line 5)'],
+        },
       ],
     },
   },
@@ -106,6 +114,12 @@ describe('buildAuditHtml', () => {
   it('lists events and the probe log with its verbatim sent line', () => {
     expect(html).toContain('3 universes dark')
     expect(html).toContain('sent: one ArtPoll broadcast to 255.255.255.255:6454')
+  })
+
+  it("lists a probe's findings, escaped", () => {
+    expect(html).toContain(
+      '<ul class="items"><li>Fault: CAM 1 &lt;video&gt; (sender): no a=ts-refclk (SDP line 5)</li></ul>'
+    )
   })
 
   it('escapes user-influenced text so the report can never inject markup', () => {
