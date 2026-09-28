@@ -118,6 +118,42 @@ iPhones abandoning the crew Wi-Fi for mobile data — see
 [the "no internet" problem](/docs/phones-and-platforms#the-no-internet-problem)
 for what that failure looks like and why it's worth doing.
 
+### Keep the router pointed at this box
+
+When the router is your own and runs OpenWrt (a GL.iNet travel router, for
+instance), the box can keep that DNS entry right by itself. Tick **Keep the
+router pointed at this box**, give it the router's address and admin
+password, and save. The box logs in to the router over SSH straight away,
+and again whenever its own address changes, and moves the `address=/name/ip`
+entry for its name to its current address. It fixes the entry wherever it
+already is (the router's DNS settings, `/etc/dnsmasq.conf` or a file in
+`/etc/dnsmasq.d`), adds one if there is none, and restarts dnsmasq only when
+something changed. The phone-check names from the optional block are moved
+along with it if you added them, and never added if you didn't.
+
+The line under the buttons says what happened last. **Update the router
+now** tries again on the spot; otherwise a failure is retried on its own,
+less often each time.
+
+- **It's off unless you turn it on.** It needs the router's root password,
+  which is then kept in the box's database (and so in its backups). Use it
+  on a router you own, never on a venue's.
+- **The router's key is remembered** after the first login that works, and
+  the box refuses to send the password to anything else at that address. If
+  you reset or replace the router, tick **Forget the router's key** and save.
+- **It can only fix a router it can reach.** If the box's machine has moved
+  to a different network altogether, there's nothing to update until it's
+  back on the crew network.
+- **It doesn't need the name to work.** The box reaches the router by the
+  router's address, so it can repair the entry exactly when the name is
+  broken.
+- Getting into the admin panel while the name points elsewhere: open the box
+  by its address instead, `https://<box address>:8787/?admin` (on the box's
+  own machine, `https://localhost:8787/?admin` works too unless the box is
+  tied to its crew adapter), and step past the certificate warning (Safari:
+  **Show Details → visit this website**; Chrome: **Advanced → Proceed**). The
+  warning is only because the certificate is for the name, not the address.
+
 ## Box settings
 
 The settings a box reads when it starts, which used to need environment

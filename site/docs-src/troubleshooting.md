@@ -157,6 +157,9 @@ app.
   Update the router's `address=/name/ip` line to the box's **current** IP —
   it changes with the DHCP lease unless the box is reserved — and restart
   dnsmasq. A box's IP is on its own terminal banner and in `crewbox --status`.
+  On your own OpenWrt router, **Admin → This network → Keep the router
+  pointed at this box** does this for you whenever the address changes; see
+  [Admin](/docs/admin#keep-the-router-pointed-at-this-box).
 
 - **The name resolves correctly on phones but not on the box's own laptop**
   — that laptop is asking the wrong resolver. macOS picks its DNS server
