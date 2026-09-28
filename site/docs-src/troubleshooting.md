@@ -156,9 +156,9 @@ app.
   A `216.` or any other public-looking address means the override lost.
   Update the router's `address=/name/ip` line to the box's **current** IP —
   it changes with the DHCP lease unless the box is reserved — and restart
-  dnsmasq. On a MikroTik, paste the RouterOS lines from a fresh
-  `crewbox-dns.conf` again: they replace the old entry. A box's IP is on its
-  own terminal banner and in `crewbox --status`.
+  dnsmasq. On a MikroTik, run a fresh `crewbox-dns.rsc` (**Download for
+  MikroTik**) again: it replaces the old entry. A box's IP is on its own
+  terminal banner and in `crewbox --status`.
 
 - **The name resolves correctly on phones but not on the box's own laptop**
   — that laptop is asking the wrong resolver. macOS picks its DNS server

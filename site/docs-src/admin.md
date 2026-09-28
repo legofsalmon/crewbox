@@ -111,8 +111,11 @@ can reach the box by its name, certificate expiry, and clock sanity.
 router — hand it to whoever runs the router instead of explaining DNS at the
 production desk. On a box with a certificate it points the name at the box;
 on one without, it carries only the optional block below. Each entry comes
-in dnsmasq form (OpenWRT, GL.iNet, Pi-hole), as RouterOS commands to paste
-into a MikroTik's terminal, and as `hosts` and zone-file lines.
+in dnsmasq form (OpenWRT, GL.iNet, Pi-hole) and as `hosts` and zone-file
+lines. **Download for MikroTik** gives the same entries as `crewbox-dns.rsc`,
+a RouterOS script to paste into the router's terminal or run with `/import`.
+It is a file of its own because a RouterOS line in a dnsmasq config stops
+dnsmasq starting.
 
 That file carries a second, clearly-marked **optional** block: the addresses
 phones fetch to decide whether a network has internet. Adding it stops

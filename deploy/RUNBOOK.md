@@ -176,8 +176,9 @@ deployment choice.
 
 1. Power order: router → APs → server box (all on the UPS).
 2. Router: static IP for the server; `deploy/dnsmasq.conf` installed so
-   `chat.<yourdomain>` → server IP (on a MikroTik, paste the RouterOS lines
-   from **Admin → This network** instead); DHCP hands out the router as DNS.
+   `chat.<yourdomain>` → server IP (on a MikroTik, run `crewbox-dns.rsc` from
+   **Admin → This network → Download for MikroTik** instead); DHCP hands out
+   the router as DNS.
 3. `systemctl status crewbox` — green. There is no separate voice service:
    the SFU starts and stops with the box. The packaged box carries its own;
    a rig installed from source needs `livekit-server` on the machine and
