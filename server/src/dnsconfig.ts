@@ -107,6 +107,57 @@ function routerosEntry(host: string, address: string): string {
  */
 const ROUTEROS_ANSWER = '/ip dns set allow-remote-requests=yes'
 
+/**
+ * The same entries as a RouterOS script, for a MikroTik: crewbox-dns.rsc.
+ *
+ * Its own file rather than a section of crewbox-dns.conf, because that one
+ * gets saved whole into dnsmasq, and dnsmasq will not start on a line it
+ * cannot read — which a RouterOS command is. This file is a script from top
+ * to bottom instead: pasted into the terminal or run with /import, every
+ * line runs, comments and all. That includes the optional probe entries, the
+ * same as saving the dnsmasq file whole does, and it says how to leave them
+ * out. Without a certificate there is no name, so the probe entries are all
+ * there is.
+ */
+export function routerosScript(hostname: string | undefined, address: string): string {
+  const plan = dnsPlan(hostname ?? '', address)
+  const nameEntry = hostname ? `${plan.routeros}\n` : ''
+  const header = hostname
+    ? `# Crewbox — local DNS for ${hostname}, as RouterOS commands
+#
+# Point ${hostname} at the crew box on this network, so phones reach it by
+# the name on its certificate. It has to be a LOCAL override: a festival
+# network has no uplink to ask public DNS, and routers commonly refuse public
+# answers that point at private addresses.
+`
+    : `# Crewbox — local DNS for the crew box at ${address}, as RouterOS commands
+#
+# This box has no certificate, so there is no name to point at it; crew reach
+# it by address. The one thing the router can still do is below.
+`
+  return `${header}#
+# Paste into the router's terminal (Winbox: New Terminal, or SSH), or upload
+# this file to the router's Files and run: /import file-name=crewbox-dns.rsc
+# Running it again after the box's address changes replaces the entries.
+# DHCP must hand out this router as the DNS server: IP > DHCP Server >
+# Networks > DNS Servers. The next line lets the router answer phones at all;
+# on a router that also has an internet uplink, check its firewall drops DNS
+# from there.
+${ROUTEROS_ANSWER}
+${nameEntry}
+# ==========================================================================
+# OPTIONAL — stop phones deciding this network is dead
+# ==========================================================================
+#
+# Every phone fetches one fixed URL when it joins a Wi-Fi network to decide
+# whether it "has internet". With no uplink they all fail, and an iPhone
+# moves to mobile data, where it cannot reach the box. These entries point
+# those checks at the box, which answers them on port 80. Running this whole
+# file includes them; to leave them out, delete from the OPTIONAL banner down.
+${plan.probes.routeros}
+`
+}
+
 /** A file an admin can drop straight onto a router, comments and all. */
 export function dnsConfigFile(plan: DnsPlan): string {
   return nameBlock(plan) + probeBlock(plan.probes)
@@ -148,13 +199,8 @@ function nameBlock(plan: DnsPlan): string {
 ${plan.dnsmasq}
 
 # --- MikroTik RouterOS ----------------------------------------------------
-# Paste into the router's terminal (Winbox: New Terminal, or SSH). Pasting
-# again after the box's address changes replaces the entry. DHCP must hand
-# out this router as the DNS server: IP > DHCP Server > Networks > DNS
-# Servers. The first line lets the router answer phones at all; on a router
-# that also has an internet uplink, check its firewall drops DNS from there.
-${ROUTEROS_ANSWER}
-${plan.routeros}
+# Not in this file. Ask whoever runs the crew box for the RouterOS version:
+# Admin > This network > Download for MikroTik.
 
 # --- A single machine, before the router is set up ------------------------
 # Append to /etc/hosts (macOS and Linux), or
@@ -197,10 +243,6 @@ function probeBlock(probes: DnsPlan['probes']): string {
 
 # --- dnsmasq (OpenWRT, Pi-hole) -------------------------------------------
 ${probes.dnsmasq}
-
-# --- RouterOS (MikroTik), pasted into the router's terminal ---------------
-${ROUTEROS_ANSWER}
-${probes.routeros}
 
 # --- hosts file -----------------------------------------------------------
 ${probes.hosts}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dnsConfigFile, dnsPlan, probesConfigFile } from '../src/dnsconfig.ts'
+import { dnsConfigFile, dnsPlan, probesConfigFile, routerosScript } from '../src/dnsconfig.ts'
 
 /**
  * The generated config is the fix for the one check an admin cannot act on
@@ -32,23 +32,32 @@ describe('local DNS config', () => {
     expect(plan.routeros).not.toMatch(/match-subdomain/)
   })
 
-  it('gives RouterOS a paste that is nothing but RouterOS', () => {
-    // The section is pasted into a terminal as it stands, so a dnsmasq or
-    // hosts line leaking into it is an error on the router. It also turns on
+  it('gives RouterOS a script that is nothing but RouterOS', () => {
+    // Pasted into a terminal or run with /import as it stands, so a dnsmasq
+    // or hosts line in it is an error on the router. It also turns on
     // answering the LAN, or the entries exist and no phone can ask for them.
-    const section = (file: string, header: string) => {
-      const start = file.indexOf(header)
-      return file.slice(start, file.indexOf('\n\n', start)).split('\n').slice(1)
-    }
-    for (const lines of [
-      section(dnsConfigFile(plan), '# --- MikroTik RouterOS'),
-      section(dnsConfigFile(plan), '# --- RouterOS (MikroTik)'),
-      section(probesConfigFile('192.168.1.50'), '# --- RouterOS (MikroTik)'),
+    for (const script of [
+      routerosScript('chat.letissier.ie', '192.168.1.50'),
+      routerosScript(undefined, '192.168.1.50'),
     ]) {
-      expect(lines.length).toBeGreaterThan(0)
-      for (const line of lines) expect(line).toMatch(/^(#|\/ip dns )/)
+      const lines = script.split('\n')
+      for (const line of lines) expect(line).toMatch(/^(|#.*|\/ip dns .*)$/)
       expect(lines).toContain('/ip dns set allow-remote-requests=yes')
+      expect(script).toContain(plan.probes.routeros)
+      expect(script).toMatch(/OPTIONAL/)
     }
+    expect(routerosScript('chat.letissier.ie', '192.168.1.50')).toContain(plan.routeros)
+    // No certificate, no name: only the probe entries.
+    expect(routerosScript(undefined, '192.168.1.50')).not.toContain('name=chat.')
+  })
+
+  it('keeps RouterOS out of the dnsmasq file', () => {
+    // That one is saved whole into dnsmasq, which will not start on a line it
+    // cannot read. It points MikroTik owners at their own download instead.
+    for (const file of [dnsConfigFile(plan), probesConfigFile('192.168.1.50')]) {
+      expect(file).not.toContain('/ip dns')
+    }
+    expect(dnsConfigFile(plan)).toMatch(/Download for MikroTik/)
   })
 
   it('writes a hosts line for the laptop that needs it before the router does', () => {
@@ -62,7 +71,6 @@ describe('local DNS config', () => {
   it('produces a file that carries every form plus why it is local', () => {
     const file = dnsConfigFile(plan)
     expect(file).toContain(plan.dnsmasq)
-    expect(file).toContain(plan.routeros)
     expect(file).toContain(plan.hosts)
     expect(file).toContain(plan.zone)
     // The reasoning is the part that stops this being undone later.
