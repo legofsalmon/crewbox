@@ -70,7 +70,17 @@ export function dnsPlan(hostname: string, address: string): DnsPlan {
   }
 }
 
-/** A file an admin can drop straight onto a router, comments and all. */
+/**
+ * A file an admin can drop straight onto a router, comments and all.
+ *
+ * "Straight onto a router" means the whole file is a dnsmasq config: its
+ * dnsmasq section says to save it as /etc/dnsmasq.d/crewbox.conf, and an
+ * admin holding a file called crewbox-dns.conf does exactly that. dnsmasq
+ * refuses to start on a line it cannot read, and on OpenWRT the same process
+ * hands out DHCP, so the hosts and zone lines this file used to carry as-is
+ * took the whole crew network down with them. Every line that is not
+ * dnsmasq's is written as a comment (see forOtherSystems).
+ */
 export function dnsConfigFile(plan: DnsPlan): string {
   return nameBlock(plan) + probeBlock(plan.probes)
 }
@@ -93,6 +103,17 @@ export function probesConfigFile(address: string): string {
   )
 }
 
+/**
+ * Lines for some other system, carried as comments so dnsmasq skips them.
+ * Whoever needs them copies them without the leading "# ".
+ */
+function forOtherSystems(lines: string): string {
+  return lines
+    .split('\n')
+    .map((line) => `# ${line}`)
+    .join('\n')
+}
+
 function nameBlock(plan: DnsPlan): string {
   return `# Crewbox — local DNS for ${plan.hostname}
 #
@@ -106,17 +127,20 @@ function nameBlock(plan: DnsPlan): string {
 # that point at private addresses.
 
 # --- OpenWRT, Pi-hole, dnsmasq --------------------------------------------
-# Save as /etc/dnsmasq.d/crewbox.conf (OpenWRT: /etc/dnsmasq.d/), then
-# restart dnsmasq. Make sure DHCP hands out this router as the DNS server.
+# This whole file is a dnsmasq config: save it as
+# /etc/dnsmasq.d/crewbox.conf, then restart dnsmasq. It includes the optional
+# block further down; delete that block first if you don't want it. Make sure
+# DHCP hands out this router as the DNS server.
 ${plan.dnsmasq}
 
 # --- A single machine, before the router is set up ------------------------
 # Append to /etc/hosts (macOS and Linux), or
-# C:\\Windows\\System32\\drivers\\etc\\hosts on Windows.
-${plan.hosts}
+# C:\\Windows\\System32\\drivers\\etc\\hosts on Windows, without the "# ":
+${forOtherSystems(plan.hosts)}
 
 # --- A venue running its own BIND/zone file -------------------------------
-${plan.zone}
+# For the zone file, without the "# ":
+${forOtherSystems(plan.zone)}
 
 # Check it worked from a phone on the crew network: the join page should load
 # at https://${plan.hostname} with no certificate warning.
@@ -139,7 +163,9 @@ function probeBlock(probes: DnsPlan['probes']): string {
 #
 # Adding these lines points those probes at the box, which answers them. The
 # box has to be running its probe responder for this to help — it listens on
-# port 80 and says so in the admin panel's readiness list.
+# port 80 and says so in the admin panel's readiness list. Saving this whole
+# file into dnsmasq includes them; to leave them out, cut the file off at the
+# OPTIONAL banner above.
 #
 # The trade, stated plainly: phones will stop warning that this network has
 # no internet, because as far as they can tell it now has. That is the
@@ -152,8 +178,8 @@ function probeBlock(probes: DnsPlan['probes']): string {
 # --- dnsmasq (OpenWRT, Pi-hole) -------------------------------------------
 ${probes.dnsmasq}
 
-# --- hosts file -----------------------------------------------------------
-${probes.hosts}
+# --- hosts file, without the "# " -----------------------------------------
+${forOtherSystems(probes.hosts)}
 
 # Check it worked: join the crew Wi-Fi on an iPhone and confirm the Wi-Fi
 # icon stays in the status bar, with no "no internet connection" alert.

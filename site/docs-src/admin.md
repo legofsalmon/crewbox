@@ -110,13 +110,17 @@ can reach the box by its name, certificate expiry, and clock sanity.
 **Download DNS config** gives a ready-made `crewbox-dns.conf` for the venue
 router — hand it to whoever runs the router instead of explaining DNS at the
 production desk. On a box with a certificate it points the name at the box;
-on one without, it carries only the optional block below.
+on one without, it carries only the optional block below. The whole file is
+a dnsmasq config, so on an OpenWRT, GL.iNet or Pi-hole router it can be saved
+as it is into `/etc/dnsmasq.d/`. The lines for other systems (a laptop's
+`hosts` file, a venue's zone file) are in it as comments.
 
 That file carries a second, clearly-marked **optional** block: the addresses
 phones fetch to decide whether a network has internet. Adding it stops
 iPhones abandoning the crew Wi-Fi for mobile data — see
 [the "no internet" problem](/docs/phones-and-platforms#the-no-internet-problem)
-for what that failure looks like and why it's worth doing.
+for what that failure looks like and why it's worth doing. Saving the whole
+file includes it; to leave it out, cut the file off at the `OPTIONAL` banner.
 
 ## Box settings
 
