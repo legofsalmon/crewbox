@@ -9,6 +9,7 @@ import {
 import type { UniverseHealth } from '../src/dmx/state.ts'
 import type { ClockStatus } from '../src/netwatch/ptp.ts'
 import type { SapStream } from '../src/netwatch/sap.ts'
+import type { VideoClockDomain } from '../src/netwatch/st2059.ts'
 import type { AuditEvent, RollupRow } from '../src/audit/metrics.ts'
 
 /**
@@ -330,6 +331,50 @@ describe('media', () => {
     const f = finding(report, 'media', 'media-churn')
     expect(f?.state).toBe('limited')
     expect(f?.fix).toContain('PoE')
+  })
+
+  describe('the video clock', () => {
+    const domain = (findings: VideoClockDomain['findings'] = []): VideoClockDomain => ({
+      domain: 127,
+      grandmaster: '08:00:11:ff:fe:21:e1:b0',
+      clockClass: 248,
+      ptpTimescale: true,
+      utcOffset: 37,
+      metadata: null,
+      findings,
+      lastHeard: NOW,
+    })
+
+    it('is said only where a domain runs the SMPTE profile', () => {
+      expect(finding(scoreAudit(watched()), 'media', 'media-video-clock')).toBeUndefined()
+      const f = finding(
+        scoreAudit(watched({ videoClock: [domain()] })),
+        'media',
+        'media-video-clock'
+      )
+      expect(f?.state).toBe('ok')
+      expect(f?.detail).toContain('free-running (class 248)')
+      expect(f?.detail).toContain('no synchronization metadata')
+    })
+
+    it('is limited by a fault, with its fix', () => {
+      const offset = {
+        rule: 'utc-offset',
+        severity: 'warning' as const,
+        message: 'currentUtcOffset is 0 s, but TAI − UTC has been 37 s since 1 January 2017',
+        messageType: 'Announce',
+        source: '08:00:11:ff:fe:21:e1:b0',
+        lastSeen: NOW,
+      }
+      const f = finding(
+        scoreAudit(watched({ videoClock: [domain([offset])] })),
+        'media',
+        'media-video-clock'
+      )
+      expect(f?.state).toBe('limited')
+      expect(f?.detail).toContain('Announce from 08:00:11:ff:fe:21:e1:b0: currentUtcOffset is 0 s')
+      expect(f?.fix).toMatch(/37 s/)
+    })
   })
 
   describe('announced ST 2110 streams', () => {

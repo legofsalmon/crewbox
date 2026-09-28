@@ -1963,6 +1963,7 @@ export function buildApp({
               watch: netwatch.snapshot(),
               mdns: netwatch.mdns.roster(),
               sap: netwatch.sap.roster(),
+              videoClock: netwatch.video.status(),
             }
           : {}),
         recentSeries: (metric, key) =>
@@ -3060,7 +3061,8 @@ export function buildApp({
               Date.now(),
               // A roster at its cap is a misbehaving network, and the list
               // stops being the answer to "what is out there".
-              { devices: netwatch.mdns.overflow(), streams: netwatch.sap.overflow() }
+              { devices: netwatch.mdns.overflow(), streams: netwatch.sap.overflow() },
+              netwatch.video.status()
             ),
           }
         : {}),

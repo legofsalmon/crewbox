@@ -4,6 +4,14 @@ import type { ClockStatus } from './ptp.ts'
 import type { MediaService } from './mdns.ts'
 import type { SapStream } from './sap.ts'
 import { bitrate } from './sdp.ts'
+import {
+  describeDomain,
+  faultFix,
+  findingWords,
+  isFault,
+  isWorthALook,
+  type VideoClockDomain,
+} from './st2059.ts'
 
 /**
  * "Audio & media network", beside the lighting panel, same contract: what is
@@ -56,7 +64,9 @@ export function mediaReadiness(
   streams: SapStream[],
   now: number,
   /** Announcements the rosters had no room for — see MAX_SERVICES. */
-  overflow: { devices: number; streams: number } = { devices: 0, streams: 0 }
+  overflow: { devices: number; streams: number } = { devices: 0, streams: 0 },
+  /** Domains running SMPTE ST 2059-2 — see netwatch/st2059.ts. */
+  video: VideoClockDomain[] = []
 ): ReadinessCheck[] {
   const checks: ReadinessCheck[] = []
 
@@ -150,6 +160,34 @@ export function mediaReadiness(
         'No PTP traffic seen. A Dante or AES67 network always has a grandmaster announcing, so ' +
         'hearing nothing means this adapter is not on the audio network — or the switch is filtering multicast.',
       fix: 'Check which adapter Box settings → Media network adapter names, and that it has a leg on the audio VLAN.',
+    })
+  }
+
+  // --- The video clock ------------------------------------------------------
+  // Only for domains running the SMPTE profile, so an audio rig never sees
+  // it; the line above has already said who the grandmaster is and whether
+  // it is steady. This one says whether video can lock to it.
+  if (video.length > 0) {
+    const faults = video.flatMap((d) => d.findings.filter(isFault))
+    const looks = video.flatMap((d) => d.findings.filter(isWorthALook))
+    const words = (f: (typeof faults)[number]) => findingWords(f, shortId)
+    checks.push({
+      id: 'media-video-clock',
+      label: 'Video clock (ST 2059-2)',
+      state: faults.length > 0 ? 'limited' : 'ok',
+      detail:
+        (faults.length > 0
+          ? `Breaks ST 2059-2: ${faults.slice(0, 3).map(words).join('; ')}` +
+            (faults.length > 3 ? `; and ${faults.length - 3} more` : '') +
+            '. '
+          : '') +
+        video.map((d) => describeDomain(d, shortId)).join('. ') +
+        '.' +
+        (looks.length > 0
+          ? ` Worth a look: ${words(looks[0]!)}` +
+            (looks.length > 1 ? `, and ${plural(looks.length - 1, 'other')}.` : '.')
+          : ''),
+      fix: faults.length > 0 ? faultFix(faults[0]!) : undefined,
     })
   }
 
@@ -254,7 +292,7 @@ export function mediaReadiness(
       id: 'media-st2110-checks',
       label: 'ST 2110 checks',
       state: 'limited',
-      detail: `The ST 2110 checks could not load (${status.checks}), so announced SDP files are listed but not checked.`,
+      detail: `The ST 2110 checks could not load (${status.checks}), so announced SDP files are listed but not checked, and the video clock is not checked against ST 2059-2.`,
       fix: 'Restart the box. The checks are part of it, so if this persists the download is damaged: download it again.',
     })
   }

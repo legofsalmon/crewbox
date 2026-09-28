@@ -2,6 +2,7 @@ import dgram from 'node:dgram'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DmxTransmitAttempt } from '../src/dmx/listener.ts'
 import { NetWatch } from '../src/netwatch/listener.ts'
+import { loadSt2110 } from '../src/st2110.ts'
 
 /**
  * Real sockets on loopback, high ports (319/320 are privileged and 5353 is
@@ -107,6 +108,49 @@ describe('the media-network watchers', () => {
     ).toBe(true)
     expect(watcher.sap.roster()[0]!.name).toBe('Test Stream')
     expect(watcher.snapshot().ptp.packets).toBeGreaterThan(0)
+  })
+
+  it('checks what it overhears: announced SDP files, and the video clock', async () => {
+    const watcher = start()
+    await until(() => watcher.snapshot().sap.listening && watcher.snapshot().ptp.listening)
+    await loadSt2110()
+
+    // An ST 2059-2 grandmaster's Announce (legofsalmon/st2110's own fixture),
+    // and an ST 2110-20 camera's announcement.
+    const grandmaster = Buffer.from(
+      '0b0200407f00003c000000000000000000000000080011fffe21e1b000010001050000006ab90566000000000025008006214e5d80080011fffe21e1b0000020',
+      'hex'
+    )
+    const camera = Buffer.concat([
+      sap().subarray(0, 24),
+      Buffer.from(
+        [
+          'v=0',
+          'o=- 1 1 IN IP4 10.0.0.1',
+          's=CAM 1',
+          't=0 0',
+          'm=video 5004 RTP/AVP 96',
+          'c=IN IP4 239.1.1.1/32',
+          'a=rtpmap:96 raw/90000',
+          'a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=50; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2017; TP=2110TPN',
+          '',
+        ].join('\r\n')
+      ),
+    ])
+    const from = await sender()
+    from.send(grandmaster, PORTS.ptpGeneral, '224.0.1.129')
+    from.send(camera, PORTS.sap, '239.255.255.255')
+
+    expect(
+      await until(
+        () => watcher.video.status().length === 1 && watcher.sap.roster()[0]?.sdp !== null
+      )
+    ).toBe(true)
+    expect(watcher.video.status()[0]).toMatchObject({ domain: 127, clockClass: 6 })
+    const checked = watcher.sap.roster()[0]!.sdp!
+    expect(checked.st2110).toBe(true)
+    expect(checked.problems.map((p) => p.rule)).toContain('ts-refclk-missing')
+    expect(watcher.snapshot().checks).toBeNull()
   })
 
   it('forgets everything on stop', async () => {

@@ -3,6 +3,13 @@ import type { NetWatchStatus } from '../netwatch/listener.ts'
 import type { ClockStatus } from '../netwatch/ptp.ts'
 import type { MediaService } from '../netwatch/mdns.ts'
 import type { SapStream } from '../netwatch/sap.ts'
+import {
+  describeDomain,
+  faultFix,
+  findingWords,
+  isFault,
+  type VideoClockDomain,
+} from '../netwatch/st2059.ts'
 import type { AuditEvent, ProbeRunRecord, RollupRow } from './metrics.ts'
 
 /**
@@ -57,6 +64,8 @@ export interface ScoreInput {
   watch?: NetWatchStatus
   mdns?: MediaService[]
   sap?: SapStream[]
+  /** Domains running SMPTE ST 2059-2 (netwatch/st2059.ts). */
+  videoClock?: VideoClockDomain[]
   /** Rollups for one series over the scorer's window (typically 15 min). */
   recentSeries: (metric: string, key: string) => RollupRow[]
   /** Events from the last hour, any order. */
@@ -389,6 +398,27 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
         fix: 'Check the box is on the media VLAN and multicast reaches it (querier again).',
       })
     }
+  }
+
+  // The video clock, only where a domain runs the SMPTE profile.
+  const video = input.videoClock ?? []
+  if (video.length > 0) {
+    const faults = video.flatMap((d) => d.findings.filter(isFault))
+    // Ids as the clock finding above writes them.
+    const id = (clock: string) => clock
+    findings.push({
+      id: 'media-video-clock',
+      label: 'Video clock (ST 2059-2)',
+      state: faults.length > 0 ? 'limited' : 'ok',
+      detail:
+        faults.length > 0
+          ? `Breaks ST 2059-2: ${faults
+              .slice(0, 3)
+              .map((f) => findingWords(f, id))
+              .join('; ')}` + (faults.length > 3 ? `; and ${faults.length - 3} more.` : '.')
+          : `${video.map((d) => describeDomain(d, id)).join('. ')}.`,
+      ...(faults.length > 0 ? { fix: faultFix(faults[0]!) } : {}),
+    })
   }
 
   const gone = input.events.filter((e) => e.kind === 'media.device.gone')

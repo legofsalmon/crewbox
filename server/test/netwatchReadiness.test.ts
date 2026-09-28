@@ -5,6 +5,7 @@ import type { ClockStatus } from '../src/netwatch/ptp.ts'
 import type { MediaService } from '../src/netwatch/mdns.ts'
 import type { SapStream } from '../src/netwatch/sap.ts'
 import type { SdpCheck } from '../src/netwatch/sdp.ts'
+import type { VideoClockDomain, VideoClockFinding } from '../src/netwatch/st2059.ts'
 
 const NOW = 10_000_000
 
@@ -241,5 +242,77 @@ describe('the watchers themselves', () => {
     expect(check?.state).toBe('limited')
     expect(check?.detail).toContain('EADDRINUSE')
     expect(check?.fix).toContain('Dante Virtual Soundcard')
+  })
+})
+
+describe('the video clock', () => {
+  const OVERFLOW = { devices: 0, streams: 0 }
+  const domain = (over: Partial<VideoClockDomain> = {}): VideoClockDomain => ({
+    domain: 127,
+    grandmaster: '08:00:11:ff:fe:21:e1:b0',
+    clockClass: 6,
+    ptpTimescale: true,
+    utcOffset: 37,
+    metadata: {
+      frameRate: '50/1',
+      dropFrame: false,
+      locking: 'externally locked',
+      localOffset: 3563,
+      lastSeen: NOW,
+    },
+    findings: [],
+    lastHeard: NOW,
+    ...over,
+  })
+  const finding = (over: Partial<VideoClockFinding>): VideoClockFinding => ({
+    rule: 'sync-interval',
+    severity: 'error',
+    message: 'logMessageInterval is 0 (one a second), outside −7 to −1',
+    messageType: 'Sync',
+    source: '08:00:11:ff:fe:21:e1:b0',
+    lastSeen: NOW,
+    ...over,
+  })
+  const line = (video: VideoClockDomain[]) =>
+    find(mediaReadiness(status(), clock(), [], [], NOW, OVERFLOW, video), 'media-video-clock')
+
+  it('is absent where no domain runs the SMPTE profile', () => {
+    expect(line([])).toBeUndefined()
+    expect(
+      find(mediaReadiness(status(), clock(), [], [], NOW), 'media-video-clock')
+    ).toBeUndefined()
+  })
+
+  it('describes a healthy video clock', () => {
+    const check = line([domain()])
+    expect(check?.state).toBe('ok')
+    expect(check?.detail).toBe(
+      'Domain 127: grandmaster 08:00:11:21:E1:B0, locked (class 6); ' +
+        '50 fps, externally locked, local time UTC+01:00.'
+    )
+    expect(check?.fix).toBeUndefined()
+  })
+
+  it('names what breaks the profile, and who sent it', () => {
+    const check = line([domain({ findings: [finding({})] })])
+    expect(check?.state).toBe('limited')
+    expect(check?.detail).toMatch(
+      /^Breaks ST 2059-2: Sync from 08:00:11:21:E1:B0: logMessageInterval is 0 \(one a second\)/
+    )
+    expect(check?.fix).toMatch(/SMPTE ST 2059-2 profile/)
+  })
+
+  it('mentions a doubtful setting without calling the clock broken', () => {
+    const jump = finding({
+      rule: 'sm-jump',
+      severity: 'warning',
+      message: 'jumpSeconds is -3600 but timeOfNextJump is 0',
+      messageType: 'Management',
+    })
+    const described = finding({ rule: 'gm-clock-class', severity: 'warning', message: 'x' })
+    const check = line([domain({ findings: [jump, described] })])
+    expect(check?.state).toBe('ok')
+    expect(check?.detail).toContain('Worth a look: Management from 08:00:11:21:E1:B0: jumpSeconds')
+    expect(check?.detail).not.toContain('x.')
   })
 })
