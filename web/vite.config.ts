@@ -122,6 +122,18 @@ export default defineConfig({
             },
           },
           {
+            // The ST 2110 checks (web/src/lib/st2110.ts): a megabyte fetched
+            // only by someone using the Network page's tools, so never
+            // precached — .wasm is outside the precache's globs — but kept
+            // once used, so the tools work offline from then on.
+            urlPattern: ({ url }) => /\/assets\/st2110_wasm_bg-.*\.wasm$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'crewbox-st2110',
+              expiration: { maxEntries: 2 },
+            },
+          },
+          {
             // Uploaded files are content-addressed → cache forever once seen.
             urlPattern: ({ url }) => url.pathname.startsWith('/api/files/'),
             handler: 'CacheFirst',
