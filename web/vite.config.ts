@@ -109,8 +109,20 @@ export default defineConfig({
          *
          * The runtime rule below puts it in the cache the first time it is
          * actually used, so it stays available afterwards.
+         *
+         * The ST 2110 checks' WebAssembly is left out for the same reason,
+         * at twice the size: the precache takes .wasm by default, and a
+         * megabyte only the Network page's tools use would reach every
+         * phone on install. Its runtime rule is below too.
          */
-        globIgnores: ['**/voice-*.js', '**/voice-*.js.br', '**/voice-*.js.gz'],
+        globIgnores: [
+          '**/voice-*.js',
+          '**/voice-*.js.br',
+          '**/voice-*.js.gz',
+          '**/st2110_wasm_bg-*.wasm',
+          '**/st2110_wasm_bg-*.wasm.br',
+          '**/st2110_wasm_bg-*.wasm.gz',
+        ],
         runtimeCaching: [
           {
             // Content-hashed, so a cached copy can never be the wrong one.
@@ -124,8 +136,9 @@ export default defineConfig({
           {
             // The ST 2110 checks (web/src/lib/st2110.ts): a megabyte fetched
             // only by someone using the Network page's tools, so never
-            // precached — .wasm is outside the precache's globs — but kept
-            // once used, so the tools work offline from then on.
+            // precached (globIgnores, above), but kept once used, so the
+            // tools work offline from then on. The capture analyser's
+            // worker fetches it through this rule too.
             urlPattern: ({ url }) => /\/assets\/st2110_wasm_bg-.*\.wasm$/.test(url.pathname),
             handler: 'CacheFirst',
             options: {
@@ -146,6 +159,10 @@ export default defineConfig({
       },
     }),
   ],
+  // The capture analyser's worker (web/src/lib/st2110.ts) is started as a
+  // module worker, which is what the dev server serves it as; built the
+  // same way, the two cannot drift apart.
+  worker: { format: 'es' },
   optimizeDeps: {
     // Workspace package ships TS source; let Vite transform it directly.
     exclude: ['@crewbox/shared'],
