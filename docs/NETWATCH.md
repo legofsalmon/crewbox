@@ -1,9 +1,11 @@
 # Watching the audio & media network
 
 `CREWBOX_DMX` gave the box ears on the lighting network. `CREWBOX_WATCH=1`
-does the same for the audio/media network: PTP clock health, a Dante/NDI
-device roster, and the AES67 stream directory — all overheard, never asked
-for.
+does the same for the audio/media network: PTP clock health, a
+Dante/NDI/NMOS device roster, and the AES67 and ST 2110 stream directory —
+all overheard, never asked for. On an ST 2110 rig the box also checks what
+it overhears against the standards: each stream's SDP file, and the video
+clock against SMPTE ST 2059-2 ([below](#the-st-2110-checks)).
 
 ## The one rule, again
 
@@ -21,18 +23,21 @@ crew network may be this one. Only an admin choosing **Always** puts it on a
 network a watcher shares, and the panel names that choice for what it is.
 
 The other is the Network audit's deep probe, which only an admin can start:
-one mDNS question for Dante and NDI devices, so the roster fills in without
-waiting for their next announcements. It leaves by the adapter
-`CREWBOX_WATCH_IFACE` names, and by whichever one the operating system picks
-for multicast when nothing does ([NETWORK_AUDIT.md](NETWORK_AUDIT.md)).
+one mDNS question for Dante and NDI devices and NMOS registries, so the
+roster fills in without waiting for their next announcements, and, when
+there is an NMOS registry, a read of it over HTTP. The question leaves by
+the adapter `CREWBOX_WATCH_IFACE` names, and by whichever one the operating
+system picks for multicast when nothing does; the read leaves from that
+adapter's address, or by the operating system's route to the registry when
+nothing is named ([NETWORK_AUDIT.md](NETWORK_AUDIT.md)).
 
 ## What it watches
 
-| Watcher | Where                      | What it learns                                                                                            |
-| ------- | -------------------------- | --------------------------------------------------------------------------------------------------------- |
-| PTP     | 224.0.1.129, ports 319/320 | Who the clock grandmaster is, whether that has been changing, whether an election is live                 |
-| mDNS    | 224.0.0.251:5353           | Dante devices (`_netaudio-*._udp`) and NDI sources (`_ndi._tcp`): names, addresses, appearances, goodbyes |
-| SAP     | 239.255.255.255:9875       | AES67/RAVENNA stream announcements: name, destination, origin                                             |
+| Watcher | Where                      | What it learns                                                                                                                                          |
+| ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PTP     | 224.0.1.129, ports 319/320 | Who the clock grandmaster is, whether that has been changing, whether an election is live; on the video domain, whether the clock keeps SMPTE ST 2059-2 |
+| mDNS    | 224.0.0.251:5353           | Dante devices (`_netaudio-*._udp`), NDI sources (`_ndi._tcp`), and NMOS nodes and registries (`_nmos-*._tcp`): names, addresses, appearances, goodbyes  |
+| SAP     | 239.255.255.255:9875       | AES67/RAVENNA and ST 2110 stream announcements: name, destination, origin, and the SDP file itself                                                      |
 
 The line that pays for the feature is the clock one. A PTP grandmaster
 election war is the audio fault every device suffers at once — clicks and
@@ -53,6 +58,43 @@ for the same Linux reason as `CREWBOX_DMX_IFACE`. On a box with one adapter
 it can be omitted.
 
 Off by default. When off, the panel section does not appear at all.
+
+## The ST 2110 checks
+
+The checks are legofsalmon/st2110's, written in Rust and carried here as
+WebAssembly in the `st2110` workspace, whose README says which commit they
+were built from and how to build them again. The box and the browser run
+the same build. What the box does with them, all from traffic it already
+overhears:
+
+- **SDP files.** Every SAP announcement carries its stream's SDP file. One
+  that describes an ST 2110 stream (video, ancillary data and the rest, or
+  audio that says it is ST 2110-30) is checked against the standards once
+  for each version of the file. The readiness panel's "ST 2110 streams" line
+  lists the faults, and the audit's media card grades them. AES67 streams
+  stay under AES67's rules: a Dante stream's clock offset is AES67's to
+  allow, and ST 2110's to forbid.
+- **The video clock.** PTP messages on domain 127, ST 2059-2's default, or
+  on a domain an ST 2059-2 synchronization-metadata message names, are
+  checked against the profile: message rates, the grandmaster's class and
+  timescale, the UTC offset, and the time code metadata. Dante's domain 0 is
+  never judged by the video profile. At most one message of each kind from
+  each clock is decoded a second, and at most 512 clocks are followed, so a
+  flood of PTP is not a flood of work. A grandmaster running free is
+  described, not faulted; a wrong UTC offset is a fault, because every time
+  code made from the clock is out by it.
+- **The NMOS registry**, in the deep probe only: what is registered, whose
+  clocks it follows, the connections, and every sender's SDP file.
+
+The browser runs the rest on the device, from the Network page: an SDP file
+gone through line by line, and a packet capture measured as SMPTE RP 2110-25
+describes. The capture analyser runs in a worker of its own, started for
+each capture and torn down after it, so a big capture's memory goes when the
+worker does. Neither tool sends the file anywhere, the box included.
+
+A module that will not load is a line on the readiness panel ("ST 2110
+checks"), not a crash, and everything that uses the checks treats "not
+checked" as not checked, never as fine.
 
 ## Honesty notes
 
@@ -80,7 +122,9 @@ Off by default. When off, the panel section does not appear at all.
   IEEE 1588-2008, RFC 6762/6763, RFC 2974 and SDP are well-trodden, but no
   packet here has been checked against a real stagebox yet. The sniffer
   script pattern (`scripts/dmx-sniff.mjs`) is the model for validating it
-  when a Dante rig is in reach.
+  when a Dante rig is in reach. The ST 2110 checks are tested against
+  legofsalmon/st2110's own fixtures, which are built from the standards
+  too: no ST 2110 device has been on the other end yet either.
 
 ## The bridging warning applies here too
 

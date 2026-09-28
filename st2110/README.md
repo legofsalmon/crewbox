@@ -19,7 +19,10 @@ from the box binary or from this directory, and hands back `null` rather than
 throwing when it cannot.
 
 The browser: `web/src/lib/st2110.ts`, which fetches the module the first time
-somebody uses a tool that needs it, so no phone downloads it otherwise.
+somebody uses a tool that needs it, so no phone downloads it otherwise. The
+SDP linter runs in the page; the capture analyser runs in a worker of its
+own (`st2110Capture.worker.ts`), started for each capture and torn down
+after it, because a WebAssembly instance's memory never shrinks.
 
 ## Rebuilding it
 
