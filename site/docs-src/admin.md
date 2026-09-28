@@ -154,12 +154,13 @@ less often each time.
 - **It doesn't need the name to work.** The box reaches the router by the
   router's address, so it can repair the entry exactly when the name is
   broken.
-- Getting into the admin panel while the name points elsewhere: open the box
-  by its address instead, `https://<box address>:8787/?admin` (on the box's
-  own machine, `https://localhost:8787/?admin` works too unless the box is
-  tied to its crew adapter), and step past the certificate warning (Safari:
-  **Show Details → visit this website**; Chrome: **Advanced → Proceed**). The
-  warning is only because the certificate is for the name, not the address.
+- Getting into the admin panel while the name points elsewhere: on a Mac,
+  choose **Open the admin panel by IP address** in the Crewbox menu. It
+  opens the same one-time link at the box's address instead of its name.
+  Elsewhere, open `https://<box address>:8787/?admin`. Either way the
+  browser warns about the certificate; step past it (Safari: **Show Details
+  → visit this website**; Chrome: **Advanced → Proceed**). The warning is
+  only because the certificate is for the name, not the address.
 
 ## Box settings
 

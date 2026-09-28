@@ -40,7 +40,7 @@ import { readBoxStatus, type BoxStatus } from './box.ts'
  *
  * Read by the menu-bar item (native/macos), the tray icon (native/windows)
  * and `crewbox --admin`, any of which may be a different version from the
- * box, so the name and the two fields stay as they are.
+ * box, so the name and the first two fields stay as they are.
  */
 export const ADMIN_LINK_FILE = 'admin-link.json'
 
@@ -48,6 +48,13 @@ export const ADMIN_LINK_FILE = 'admin-link.json'
 export interface AdminLinkFile {
   pid: number
   url: string
+  /**
+   * The same link at the box's network address, for a box whose link uses
+   * its certificate's name: when that name stops resolving to the box, the
+   * link at the name hangs and this one still arrives (with the browser's
+   * certificate warning). Added later, so readers treat it as optional.
+   */
+  byAddress?: string
 }
 
 export function adminLinkPath(dataDir: string): string {
@@ -65,6 +72,21 @@ export function adminLinkPath(dataDir: string): string {
  */
 export function adminLinkUrl(origin: string, key: string): string {
   return `${origin}/?admin#admin-key=${key}`
+}
+
+/**
+ * What to write for one key: the link at `origin`, and, when `addressBase`
+ * is another origin of the box, the same link there too.
+ */
+export function adminLinkFile(
+  origin: string,
+  key: string,
+  addressBase: string | undefined,
+  pid = process.pid
+): AdminLinkFile {
+  const url = adminLinkUrl(origin, key)
+  const byAddress = addressBase ? adminLinkAt(url, addressBase) : null
+  return { pid, url, ...(byAddress ? { byAddress } : {}) }
 }
 
 /**

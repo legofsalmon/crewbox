@@ -51,6 +51,11 @@ struct BoxStatus: Decodable {
 struct AdminLink: Decodable {
     let pid: Int32
     let url: String
+    /// The same key at the box's network address. Only on a box with a
+    /// certificate, whose `url` uses the name: when that name stops reaching
+    /// this Mac, `url` hangs and this still arrives, past the browser's
+    /// certificate warning. Optional, because older boxes don't write it.
+    let byAddress: String?
 }
 
 /// Where the box keeps its data — the same rule the box itself applies.
@@ -89,13 +94,13 @@ func readStatus() -> BoxStatus? {
 /// Read at the moment it is clicked, never kept: the key works once, and the
 /// box writes a new one as soon as it is used. A link from any other process
 /// is a key nobody can spend, so the pid has to be the running box's.
-func readAdminLink(for status: BoxStatus) -> String? {
+func readAdminLink(for status: BoxStatus) -> AdminLink? {
     let path = dataDir().appendingPathComponent("admin-link.json")
     guard let data = try? Data(contentsOf: path),
           let link = try? JSONDecoder().decode(AdminLink.self, from: data),
           link.pid == status.pid
     else { return nil }
-    return link.url
+    return link
 }
 
 // MARK: - App
@@ -307,6 +312,21 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
                 action(
                     "Open the admin panel", #selector(openAdmin),
                     represented: status.joinUrl + "?admin"))
+            // The way in when the name on the certificate no longer leads
+            // here: a DNS override gone stale, or this Mac asking a resolver
+            // that never heard of it. Every link at the name hangs then, the
+            // one above included; this one goes by address, so it arrives,
+            // with a certificate warning the browser has to be told past.
+            // Offered only when the box wrote one, so never on a box with no
+            // certificate, whose links already use an address.
+            if readAdminLink(for: status)?.byAddress != nil {
+                let item = action(
+                    "Open the admin panel by IP address", #selector(openAdminByAddress))
+                item.toolTip =
+                    "For when the name doesn't reach this box. Expect a certificate warning: "
+                    + "the certificate is for the name, not the address."
+                menu.addItem(item)
+            }
             menu.addItem(
                 action("Copy the join link", #selector(copyJoin), represented: status.joinUrl))
             menu.addItem(
@@ -365,7 +385,12 @@ final class CrewboxMenuBar: NSObject, NSApplicationDelegate {
     /// The admin link if the box has one for us, the password prompt if not.
     @objc private func openAdmin(_ sender: NSMenuItem) {
         let link = readStatus().flatMap { readAdminLink(for: $0) }
-        open(link ?? (sender.representedObject as? String))
+        open(link?.url ?? (sender.representedObject as? String))
+    }
+    /// The same, at the box's address. Read at the click like the other: the
+    /// key is spent by whichever of the two is opened first.
+    @objc private func openAdminByAddress(_ sender: NSMenuItem) {
+        open(readStatus().flatMap { readAdminLink(for: $0) }?.byAddress)
     }
     @objc private func openConnect(_ sender: NSMenuItem) {
         open(sender.representedObject as? String)
