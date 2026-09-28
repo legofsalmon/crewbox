@@ -95,8 +95,8 @@ included, and they work even while the box doesn't answer.
   runs in the background, so the page stays usable while a big capture is
   read. Up to 1 GB: cut a bigger one down with Wireshark's `editcap` first.
 
-The first check fetches the checks from the box, about a megabyte; after
-that they work offline.
+The first check fetches the checks from the box, a few hundred kilobytes;
+after that they work offline.
 
 ## The HTML report
 
