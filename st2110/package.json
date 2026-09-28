@@ -1,6 +1,6 @@
 {
   "name": "@crewbox/st2110",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "The ST 2110 checks (SDP files, PTP messages, NMOS registries, packet captures) from legofsalmon/st2110, compiled to WebAssembly",
   "type": "module",
