@@ -77,8 +77,12 @@ await build({
   target: 'node22',
   format: 'cjs',
   outfile: join(outDir, 'bundle.cjs'),
-  // Optional ws accelerators — not installed, never required at runtime.
-  external: ['bufferutil', 'utf-8-validate'],
+  // Optional accelerators, each required inside a try with a pure-JS
+  // fallback: ws's two (not installed), and ssh2's native crypto binding and
+  // CPU probe (compiled at install when a toolchain is present, and a .node
+  // file cannot live inside the executable). The router DNS sync is ssh2's
+  // only user, and one short session a change needs none of them.
+  external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node'],
   define: {
     'process.env.DEPLOY_VERSION': JSON.stringify(version),
     'process.env.DEPLOY_COMMIT': JSON.stringify(commit),

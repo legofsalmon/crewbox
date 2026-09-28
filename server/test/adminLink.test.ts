@@ -7,6 +7,7 @@ import { Store } from '../src/store.ts'
 import { buildApp, type App } from '../src/app.ts'
 import {
   AdminLinkKey,
+  adminLinkFile,
   adminLinkAt,
   adminLinkPath,
   adminLinkUrl,
@@ -307,5 +308,37 @@ describe('crewbox --admin', () => {
       null
     )
     expect(adminLinkAt('not a url', 'http://localhost:8787')).toBeNull()
+  })
+})
+
+describe('the link at the box’s address', () => {
+  it('carries the same key at the address, for when the name stops resolving', () => {
+    const file = adminLinkFile(
+      'https://chat.letissier.ie:8787',
+      'k3y',
+      'https://192.168.200.23:8787',
+      1234
+    )
+    expect(file).toEqual({
+      pid: 1234,
+      url: 'https://chat.letissier.ie:8787/?admin#admin-key=k3y',
+      byAddress: 'https://192.168.200.23:8787/?admin#admin-key=k3y',
+    })
+  })
+
+  it('leaves it out when there is no other address, or it is the same one', () => {
+    expect(adminLinkFile('http://localhost:8787', 'k', undefined, 1)).toEqual({
+      pid: 1,
+      url: 'http://localhost:8787/?admin#admin-key=k',
+    })
+    expect(
+      adminLinkFile('http://localhost:8787', 'k', 'http://localhost:8787', 1)
+    ).not.toHaveProperty('byAddress')
+  })
+
+  it('round-trips through the file the menu reads', () => {
+    const link = adminLinkFile('https://chat.letissier.ie:8787', 'k', 'https://10.0.0.2:8787')
+    writeAdminLink(dir, link)
+    expect(JSON.parse(readFileSync(adminLinkPath(dir), 'utf8'))).toEqual(link)
   })
 })

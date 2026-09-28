@@ -329,7 +329,7 @@ async function hostnameCheck(probes: Probes, addresses: string[]): Promise<EnvCh
       state: 'limited',
       // Usually the public DNS record, or last year's box.
       detail: `${name} resolves to ${resolved.join(', ')}, which is not this machine.`,
-      fix: `Crew following that name will land somewhere else entirely — often a web host, if the domain has a wildcard record. Public DNS cannot fix this: a site with no uplink cannot reach it, and routers commonly refuse public answers pointing at private addresses. Download the DNS config below and put it on the venue router, which overrides both.`,
+      fix: `Crew following that name will land somewhere else entirely — often a web host, if the domain has a wildcard record. Public DNS cannot fix this: a site with no uplink cannot reach it, and routers commonly refuse public answers pointing at private addresses. Download the DNS config below and put it on the venue router, which overrides both. On your own OpenWrt router, such as a GL.iNet, “Keep the router pointed at this box” below does it for you and keeps it right when the address changes.`,
     }
   }
 
