@@ -3,6 +3,8 @@ import { receiveOnly } from '../dmx/listener.ts'
 import { MDNS_GROUP, MDNS_PORT, MdnsState, parseMdns } from './mdns.ts'
 import { PTP_EVENT_PORT, PTP_GENERAL_PORT, PTP_GROUP, PtpState, parsePtp } from './ptp.ts'
 import { SAP_GROUP, SAP_PORT, SapState, parseSap } from './sap.ts'
+import { checkSdp } from './sdp.ts'
+import { loadSt2110, st2110, st2110Error } from '../st2110.ts'
 
 /**
  * The media-network watchers: PTP clock health, the mDNS device roster
@@ -48,17 +50,24 @@ export interface NetWatchStatus {
   mdns: WatcherStatus
   sap: WatcherStatus
   interfaceIp: string | null
+  /** Why the ST 2110 checks could not load, or null (server/src/st2110.ts). */
+  checks: string | null
 }
 
 export class NetWatch {
   readonly ptp = new PtpState()
   readonly mdns = new MdnsState()
-  readonly sap = new SapState()
+  readonly sap = new SapState({
+    check: (sdp) => {
+      const checks = st2110()
+      return checks ? checkSdp(sdp, checks) : null
+    },
+  })
   private readonly options: NetWatchOptions
   private readonly create: (options: dgram.SocketOptions) => dgram.Socket
   private readonly sockets: dgram.Socket[] = []
   private sweepTimer: NodeJS.Timeout | null = null
-  private readonly status: NetWatchStatus
+  private readonly status: Omit<NetWatchStatus, 'checks'>
 
   constructor(options: NetWatchOptions = {}) {
     this.options = options
@@ -73,6 +82,9 @@ export class NetWatch {
 
   /** Never throws — a watcher that can't open is a status line, not a crash. */
   start(): void {
+    // Compiling the checks takes a moment, and the first announcements are
+    // seconds away at best: start now so they are ready when those arrive.
+    void loadSt2110()
     // PTP splits event and general messages across two ports; both matter
     // (Announce carries the grandmaster, Sync carries the beat) and both
     // land in the one PtpState.
@@ -146,6 +158,7 @@ export class NetWatch {
       mdns: { ...this.status.mdns },
       sap: { ...this.status.sap },
       interfaceIp: this.status.interfaceIp,
+      checks: st2110Error(),
     }
   }
 

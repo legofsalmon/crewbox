@@ -8,6 +8,7 @@ import {
 } from '../src/audit/score.ts'
 import type { UniverseHealth } from '../src/dmx/state.ts'
 import type { ClockStatus } from '../src/netwatch/ptp.ts'
+import type { SapStream } from '../src/netwatch/sap.ts'
 import type { AuditEvent, RollupRow } from '../src/audit/metrics.ts'
 
 /**
@@ -266,6 +267,7 @@ describe('media', () => {
         mdns: { listening: true, error: null, packets: 10 },
         sap: { listening: true, error: null, packets: 0 },
         interfaceIp: null,
+        checks: null,
       },
       ptp: ptp(),
       mdns: [],
@@ -328,6 +330,48 @@ describe('media', () => {
     const f = finding(report, 'media', 'media-churn')
     expect(f?.state).toBe('limited')
     expect(f?.fix).toContain('PoE')
+  })
+
+  describe('announced ST 2110 streams', () => {
+    const stream = (name: string, st2110: boolean, error?: string): SapStream => ({
+      name,
+      origin: '10.0.0.1',
+      connection: '239.1.1.1',
+      firstSeen: NOW - 60_000,
+      lastSeen: NOW,
+      sdp: {
+        st2110,
+        streams: [],
+        problems: error ? [{ severity: 'error', rule: 'r', message: error, line: 5 }] : [],
+      },
+    })
+
+    it('are counted apart from AES67 ones, and only when there are some', () => {
+      const audio = scoreAudit(watched({ sap: [stream('Mix', false)] }))
+      expect(finding(audio, 'media', 'media-roster')?.detail).toContain('1 AES67 stream.')
+      expect(finding(audio, 'media', 'media-sdp')).toBeUndefined()
+
+      const both = scoreAudit(watched({ sap: [stream('Mix', false), stream('CAM 1', true)] }))
+      expect(finding(both, 'media', 'media-roster')?.detail).toContain(
+        '1 AES67 stream, 1 ST 2110 stream.'
+      )
+      expect(finding(both, 'media', 'media-sdp')?.state).toBe('ok')
+    })
+
+    it('grade a file a receiver would refuse as limited, naming it', () => {
+      const report = scoreAudit(
+        watched({ sap: [stream('CAM 1', true), stream('CAM 2', true, 'no a=ts-refclk')] })
+      )
+      const f = finding(report, 'media', 'media-sdp')
+      expect(f?.state).toBe('limited')
+      expect(f?.detail).toContain('1 announced SDP file of 2 has a fault')
+      expect(f?.detail).toContain('CAM 2: no a=ts-refclk')
+    })
+
+    it("leave an AES67 file's findings to AES67", () => {
+      const report = scoreAudit(watched({ sap: [stream('Mix', false, 'no a=ts-refclk')] }))
+      expect(finding(report, 'media', 'media-sdp')).toBeUndefined()
+    })
   })
 })
 

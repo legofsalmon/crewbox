@@ -108,6 +108,7 @@ describe('rollups', () => {
         mdns: { listening: true, error: null, packets: 0 },
         sap: { listening: true, error: null, packets: 0 },
         interfaceIp: null,
+        checks: null,
       }),
     })
     h.tick(5_000) // first sight: no previous, no delta

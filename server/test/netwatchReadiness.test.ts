@@ -4,6 +4,7 @@ import type { NetWatchStatus } from '../src/netwatch/listener.ts'
 import type { ClockStatus } from '../src/netwatch/ptp.ts'
 import type { MediaService } from '../src/netwatch/mdns.ts'
 import type { SapStream } from '../src/netwatch/sap.ts'
+import type { SdpCheck } from '../src/netwatch/sdp.ts'
 
 const NOW = 10_000_000
 
@@ -12,6 +13,7 @@ const status = (over: Partial<NetWatchStatus> = {}): NetWatchStatus => ({
   mdns: { listening: true, error: null, packets: 100 },
   sap: { listening: true, error: null, packets: 10 },
   interfaceIp: '10.10.0.2',
+  checks: null,
   ...over,
 })
 
@@ -129,10 +131,106 @@ describe('the rosters', () => {
       connection: '239.69.128.7',
       firstSeen: NOW - 60_000,
       lastSeen: NOW - 1000,
+      sdp: null,
     }
     const check = find(mediaReadiness(status(), clock(), [], [stream], NOW), 'media-streams')
     expect(check?.detail).toContain('Monitor Mix L/R')
     expect(check?.detail).toContain('239.69.128.7')
+  })
+})
+
+describe('ST 2110 streams', () => {
+  const aes67: SapStream = {
+    name: 'Monitor Mix L/R',
+    origin: '10.10.0.7',
+    connection: '239.69.128.7',
+    firstSeen: NOW - 60_000,
+    lastSeen: NOW - 1000,
+    sdp: { st2110: false, streams: [], problems: [] },
+  }
+  const camera = (name: string, over: Partial<SdpCheck> = {}): SapStream => ({
+    name,
+    origin: '10.0.0.1',
+    connection: '239.1.1.1',
+    firstSeen: NOW - 60_000,
+    lastSeen: NOW - 1000,
+    sdp: {
+      st2110: true,
+      streams: [
+        {
+          essence: 'video',
+          summary: '1920x1080 progressive, 50 fps',
+          destination: '239.1.1.1',
+          bitrate: 2_073_600_000,
+        },
+      ],
+      problems: [],
+      ...over,
+    },
+  })
+  const refused = {
+    severity: 'error' as const,
+    rule: 'ts-refclk-missing',
+    message: 'no a=ts-refclk, so receivers cannot tell which clock the timestamps follow',
+    line: 5,
+  }
+
+  it('get a line of their own, apart from the AES67 streams', () => {
+    const checks = mediaReadiness(status(), clock(), [], [aes67, camera('CAM 1')], NOW)
+    expect(find(checks, 'media-streams')?.detail).toContain('Monitor Mix L/R')
+    expect(find(checks, 'media-streams')?.detail).not.toContain('CAM 1')
+    const line = find(checks, 'media-st2110-streams')
+    expect(line?.state).toBe('ok')
+    expect(line?.detail).toContain('CAM 1 (video at 2.07 Gb/s → 239.1.1.1)')
+    expect(line?.detail).toContain('never joins')
+    expect(line?.fix).toBeUndefined()
+  })
+
+  it('say which file a receiver would refuse, and where in it', () => {
+    const checks = mediaReadiness(
+      status(),
+      clock(),
+      [],
+      [camera('CAM 1'), camera('CAM 2', { problems: [refused] })],
+      NOW
+    )
+    const line = find(checks, 'media-st2110-streams')
+    expect(line?.state).toBe('limited')
+    expect(line?.detail).toContain(`CAM 2: ${refused.message} (line 5)`)
+    expect(line?.fix).toMatch(/at the sender/)
+  })
+
+  it('mention a warning without calling the stream faulty', () => {
+    const warning = { ...refused, severity: 'warning' as const, rule: 'source-filter-missing' }
+    const line = find(
+      mediaReadiness(status(), clock(), [], [camera('CAM 3', { problems: [warning] })], NOW),
+      'media-st2110-streams'
+    )
+    expect(line?.state).toBe('ok')
+    expect(line?.detail).toContain('Worth a look: CAM 3')
+  })
+
+  it('stay with the AES67 streams until their files have been checked', () => {
+    const unchecked = { ...camera('CAM 4'), sdp: null }
+    const checks = mediaReadiness(status(), clock(), [], [unchecked], NOW)
+    expect(find(checks, 'media-streams')?.detail).toContain('CAM 4')
+    expect(find(checks, 'media-st2110-streams')).toBeUndefined()
+  })
+
+  it('are listed unchecked when the checks could not load, and the line says so', () => {
+    const checks = mediaReadiness(
+      status({ checks: 'CompileError: bad magic' }),
+      clock(),
+      [],
+      [],
+      NOW
+    )
+    const line = find(checks, 'media-st2110-checks')
+    expect(line?.state).toBe('limited')
+    expect(line?.detail).toContain('CompileError: bad magic')
+    expect(
+      find(mediaReadiness(status(), clock(), [], [], NOW), 'media-st2110-checks')
+    ).toBeUndefined()
   })
 })
 

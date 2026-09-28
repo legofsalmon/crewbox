@@ -3,6 +3,7 @@ import type { NetWatchStatus } from './listener.ts'
 import type { ClockStatus } from './ptp.ts'
 import type { MediaService } from './mdns.ts'
 import type { SapStream } from './sap.ts'
+import { bitrate } from './sdp.ts'
 
 /**
  * "Audio & media network", beside the lighting panel, same contract: what is
@@ -28,6 +29,25 @@ const clock = (at: number): string => new Date(at).toTimeString().slice(0, 5)
 
 /** A short grandmaster identity: the EUI-64 reads as a MAC to most techs. */
 const shortId = (id: string): string => id.replace(':ff:fe:', ':').toUpperCase()
+
+/**
+ * One announced ST 2110 stream in a few words: "CAM 1 (video at 2.07 Gb/s →
+ * 239.1.1.1)". The linter's own summary says far more, and six of them in a
+ * row is a paragraph nobody reads on a phone; the bitrate is the fact that
+ * decides whether a link can take the stream at all.
+ */
+function streamWords(stream: SapStream): string {
+  const facts = stream.sdp?.streams ?? []
+  const essences = [...new Set(facts.map((f) => f.essence))].join(' and ')
+  const rate = facts.find((f) => f.bitrate !== null)?.bitrate
+  const destinations = [...new Set(facts.flatMap((f) => (f.destination ? [f.destination] : [])))]
+  const words = [
+    essences || 'stream',
+    rate ? ` at ${bitrate(rate)}` : '',
+    destinations.length > 0 ? ` → ${destinations.join(' and ')}` : '',
+  ].join('')
+  return `${stream.name} (${words})`
+}
 
 export function mediaReadiness(
   status: NetWatchStatus,
@@ -168,19 +188,74 @@ export function mediaReadiness(
   }
 
   // --- The stream directory -------------------------------------------------
-  if (streams.length > 0) {
+  // ST 2110 streams get a line of their own: their SDP files are checked,
+  // and calling a camera an AES67 stream would be wrong twice over. Anything
+  // not (yet) known to be ST 2110 stays here, as it always has.
+  const aes67 = streams.filter((s) => !s.sdp?.st2110)
+  if (aes67.length > 0) {
     checks.push({
       id: 'media-streams',
       label: 'AES67 streams',
       state: 'ok',
       detail:
-        `${plural(streams.length, 'stream')} announced: ` +
-        streams
+        `${plural(aes67.length, 'stream')} announced: ` +
+        aes67
           .slice(0, 6)
           .map((s) => `${s.name}${s.connection ? ` → ${s.connection}` : ''}`)
           .join(', ') +
-        (streams.length > 6 ? `, and ${streams.length - 6} more` : '') +
+        (aes67.length > 6 ? `, and ${aes67.length - 6} more` : '') +
         '. Dante flows appear here only when explicitly put in AES67 mode.',
+    })
+  }
+
+  const st2110 = streams.filter((s) => s.sdp?.st2110)
+  if (st2110.length > 0) {
+    const problem = (s: SapStream, severity: 'error' | 'warning') =>
+      s.sdp?.problems.find((p) => p.severity === severity)
+    const faulty = st2110.filter((s) => problem(s, 'error'))
+    const doubtful = st2110.filter((s) => !problem(s, 'error') && problem(s, 'warning'))
+    const said = (s: SapStream, severity: 'error' | 'warning') => {
+      const p = problem(s, severity)!
+      return `${s.name}: ${p.message}${p.line ? ` (line ${p.line})` : ''}`
+    }
+    checks.push({
+      id: 'media-st2110-streams',
+      label: 'ST 2110 streams',
+      state: faulty.length > 0 ? 'limited' : 'ok',
+      detail:
+        (faulty.length > 0
+          ? `${plural(faulty.length, 'announced SDP file')} ${faulty.length === 1 ? 'is' : 'are'} ` +
+            `wrong in a way a receiver can refuse: ${faulty
+              .slice(0, 3)
+              .map((s) => said(s, 'error'))
+              .join('; ')}` +
+            (faulty.length > 3 ? `; and ${faulty.length - 3} more` : '') +
+            '. '
+          : '') +
+        `${plural(st2110.length, 'stream')} announced: ` +
+        st2110.slice(0, 6).map(streamWords).join(', ') +
+        (st2110.length > 6 ? `, and ${st2110.length - 6} more` : '') +
+        '.' +
+        (doubtful.length > 0
+          ? ` Worth a look: ${said(doubtful[0]!, 'warning')}` +
+            (doubtful.length > 1 ? `, and ${plural(doubtful.length - 1, 'other file')}.` : '.')
+          : '') +
+        ' Read from their announcements; crewbox never joins a stream.',
+      fix:
+        faulty.length > 0
+          ? 'Correct the file at the sender, in its own settings or through NMOS. Network → Check an SDP file goes through a copy line by line.'
+          : undefined,
+    })
+  }
+
+  // --- The checks themselves ------------------------------------------------
+  if (status.checks) {
+    checks.push({
+      id: 'media-st2110-checks',
+      label: 'ST 2110 checks',
+      state: 'limited',
+      detail: `The ST 2110 checks could not load (${status.checks}), so announced SDP files are listed but not checked.`,
+      fix: 'Restart the box. The checks are part of it, so if this persists the download is damaged: download it again.',
     })
   }
 

@@ -404,8 +404,40 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
     })
   }
 
-  const devices = input.mdns ?? []
+  // SDP files the ST 2110 checks found fault with (netwatch/sdp.ts). Only
+  // ST 2110 streams are judged: AES67 audio keeps to its own rules.
   const streams = input.sap ?? []
+  const st2110 = streams.filter((s) => s.sdp?.st2110)
+  const faulty = st2110.flatMap((s) => {
+    const error = s.sdp?.problems.find((p) => p.severity === 'error')
+    return error ? [{ name: s.name, error }] : []
+  })
+  if (faulty.length > 0) {
+    findings.push({
+      id: 'media-sdp',
+      label: 'ST 2110 SDP files',
+      state: 'limited',
+      detail:
+        `${plural(faulty.length, 'announced SDP file')} of ${st2110.length} ` +
+        `${faulty.length === 1 ? 'has a fault' : 'have faults'} a receiver can refuse: ` +
+        faulty
+          .slice(0, 3)
+          .map((f) => `${f.name}: ${f.error.message}`)
+          .join('; ') +
+        (faulty.length > 3 ? `; and ${faulty.length - 3} more` : '') +
+        '.',
+      fix: 'Correct the file at the sender, in its own settings or through NMOS. Network → Check an SDP file goes through a copy line by line.',
+    })
+  } else if (st2110.length > 0) {
+    findings.push({
+      id: 'media-sdp',
+      label: 'ST 2110 SDP files',
+      state: 'ok',
+      detail: `${plural(st2110.length, 'announced SDP file')}, none with a fault a receiver would refuse.`,
+    })
+  }
+
+  const devices = input.mdns ?? []
   findings.push({
     id: 'media-roster',
     label: 'Media roster',
@@ -413,7 +445,9 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
     detail:
       `${plural(devices.filter((d) => d.kind === 'dante').length, 'Dante device')}, ` +
       `${plural(devices.filter((d) => d.kind === 'ndi').length, 'NDI source')}, ` +
-      `${plural(streams.length, 'AES67 stream')}.`,
+      `${plural(streams.length - st2110.length, 'AES67 stream')}` +
+      // Said only when there are some: an audio rig has no use for a zero.
+      (st2110.length > 0 ? `, ${plural(st2110.length, 'ST 2110 stream')}.` : '.'),
     series: { metric: 'media.mdnsDevices', key: '' },
   })
 
