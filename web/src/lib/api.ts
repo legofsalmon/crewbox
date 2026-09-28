@@ -356,6 +356,55 @@ export function adminGetEnvironment(auth: AdminAuth, refresh = false): Promise<E
   })
 }
 
+/** Where the box keeps the router's DNS entry pointed (server/src/routerDns.ts). */
+export interface RouterDnsStatus {
+  state: 'off' | 'waiting' | 'working' | 'ok' | 'failed'
+  message: string
+  /** When the router last answered (ms), or 0. */
+  at: number
+  target?: { hostname: string; address: string }
+}
+
+export interface RouterDns {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  /** The password itself never comes back. */
+  hasPassword: boolean
+  /** The router's pinned SSH key, once the box has logged in. */
+  hostKey: string
+  /** A guess at the router: the .1 of the box's own network. */
+  suggestedHost: string
+  status: RouterDnsStatus
+}
+
+export interface RouterDnsSave {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  /** Leave out to keep the saved one. */
+  password?: string
+  forgetHostKey?: boolean
+}
+
+export function adminRouterDns(auth: AdminAuth): Promise<RouterDns> {
+  return request('/api/admin/router-dns', { headers: adminHeaders(auth) })
+}
+
+export function adminSaveRouterDns(auth: AdminAuth, body: RouterDnsSave): Promise<RouterDns> {
+  return request('/api/admin/router-dns', {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export function adminSyncRouterDns(auth: AdminAuth): Promise<RouterDns> {
+  return request('/api/admin/router-dns/sync', { method: 'POST', headers: adminHeaders(auth) })
+}
+
 /** The local DNS config for this box, as a file to put on the venue router. */
 export function adminDnsConfig(auth: AdminAuth): Promise<Blob> {
   return adminFile('/api/admin/dns-config', auth)
