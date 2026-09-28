@@ -63,7 +63,8 @@ internet. In order of preference:
 1. **The venue router speaks dnsmasq** (most do): add one line mapping the
    name to the box's IP. **Admin → This network** generates exactly this
    file when it detects the name isn't resolving — download, hand to
-   whoever runs the router.
+   whoever runs the router. For a MikroTik, **Download for MikroTik** gives
+   the same entry as a RouterOS script.
 2. **Your own event router**: same line, your own kit, no venue
    conversation.
 3. **No DNS control at all**: crew use the IP over plain HTTP — everything

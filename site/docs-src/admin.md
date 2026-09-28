@@ -113,7 +113,10 @@ production desk. On a box with a certificate it points the name at the box;
 on one without, it carries only the optional block below. The whole file is
 a dnsmasq config, so on an OpenWRT, GL.iNet or Pi-hole router it can be saved
 as it is into `/etc/dnsmasq.d/`. The lines for other systems (a laptop's
-`hosts` file, a venue's zone file) are in it as comments.
+`hosts` file, a venue's zone file) are in it as comments. **Download for
+MikroTik** gives the same entries as `crewbox-dns.rsc`, a RouterOS script to
+paste into the router's terminal or run with `/import`. It is a file of its
+own because a RouterOS line in a dnsmasq config stops dnsmasq starting.
 
 That file carries a second, clearly-marked **optional** block: the addresses
 phones fetch to decide whether a network has internet. Adding it stops

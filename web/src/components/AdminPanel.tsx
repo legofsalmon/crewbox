@@ -335,14 +335,17 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
     }
   }, [])
 
-  async function downloadDns() {
+  async function downloadDns(format: 'dnsmasq' | 'routeros') {
+    const routeros = format === 'routeros'
     try {
-      const blob = await api.adminDnsConfig(auth())
-      const result = await deliverFile('crewbox-dns.conf', blob)
+      const blob = await api.adminDnsConfig(auth(), format)
+      const result = await deliverFile(routeros ? 'crewbox-dns.rsc' : 'crewbox-dns.conf', blob)
       if (result === 'unavailable') onNote(NO_DOWNLOADS)
       else if (result !== 'cancelled') {
         onNote(
-          `${deliveredNote(result, 'DNS config') ?? 'DNS config ready'} — put it on the venue router`
+          routeros
+            ? `${deliveredNote(result, 'RouterOS script') ?? 'RouterOS script ready'} — paste it into the MikroTik's terminal`
+            : `${deliveredNote(result, 'DNS config') ?? 'DNS config ready'} — put it on the venue router`
         )
       }
     } catch (err) {
@@ -367,8 +370,15 @@ function Environment({ onNote }: { onNote: (note: string) => void }) {
             on every box. It used to appear only when the name was wrong, and
             that line pointed at nothing. */}
         {!pending && (
-          <button className="admin-btn" onClick={() => void downloadDns()}>
+          <button className="admin-btn" onClick={() => void downloadDns('dnsmasq')}>
             Download DNS config
+          </button>
+        )}
+        {/* A file of its own, not a section of the one above: that one is
+            saved whole into dnsmasq, which will not start on a RouterOS line. */}
+        {!pending && (
+          <button className="admin-btn" onClick={() => void downloadDns('routeros')}>
+            Download for MikroTik
           </button>
         )}
         {!pending && <span className="admin-muted">Checked {ago(report.probedAt)}</span>}
