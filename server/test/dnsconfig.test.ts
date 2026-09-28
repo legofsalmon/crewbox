@@ -29,14 +29,28 @@ describe('local DNS config', () => {
 
   it('produces a file that carries every form plus why it is local', () => {
     const file = dnsConfigFile(plan)
-    expect(file).toContain(plan.dnsmasq)
-    expect(file).toContain(plan.hosts)
-    expect(file).toContain(plan.zone)
+    expect(file).toContain(`\n${plan.dnsmasq}\n`)
+    // The other systems' lines ride along as comments: see the next test.
+    expect(file).toContain(`\n# ${plan.hosts}\n`)
+    expect(file).toContain(`\n# ${plan.zone}\n`)
     // The reasoning is the part that stops this being undone later.
     expect(file).toMatch(/no uplink/)
     expect(file).toMatch(/private addresses/)
     // And a way to tell whether it worked.
     expect(file).toContain(`https://${plan.hostname}`)
+  })
+
+  it('is a dnsmasq config from top to bottom', () => {
+    // Its dnsmasq section says to save it as /etc/dnsmasq.d/crewbox.conf, so
+    // that is what happens to the whole file. dnsmasq will not start on a line
+    // it cannot read, and on OpenWRT the same process hands out DHCP: one
+    // hosts line in here used to take the whole crew network down. Every line
+    // is blank, a comment, or an address= override.
+    for (const file of [dnsConfigFile(plan), probesConfigFile('192.168.1.50')]) {
+      for (const line of file.split('\n')) {
+        expect(line).toMatch(/^(|#.*|address=\/[^/\s]+\/[\d.]+)$/)
+      }
+    }
   })
 
   it('points the OS connectivity probes at the box too', () => {
@@ -48,10 +62,12 @@ describe('local DNS config', () => {
       expect(plan.probes.hosts).toContain(`192.168.1.50\t${host}`)
     }
     const file = dnsConfigFile(plan)
-    expect(file).toContain('captive.apple.com')
-    // Marked optional and separate, because it changes what phones report
-    // about the network — an admin should choose it deliberately.
+    expect(file).toContain(`\n${plan.probes.dnsmasq}\n`)
+    // Marked optional, because it changes what phones report about the
+    // network. Saving the whole file takes it too, so the file says how to
+    // leave it out.
     expect(file).toMatch(/OPTIONAL/)
+    expect(file).toMatch(/to leave them out/)
     expect(file).toMatch(/mobile network|mobile data/)
   })
 
