@@ -108,3 +108,9 @@ own icon, works offline.
 **PTP / Dante / NDI / AES67** — clocking and media-over-network systems the
 **Network** module can watch on the audio/media network. If none of that is
 on your network, that card simply says "Not watched".
+
+**ST 2110 / NMOS / SDP file** — ST 2110 is the broadcast standard that sends
+video, audio and data over the network as separate streams, all timed by
+PTP. NMOS is how its devices find each other and are connected, through a
+**registry**. An SDP file describes one stream: where it goes and what is
+in it. The **Network** module checks all three.

@@ -119,6 +119,16 @@ const livekitPath = join(root, 'build', 'livekit', livekitExe)
 const hasLivekit = existsSync(livekitPath)
 if (hasLivekit) assets[`livekit/${livekitExe}`] = livekitPath
 
+// 2b'. The ST 2110 checks (st2110/README.md), which the media watcher and the
+// deep probe run. Not optional like the two either side: it is committed, so
+// a build without it is a broken checkout, not a lighter box.
+const st2110Wasm = join(root, 'st2110', 'pkg', 'st2110_wasm_bg.wasm')
+if (!existsSync(st2110Wasm)) {
+  console.error('st2110/pkg/st2110_wasm_bg.wasm not found — it is committed; restore it')
+  process.exit(1)
+}
+assets['st2110/st2110_wasm_bg.wasm'] = st2110Wasm
+
 // 2c. The Windows tray icon, compiled here and carried inside the binary.
 //
 // Started from Explorer the box shows a console window someone closes, or

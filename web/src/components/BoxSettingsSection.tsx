@@ -213,7 +213,7 @@ export default function BoxSettingsSection({
           <option value="">Off</option>
           <option value="1">On</option>
         </select>,
-        'Listens for the PTP clock, Dante and NDI devices and AES67 streams. It only listens; it never sends on that network.'
+        'Listens for the PTP clock, Dante, NDI and NMOS devices, and AES67 and ST 2110 streams, and checks the ST 2110 ones. It only listens; it sends on that network only when an admin runs the deep probe.'
       )}
       {(form.CREWBOX_WATCH === '1' || pinned('CREWBOX_WATCH')) &&
         field(
@@ -221,6 +221,19 @@ export default function BoxSettingsSection({
           'Media network adapter',
           adapterSelect('CREWBOX_WATCH_IFACE', 'Let the computer choose')
         )}
+      {field(
+        'CREWBOX_NMOS_REGISTRY',
+        'NMOS registry',
+        <input
+          id="box-CREWBOX_NMOS_REGISTRY"
+          type="url"
+          inputMode="url"
+          value={form.CREWBOX_NMOS_REGISTRY}
+          placeholder="Found by itself"
+          onChange={(e) => set('CREWBOX_NMOS_REGISTRY', e.target.value)}
+        />,
+        "Only if the ST 2110 kit's registry does not announce itself: its address, like http://10.20.0.5:8080. The deep probe reads it."
+      )}
 
       <h3 className="admin-subhead">Video</h3>
       {field(

@@ -8,6 +8,8 @@ import {
 } from '../src/audit/score.ts'
 import type { UniverseHealth } from '../src/dmx/state.ts'
 import type { ClockStatus } from '../src/netwatch/ptp.ts'
+import type { SapStream } from '../src/netwatch/sap.ts'
+import type { VideoClockDomain } from '../src/netwatch/st2059.ts'
 import type { AuditEvent, RollupRow } from '../src/audit/metrics.ts'
 
 /**
@@ -266,6 +268,7 @@ describe('media', () => {
         mdns: { listening: true, error: null, packets: 10 },
         sap: { listening: true, error: null, packets: 0 },
         interfaceIp: null,
+        checks: null,
       },
       ptp: ptp(),
       mdns: [],
@@ -328,6 +331,136 @@ describe('media', () => {
     const f = finding(report, 'media', 'media-churn')
     expect(f?.state).toBe('limited')
     expect(f?.fix).toContain('PoE')
+  })
+
+  describe('the video clock', () => {
+    const domain = (findings: VideoClockDomain['findings'] = []): VideoClockDomain => ({
+      domain: 127,
+      grandmaster: '08:00:11:ff:fe:21:e1:b0',
+      clockClass: 248,
+      ptpTimescale: true,
+      utcOffset: 37,
+      metadata: null,
+      findings,
+      lastHeard: NOW,
+    })
+
+    it('is said only where a domain runs the SMPTE profile', () => {
+      expect(finding(scoreAudit(watched()), 'media', 'media-video-clock')).toBeUndefined()
+      const f = finding(
+        scoreAudit(watched({ videoClock: [domain()] })),
+        'media',
+        'media-video-clock'
+      )
+      expect(f?.state).toBe('ok')
+      expect(f?.detail).toContain('free-running (class 248)')
+      expect(f?.detail).toContain('no synchronization metadata')
+    })
+
+    it('is limited by a fault, with its fix', () => {
+      const offset = {
+        rule: 'utc-offset',
+        severity: 'warning' as const,
+        message: 'currentUtcOffset is 0 s, but TAI − UTC has been 37 s since 1 January 2017',
+        messageType: 'Announce',
+        source: '08:00:11:ff:fe:21:e1:b0',
+        lastSeen: NOW,
+      }
+      const f = finding(
+        scoreAudit(watched({ videoClock: [domain([offset])] })),
+        'media',
+        'media-video-clock'
+      )
+      expect(f?.state).toBe('limited')
+      expect(f?.detail).toContain('Announce from 08:00:11:ff:fe:21:e1:b0: currentUtcOffset is 0 s')
+      expect(f?.fix).toMatch(/37 s/)
+    })
+  })
+
+  describe('the NMOS registry', () => {
+    const probed = (nmos: Record<string, unknown>) => ({
+      id: 'p1',
+      startedAt: NOW - 60_000,
+      finishedAt: NOW - 50_000,
+      by: 'Colm',
+      report: { probes: [{ id: 'nmos-registry', network: 'media', sent: 'x', ...nmos }] },
+    })
+
+    it("carries the deep probe's verdict on it, when the probe read one", () => {
+      const report = scoreAudit(
+        watched({
+          probe: probed({
+            state: 'limited',
+            detail: 'The registry on 10.20.0.5:8080 (IS-04 v1.3): 1 fault',
+            fix: 'Each line names the resource.',
+          }),
+        })
+      )
+      const f = finding(report, 'media', 'media-nmos')
+      expect(f).toMatchObject({ state: 'limited', fix: 'Each line names the resource.' })
+      expect(f?.detail).toContain('10.20.0.5:8080')
+
+      const skipped = scoreAudit(watched({ probe: probed({ state: 'skipped', detail: 'no' }) }))
+      expect(finding(skipped, 'media', 'media-nmos')).toBeUndefined()
+    })
+
+    it('counts NMOS nodes on the roster, only when there are some', () => {
+      const node = {
+        name: 'cam 1',
+        kind: 'nmos' as const,
+        address: '10.20.0.21',
+        firstSeen: NOW,
+        lastSeen: NOW,
+        saidGoodbye: false,
+        nmos: { api: 'node' as const, port: 80, proto: 'http', versions: [], priority: null },
+      }
+      const report = scoreAudit(watched({ mdns: [node] }))
+      expect(finding(report, 'media', 'media-roster')?.detail).toBe(
+        '0 Dante devices, 0 NDI sources, 1 NMOS node, 0 AES67 streams.'
+      )
+    })
+  })
+
+  describe('announced ST 2110 streams', () => {
+    const stream = (name: string, st2110: boolean, error?: string): SapStream => ({
+      name,
+      origin: '10.0.0.1',
+      connection: '239.1.1.1',
+      firstSeen: NOW - 60_000,
+      lastSeen: NOW,
+      sdp: {
+        st2110,
+        streams: [],
+        problems: error ? [{ severity: 'error', rule: 'r', message: error, line: 5 }] : [],
+      },
+    })
+
+    it('are counted apart from AES67 ones, and only when there are some', () => {
+      const audio = scoreAudit(watched({ sap: [stream('Mix', false)] }))
+      expect(finding(audio, 'media', 'media-roster')?.detail).toContain('1 AES67 stream.')
+      expect(finding(audio, 'media', 'media-sdp')).toBeUndefined()
+
+      const both = scoreAudit(watched({ sap: [stream('Mix', false), stream('CAM 1', true)] }))
+      expect(finding(both, 'media', 'media-roster')?.detail).toContain(
+        '1 AES67 stream, 1 ST 2110 stream.'
+      )
+      expect(finding(both, 'media', 'media-sdp')?.state).toBe('ok')
+    })
+
+    it('grade a file a receiver would refuse as limited, naming it', () => {
+      const report = scoreAudit(
+        watched({ sap: [stream('CAM 1', true), stream('CAM 2', true, 'no a=ts-refclk')] })
+      )
+      const f = finding(report, 'media', 'media-sdp')
+      expect(f?.state).toBe('limited')
+      expect(f?.detail).toContain('1 announced SDP file of 2 has a fault')
+      expect(f?.detail).toContain('CAM 2: no a=ts-refclk')
+    })
+
+    it("leave an AES67 file's findings to AES67", () => {
+      const report = scoreAudit(watched({ sap: [stream('Mix', false, 'no a=ts-refclk')] }))
+      expect(finding(report, 'media', 'media-sdp')).toBeUndefined()
+    })
   })
 })
 

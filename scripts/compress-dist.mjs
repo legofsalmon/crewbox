@@ -12,7 +12,18 @@ import { extname, join } from 'node:path'
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib'
 
 const dir = process.argv[2] ?? 'dist'
-const COMPRESSIBLE = new Set(['.js', '.css', '.html', '.svg', '.json', '.webmanifest', '.txt'])
+const COMPRESSIBLE = new Set([
+  '.js',
+  '.css',
+  '.html',
+  '.svg',
+  '.json',
+  '.webmanifest',
+  '.txt',
+  // The ST 2110 checks (web/src/lib/st2110.ts): a megabyte, and a quarter of
+  // that as brotli.
+  '.wasm',
+])
 const MIN_BYTES = 1024
 
 let files = 0

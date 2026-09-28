@@ -3,6 +3,13 @@ import type { NetWatchStatus } from '../netwatch/listener.ts'
 import type { ClockStatus } from '../netwatch/ptp.ts'
 import type { MediaService } from '../netwatch/mdns.ts'
 import type { SapStream } from '../netwatch/sap.ts'
+import {
+  describeDomain,
+  faultFix,
+  findingWords,
+  isFault,
+  type VideoClockDomain,
+} from '../netwatch/st2059.ts'
 import type { AuditEvent, ProbeRunRecord, RollupRow } from './metrics.ts'
 
 /**
@@ -57,6 +64,8 @@ export interface ScoreInput {
   watch?: NetWatchStatus
   mdns?: MediaService[]
   sap?: SapStream[]
+  /** Domains running SMPTE ST 2059-2 (netwatch/st2059.ts). */
+  videoClock?: VideoClockDomain[]
   /** Rollups for one series over the scorer's window (typically 15 min). */
   recentSeries: (metric: string, key: string) => RollupRow[]
   /** Events from the last hour, any order. */
@@ -391,6 +400,27 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
     }
   }
 
+  // The video clock, only where a domain runs the SMPTE profile.
+  const video = input.videoClock ?? []
+  if (video.length > 0) {
+    const faults = video.flatMap((d) => d.findings.filter(isFault))
+    // Ids as the clock finding above writes them.
+    const id = (clock: string) => clock
+    findings.push({
+      id: 'media-video-clock',
+      label: 'Video clock (ST 2059-2)',
+      state: faults.length > 0 ? 'limited' : 'ok',
+      detail:
+        faults.length > 0
+          ? `Breaks ST 2059-2: ${faults
+              .slice(0, 3)
+              .map((f) => findingWords(f, id))
+              .join('; ')}` + (faults.length > 3 ? `; and ${faults.length - 3} more.` : '.')
+          : `${video.map((d) => describeDomain(d, id)).join('. ')}.`,
+      ...(faults.length > 0 ? { fix: faultFix(faults[0]!) } : {}),
+    })
+  }
+
   const gone = input.events.filter((e) => e.kind === 'media.device.gone')
   if (gone.length > 0) {
     const last = gone.reduce((a, b) => (a.at > b.at ? a : b))
@@ -404,8 +434,53 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
     })
   }
 
-  const devices = input.mdns ?? []
+  // SDP files the ST 2110 checks found fault with (netwatch/sdp.ts). Only
+  // ST 2110 streams are judged: AES67 audio keeps to its own rules.
   const streams = input.sap ?? []
+  const st2110 = streams.filter((s) => s.sdp?.st2110)
+  const faulty = st2110.flatMap((s) => {
+    const error = s.sdp?.problems.find((p) => p.severity === 'error')
+    return error ? [{ name: s.name, error }] : []
+  })
+  if (faulty.length > 0) {
+    findings.push({
+      id: 'media-sdp',
+      label: 'ST 2110 SDP files',
+      state: 'limited',
+      detail:
+        `${plural(faulty.length, 'announced SDP file')} of ${st2110.length} ` +
+        `${faulty.length === 1 ? 'has a fault' : 'have faults'} a receiver can refuse: ` +
+        faulty
+          .slice(0, 3)
+          .map((f) => `${f.name}: ${f.error.message}`)
+          .join('; ') +
+        (faulty.length > 3 ? `; and ${faulty.length - 3} more` : '') +
+        '.',
+      fix: 'Correct the file at the sender, in its own settings or through NMOS. Network → Check an SDP file goes through a copy line by line.',
+    })
+  } else if (st2110.length > 0) {
+    findings.push({
+      id: 'media-sdp',
+      label: 'ST 2110 SDP files',
+      state: 'ok',
+      detail: `${plural(st2110.length, 'announced SDP file')}, none with a fault a receiver would refuse.`,
+    })
+  }
+
+  // The NMOS registry, from the last deep probe that read one.
+  const registry = probeResults(input.probe).find((p) => p.id === 'nmos-registry')
+  if (registry && registry.state !== 'skipped') {
+    findings.push({
+      id: 'media-nmos',
+      label: 'NMOS registry',
+      state: registry.state,
+      detail: registry.detail,
+      ...(registry.fix ? { fix: registry.fix } : {}),
+    })
+  }
+
+  const devices = input.mdns ?? []
+  const nmosNodes = devices.filter((d) => d.nmos?.api === 'node').length
   findings.push({
     id: 'media-roster',
     label: 'Media roster',
@@ -413,7 +488,10 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
     detail:
       `${plural(devices.filter((d) => d.kind === 'dante').length, 'Dante device')}, ` +
       `${plural(devices.filter((d) => d.kind === 'ndi').length, 'NDI source')}, ` +
-      `${plural(streams.length, 'AES67 stream')}.`,
+      (nmosNodes > 0 ? `${plural(nmosNodes, 'NMOS node')}, ` : '') +
+      `${plural(streams.length - st2110.length, 'AES67 stream')}` +
+      // Said only when there are some: an audio rig has no use for a zero.
+      (st2110.length > 0 ? `, ${plural(st2110.length, 'ST 2110 stream')}.` : '.'),
     series: { metric: 'media.mdnsDevices', key: '' },
   })
 

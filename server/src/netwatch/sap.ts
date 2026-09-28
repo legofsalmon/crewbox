@@ -1,11 +1,18 @@
+import type { SdpCheck } from './sdp.ts'
+
 /**
- * SAP (RFC 2974), overheard — the roster of AES67/RAVENNA streams.
+ * SAP (RFC 2974), overheard — the roster of AES67/RAVENNA and ST 2110 streams.
  *
  * Standards-based audio-over-IP announces its streams with Session
  * Announcement Protocol: an SDP description multicast to 239.255.255.255:9875,
  * repeated every few minutes for as long as the stream exists, with an
  * explicit deletion message when it ends. Listening — which is all this does —
- * yields the stream directory: what is being sent, by whom, from where.
+ * yields the stream directory: what is being sent, by whom, from where. ST
+ * 2110 senders that announce do it the same way, and since each announcement
+ * is the stream's whole SDP file, the directory also checks every one
+ * (netwatch/sdp.ts). It reads the announcements and nothing more: joining a
+ * stream to look at it would pull gigabits of video onto whatever port the
+ * box is on.
  *
  * Dante only speaks SAP for flows explicitly put in AES67 mode, so this
  * roster is the standards-world complement to the mDNS device roster, not a
@@ -26,7 +33,16 @@ export interface SapMessage {
   origin: string
   /** From SDP `c=` — where the stream is sent (usually a multicast group). */
   connection: string
+  /** The SDP file itself, or '' when it is longer than MAX_SDP_LENGTH. */
+  sdp: string
 }
+
+/**
+ * The longest SDP file the directory keeps. A real one is a kilobyte or two
+ * and a SAP datagram is meant to stay under one; this bounds what 256
+ * streams can hold, and a file past it is listed but not checked.
+ */
+export const MAX_SDP_LENGTH = 16 * 1024
 
 /**
  * Parse one SAP datagram. Returns null for junk. Authenticated SAP (auth
@@ -72,6 +88,7 @@ export function parseSap(buf: Buffer): SapMessage | null {
     sessionName: line('s='),
     origin: originParts[5] ?? '',
     connection: line('c=').split(/\s+/)[2]?.split('/')[0] ?? '',
+    sdp: sdp.length <= MAX_SDP_LENGTH ? sdp : '',
   }
 }
 
@@ -81,6 +98,26 @@ export interface SapStream {
   connection: string
   firstSeen: number
   lastSeen: number
+  /**
+   * What the ST 2110 checks make of its SDP file; null until they have run,
+   * or when they cannot (see SapOptions.check) — "not checked", never "fine".
+   */
+  sdp: SdpCheck | null
+}
+
+export interface SapOptions {
+  /**
+   * Checks an announced SDP file, or answers null when the checks are not
+   * available yet. Injected so the directory stays pure and its tests need
+   * no WebAssembly; the listener passes the real one.
+   */
+  check?: (sdp: string) => SdpCheck | null
+}
+
+/** A stream as kept: the listed facts, the file, and its last check. */
+interface Entry extends Omit<SapStream, 'sdp'> {
+  text: string
+  checked: { text: string; result: SdpCheck | null } | null
 }
 
 /** SAP repeats announcements every few minutes; RFC 2974's own no-timeout
@@ -101,9 +138,14 @@ export const MAX_STREAMS = 256
 
 /** The stream directory. Deletions remove; silence eventually ages out. */
 export class SapState {
-  private readonly streams = new Map<string, SapStream>()
+  private readonly streams = new Map<string, Entry>()
   /** Announcements refused because the directory was full. */
   private overflowed = 0
+  private readonly check: SapOptions['check']
+
+  constructor(options: SapOptions = {}) {
+    this.check = options.check
+  }
 
   apply(message: SapMessage, now: number): void {
     if (message.deletion) {
@@ -127,13 +169,40 @@ export class SapState {
         connection: message.connection,
         firstSeen: now,
         lastSeen: now,
+        text: '',
+        checked: null,
       }
       this.streams.set(message.id, stream)
     }
     if (message.sessionName) stream.name = message.sessionName
     if (message.origin) stream.origin = message.origin
     if (message.connection) stream.connection = message.connection
+    // Kept as announced, and checked when somebody reads the directory
+    // rather than here: a stream repeats its announcement every few minutes
+    // unchanged, and checking on the packet path would redo the same work
+    // for every repeat of every stream.
+    stream.text = message.sdp
     stream.lastSeen = now
+  }
+
+  /**
+   * An entry's check, redone only when its file has changed. A null from the
+   * checker — not loaded yet — is not kept, so the next read tries again; a
+   * checker that throws is a bug in it, recorded as unchecked for this
+   * version of the file rather than retried on every read.
+   */
+  private checkOf(entry: Entry): SdpCheck | null {
+    if (!this.check || !entry.text) return null
+    if (entry.checked?.text === entry.text) return entry.checked.result
+    let result: SdpCheck | null
+    try {
+      result = this.check(entry.text)
+      if (result === null) return null
+    } catch {
+      result = null
+    }
+    entry.checked = { text: entry.text, result }
+    return result
   }
 
   sweep(now: number): void {
@@ -148,9 +217,16 @@ export class SapState {
   }
 
   roster(): SapStream[] {
-    return [...this.streams.values()].sort(
-      (a, b) => b.lastSeen - a.lastSeen || a.name.localeCompare(b.name)
-    )
+    return [...this.streams.values()]
+      .map((entry) => ({
+        name: entry.name,
+        origin: entry.origin,
+        connection: entry.connection,
+        firstSeen: entry.firstSeen,
+        lastSeen: entry.lastSeen,
+        sdp: this.checkOf(entry),
+      }))
+      .sort((a, b) => b.lastSeen - a.lastSeen || a.name.localeCompare(b.name))
   }
 
   clear(): void {

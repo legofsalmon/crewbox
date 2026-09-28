@@ -124,6 +124,11 @@ describe('which services matter', () => {
     expect(serviceKind('_netaudio-arc._udp.local')).toBe('dante')
     expect(serviceKind('_netaudio-dbc._udp.local')).toBe('dante')
     expect(serviceKind('_ndi._tcp.local')).toBe('ndi')
+    expect(serviceKind('_nmos-query._tcp.local')).toBe('nmos')
+    expect(serviceKind('_nmos-register._tcp.local')).toBe('nmos')
+    expect(serviceKind('_nmos-registration._tcp.local')).toBe('nmos')
+    expect(serviceKind('_nmos-node._tcp.local')).toBe('nmos')
+    expect(serviceKind('_nmos-auth._tcp.local')).toBeNull()
     expect(serviceKind('_http._tcp.local')).toBeNull()
     expect(serviceKind('_airplay._tcp.local')).toBeNull()
   })
@@ -216,5 +221,97 @@ describe('the device roster', () => {
     expect(names).toContain('newcomer')
     expect(names).not.toContain('leaving')
     expect(state.overflow()).toBe(0)
+  })
+})
+
+describe('NMOS', () => {
+  const QUERY = ['_nmos-query', '_tcp', 'local']
+  const txt = (...strings: string[]): Buffer =>
+    Buffer.concat(strings.map((t) => Buffer.concat([Buffer.from([t.length]), Buffer.from(t)])))
+  const srv = (port: number, host: string[]): Buffer => {
+    const fixed = Buffer.alloc(6)
+    fixed.writeUInt16BE(port, 4)
+    return Buffer.concat([fixed, label(host)])
+  }
+
+  it('reads a registry down to where its Query API is, in any record order', () => {
+    const records = parseMdns(
+      packet([
+        // TXT and SRV ahead of the PTR, as some responders send them.
+        {
+          name: label(['Registry A', ...QUERY]),
+          type: 16,
+          ttl: 4500,
+          rdata: txt('api_proto=http', 'api_ver=v1.2,v1.3', 'api_auth=false', 'pri=10'),
+        },
+        {
+          name: label(['Registry A', ...QUERY]),
+          type: 33,
+          ttl: 120,
+          rdata: srv(8080, ['reg-a', 'local']),
+        },
+        { name: label(QUERY), type: 12, ttl: 4500, rdata: label(['Registry A', ...QUERY]) },
+        { name: label(['reg-a', 'local']), type: 1, ttl: 120, rdata: Buffer.from([10, 20, 0, 5]) },
+      ])
+    )
+    expect(records[0]!.txt).toEqual([
+      'api_proto=http',
+      'api_ver=v1.2,v1.3',
+      'api_auth=false',
+      'pri=10',
+    ])
+    expect(records[1]!.port).toBe(8080)
+
+    const state = new MdnsState()
+    state.applyPacket(records, 1000)
+    expect(state.roster()).toEqual([
+      {
+        name: 'registry a',
+        kind: 'nmos',
+        address: '10.20.0.5',
+        firstSeen: 1000,
+        lastSeen: 1000,
+        saidGoodbye: false,
+        nmos: { api: 'query', port: 8080, proto: 'http', versions: ['v1.2', 'v1.3'], priority: 10 },
+      },
+    ])
+  })
+
+  it('tells the APIs apart, and ignores TXT values it cannot use', () => {
+    const state = new MdnsState()
+    const announce = (type: string, name: string, ...strings: string[]) => {
+      const service = [`_${type}`, '_tcp', 'local']
+      state.applyPacket(
+        parseMdns(
+          packet([
+            { name: label(service), type: 12, ttl: 4500, rdata: label([name, ...service]) },
+            { name: label([name, ...service]), type: 16, ttl: 4500, rdata: txt(...strings) },
+          ])
+        ),
+        1000
+      )
+    }
+    announce('nmos-register', 'reg', 'api_proto=https', 'pri=0')
+    announce('nmos-registration', 'old-reg', 'api_proto=gopher', 'pri=high')
+    announce('nmos-node', 'camera-1', 'api_ver=v1.3')
+    const apis = Object.fromEntries(state.roster().map((s) => [s.name, s.nmos]))
+    expect(apis['reg']).toMatchObject({ api: 'registration', proto: 'https', priority: 0 })
+    expect(apis['old-reg']).toMatchObject({ api: 'registration', proto: 'http', priority: null })
+    expect(apis['camera-1']).toMatchObject({ api: 'node', versions: ['v1.3'] })
+    // Dante and NDI entries carry no NMOS facts.
+    state.applyPacket(
+      parseMdns(
+        packet([
+          {
+            name: label(DANTE_SERVICE),
+            type: 12,
+            ttl: 4500,
+            rdata: label(['Stagebox', ...DANTE_SERVICE]),
+          },
+        ])
+      ),
+      2000
+    )
+    expect(state.roster().find((s) => s.kind === 'dante')).not.toHaveProperty('nmos')
   })
 })

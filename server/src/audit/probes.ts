@@ -6,6 +6,17 @@ import type { Probes } from '../environment.ts'
 // on", shared with the video scan, which made the same promise first.
 import { subnetBroadcast } from '../video/discovery.ts'
 import type { MetricsStore } from './metrics.ts'
+import type { MediaService } from '../netwatch/mdns.ts'
+import type { St2110 } from '../st2110.ts'
+import {
+  findingLines,
+  nodeHttpGet,
+  pickRegistry,
+  readFailure,
+  readRegistry,
+  registrySummary,
+  type HttpGet,
+} from './nmos.ts'
 
 /**
  * The deep probe: the audit's one deliberate exception to "never transmit",
@@ -35,6 +46,13 @@ import type { MetricsStore } from './metrics.ts'
  * lighting interface is explicitly configured, so it can never leave on the
  * crew LAN by accident. The mDNS probe is the one-shot multicast query
  * (RFC 6762 §5.1) every phone on the network performs continuously.
+ *
+ * The NMOS probe reads the registry ST 2110 kit registers with (IS-04),
+ * over HTTP, and each sender's SDP file from its device: what any NMOS
+ * controller on that network does all day. It goes only to a registry
+ * named in Box settings or one that announced itself, and leaves from the
+ * media network's adapter when one is set. Its `sent` line counts the
+ * requests and the devices they went to.
  */
 
 export const ARTNET_PORT = 6454
@@ -44,16 +62,29 @@ export const MDNS_GROUP = '224.0.0.251'
 /** How long solicited replies are given to land on the passive listeners. */
 export const REPLY_WAIT_MS = 5_000
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/** "10.20.0.5:8080" from a URL, or the text itself when it is not one. */
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host || url
+  } catch {
+    return url
+  }
+}
+
 export type ProbeState = 'ok' | 'info' | 'limited' | 'off' | 'skipped'
 
 export interface ProbeResult {
-  id: 'crew-uplink' | 'crew-dns' | 'artnet-inventory' | 'mdns-roster'
+  id: 'crew-uplink' | 'crew-dns' | 'artnet-inventory' | 'mdns-roster' | 'nmos-registry'
   network: 'crew' | 'lighting' | 'media'
   state: ProbeState
   /** Exactly what was transmitted, in words venue IT can verify. */
   sent: string
   detail: string
   fix?: string
+  /** What the probe found, one line each, when there is a list: the NMOS findings. */
+  items?: string[]
 }
 
 export interface ProbeRun {
@@ -72,6 +103,8 @@ export interface AuditProbeIo {
   wait: (ms: number) => Promise<void>
   /** The box's adapters, for working out where a broadcast should go. */
   interfaces?: typeof networkInterfaces
+  /** HTTP GET, for the NMOS registry; Node's own client when omitted. */
+  httpGet?: HttpGet
 }
 
 export interface ProberDeps {
@@ -87,6 +120,12 @@ export interface ProberDeps {
   certHostname: () => string | undefined
   /** Whether the media watchers are running (mDNS replies need a listener). */
   watching: () => boolean
+  /** The mDNS roster, where registries that announced themselves are found. */
+  mdnsRoster?: () => MediaService[]
+  /** The NMOS registry Box settings names, or '' to use one that announced itself. */
+  nmosRegistry?: () => string
+  /** The ST 2110 checks, or null when they did not load. */
+  checks?: () => Pick<St2110, 'checkRegistry'> | null
   /**
    * Whether this box may go off-site at all. CREWBOX_UPDATE_CHECK=0 says it
    * may not, and the uplink probe then sends nothing. Omitted, it may.
@@ -123,23 +162,29 @@ function dnsName(name: string): Buffer {
 }
 
 /**
- * One one-shot mDNS query (RFC 6762 §5.1): header with QDCOUNT 2, then PTR
- * questions for the Dante and NDI service types. QM (multicast response)
- * so the answers are heard by the passive listener — and by every other
- * device on the network, exactly like any phone's discovery.
+ * One one-shot mDNS query (RFC 6762 §5.1): header with QDCOUNT 3, then PTR
+ * questions for the Dante, NDI and NMOS Query API service types. QM
+ * (multicast response) so the answers are heard by the passive listener —
+ * and by every other device on the network, exactly like any phone's
+ * discovery.
  */
 export function buildMdnsQuery(): Buffer {
   const header = Buffer.alloc(12)
   header.writeUInt16BE(0, 0) // ID 0 (mDNS)
   header.writeUInt16BE(0, 2) // flags: standard query
-  header.writeUInt16BE(2, 4) // QDCOUNT
+  header.writeUInt16BE(3, 4) // QDCOUNT
   const question = (name: string): Buffer => {
     const q = Buffer.alloc(4)
     q.writeUInt16BE(12, 0) // QTYPE PTR
     q.writeUInt16BE(1, 2) // QCLASS IN, QU bit clear → multicast response
     return Buffer.concat([dnsName(name), q])
   }
-  return Buffer.concat([header, question('_netaudio-arc._udp.local'), question('_ndi._tcp.local')])
+  return Buffer.concat([
+    header,
+    question('_netaudio-arc._udp.local'),
+    question('_ndi._tcp.local'),
+    question('_nmos-query._tcp.local'),
+  ])
 }
 
 /** Send one datagram from a throwaway socket, always closed. */
@@ -253,6 +298,8 @@ export class Prober {
       run.probes.push(await this.probeDns())
       run.probes.push(await this.probeArtnet())
       run.probes.push(await this.probeMdns())
+      // After the mDNS query, whose answers name the registry.
+      run.probes.push(await this.probeNmos())
     } finally {
       run.finishedAt = this.io.now()
       this.persist(run)
@@ -456,7 +503,7 @@ export class Prober {
     }
     const iface = this.deps.watchIface()
     const before = this.deps.mdnsCount?.() ?? 0
-    const sent = `one mDNS query (PTR _netaudio-arc._udp.local + _ndi._tcp.local) to ${MDNS_GROUP}:${MDNS_PORT}`
+    const sent = `one mDNS query (PTR _netaudio-arc._udp.local + _ndi._tcp.local + _nmos-query._tcp.local) to ${MDNS_GROUP}:${MDNS_PORT}`
     try {
       await sendOnce(this.io, buildMdnsQuery(), MDNS_GROUP, MDNS_PORT, (socket) => {
         if (iface) socket.setMulticastInterface(iface)
@@ -481,6 +528,99 @@ export class Prober {
       detail:
         `${after} media device${after === 1 ? '' : 's'} on the roster` +
         (woken > 0 ? ` — ${woken} surfaced only when asked.` : '.'),
+    }
+  }
+
+  private async probeNmos(): Promise<ProbeResult> {
+    const configured = this.deps.nmosRegistry?.() ?? ''
+    const target = pickRegistry(configured, this.deps.mdnsRoster?.() ?? [])
+    if (!target) {
+      return this.deps.watching()
+        ? {
+            id: 'nmos-registry',
+            network: 'media',
+            state: 'info',
+            sent: 'nothing',
+            detail:
+              'No NMOS registry answered the mDNS query, so there was none to read. Nothing to check on a rig without NMOS.',
+            fix: "If the registry is found through the venue's DNS instead, name it in Box settings → NMOS registry.",
+          }
+        : {
+            id: 'nmos-registry',
+            network: 'media',
+            state: 'skipped',
+            sent: 'nothing',
+            detail:
+              'Skipped: no NMOS registry is named in Box settings, and with the media watchers off none can announce itself.',
+            fix: 'Turn on Box settings → Watch the media network, or name the registry in Box settings → NMOS registry.',
+          }
+    }
+    const checks = this.deps.checks?.() ?? null
+    if (!checks) {
+      return {
+        id: 'nmos-registry',
+        network: 'media',
+        state: 'limited',
+        sent: 'nothing',
+        detail: `The ST 2110 checks could not load, so the registry at ${target.url} was not read.`,
+        fix: 'Restart the box. The checks are part of it, so if this persists the download is damaged: download it again.',
+      }
+    }
+    const iface = this.deps.watchIface()
+    const get = this.io.httpGet ?? nodeHttpGet(iface || undefined)
+    const found = target.from === 'setting' ? 'named in Box settings' : 'which announced itself'
+    try {
+      const read = await readRegistry(target.url, get, this.io.now)
+      const { registry, manifests, hosts } = read.requests
+      // Host and port, not the URL: the exported report stays free of
+      // links, and "10.20.0.5:8080" is what venue IT will look for.
+      const on = new URL(read.base).host
+      const version = read.snapshot.api_version ?? ''
+      const sent =
+        `${plural(registry, 'HTTP GET request')} to the NMOS Query API on ${on}` +
+        (manifests > 0
+          ? `, and ${manifests} for senders' SDP files, to ${plural(hosts, 'device')}`
+          : '') +
+        (iface ? `, from ${iface}` : '')
+      const report = checks.checkRegistry(read.snapshot)
+      const errors = report.findings.filter((f) => f.severity === 'error').length
+      const warnings = report.findings.filter((f) => f.severity === 'warning').length
+      return {
+        id: 'nmos-registry',
+        network: 'media',
+        state: errors > 0 ? 'limited' : 'ok',
+        sent,
+        detail:
+          `The registry on ${on} (IS-04 ${version}, ${found}): ${registrySummary(report)} ` +
+          (errors > 0
+            ? `${plural(errors, 'fault')} a receiver or controller can trip on` +
+              (warnings > 0 ? `, and ${plural(warnings, 'warning')}` : '') +
+              ', listed below.'
+            : warnings > 0
+              ? `No faults; ${plural(warnings, 'warning')}, listed below.`
+              : 'Nothing wrong with what is registered.') +
+          (read.partial.length > 0 ? ` Not read: ${read.partial.join('; ')}.` : ''),
+        ...(errors > 0
+          ? {
+              fix: 'Each line names the resource. Correct it at the device that registered it, or in the controller that set it up.',
+            }
+          : {}),
+        ...(errors + warnings > 0 ? { items: findingLines(report) } : {}),
+      }
+    } catch (err) {
+      const reason = readFailure(err)
+      if (reason === null) throw err
+      return {
+        id: 'nmos-registry',
+        network: 'media',
+        state: 'limited',
+        sent: `HTTP GET requests to ${hostOf(target.url)}`,
+        detail: `The NMOS registry ${found} could not be read: ${reason}.`,
+        fix:
+          target.from === 'setting'
+            ? 'Check the address in Box settings → NMOS registry, and that the registry is running and reachable from the media network adapter.'
+            : 'Check the registry is running and reachable from the media network adapter.',
+      }
     }
   }
 }
