@@ -158,8 +158,9 @@ this Wi-Fi_) tells you which half is missing:
    > redirect keeps the privilege in a one-off rule instead.
 
 2. **The router's DNS points the test addresses at the box.** Download
-   `crewbox-dns.conf` from **Admin → This network** and paste its second,
-   clearly-marked optional block onto the router alongside the first.
+   `crewbox-dns.conf` from **Admin → This network**: its second,
+   clearly-marked optional block does this. On a dnsmasq router, saving the
+   whole file includes it.
 
 > [!NOTE]
 > Once both halves are in, iPhones stop warning that this network has no

@@ -36,6 +36,8 @@ export interface DnsPlan {
   address: string
   /** dnsmasq: OpenWRT, Pi-hole, most Linux routers, and the deploy/ config. */
   dnsmasq: string
+  /** RouterOS (MikroTik) terminal commands. Safe to paste again: see routerosEntry. */
+  routeros: string
   /** A hosts file, for one laptop that needs to work before the router does. */
   hosts: string
   /** BIND-style zone line, for a venue that runs its own resolver. */
@@ -48,6 +50,7 @@ export interface DnsPlan {
   probes: {
     hostnames: readonly string[]
     dnsmasq: string
+    routeros: string
     hosts: string
   }
 }
@@ -60,17 +63,112 @@ export function dnsPlan(hostname: string, address: string): DnsPlan {
     // any upstream answer — which is the point, since the upstream will
     // usually answer with a wildcard.
     dnsmasq: `address=/${hostname}/${address}`,
+    routeros: routerosEntry(hostname, address),
     hosts: `${address}\t${hostname}`,
     zone: `${hostname}.\tIN\tA\t${address}`,
     probes: {
       hostnames: PROBE_HOSTS,
       dnsmasq: PROBE_HOSTS.map((host) => `address=/${host}/${address}`).join('\n'),
+      routeros: PROBE_HOSTS.map((host) => routerosEntry(host, address)).join('\n'),
       hosts: PROBE_HOSTS.map((host) => `${address}\t${host}`).join('\n'),
     },
   }
 }
 
-/** A file an admin can drop straight onto a router, comments and all. */
+/**
+ * One RouterOS static entry, written to be pasted more than once.
+ *
+ * `add` alone, pasted again after the box's address has moved, would either
+ * fail or leave last event's entry beside the new one. Removing the name
+ * first makes each paste the whole truth for that name, the way dnsmasq's
+ * single line already is.
+ *
+ * A one-minute TTL, where RouterOS defaults to a day. dnsmasq answers its
+ * own entries with a TTL of zero, so a fixed entry reaches phones at once; a
+ * day would leave them on last event's address long after the router was
+ * put right.
+ *
+ * Exact names, where dnsmasq's `address=/name/` also covers everything under
+ * the name. Nothing under these names is ever asked for, and the RouterOS
+ * equivalent (`match-subdomain=yes`) only exists on RouterOS 7: a router
+ * still on 6 would reject the whole line.
+ */
+function routerosEntry(host: string, address: string): string {
+  return (
+    `/ip dns static remove [find name=${host}]\n` +
+    `/ip dns static add name=${host} address=${address} ttl=1m comment=crewbox`
+  )
+}
+
+/**
+ * Lets RouterOS answer DNS from the LAN at all: without it the static entries
+ * exist and no phone can ask for them. Off unless the router's default config
+ * turned it on, and setting it again changes nothing.
+ */
+const ROUTEROS_ANSWER = '/ip dns set allow-remote-requests=yes'
+
+/**
+ * The same entries as a RouterOS script, for a MikroTik: crewbox-dns.rsc.
+ *
+ * Its own file rather than a section of crewbox-dns.conf, because that one
+ * gets saved whole into dnsmasq, and dnsmasq will not start on a line it
+ * cannot read — which a RouterOS command is. This file is a script from top
+ * to bottom instead: pasted into the terminal or run with /import, every
+ * line runs, comments and all. That includes the optional probe entries, the
+ * same as saving the dnsmasq file whole does, and it says how to leave them
+ * out. Without a certificate there is no name, so the probe entries are all
+ * there is.
+ */
+export function routerosScript(hostname: string | undefined, address: string): string {
+  const plan = dnsPlan(hostname ?? '', address)
+  const nameEntry = hostname ? `${plan.routeros}\n` : ''
+  const header = hostname
+    ? `# Crewbox — local DNS for ${hostname}, as RouterOS commands
+#
+# Point ${hostname} at the crew box on this network, so phones reach it by
+# the name on its certificate. It has to be a LOCAL override: a festival
+# network has no uplink to ask public DNS, and routers commonly refuse public
+# answers that point at private addresses.
+`
+    : `# Crewbox — local DNS for the crew box at ${address}, as RouterOS commands
+#
+# This box has no certificate, so there is no name to point at it; crew reach
+# it by address. The one thing the router can still do is below.
+`
+  return `${header}#
+# Paste into the router's terminal (Winbox: New Terminal, or SSH), or upload
+# this file to the router's Files and run: /import file-name=crewbox-dns.rsc
+# Running it again after the box's address changes replaces the entries.
+# DHCP must hand out this router as the DNS server: IP > DHCP Server >
+# Networks > DNS Servers. The next line lets the router answer phones at all;
+# on a router that also has an internet uplink, check its firewall drops DNS
+# from there.
+${ROUTEROS_ANSWER}
+${nameEntry}
+# ==========================================================================
+# OPTIONAL — stop phones deciding this network is dead
+# ==========================================================================
+#
+# Every phone fetches one fixed URL when it joins a Wi-Fi network to decide
+# whether it "has internet". With no uplink they all fail, and an iPhone
+# moves to mobile data, where it cannot reach the box. These entries point
+# those checks at the box, which answers them on port 80. Running this whole
+# file includes them; to leave them out, delete from the OPTIONAL banner down.
+${plan.probes.routeros}
+`
+}
+
+/**
+ * A file an admin can drop straight onto a router, comments and all.
+ *
+ * "Straight onto a router" means the whole file is a dnsmasq config: its
+ * dnsmasq section says to save it as /etc/dnsmasq.d/crewbox.conf, and an
+ * admin holding a file called crewbox-dns.conf does exactly that. dnsmasq
+ * refuses to start on a line it cannot read, and on OpenWRT the same process
+ * hands out DHCP, so the hosts and zone lines this file used to carry as-is
+ * took the whole crew network down with them. Every line that is not
+ * dnsmasq's is written as a comment (see forOtherSystems).
+ */
 export function dnsConfigFile(plan: DnsPlan): string {
   return nameBlock(plan) + probeBlock(plan.probes)
 }
@@ -93,6 +191,17 @@ export function probesConfigFile(address: string): string {
   )
 }
 
+/**
+ * Lines for some other system, carried as comments so dnsmasq skips them.
+ * Whoever needs them copies them without the leading "# ".
+ */
+function forOtherSystems(lines: string): string {
+  return lines
+    .split('\n')
+    .map((line) => `# ${line}`)
+    .join('\n')
+}
+
 function nameBlock(plan: DnsPlan): string {
   return `# Crewbox — local DNS for ${plan.hostname}
 #
@@ -106,17 +215,24 @@ function nameBlock(plan: DnsPlan): string {
 # that point at private addresses.
 
 # --- OpenWRT, Pi-hole, dnsmasq --------------------------------------------
-# Save as /etc/dnsmasq.d/crewbox.conf (OpenWRT: /etc/dnsmasq.d/), then
-# restart dnsmasq. Make sure DHCP hands out this router as the DNS server.
+# This whole file is a dnsmasq config: save it as
+# /etc/dnsmasq.d/crewbox.conf, then restart dnsmasq. It includes the optional
+# block further down; delete that block first if you don't want it. Make sure
+# DHCP hands out this router as the DNS server.
 ${plan.dnsmasq}
+
+# --- MikroTik RouterOS ----------------------------------------------------
+# Not in this file. Ask whoever runs the crew box for the RouterOS version:
+# Admin > This network > Download for MikroTik.
 
 # --- A single machine, before the router is set up ------------------------
 # Append to /etc/hosts (macOS and Linux), or
-# C:\\Windows\\System32\\drivers\\etc\\hosts on Windows.
-${plan.hosts}
+# C:\\Windows\\System32\\drivers\\etc\\hosts on Windows, without the "# ":
+${forOtherSystems(plan.hosts)}
 
 # --- A venue running its own BIND/zone file -------------------------------
-${plan.zone}
+# For the zone file, without the "# ":
+${forOtherSystems(plan.zone)}
 
 # Check it worked from a phone on the crew network: the join page should load
 # at https://${plan.hostname} with no certificate warning.
@@ -139,7 +255,9 @@ function probeBlock(probes: DnsPlan['probes']): string {
 #
 # Adding these lines points those probes at the box, which answers them. The
 # box has to be running its probe responder for this to help — it listens on
-# port 80 and says so in the admin panel's readiness list.
+# port 80 and says so in the admin panel's readiness list. Saving this whole
+# file into dnsmasq includes them; to leave them out, cut the file off at the
+# OPTIONAL banner above.
 #
 # The trade, stated plainly: phones will stop warning that this network has
 # no internet, because as far as they can tell it now has. That is the
@@ -152,8 +270,8 @@ function probeBlock(probes: DnsPlan['probes']): string {
 # --- dnsmasq (OpenWRT, Pi-hole) -------------------------------------------
 ${probes.dnsmasq}
 
-# --- hosts file -----------------------------------------------------------
-${probes.hosts}
+# --- hosts file, without the "# " -----------------------------------------
+${forOtherSystems(probes.hosts)}
 
 # Check it worked: join the crew Wi-Fi on an iPhone and confirm the Wi-Fi
 # icon stays in the status bar, with no "no internet connection" alert.

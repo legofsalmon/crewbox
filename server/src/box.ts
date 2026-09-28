@@ -10,8 +10,9 @@ import {
 } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
+import { promisify } from 'node:util'
 import { joinCode } from './joinCode.ts'
 import { releaseRunMarker } from './reports/marker.ts'
 
@@ -431,8 +432,9 @@ export async function stopRunningBox(dataDir: string): Promise<number> {
   // happens afterwards: the sockets, the SFU, the database. So waiting for
   // the file to vanish returned within milliseconds of the signal, before
   // any of it, and the promise in this comment was not kept.
-  for (let i = 0; i < 100; i++) {
-    if (!running(status.pid)) {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    if (!running(status.pid) && !(await stillListed(status.pid))) {
       // On Windows that signal was a hard kill, so the box never got to
       // remove its own run marker; an operator's --stop is not a crash.
       releaseRunMarker(dataDir, status.pid)
@@ -460,6 +462,44 @@ function running(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Windows only: does the process list still show this pid?
+ *
+ * `running()` reads the exit code, and Windows sets that as soon as
+ * termination starts (the SIGTERM above is a TerminateProcess there). The
+ * process then keeps its sockets, its database and its own executable until
+ * the kernel has finished tearing it down, and is listed until then. On a
+ * GitHub Windows runner that took up to about 90 ms for the 1.3.0 box, and
+ * `--stop` returned inside it: the release's smoke test caught the box still
+ * alive, twice.
+ *
+ * If tasklist cannot answer, the pid counts as gone. The exit code has already
+ * said so, and a missing tool must not turn --stop into a ten-second wait.
+ */
+async function stillListed(pid: number): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  try {
+    const { stdout } = await execFileAsync(
+      'tasklist.exe',
+      ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+      { windowsHide: true, timeout: 5000 }
+    )
+    return listsPid(stdout, pid)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Whether tasklist's CSV output has a row for this pid. Only rows count: with
+ * no match it prints a one-line notice instead, in the machine's language.
+ */
+export function listsPid(csv: string, pid: number): boolean {
+  return csv.split(/\r?\n/).some((line) => line.split('","')[1] === String(pid))
 }
 
 /**

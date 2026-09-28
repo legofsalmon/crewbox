@@ -405,9 +405,18 @@ export function adminSyncRouterDns(auth: AdminAuth): Promise<RouterDns> {
   return request('/api/admin/router-dns/sync', { method: 'POST', headers: adminHeaders(auth) })
 }
 
-/** The local DNS config for this box, as a file to put on the venue router. */
-export function adminDnsConfig(auth: AdminAuth): Promise<Blob> {
-  return adminFile('/api/admin/dns-config', auth)
+/**
+ * The local DNS config for this box, as a file to put on the venue router:
+ * a dnsmasq config, or the same entries as a RouterOS script for a MikroTik.
+ */
+export function adminDnsConfig(
+  auth: AdminAuth,
+  format: 'dnsmasq' | 'routeros' = 'dnsmasq'
+): Promise<Blob> {
+  return adminFile(
+    format === 'routeros' ? '/api/admin/dns-config?format=routeros' : '/api/admin/dns-config',
+    auth
+  )
 }
 
 /** The rule that sends port 80 to the probe responder on this machine. */

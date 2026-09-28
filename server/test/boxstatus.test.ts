@@ -9,6 +9,7 @@ import { openDb } from '../src/db.ts'
 import { Store } from '../src/store.ts'
 import {
   clearBoxStatus,
+  listsPid,
   readBoxStatus,
   statusPath,
   stopRunningBox,
@@ -184,6 +185,23 @@ describe('stopping a running box', () => {
     // a signal to whatever inherited the number.
     writeBoxStatus(dir, status(0x7fffffff))
     expect(readBoxStatus(dir)).toBeNull()
+  })
+
+  it("reads Windows' process list for the pid, and only its rows", () => {
+    // On Windows --stop also waits for tasklist to stop listing the box: the
+    // exit code is set while the process is still being torn down.
+    const row = '"crewbox-win32-x64.exe","7288","Console","1","151,204 K"'
+    expect(listsPid(`${row}\r\n`, 7288)).toBe(true)
+    // Another process whose numbers merely contain it, in any column.
+    expect(listsPid('"livekit-server.exe","72880","Console","1","7,288 K"\r\n', 7288)).toBe(false)
+    // No match is a notice, not a row, and in the machine's own language.
+    expect(
+      listsPid('INFO: No tasks are running which match the specified criteria.\r\n', 7288)
+    ).toBe(false)
+    expect(
+      listsPid('INFORMATION: Es werden keine Tasks mit den angegebenen Kriterien ausgeführt.', 7288)
+    ).toBe(false)
+    expect(listsPid('', 7288)).toBe(false)
   })
 })
 
