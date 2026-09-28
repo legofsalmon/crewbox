@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_STREAMS, SAP_TIMEOUT_MS, SapState, parseSap } from '../src/netwatch/sap.ts'
+import {
+  MAX_SDP_LENGTH,
+  MAX_STREAMS,
+  SAP_TIMEOUT_MS,
+  SapState,
+  parseSap,
+} from '../src/netwatch/sap.ts'
+import type { SdpCheck } from '../src/netwatch/sdp.ts'
 
 const SDP = [
   'v=0',
@@ -39,6 +46,14 @@ describe('parsing SAP', () => {
 
   it('marks a deletion as one', () => {
     expect(parseSap(sap({ deletion: true }))!.deletion).toBe(true)
+  })
+
+  it('keeps the SDP file itself, unless it is too long to be one', () => {
+    expect(parseSap(sap())!.sdp).toBe(SDP)
+    const huge = `${SDP}\r\n${'a=x-padding:1\r\n'.repeat(MAX_SDP_LENGTH / 10)}`
+    const message = parseSap(sap({ sdp: huge }))!
+    expect(message.sdp).toBe('')
+    expect(message.sessionName).toBe('Monitor Mix L/R') // still listed
   })
 
   it('refuses junk, wrong versions and encrypted payloads', () => {
@@ -88,5 +103,69 @@ describe('the stream directory', () => {
     }
     expect(state.roster()).toHaveLength(MAX_STREAMS)
     expect(state.overflow()).toBe(20)
+  })
+})
+
+describe('checking what the directory lists', () => {
+  const verdict = (st2110: boolean): SdpCheck => ({ st2110, streams: [], problems: [] })
+
+  it('checks each file once, and again only when it changes', () => {
+    const seen: string[] = []
+    const state = new SapState({
+      check: (sdp) => {
+        seen.push(sdp)
+        return verdict(true)
+      },
+    })
+    state.apply(parseSap(sap())!, 1000)
+    expect(state.roster()[0]!.sdp).toEqual(verdict(true))
+    state.apply(parseSap(sap())!, 300_000) // the periodic repeat
+    state.roster()
+    expect(seen).toHaveLength(1)
+    const changed = SDP.replace('Monitor Mix L/R', 'Monitor Mix 2')
+    state.apply(parseSap(sap({ sdp: changed }))!, 400_000)
+    expect(state.roster()[0]!.name).toBe('Monitor Mix 2')
+    expect(seen).toEqual([SDP, changed])
+  })
+
+  it('says "not checked" until the checks are there, then checks', () => {
+    let ready = false
+    const state = new SapState({ check: () => (ready ? verdict(false) : null) })
+    state.apply(parseSap(sap())!, 1000)
+    expect(state.roster()[0]!.sdp).toBeNull()
+    ready = true
+    expect(state.roster()[0]!.sdp).toEqual(verdict(false))
+  })
+
+  it('survives a check that throws, without retrying it on every read', () => {
+    let calls = 0
+    const state = new SapState({
+      check: () => {
+        calls++
+        throw new Error('boom')
+      },
+    })
+    state.apply(parseSap(sap())!, 1000)
+    expect(state.roster()[0]!.sdp).toBeNull()
+    state.roster()
+    expect(calls).toBe(1)
+  })
+
+  it('checks nothing when it has no checker, or no file', () => {
+    const plain = new SapState()
+    plain.apply(parseSap(sap())!, 1000)
+    expect(plain.roster()[0]!.sdp).toBeNull()
+
+    let calls = 0
+    const state = new SapState({
+      check: () => {
+        calls++
+        return verdict(true)
+      },
+    })
+    const huge = `${SDP}\r\n${'a=x-padding:1\r\n'.repeat(MAX_SDP_LENGTH / 10)}`
+    state.apply(parseSap(sap({ sdp: huge }))!, 1000)
+    expect(state.roster()[0]!.sdp).toBeNull()
+    expect(calls).toBe(0)
   })
 })

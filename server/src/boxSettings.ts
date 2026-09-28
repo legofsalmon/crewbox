@@ -48,6 +48,20 @@ const wholeNumber =
     return n >= min && n <= max ? null : message
   }
 
+/** An http:// or https:// address with a host: where an NMOS registry answers. */
+const httpUrlOrBlank = (v: string): string | null => {
+  if (v === '') return null
+  try {
+    const url = new URL(v)
+    if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname && !/\s/.test(v)) {
+      return null
+    }
+  } catch {
+    // Not a URL at all; the message below says what is wanted.
+  }
+  return "That needs to be the registry's address, like http://10.20.0.5:8080, or left blank."
+}
+
 /** Whether the runtime knows `zone` as an IANA timezone name. */
 export function isTimeZone(zone: string): boolean {
   try {
@@ -81,6 +95,7 @@ export const BOX_SETTINGS = {
   CREWBOX_DMX_ARTNET_BASE: oneOf(['0', '1'], 'Art-Net universe 0 is plot universe 0 or 1.'),
   CREWBOX_WATCH: oneOf(['0', '1'], 'Media network watching is on or off.'),
   CREWBOX_WATCH_IFACE: ipv4OrBlank,
+  CREWBOX_NMOS_REGISTRY: httpUrlOrBlank,
   CREWBOX_VIDEO_IFACE: ipv4OrBlank,
   CREWBOX_VIDEO_SNMP_COMMUNITY: (v: string): string | null =>
     /^[\x21-\x7e]{0,32}$/.test(v) ? null : 'An SNMP community is up to 32 characters, no spaces.',

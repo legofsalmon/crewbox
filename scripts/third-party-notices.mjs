@@ -18,6 +18,9 @@
 // in. It is committed, and a server test fails when it no longer matches the
 // lockfile.
 //
+// The Rust crates compiled into the ST 2110 checks' WebAssembly module come
+// from the list scripts/build-st2110.mjs writes beside it (st2110/NOTICES.txt).
+//
 // The rest are not npm packages and are described by hand at the end: the
 // Node.js runtime inside the box binary, the LiveKit server inside it, and in
 // the APK the AndroidX libraries, OkHttp (with Okio and the Kotlin standard
@@ -304,6 +307,21 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 `
 
+/**
+ * The Rust crates compiled into the ST 2110 checks, which reach the web app
+ * and the box binary as one WebAssembly module (st2110/README.md). npm knows
+ * the module only as a workspace, so their notices come from the list
+ * scripts/build-st2110.mjs writes beside it whenever it is rebuilt.
+ */
+function st2110Notices() {
+  return `${RULE}
+The ST 2110 checks (in the web app and the box binary, as WebAssembly)
+Licence: Elastic-2.0, as Crewbox; the Rust crates compiled into it follow
+${RULE}
+${readFileSync(join(ROOT, 'st2110', 'NOTICES.txt'), 'utf8').trim()}
+`
+}
+
 export function renderNotices(
   lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8'))
 ) {
@@ -315,8 +333,9 @@ their licences. Each entry gives the package, its version, its licence and
 the licence text and notices it ships with. Generated from package-lock.json
 by scripts/third-party-notices.mjs; do not edit by hand.
 
-${shipped.length} npm packages, then the Node.js runtime, the LiveKit server, AndroidX, OkHttp,
-ZXing, Tink and what CameraX brings with it.
+${shipped.length} npm packages, then the Rust crates in the ST 2110 checks, the Node.js
+runtime, the LiveKit server, AndroidX, OkHttp, ZXing, Tink and what CameraX
+brings with it.
 `
   const blocks = shipped.map(({ at, name, info }) => {
     const dir = join(ROOT, at)
@@ -332,7 +351,7 @@ ZXing, Tink and what CameraX brings with it.
       '',
     ].join('\n')
   })
-  return `${header}\n${blocks.join('\n')}\n${BY_HAND}`
+  return `${header}\n${blocks.join('\n')}\n${st2110Notices()}\n${BY_HAND}`
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

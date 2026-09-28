@@ -2,7 +2,7 @@
 title: Network audit
 section: Network
 order: 10
-blurb: Three graded networks, the history behind every finding, the admin deep probe, and the report for venue IT.
+blurb: Three graded networks, the history behind every finding, the admin deep probe, ST 2110 checks, and the report for venue IT.
 ---
 
 # Network audit
@@ -23,8 +23,10 @@ runs the [deep probe](#the-deep-probe).
   it sits).
 - **Lighting network** — what the DMX listener hears: frames arriving,
   loss, refresh rate, competing sources, sync health.
-- **Audio & media network** — PTP clocking, Dante/NDI rosters, stream
-  announcements, when the box is watching them.
+- **Audio & media network** — PTP clocking, Dante/NDI/NMOS rosters, stream
+  announcements, when the box is watching them. On an ST 2110 rig it also
+  checks each announced stream's SDP file, and the video clock against
+  SMPTE ST 2059-2.
 
 Each card wears a grade: **Good for A/V · Usable — fixes below · Not
 suitable right now · Not watched**. "Not watched" is an honest state, not a
@@ -59,14 +61,42 @@ network."
 
 Everything above is passive. The one exception is the **deep probe** — a
 single admin-triggered sweep that checks the internet uplink, venue DNS,
-sends **one** Art-Net poll and **one** mDNS query, and stops. Every packet
-it sends is listed in the results **verbatim**, so a strict venue can verify
-the claim against a capture. A box set to make no outbound connections
-(Admin → Box settings) skips the uplink check and sends nothing for it. Only an unlocked admin device shows the **Run
+sends **one** Art-Net poll and **one** mDNS query, reads the NMOS registry
+if there is one, and stops. Every packet it sends is listed in the results
+**verbatim**, so a strict venue can verify the claim against a capture; for
+the registry, that is how many requests went to which devices. A box set to
+make no outbound connections (Admin → Box settings) skips the uplink check
+and sends nothing for it. Only an unlocked admin device shows the **Run
 deep probe** button; the results are visible to everyone.
+
+The registry is the one the mDNS query finds, or the one named in Admin →
+Box settings → **NMOS registry** when it doesn't announce itself. The probe
+only reads it, as any NMOS controller does, and lists what it found wrong
+with what is registered, one line each, naming the device to fix it at.
 
 If your venue forbids any transmission on the show networks: simply don't
 run it. Nothing else in the module transmits.
+
+## Checking SDP files and captures
+
+Two tools at the bottom of the page check ST 2110 files on your own device,
+with the same checks the box runs. The file goes nowhere, the box
+included, and they work even while the box doesn't answer.
+
+- **Check an SDP file** — paste one, open one, or drop one on the panel.
+  It comes back line by line, with each problem under the line it's about:
+  a **fault** is something a receiver would refuse or misread, a
+  **warning** is worth a look, and each names the standard behind it.
+- **Check a capture** — choose a pcap or pcapng file from Wireshark or
+  tcpdump and, if you have them, the SDP files of the streams in it. Each
+  RTP flow is measured as SMPTE RP 2110-25 describes (packet timing,
+  latency, the ST 2110-21 sender models), the PTP messages are followed,
+  and every fault is listed with its flow and when it first happened. It
+  runs in the background, so the page stays usable while a big capture is
+  read. Up to 1 GB: cut a bigger one down with Wireshark's `editcap` first.
+
+The first check fetches the checks from the box, a few hundred kilobytes;
+after that they work offline.
 
 ## The HTML report
 

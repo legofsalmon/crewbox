@@ -1,0 +1,20 @@
+{
+  "name": "@crewbox/st2110",
+  "version": "1.2.0",
+  "private": true,
+  "description": "The ST 2110 checks (SDP files, PTP messages, NMOS registries, packet captures) from legofsalmon/st2110, compiled to WebAssembly",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./pkg/st2110_wasm.d.ts",
+      "default": "./pkg/st2110_wasm.js"
+    },
+    "./st2110_wasm_bg.wasm": "./pkg/st2110_wasm_bg.wasm",
+    "./package.json": "./package.json"
+  },
+  "st2110": {
+    "commit": "354c01befcb0b082ea376265e996c0b25e606911",
+    "wasmBindgen": "0.2.129"
+  }
+}

@@ -6,6 +6,7 @@
   "type": "module",
   "workspaces": [
     "shared",
+    "st2110",
     "server",
     "web",
     "native"

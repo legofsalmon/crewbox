@@ -63,6 +63,7 @@ const STYLE = `
   .events td { padding:3px 12px 3px 0; vertical-align:top; }
   .events .t { color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
   .sent { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted); }
+  .items { margin:4px 0; padding-left:18px; color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
   table { border-collapse:collapse; }
   h3 { font-size:15px; margin:24px 0 8px; }
 `
@@ -119,11 +120,14 @@ export function buildAuditHtml(
     .join('')
 
   const probeReport = probe?.report as
-    { probes?: Array<{ detail: string; fix?: string; sent: string }> } | undefined
+    { probes?: Array<{ detail: string; fix?: string; sent: string; items?: string[] }> } | undefined
   const probeRows = (probeReport?.probes ?? [])
     .map(
       (p) =>
         `<div class="finding"><div><div>${esc(p.detail)}</div>` +
+        (Array.isArray(p.items) && p.items.length > 0
+          ? `<ul class="items">${p.items.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>`
+          : '') +
         (p.fix ? `<div class="ffix">${esc(p.fix)}</div>` : '') +
         `<div class="sent">sent: ${esc(p.sent)}</div></div></div>`
     )

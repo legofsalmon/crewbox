@@ -32,6 +32,8 @@ export default tseslint.config(
       // Generated native platform projects (Phase 5 owns these).
       'native/android/',
       'native/ios/',
+      // The st2110 checks, as wasm-bindgen writes them (st2110/README.md).
+      'st2110/pkg/',
       'playwright-report/',
       'test-results/',
     ],
