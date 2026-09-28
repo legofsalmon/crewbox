@@ -34,6 +34,7 @@ import { DocsRelay, type RelayLimits, parseRoomName } from './docs.ts'
 import { allowsOrigin } from './cors.ts'
 import { boxProbes, certNames, createEnvironmentCache, type Probes } from './environment.ts'
 import { dnsConfigFile, dnsPlan, probesConfigFile } from './dnsconfig.ts'
+import { loadRouterDns, RouterDnsSync, type SshRunner } from './routerDns.ts'
 import { redirectConfigFile, redirectPlan } from './portredirect.ts'
 import { escapeHtml, PAGE_CSS } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
@@ -567,6 +568,12 @@ export interface AppDeps {
    */
   onSettingsChanged?: () => void
   /**
+   * How the box logs in to the router to keep its DNS entry right
+   * (routerDns.ts). Tests pass a fake; left out, it is real SSH — and only
+   * ever used once an admin has turned the setting on.
+   */
+  routerDnsRun?: SshRunner
+  /**
    * Told every admin link key as it is minted: at start, and each time one
    * is used (adminLink.ts). The running box writes it to the data directory
    * for the menu-bar item, the tray icon and `--admin`. A callback for the
@@ -665,6 +672,7 @@ export function buildApp({
   timeZone,
   onSettingsChanged = () => {},
   publishAdminLink,
+  routerDnsRun,
   announce,
   licence,
   reports,
@@ -2892,6 +2900,94 @@ export function buildApp({
       .header('content-type', 'text/plain; charset=utf-8')
       .header('content-disposition', 'attachment; filename="crewbox-dns.conf"')
       .send(hostname ? dnsConfigFile(dnsPlan(hostname, address)) : probesConfigFile(address))
+  })
+
+  /**
+   * Keeping that entry right on the router by itself (routerDns.ts). Off
+   * until an admin turns it on here; it then logs in over SSH at start and
+   * whenever the box's address moves. Inert while off: the check reads one
+   * settings row and stops.
+   */
+  const routerDns = new RouterDnsSync({
+    store,
+    target: () => {
+      const pem = readCertPem()
+      const hostname = pem ? certNames(pem)[0] : undefined
+      const address = lanAddress()
+      return hostname && address ? { hostname, address } : null
+    },
+    ...(routerDnsRun ? { run: routerDnsRun } : {}),
+    log: fastify.log,
+  })
+  routerDns.start()
+  fastify.addHook('onClose', () => routerDns.stop())
+
+  /** The settings as the panel sees them: never the password itself. */
+  const routerDnsView = () => {
+    const { password, ...settings } = loadRouterDns(store)
+    const address = lanAddress()
+    return {
+      ...settings,
+      hasPassword: password !== '',
+      // GL.iNet and most OpenWrt set-ups are the .1 of the box's network.
+      suggestedHost: address ? address.replace(/\.\d+$/, '.1') : '',
+      status: routerDns.status(),
+    }
+  }
+
+  fastify.get('/api/admin/router-dns', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    return routerDnsView()
+  })
+
+  const RouterDnsBody = z.object({
+    enabled: z.boolean(),
+    host: z
+      .string()
+      .trim()
+      .max(253)
+      .regex(/^[A-Za-z0-9.:-]*$/, 'The router address is an IP address or a name.'),
+    port: z.number().int().min(1).max(65535).default(22),
+    username: z.string().trim().min(1).max(64).default('root'),
+    /** Omit to keep the saved one. */
+    password: z.string().max(256).optional(),
+    /** Drop the pinned key, after the router was reset or replaced. */
+    forgetHostKey: z.boolean().optional(),
+  })
+
+  fastify.post('/api/admin/router-dns', async (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const parsed = RouterDnsBody.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    const saved = loadRouterDns(store)
+    const next = {
+      enabled: parsed.data.enabled,
+      host: parsed.data.host,
+      port: parsed.data.port,
+      username: parsed.data.username,
+      password: parsed.data.password ?? saved.password,
+      hostKey: parsed.data.forgetHostKey ? '' : saved.hostKey,
+    }
+    if (next.enabled && (!next.host || !next.password)) {
+      return reply
+        .code(400)
+        .send({ error: 'The router’s address and password are both needed to turn this on.' })
+    }
+    routerDns.save(next)
+    // Straight away, so the panel shows whether it worked rather than "waiting".
+    if (next.enabled) await routerDns.sync()
+    return routerDnsView()
+  })
+
+  fastify.post('/api/admin/router-dns/sync', async (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    if (!loadRouterDns(store).enabled) {
+      return reply.code(409).send({ error: 'Turn on “Keep the router pointed at this box” first.' })
+    }
+    await routerDns.sync()
+    return routerDnsView()
   })
 
   /**
