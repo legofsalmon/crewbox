@@ -225,6 +225,56 @@ export function mediaReadiness(
     })
   }
 
+  // NMOS (AMWA IS-04): the registry ST 2110 kit registers with, and the
+  // nodes announcing themselves. Where the registry is matters most, since
+  // it is what the deep probe reads (audit/nmos.ts).
+  const nmos = devices.filter((d) => d.nmos && !d.saidGoodbye)
+  if (nmos.length > 0) {
+    const where = (d: MediaService) =>
+      `${d.address || d.name}${d.nmos?.port ? `:${d.nmos.port}` : ''}`
+    const api = (name: string) => nmos.filter((d) => d.nmos?.api === name)
+    const registries = api('query').sort(
+      (a, b) => (a.nmos?.priority ?? 1000) - (b.nmos?.priority ?? 1000)
+    )
+    const registrations = api('registration')
+    const nodes = api('node')
+    const parts: string[] = []
+    if (registries.length > 0) {
+      parts.push(
+        `${plural(registries.length, 'registry', 'registries')}: ` +
+          registries
+            .slice(0, 3)
+            .map((d) => {
+              const version = d.nmos?.versions.at(-1)
+              const priority = d.nmos?.priority
+              const facts = [version, priority !== null ? `priority ${priority}` : ''].filter(
+                Boolean
+              )
+              return `Query API at ${where(d)}${facts.length > 0 ? ` (${facts.join(', ')})` : ''}`
+            })
+            .join(', ')
+      )
+    } else if (registrations.length > 0) {
+      parts.push(
+        `a registry's Registration API at ${where(registrations[0]!)}; the deep probe asks for its Query API`
+      )
+    }
+    if (nodes.length > 0) parts.push(`${plural(nodes.length, 'node')} announcing their Node API`)
+    if (parts.length > 0) {
+      const detail = parts.join('; ')
+      checks.push({
+        id: 'media-nmos',
+        label: 'NMOS',
+        state: 'ok',
+        detail:
+          `${detail[0]!.toUpperCase()}${detail.slice(1)}.` +
+          (registries.length > 0 || registrations.length > 0
+            ? ' The deep probe reads the registry and checks what is registered there.'
+            : ''),
+      })
+    }
+  }
+
   // --- The stream directory -------------------------------------------------
   // ST 2110 streams get a line of their own: their SDP files are checked,
   // and calling a camera an AES67 stream would be wrong twice over. Anything

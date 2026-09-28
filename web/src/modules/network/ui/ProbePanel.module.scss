@@ -70,6 +70,17 @@
   font-size: 13.5px;
 }
 
+.items {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
 .fix {
   color: var(--accent-strong);
   font-size: 13px;

@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import type { networkInterfaces } from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { openDb } from '../src/db.ts'
 import { MetricsStore } from '../src/audit/metrics.ts'
 import {
@@ -13,6 +14,9 @@ import {
   type ProberDeps,
 } from '../src/audit/probes.ts'
 import type { Probes } from '../src/environment.ts'
+import type { HttpGet } from '../src/audit/nmos.ts'
+import type { MediaService } from '../src/netwatch/mdns.ts'
+import { loadSt2110, type St2110 } from '../src/st2110.ts'
 
 /**
  * The deep probe is the audit's one transmission, so it is tested byte for
@@ -32,22 +36,23 @@ describe('packet builders', () => {
     expect(p[13]).toBe(0) // DiagPriority
   })
 
-  it('the mDNS query asks two PTR questions, QM', () => {
+  it('the mDNS query asks three PTR questions, QM', () => {
     const q = buildMdnsQuery()
     expect(q.readUInt16BE(0)).toBe(0) // ID 0 (mDNS)
     expect(q.readUInt16BE(2)).toBe(0) // standard query
-    expect(q.readUInt16BE(4)).toBe(2) // QDCOUNT
+    expect(q.readUInt16BE(4)).toBe(3) // QDCOUNT
     expect(q.readUInt16BE(6)).toBe(0) // ANCOUNT
     const text = q.toString('latin1')
     expect(text).toContain('_netaudio-arc')
     expect(text).toContain('_ndi')
-    // QU bit clear on both questions: responses go to the multicast group,
+    expect(text).toContain('_nmos-query')
+    // QU bit clear on every question: responses go to the multicast group,
     // where the passive listener (and everyone else, as normal) hears them.
     const qclassOffsets: number[] = []
     for (let i = 12; i < q.length - 1; i++) {
       if (q.readUInt16BE(i) === 12 && q.readUInt16BE(i + 2) === 1) qclassOffsets.push(i + 2)
     }
-    expect(qclassOffsets).toHaveLength(2)
+    expect(qclassOffsets).toHaveLength(3)
   })
 })
 
@@ -120,8 +125,17 @@ const fakeInterfaces = (() => ({
   eth1: [{ family: 'IPv4', address: '2.0.0.5', netmask: '255.0.0.0' }],
 })) as unknown as typeof networkInterfaces
 
-function harness(deps: Partial<ProberDeps> = {}, env: Partial<Probes> = {}, failSend = false) {
+/** Every HTTP request a probe made; none unless a test answers them. */
+let requested: string[] = []
+
+function harness(
+  deps: Partial<ProberDeps> = {},
+  env: Partial<Probes> = {},
+  failSend = false,
+  httpGet?: HttpGet
+) {
   FakeSocket.instances = []
+  requested = []
   const metrics = new MetricsStore(openDb(':memory:'))
   const io: AuditProbeIo = {
     createSocket: () =>
@@ -130,6 +144,11 @@ function harness(deps: Partial<ProberDeps> = {}, env: Partial<Probes> = {}, fail
     now: () => 1_700_000_000_000,
     wait: async () => {},
     interfaces: fakeInterfaces,
+    httpGet: async (url, options) => {
+      requested.push(url)
+      if (!httpGet) throw new Error(`no HTTP in this test: ${url}`)
+      return httpGet(url, options)
+    },
   }
   const prober = new Prober(
     io,
@@ -153,6 +172,8 @@ describe('Prober', () => {
     const { prober } = harness()
     const run = await prober.run('Colm')
     expect(FakeSocket.instances).toHaveLength(0)
+    expect(requested).toEqual([])
+    expect(result(run, 'nmos-registry').state).toBe('skipped')
     expect(result(run, 'artnet-inventory').state).toBe('skipped')
     expect(result(run, 'artnet-inventory').sent).toBe('nothing')
     expect(result(run, 'mdns-roster').state).toBe('skipped')
@@ -254,7 +275,7 @@ describe('Prober', () => {
     const stored = metrics.latestProbeRun()
     expect(stored?.finishedAt).not.toBeNull()
     expect(stored?.by).toBe('Colm')
-    expect((stored?.report as { probes: unknown[] }).probes).toHaveLength(4)
+    expect((stored?.report as { probes: unknown[] }).probes).toHaveLength(5)
   })
 
   it('grades uplink states from the environment probes', async () => {
@@ -308,5 +329,107 @@ describe('Prober', () => {
     const r = result(await wrong.prober.run('a'), 'crew-dns')
     expect(r.state).toBe('limited')
     expect(r.detail).toContain('not this box')
+  })
+})
+
+describe('reading the NMOS registry', () => {
+  const FACILITY = JSON.parse(
+    readFileSync(new URL('./fixtures/nmos-facility.json', import.meta.url), 'utf8')
+  ) as Record<string, unknown>
+  const manifests = FACILITY.manifests as Record<string, { url: string; sdp: string }>
+
+  let checks: St2110
+  beforeAll(async () => {
+    checks = (await loadSt2110())!
+  })
+
+  /** The facility's registry, answering on 10.20.0.5:8080, with its SDP files. */
+  const facility =
+    (sdp: (text: string) => string = (text) => text): HttpGet =>
+    async (url) => {
+      const base = 'http://10.20.0.5:8080/x-nmos/query/v1.3/'
+      for (const kind of ['nodes', 'devices', 'sources', 'flows', 'senders', 'receivers']) {
+        if (url.startsWith(`${base}${kind}/`)) {
+          return { status: 200, headers: {}, body: JSON.stringify(FACILITY[kind]) }
+        }
+      }
+      const manifest = Object.values(manifests).find((m) => m.url === url)
+      if (manifest) return { status: 200, headers: {}, body: sdp(manifest.sdp) }
+      return { status: 404, headers: {}, body: '' }
+    }
+
+  const announced: MediaService = {
+    name: 'registry',
+    kind: 'nmos',
+    address: '10.20.0.5',
+    firstSeen: 0,
+    lastSeen: 0,
+    saidGoodbye: false,
+    nmos: { api: 'query', port: 8080, proto: 'http', versions: ['v1.3'], priority: 0 },
+  }
+
+  const media = (over: Partial<ProberDeps> = {}): Partial<ProberDeps> => ({
+    watching: () => true,
+    watchIface: () => '10.20.0.2',
+    mdnsRoster: () => [announced],
+    checks: () => checks,
+    ...over,
+  })
+
+  it('reads the registry that answered the mDNS query, checks it, and counts what it sent', async () => {
+    const { prober } = harness(media(), {}, false, facility())
+    const r = result(await prober.run('Colm'), 'nmos-registry')
+    expect(r.state).toBe('ok')
+    expect(r.detail).toBe(
+      'The registry on 10.20.0.5:8080 (IS-04 v1.3, which announced itself): 2 nodes, ' +
+        '2 senders (2 active), 2 receivers (2 taking a stream). Every registered clock ' +
+        'follows grandmaster 08-00-11-ff-fe-21-e1-b0. Nothing wrong with what is registered.'
+    )
+    expect(r.sent).toBe(
+      "6 HTTP GET requests to the NMOS Query API on 10.20.0.5:8080, and 2 for senders' " +
+        'SDP files, to 1 device, from 10.20.0.2'
+    )
+    expect(r.items).toBeUndefined()
+    expect(requested).toHaveLength(8)
+  })
+
+  it('lists what is wrong, faults first', async () => {
+    const noClock = facility((text) => text.replace(/a=ts-refclk.*\n/g, ''))
+    const { prober } = harness(media(), {}, false, noClock)
+    const r = result(await prober.run('Colm'), 'nmos-registry')
+    expect(r.state).toBe('limited')
+    expect(r.detail).toMatch(/\d+ faults? a receiver or controller can trip on/)
+    expect(r.items?.[0]).toMatch(/^Fault: CAM 1 (video|audio) \(sender\): /)
+    expect(r.items?.some((line) => line.includes('ts-refclk'))).toBe(true)
+    expect(r.fix).toContain('at the device that registered it')
+  })
+
+  it('says a registry could not be read, and where to look', async () => {
+    const { prober } = harness(
+      media({ mdnsRoster: () => [], nmosRegistry: () => 'http://10.20.0.99:8080' }),
+      {},
+      false,
+      async () => {
+        throw new Error('connect ECONNREFUSED 10.20.0.99:8080')
+      }
+    )
+    const r = result(await prober.run('Colm'), 'nmos-registry')
+    expect(r.state).toBe('limited')
+    expect(r.detail).toContain('named in Box settings could not be read')
+    expect(r.detail).toContain('ECONNREFUSED')
+    expect(r.sent).toBe('HTTP GET requests to 10.20.0.99:8080')
+    expect(r.fix).toContain('Box settings → NMOS registry')
+  })
+
+  it('reads nothing when no registry answered, or when the checks did not load', async () => {
+    const none = harness(media({ mdnsRoster: () => [] }), {}, false, facility())
+    const quiet = result(await none.prober.run('Colm'), 'nmos-registry')
+    expect(quiet).toMatchObject({ state: 'info', sent: 'nothing' })
+    expect(requested).toEqual([])
+
+    const unloaded = harness(media({ checks: () => null }), {}, false, facility())
+    const r = result(await unloaded.prober.run('Colm'), 'nmos-registry')
+    expect(r).toMatchObject({ state: 'limited', sent: 'nothing' })
+    expect(requested).toEqual([])
   })
 })

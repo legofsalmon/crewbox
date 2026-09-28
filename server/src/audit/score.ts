@@ -467,7 +467,20 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
     })
   }
 
+  // The NMOS registry, from the last deep probe that read one.
+  const registry = probeResults(input.probe).find((p) => p.id === 'nmos-registry')
+  if (registry && registry.state !== 'skipped') {
+    findings.push({
+      id: 'media-nmos',
+      label: 'NMOS registry',
+      state: registry.state,
+      detail: registry.detail,
+      ...(registry.fix ? { fix: registry.fix } : {}),
+    })
+  }
+
   const devices = input.mdns ?? []
+  const nmosNodes = devices.filter((d) => d.nmos?.api === 'node').length
   findings.push({
     id: 'media-roster',
     label: 'Media roster',
@@ -475,6 +488,7 @@ function scoreMedia(input: ScoreInput): AuditNetwork {
     detail:
       `${plural(devices.filter((d) => d.kind === 'dante').length, 'Dante device')}, ` +
       `${plural(devices.filter((d) => d.kind === 'ndi').length, 'NDI source')}, ` +
+      (nmosNodes > 0 ? `${plural(nmosNodes, 'NMOS node')}, ` : '') +
       `${plural(streams.length - st2110.length, 'AES67 stream')}` +
       // Said only when there are some: an audio rig has no use for a zero.
       (st2110.length > 0 ? `, ${plural(st2110.length, 'ST 2110 stream')}.` : '.'),

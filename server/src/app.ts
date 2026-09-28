@@ -104,6 +104,7 @@ import { LicenceProblem, type LicenceService } from './licence/service.ts'
 import type { ReportService } from './reports/service.ts'
 import { FEEDBACK_TYPES, OSES } from './reports/payload.ts'
 import type { Store } from './store.ts'
+import { st2110 } from './st2110.ts'
 import {
   BOX_SETTINGS,
   BOX_SETTING_NAMES,
@@ -890,6 +891,10 @@ export function buildApp({
         certHostname: () => (tls ? certNames(tls.cert.toString())[0] : undefined),
         watching: () => Boolean(netwatch),
         outbound: () => outbound,
+        ...(netwatch ? { mdnsRoster: () => netwatch.mdns.roster() } : {}),
+        // Read at startup, like every box setting: a change applies on restart.
+        nmosRegistry: () => boxSettings?.boot.CREWBOX_NMOS_REGISTRY ?? '',
+        checks: () => st2110(),
       },
       metrics
     )

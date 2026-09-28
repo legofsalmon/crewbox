@@ -377,6 +377,50 @@ describe('media', () => {
     })
   })
 
+  describe('the NMOS registry', () => {
+    const probed = (nmos: Record<string, unknown>) => ({
+      id: 'p1',
+      startedAt: NOW - 60_000,
+      finishedAt: NOW - 50_000,
+      by: 'Colm',
+      report: { probes: [{ id: 'nmos-registry', network: 'media', sent: 'x', ...nmos }] },
+    })
+
+    it("carries the deep probe's verdict on it, when the probe read one", () => {
+      const report = scoreAudit(
+        watched({
+          probe: probed({
+            state: 'limited',
+            detail: 'The registry on 10.20.0.5:8080 (IS-04 v1.3): 1 fault',
+            fix: 'Each line names the resource.',
+          }),
+        })
+      )
+      const f = finding(report, 'media', 'media-nmos')
+      expect(f).toMatchObject({ state: 'limited', fix: 'Each line names the resource.' })
+      expect(f?.detail).toContain('10.20.0.5:8080')
+
+      const skipped = scoreAudit(watched({ probe: probed({ state: 'skipped', detail: 'no' }) }))
+      expect(finding(skipped, 'media', 'media-nmos')).toBeUndefined()
+    })
+
+    it('counts NMOS nodes on the roster, only when there are some', () => {
+      const node = {
+        name: 'cam 1',
+        kind: 'nmos' as const,
+        address: '10.20.0.21',
+        firstSeen: NOW,
+        lastSeen: NOW,
+        saidGoodbye: false,
+        nmos: { api: 'node' as const, port: 80, proto: 'http', versions: [], priority: null },
+      }
+      const report = scoreAudit(watched({ mdns: [node] }))
+      expect(finding(report, 'media', 'media-roster')?.detail).toBe(
+        '0 Dante devices, 0 NDI sources, 1 NMOS node, 0 AES67 streams.'
+      )
+    })
+  })
+
   describe('announced ST 2110 streams', () => {
     const stream = (name: string, st2110: boolean, error?: string): SapStream => ({
       name,
