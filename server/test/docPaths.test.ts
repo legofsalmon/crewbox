@@ -38,6 +38,9 @@ const ELSEWHERE = new Map([
   // docs/VIDEO_MONITORING.md credits a separate project's source.
   ['docs/read-only-monitoring.md', 'the novasun project, not this repo'],
   ['src/novasun/snmp.py', 'the novasun project, not this repo'],
+  // CLAUDE.md's Design section points into the shared design-system repo.
+  ['docs/designing.md', 'the design-system repo, not this repo'],
+  ['docs/learnings.md', 'the design-system repo, not this repo'],
 ])
 
 const PATH_IN_BACKTICKS =
