@@ -27,10 +27,10 @@
   background: var(--ok);
 }
 .warn {
-  background: var(--accent);
+  background: var(--warn);
 }
 .fault {
-  background: var(--danger);
+  background: var(--danger-fill);
 }
 .unknown,
 .idle {

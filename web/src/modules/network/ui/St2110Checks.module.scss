@@ -133,7 +133,7 @@
 }
 
 .limited {
-  color: var(--accent-strong);
+  color: var(--warn-ink);
 }
 
 .off {
@@ -169,10 +169,10 @@
 }
 
 .warning {
-  border-left-color: var(--accent);
+  border-left-color: var(--warn);
 
   .severity {
-    color: var(--accent);
+    color: var(--warn-ink);
   }
 }
 

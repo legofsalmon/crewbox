@@ -7,7 +7,7 @@ import { channelLabel, useStore } from '../store.ts'
 function talkingHalo(micLevel: number | null): string {
   const level = Math.min(1, (micLevel ?? 0) * 1.6)
   const ring = (8 + level * 22).toFixed(1)
-  return `0 0 0 ${ring}px rgba(245, 183, 62, 0.25), 0 8px 24px rgba(0, 0, 0, 0.4)`
+  return `0 0 0 ${ring}px color-mix(in srgb, var(--accent) 25%, transparent), 0 8px 24px rgba(0, 0, 0, 0.4)`
 }
 
 /** Sticky intercom strip + the big push-to-talk button. */
