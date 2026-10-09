@@ -206,7 +206,7 @@
 
 .status-rigged {
   color: var(--text);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
 }
 
 // Mixing the semantic colour toward --text keeps the hue but takes the
@@ -331,7 +331,7 @@
 // Amber, not red: nothing is being sent to these addresses, which is a fact
 // about the desk and the listening window, not a fault in the fixture.
 .live-silent {
-  background: var(--accent);
+  background: var(--warn);
 }
 
 .live-no-data {

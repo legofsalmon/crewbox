@@ -44,7 +44,7 @@
   margin: 10px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--warn);
   border-radius: 8px;
   background: var(--bg-raised);
   color: var(--text-muted);
@@ -246,7 +246,7 @@
 /* The two that mean something at a glance. A note is the ordinary case and
    gets no colour at all — if everything is highlighted, nothing is. */
 .issue {
-  border-left-color: var(--accent);
+  border-left-color: var(--warn);
 }
 
 .serious {
@@ -281,7 +281,7 @@
 }
 
 .sev-issue {
-  color: var(--accent);
+  color: var(--warn-ink);
 }
 
 .sev-serious {

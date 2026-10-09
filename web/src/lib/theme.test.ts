@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { color, cssVar } from '../ds/tokens.js'
 
 /**
  * Contrast guards for the palette itself.
  *
  * e2e/theme.spec.ts already measures what the browser actually paints, which
  * is the real check — but it needs a built app and a browser, so it is not
- * what anyone runs while nudging a colour. This reads the tokens straight out
+ * what anyone runs while nudging a colour. This reads the palette straight out
  * of the stylesheet and does the arithmetic, so changing a hex to something
  * unreadable fails in a second rather than in CI.
  *
@@ -17,14 +18,27 @@ import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(new URL('../app.css', import.meta.url), 'utf8')
 
-/** Pull the custom properties out of one `:root…{ }` block. */
-function tokens(selector: string): Record<string, string> {
-  const start = css.indexOf(selector)
-  if (start === -1) throw new Error(`no ${selector} block in app.css`)
+/**
+ * Crewbox's own colour names, resolved through the design system.
+ *
+ * app.css points each name at a role (`--bg: var(--ds-surface-ground)`), and
+ * the vendored tokens.js carries every role's hex per theme. So this reads the
+ * mapping crewbox owns and the values the design system owns, and checks the
+ * pairs crewbox actually paints.
+ */
+function tokens(theme: 'dark' | 'light'): Record<string, string> {
+  const start = css.indexOf(':root,\n[data-theme] {')
+  if (start === -1) throw new Error('no :root, [data-theme] block in app.css')
   const block = css.slice(start, css.indexOf('}', start))
+  const byVar = Object.fromEntries(Object.entries(cssVar).map(([path, v]) => [v, path]))
   const found: Record<string, string> = {}
-  for (const [, name, value] of block.matchAll(/(--[\w-]+):\s*([^;]+);/g)) {
-    found[name] = value.trim()
+  for (const [, name, role] of block.matchAll(/(--[\w-]+):\s*var\((--ds-[\w-]+)\);/g)) {
+    const path = byVar[role]
+    if (!path?.startsWith('color.')) throw new Error(`${name} points at ${role}, not a colour role`)
+    let value: unknown = color[theme]
+    for (const key of path.split('.').slice(1)) value = (value as Record<string, unknown>)[key]
+    if (typeof value === 'object' && value) value = (value as Record<string, unknown>).default
+    found[name] = value as string
   }
   return found
 }
@@ -48,8 +62,8 @@ const contrast = (a: string, b: string): number => {
 }
 
 const themes = {
-  dark: tokens(':root {'),
-  light: tokens(":root[data-theme='light']"),
+  dark: tokens('dark'),
+  light: tokens('light'),
 }
 
 describe.each(Object.entries(themes))('%s theme', (_name, t) => {
@@ -77,9 +91,21 @@ describe.each(Object.entries(themes))('%s theme', (_name, t) => {
     expect(contrast(t['--accent-contrast'], t['--accent-strong'])).toBeGreaterThan(4.5)
   })
 
-  it('danger and ok read against the base surface', () => {
+  it('danger, warning and ok read against the base surface', () => {
     expect(contrast(t['--danger'], t['--bg'])).toBeGreaterThan(4.5)
+    expect(contrast(t['--warn-ink'], t['--bg'])).toBeGreaterThan(4.5)
     expect(contrast(t['--ok'], t['--bg'])).toBeGreaterThan(4.5)
+  })
+
+  it('danger and warning read on a button', () => {
+    // A destructive button's label sits on --bg-hover, not --bg.
+    expect(contrast(t['--danger'], t['--bg-hover'])).toBeGreaterThan(4.5)
+    expect(contrast(t['--warn-ink'], t['--bg-hover'])).toBeGreaterThan(4.5)
+  })
+
+  it('labels on a red or amber fill are readable', () => {
+    expect(contrast(t['--danger-on'], t['--danger-fill'])).toBeGreaterThan(4.5)
+    expect(contrast(t['--warn-on'], t['--warn'])).toBeGreaterThan(4.5)
   })
 
   it('gives every surface its own step', () => {
@@ -102,13 +128,12 @@ describe.each(Object.entries(themes))('%s theme', (_name, t) => {
   })
 })
 
-describe('the dark theme is navy', () => {
-  const t = themes.dark
-  it.each(['--bg', '--bg-raised', '--bg-hover', '--bg-active'])('%s is cool, not brown', (name) => {
-    // The complaint this palette answers was that dark mode read brown.
-    // Blue must lead red on every surface, or the cast is back.
+describe.each(Object.entries(themes))('%s surfaces', (_name, t) => {
+  it.each(['--bg', '--bg-raised', '--bg-hover', '--bg-active'])('%s is neutral', (name) => {
+    // The design system's chrome is never tinted: a tinted chrome shifts what
+    // the eye reads as white. (Crewbox's dark theme was navy until 2026-10.)
     const n = parseInt(t[name].slice(1), 16)
-    const [r, , b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-    expect(b).toBeGreaterThan(r)
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(8)
   })
 })

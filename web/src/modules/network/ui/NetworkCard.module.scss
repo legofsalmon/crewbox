@@ -35,8 +35,8 @@
 }
 
 .gradeLimited {
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent) 16%, var(--bg-raised));
+  color: var(--warn-ink);
+  background: color-mix(in srgb, var(--warn) 16%, var(--bg-raised));
 }
 
 .gradeOff {

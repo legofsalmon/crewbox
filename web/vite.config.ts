@@ -67,8 +67,8 @@ export default defineConfig({
         name: 'Crewbox — crew comms',
         short_name: 'Crewbox',
         description: 'Offline-first crew chat for festivals',
-        theme_color: '#0d1117',
-        background_color: '#0d1117',
+        theme_color: '#141415',
+        background_color: '#141415',
         display: 'standalone',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
