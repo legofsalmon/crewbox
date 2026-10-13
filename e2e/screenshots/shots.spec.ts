@@ -274,13 +274,14 @@ test('shots: the show log', async () => {
 })
 
 test('shots: admin', async () => {
-  await maya.getByRole('button', { name: 'Admin panel' }).click()
+  await maya.getByRole('button', { name: 'Settings', exact: true }).click()
+  await maya.getByRole('tab', { name: /^Admin/ }).click()
   await expect(maya.getByPlaceholder("the box's admin password")).toBeVisible()
   await shoot(maya, 'admin-unlock')
 
   await maya.getByPlaceholder("the box's admin password").fill('shots-admin-password')
   await maya.keyboard.press('Enter')
-  await expect(maya.getByRole('heading', { name: 'Admin' })).toBeVisible()
+  await expect(maya.getByRole('heading', { name: 'Crew' })).toBeVisible()
   await shoot(maya, 'admin-crew')
 
   // One scrolling panel, not tabs: bring the box section to the TOP of it.
@@ -302,7 +303,7 @@ test('shots: admin', async () => {
 
   // Leave the page usable for the tests after this one. The unlock itself
   // survives in memory, which is what lets the extras test run the probe.
-  await maya.getByRole('button', { name: 'Close admin panel' }).click()
+  await maya.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('shots: LED walls', async () => {

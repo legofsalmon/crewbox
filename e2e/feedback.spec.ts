@@ -3,7 +3,7 @@ import { textContrast } from './contrast.ts'
 import { newDevice, test } from './helpers.ts'
 
 /**
- * "Send feedback…" and the crash-report setting, from a browser.
+ * Settings → Feedback and the crash-report setting, from a browser.
  *
  * What goes is only what is on the form. The two ticks start empty, the
  * licence one is offered only to an unlocked admin on a licensed box, and the
@@ -14,7 +14,8 @@ import { newDevice, test } from './helpers.ts'
  */
 
 const unlock = async (page: Page) => {
-  await page.getByRole('button', { name: 'Admin panel' }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('tab', { name: /^Admin/ }).click()
   await page.getByLabel('Admin password').fill('e2e-admin-password')
   await page.getByRole('button', { name: 'Unlock' }).click()
   await expect(page.getByRole('heading', { name: 'Crew' })).toBeVisible()
@@ -22,8 +23,9 @@ const unlock = async (page: Page) => {
 
 test('a crew member sends feedback, with nothing extra ticked', async ({ browser }) => {
   const crew = await newDevice(browser, 'Feedback Crew')
-  await crew.getByRole('button', { name: 'Send feedback…' }).click()
-  const dialog = crew.getByRole('dialog', { name: 'Send feedback' })
+  await crew.getByRole('button', { name: 'Settings', exact: true }).click()
+  await crew.getByRole('tab', { name: 'Feedback' }).click()
+  const dialog = crew.getByRole('tabpanel', { name: 'Feedback' })
   await expect(dialog).toBeVisible()
 
   // Not an admin: no licence tick at all. The public tick starts empty.
@@ -36,16 +38,16 @@ test('a crew member sends feedback, with nothing extra ticked', async ({ browser
   await dialog.getByLabel('Message').fill('The patch sheet scrolls sideways on a small phone')
   await send.click()
   await expect(dialog).toContainText('the crew box has it')
-  await dialog.getByRole('button', { name: 'Done' }).click()
-  await expect(dialog).toHaveCount(0)
+  // A tab, not a dialog: it stays, ready for another.
+  await dialog.getByRole('button', { name: 'Send more' }).click()
+  await expect(dialog.getByLabel('Message')).toHaveValue('')
 })
 
 test('an admin on a licensed box is offered the licence tick', async ({ browser }) => {
   const admin = await newDevice(browser, 'Feedback Admin')
   await unlock(admin)
-  await admin.getByRole('button', { name: 'Close admin panel' }).click()
-  await admin.getByRole('button', { name: 'Send feedback…' }).click()
-  const dialog = admin.getByRole('dialog', { name: 'Send feedback' })
+  await admin.getByRole('tab', { name: 'Feedback' }).click()
+  const dialog = admin.getByRole('tabpanel', { name: 'Feedback' })
   const tick = dialog.getByLabel('Include my licence so you know who I am')
   await expect(tick).toBeVisible()
   await expect(tick).not.toBeChecked()
@@ -83,11 +85,11 @@ for (const scheme of ['light', 'dark'] as const) {
     await crew.getByRole('button', { name: 'Join' }).click()
     await expect(crew.getByPlaceholder(/Message/)).toBeVisible()
 
-    // The link sits in the drawer footer, small; it still has to clear AA.
-    expect(await textContrast(crew, '.feedback-link')).toBeGreaterThan(4.5)
-    await crew.getByRole('button', { name: 'Send feedback…' }).click()
-    await expect(crew.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
-    expect(await textContrast(crew, '.feedback-panel h3')).toBeGreaterThan(4.5)
+    await crew.getByRole('button', { name: 'Settings', exact: true }).click()
+    // The tabs that are not chosen are the quieter ink; they still clear AA.
+    expect(await textContrast(crew, '.settings-tab[aria-selected="false"]')).toBeGreaterThan(4.5)
+    await crew.getByRole('tab', { name: 'Feedback' }).click()
+    await expect(crew.getByRole('tabpanel', { name: 'Feedback' })).toBeVisible()
     expect(await textContrast(crew, '.feedback-panel p')).toBeGreaterThan(4.5)
     expect(await textContrast(crew, '.feedback-tick')).toBeGreaterThan(4.5)
     expect(await textContrast(crew, '.feedback-type')).toBeGreaterThan(4.5)

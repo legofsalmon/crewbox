@@ -5,7 +5,7 @@ import { nativeAlerts } from '../lib/server.ts'
 import { LEVEL_TEXT, DM_LEVELS, CHANNEL_LEVELS, dmText } from '../lib/alertLevels.ts'
 
 /**
- * "Alerts…": everything that decides what buzzes this person's pocket, on
+ * Settings → Alerts: everything that decides what buzzes this person's pocket, on
  * one screen (docs/ALERTS.md). Each channel's level, and the stages whose
  * changeover calls they follow.
  *
@@ -14,7 +14,7 @@ import { LEVEL_TEXT, DM_LEVELS, CHANNEL_LEVELS, dmText } from '../lib/alertLevel
  * Show stops, holds and the production desk aren't listed: those reach
  * everybody, which is the point of them.
  */
-export default function AlertSettingsDialog({ onClose }: { onClose: () => void }) {
+export default function AlertSettings() {
   const me = useStore((s) => s.me)
   const users = useStore((s) => s.users)
   const channels = useStore((s) => s.channels)
@@ -38,15 +38,8 @@ export default function AlertSettingsDialog({ onClose }: { onClose: () => void }
   const stages = [...new Set([...stageNames, ...settings.stages])]
 
   return (
-    <div
-      className="search-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-      onKeyDown={(e) => e.key === 'Escape' && onClose()}
-    >
-      <div className="confirm-panel alert-settings-panel" role="dialog" aria-label="Alerts">
-        <h3>Alerts</h3>
+    <div className="admin-scroll">
+      <div className="settings-pane alert-settings-panel">
         <p>
           What buzzes your phone. Show stops, holds and the production desk always reach everyone.
         </p>
@@ -118,11 +111,6 @@ export default function AlertSettingsDialog({ onClose }: { onClose: () => void }
           A followed stage calls when each changeover starts, 5 minutes before the next act, and
           when a set moves in the next two hours.
         </p>
-        <div className="confirm-actions">
-          <button className="confirm-send" onClick={onClose}>
-            Done
-          </button>
-        </div>
       </div>
     </div>
   )

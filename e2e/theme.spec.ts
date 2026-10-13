@@ -171,7 +171,9 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.getByPlaceholder('channel-name').press('Enter')
     await expect(page.getByRole('button', { name: new RegExp(`#${channel}`) })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Admin panel' }).click()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+
+    await page.getByRole('tab', { name: /^Admin/ }).click()
     await page.getByLabel('Admin password').fill('e2e-admin-password')
     // The way in, which the rule for every panel button used to paint over.
     expect(await textContrast(page, '.admin-btn.admin-btn-primary')).toBeGreaterThan(4.5)
@@ -245,6 +247,48 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(await textContrast(page, 'button:has-text("Done")')).toBeGreaterThan(4.5)
     expect(await textContrast(page, 'button:has-text("Add act")')).toBeGreaterThan(4.5)
 
+    await context.close()
+  })
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`Settings switches the theme and stays readable in ${scheme} theme`, async ({ browser }) => {
+    // The theme and the alert sounds moved from icons beside sign-out into
+    // Settings → General: a segmented control and a switch, both in view.
+    const context = await browser.newContext({ colorScheme: scheme })
+    const page = await context.newPage()
+    page.on('pageerror', (e) => {
+      throw new Error(`Page error: ${e.message}`)
+    })
+    await page.goto('/?pin=4242')
+    await page.getByLabel('Your name').fill(`Theme pick ${scheme}`)
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join' }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const mine = scheme === 'light' ? 'Light' : 'Dark'
+    const other = scheme === 'light' ? 'Dark' : 'Light'
+    await expect(page.getByRole('button', { name: mine, exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(await textContrast(page, '.settings-tab[aria-selected="true"]')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, '.settings-tab[aria-selected="false"]')).toBeGreaterThan(4.5)
+    expect(await textContrast(page, '.settings-seg button[aria-pressed="true"]')).toBeGreaterThan(
+      4.5
+    )
+    expect(await textContrast(page, '.settings-seg button[aria-pressed="false"]')).toBeGreaterThan(
+      4.5
+    )
+
+    await page.getByRole('button', { name: other, exact: true }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', other.toLowerCase())
+
+    const sounds = page.getByRole('switch', { name: 'Alert sounds' })
+    await expect(sounds).toBeChecked()
+    await sounds.click()
+    await expect(sounds).not.toBeChecked()
     await context.close()
   })
 }

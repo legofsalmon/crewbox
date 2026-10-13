@@ -6,8 +6,7 @@ import Join from './components/Join.tsx'
 import Sidebar from './components/Sidebar.tsx'
 import ChannelView from './components/ChannelView.tsx'
 import SearchOverlay from './components/SearchOverlay.tsx'
-import AdminPanel from './components/AdminPanel.tsx'
-import AdminUnlock from './components/AdminUnlock.tsx'
+import Settings from './components/Settings.tsx'
 import OnAirBar from './components/OnAirBar.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
@@ -27,8 +26,6 @@ import { clearJoinLink, currentJoinLink, subscribeJoinLink } from './lib/appLink
 import { takeAdminLinkOutcome } from './lib/adminLink.ts'
 import DrawerButton from './shell/DrawerButton.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
-import FeedbackDialog from './components/FeedbackDialog.tsx'
-import AlertSettingsDialog from './components/AlertSettingsDialog.tsx'
 import LockScreenCountdown from './components/LockScreenCountdown.tsx'
 import { APP_VERSION } from './lib/pwa.ts'
 import { screensStarted } from './lib/appScreens.ts'
@@ -70,7 +67,7 @@ export default function App() {
   }, [phase])
 
   /*
-   * `?admin` opens the panel.
+   * `?admin` opens Settings on its Admin tab.
    *
    * The callers are the tray and menu-bar helper's "Update available" and
    * "Open the admin panel" items. Before the box could update itself the
@@ -94,7 +91,7 @@ export default function App() {
       url.searchParams.delete('admin')
       window.history.replaceState(null, '', url.pathname + url.search + url.hash)
     }
-    useStore.getState().setAdminOpen(true)
+    useStore.getState().openSettings('admin')
     // After opening, which clears whatever the unlock screen said last time.
     void link?.then((outcome) => useStore.getState().adminLinkAnswered(outcome))
   }, [phase])
@@ -156,8 +153,7 @@ function Shell() {
   const setSidebarOpen = useStore((s) => s.setSidebarOpen)
   const searchOpen = useStore((s) => s.searchOpen)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
-  const adminOpen = useStore((s) => s.adminOpen)
-  const adminToken = useStore((s) => s.adminToken)
+  const settingsOpen = useStore((s) => s.settingsOpen)
   const audioSettingsOpen = useStore((s) => s.audioSettingsOpen)
   const fileDetail = useStore((s) => s.fileDetail)
   const connection = useStore((s) => s.connection)
@@ -180,10 +176,6 @@ function Shell() {
   }
   const activeModuleId = useStore((s) => s.activeModuleId)
   const activeChannelId = useStore((s) => s.activeChannelId)
-  const feedbackOpen = useStore((s) => s.feedbackOpen)
-  const alertSettingsOpen = useStore((s) => s.alertSettingsOpen)
-  const setAlertSettingsOpen = useStore((s) => s.setAlertSettingsOpen)
-  const setFeedbackOpen = useStore((s) => s.setFeedbackOpen)
 
   // A returning user gets the app from cache and a thin banner, which is
   // right for a roam or a box restart and useless when the box has genuinely
@@ -328,13 +320,9 @@ function Shell() {
         </main>
       </div>
       {searchOpen && <SearchOverlay />}
-      {/* The cog is visible to everyone; the password is what gates the
-          panel, so the gate lives here rather than around the button. */}
-      {adminOpen && (adminToken ? <AdminPanel /> : <AdminUnlock />)}
+      {settingsOpen && <Settings />}
       {audioSettingsOpen && <AudioSettings />}
       {fileDetail && <FileDetail />}
-      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
-      {alertSettingsOpen && <AlertSettingsDialog onClose={() => setAlertSettingsOpen(false)} />}
       <LockScreenCountdown />
       <IosInstallTip />
     </div>

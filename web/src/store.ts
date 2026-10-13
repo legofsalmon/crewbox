@@ -205,6 +205,9 @@ const HISTORY_PAGE = 50
 
 export type Theme = 'dark' | 'light'
 
+/** The tabs of Settings (components/Settings.tsx). */
+export type SettingsTab = 'general' | 'alerts' | 'feedback' | 'admin'
+
 /**
  * The colour the browser paints around the page in each theme.
  *
@@ -416,7 +419,13 @@ export interface AppState {
   pendingDmUserId: string | null
   sidebarOpen: boolean
   searchOpen: boolean
-  adminOpen: boolean
+  /**
+   * Settings, which everyone has: theme, alert sounds, alerts, feedback, and
+   * the Admin tab behind the box's admin password. `settingsTab` is kept
+   * while it is closed, so it opens again where it was left.
+   */
+  settingsOpen: boolean
+  settingsTab: SettingsTab
   /**
    * Proof that someone typed the admin password, for this run of the app.
    *
@@ -427,8 +436,6 @@ export interface AppState {
    */
   adminToken: string | null
   audioSettingsOpen: boolean
-  /** The "Send feedback…" dialog. */
-  feedbackOpen: boolean
   /** File message whose detail modal is open; null when closed. */
   fileDetail: Message | null
   /** Rolling median WS round-trip in ms; null while unknown/offline. */
@@ -508,7 +515,10 @@ export interface AppState {
   markChannelRead: (channelId: string) => void
   setSidebarOpen: (open: boolean) => void
   setSearchOpen: (open: boolean) => void
-  setAdminOpen: (open: boolean) => void
+  /** Open Settings, on the given tab or the one it was left on. */
+  openSettings: (tab?: SettingsTab) => void
+  closeSettings: () => void
+  setSettingsTab: (tab: SettingsTab) => void
   /** Trade the admin password for a token; throws with the server's message. */
   unlockAdmin: (password: string) => Promise<void>
   /**
@@ -516,7 +526,7 @@ export interface AppState {
    * (lib/adminLink.ts): an unlock, or why not, for the unlock screen to say.
    */
   adminLinkAnswered: (outcome: { adminToken: string } | { problem: string }) => void
-  /** Give the unlock back and close the panel — the Lock button. */
+  /** Give the unlock back, leaving the Admin tab locked — the Lock button. */
   lockAdmin: () => void
   /**
    * The box has stopped honouring this unlock.
@@ -527,7 +537,7 @@ export interface AppState {
    * did: every button went on failing with the same message and the only way
    * out was to reload the page.
    *
-   * Unlike `lockAdmin` this leaves the panel open, so the unlock screen comes
+   * Like `lockAdmin` this leaves Settings open, so the unlock screen comes
    * up in its place rather than the whole thing vanishing under somebody who
    * did not ask for it to close. And it does not call `/api/admin/lock` —
    * the token being handed back is one the box has just refused.
@@ -542,7 +552,6 @@ export interface AppState {
    */
   setAdminToken: (adminToken: string) => void
   setAudioSettingsOpen: (open: boolean) => void
-  setFeedbackOpen: (open: boolean) => void
   openFileDetail: (message: Message) => void
   closeFileDetail: () => void
   setAudioDevice: (kind: 'audioinput' | 'audiooutput', deviceId: string | null) => void
@@ -588,8 +597,6 @@ export interface AppState {
    * level for each channel that isn't at Mentions, and the stages they follow.
    */
   alertSettings: AlertSettings
-  alertSettingsOpen: boolean
-  setAlertSettingsOpen: (open: boolean) => void
   /** Set how much of a channel reaches this person's pocket, on every device. */
   setChannelAlerts: (channelId: string, level: ChannelAlertLevel) => void
   /** Follow a stage for changeover calls and the countdown, or stop. */
@@ -984,7 +991,7 @@ export const useStore = create<AppState>()((set, get) => {
   function goTo(target: { channelId?: string; moduleId?: string }): void {
     const state = get()
     if (state.searchOpen) state.setSearchOpen(false)
-    if (state.adminOpen) state.setAdminOpen(false)
+    if (state.settingsOpen) state.closeSettings()
     if (state.audioSettingsOpen) state.setAudioSettingsOpen(false)
     if (state.fileDetail) state.closeFileDetail()
     if (state.boxesOpen) state.setBoxesOpen(false)
@@ -1634,18 +1641,17 @@ export const useStore = create<AppState>()((set, get) => {
     pendingDmUserId: null,
     sidebarOpen: false,
     searchOpen: false,
-    adminOpen: false,
+    settingsOpen: false,
+    settingsTab: 'general',
     adminToken: null,
     adminLockedReason: null,
     audioSettingsOpen: false,
-    feedbackOpen: false,
     latencyMs: null,
     updateReady: false,
     screensNote: null,
     toasts: [],
     alertBanner: null,
     alertSettings: NO_ALERT_SETTINGS,
-    alertSettingsOpen: false,
     lockScreenStage: undefined,
     notificationState: undefined,
     loadingOlder: false,
@@ -2289,10 +2295,24 @@ export const useStore = create<AppState>()((set, get) => {
       set({ searchOpen: open })
     },
 
-    setAdminOpen(open) {
-      // Opening is a fresh attempt: whatever locked the panel last time is
-      // not what the unlock screen should be explaining now.
-      set({ adminOpen: open, ...(open ? { adminLockedReason: null } : {}) })
+    openSettings(tab) {
+      // Opening is a fresh attempt: whatever locked the Admin tab last time
+      // is not what the unlock screen should be explaining now. On a phone
+      // the drawer it was opened from goes, as it does for a module.
+      set({
+        settingsOpen: true,
+        sidebarOpen: false,
+        ...(tab ? { settingsTab: tab } : {}),
+        ...(get().settingsOpen ? {} : { adminLockedReason: null }),
+      })
+    },
+
+    closeSettings() {
+      set({ settingsOpen: false })
+    },
+
+    setSettingsTab(settingsTab) {
+      set({ settingsTab })
     },
 
     async unlockAdmin(password) {
@@ -2317,7 +2337,7 @@ export const useStore = create<AppState>()((set, get) => {
 
     lockAdmin() {
       const adminToken = get().adminToken
-      set({ adminToken: null, adminOpen: false, adminLockedReason: null })
+      set({ adminToken: null, adminLockedReason: null })
       // Best effort: the token is already gone from this device, and the
       // server expires it anyway. A failed call must not keep the panel open.
       if (adminToken) void api.adminLock({ token: getToken() ?? '', adminToken }).catch(() => {})
@@ -2327,9 +2347,6 @@ export const useStore = create<AppState>()((set, get) => {
       set({ adminToken })
     },
 
-    setFeedbackOpen(open) {
-      set({ feedbackOpen: open })
-    },
     setAudioSettingsOpen(open) {
       set({ audioSettingsOpen: open })
       if (open) {
@@ -2483,10 +2500,6 @@ export const useStore = create<AppState>()((set, get) => {
       const sounds = !get().sounds
       setSoundsEnabled(sounds)
       set({ sounds })
-    },
-
-    setAlertSettingsOpen(open) {
-      set({ alertSettingsOpen: open, ...(open ? { sidebarOpen: false } : {}) })
     },
 
     setChannelAlerts(channelId, level) {
