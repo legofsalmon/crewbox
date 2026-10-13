@@ -9,13 +9,14 @@ blurb: Unlocking it, the sections, resetting PINs, readiness lists, the licence,
 
 ![The unlock: the admin password, not the event PIN](shot:admin-unlock)
 
-The **cog** in the sidebar's identity row opens the admin panel. Everyone
-can see the cog — a hidden control is how a box loses its admin — but it
-opens with the **admin password**, which is not the event PIN and not
+The admin panel is the **Admin** tab of Settings, which the **cog** in the
+sidebar's identity row opens. Everyone can see the tab — a hidden control is
+how a box loses its admin — but it says **locked** until someone types the
+**admin password**, which is not the event PIN and not
 anyone's personal PIN ([the three codes](/docs/getting-connected#the-three-codes-untangled)).
 
 The unlock lives in memory only: closing the app re-locks it, and the
-**Lock** button does it on the spot — use it before handing your phone to
+**Lock** button at the top of the tab does it on the spot — use it before handing your phone to
 someone.
 
 **Lost the password?** On the box itself, **Open the admin panel** in the

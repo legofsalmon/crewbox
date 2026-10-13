@@ -67,7 +67,8 @@ address bar).
 
 ## "I'm not getting alerts"
 
-- Check the **bell** in the sidebar isn't muted.
+- Check **Alert sounds** is on under Settings → General (the cog beside your
+  name).
 - Backgrounded browser alerts need notification permission — the browser
   asks once; if it was refused, re-enable it in site settings.
 - Check the channel's own **bell**: every channel starts at **Mentions**,
