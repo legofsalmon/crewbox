@@ -21,6 +21,7 @@ export default function ChatSidebar() {
 
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [showOffline, setShowOffline] = useState(false)
 
   // A channel row is highlighted only while chat owns the main pane.
   const chatVisible = activeModuleId === null
@@ -52,6 +53,53 @@ export default function ChatSidebar() {
         ),
     [users, me, online]
   )
+
+  // Offline people wait behind a link: listing everyone who ever joined
+  // crowds the drawer for little use. Anyone with an unread message, or whose
+  // conversation is open, stays in view whatever their presence.
+  const [shown, hidden] = useMemo(() => {
+    const shown: typeof others = []
+    const hidden: typeof others = []
+    for (const user of others) {
+      const dmId = dmByOther.get(user.id)
+      const channel = dmId ? channels[dmId] : undefined
+      const keep =
+        online[user.id] ||
+        (channel && unreadCount(channel, readState) > 0) ||
+        (chatVisible && dmId !== undefined && dmId === activeChannelId)
+      ;(keep ? shown : hidden).push(user)
+    }
+    return [shown, hidden]
+  }, [others, dmByOther, channels, online, readState, chatVisible, activeChannelId])
+
+  function dmRow(user: (typeof others)[number]) {
+    const dmId = dmByOther.get(user.id)
+    const channel = dmId ? channels[dmId] : undefined
+    const unread = channel ? unreadCount(channel, readState) : 0
+    return (
+      <li key={user.id}>
+        <button
+          className={`row ${chatVisible && dmId && dmId === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
+          aria-label={`Message ${user.name}${online[user.id] ? (remoteUsers[user.id] ? ' (online remotely)' : ' (online)') : ''}${unread ? `, ${unread} unread` : ''}`}
+          onClick={() => openDm(user.id)}
+        >
+          <span className={`presence-dot ${online[user.id] ? 'on' : ''}`} />
+          <span className="row-name">{user.name}</span>
+          {online[user.id] && remoteUsers[user.id] && (
+            // "off-site" explains itself; "office" needed the tooltip,
+            // and phones don't have one.
+            <span className="office-badge" title="Connected from off the event network">
+              off-site
+            </span>
+          )}
+          {/* A DM unread is always personal — mention styling. */}
+          {unread > 0 && (
+            <span className="badge badge-mention">{unread > 99 ? '99+' : unread}</span>
+          )}
+        </button>
+      </li>
+    )
+  }
 
   function submitChannel(e: FormEvent) {
     e.preventDefault()
@@ -115,35 +163,23 @@ export default function ChatSidebar() {
         <span>Direct messages</span>
       </div>
       <ul>
-        {others.map((user) => {
-          const dmId = dmByOther.get(user.id)
-          const channel = dmId ? channels[dmId] : undefined
-          const unread = channel ? unreadCount(channel, readState) : 0
-          return (
-            <li key={user.id}>
-              <button
-                className={`row ${chatVisible && dmId && dmId === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-                aria-label={`Message ${user.name}${online[user.id] ? (remoteUsers[user.id] ? ' (online remotely)' : ' (online)') : ''}${unread ? `, ${unread} unread` : ''}`}
-                onClick={() => openDm(user.id)}
-              >
-                <span className={`presence-dot ${online[user.id] ? 'on' : ''}`} />
-                <span className="row-name">{user.name}</span>
-                {online[user.id] && remoteUsers[user.id] && (
-                  // "off-site" explains itself; "office" needed the tooltip,
-                  // and phones don't have one.
-                  <span className="office-badge" title="Connected from off the event network">
-                    off-site
-                  </span>
-                )}
-                {/* A DM unread is always personal — mention styling. */}
-                {unread > 0 && (
-                  <span className="badge badge-mention">{unread > 99 ? '99+' : unread}</span>
-                )}
-              </button>
-            </li>
-          )
-        })}
+        {shown.map(dmRow)}
         {others.length === 0 && <li className="muted-note">No one else has joined yet</li>}
+        {others.length > 0 && shown.length === 0 && (
+          <li className="muted-note">No one else is online</li>
+        )}
+        {hidden.length > 0 && (
+          <li>
+            <button
+              className="row row-more"
+              aria-expanded={showOffline}
+              onClick={() => setShowOffline((v) => !v)}
+            >
+              {showOffline ? 'Hide offline' : `Show ${hidden.length} offline`}
+            </button>
+          </li>
+        )}
+        {showOffline && hidden.map(dmRow)}
       </ul>
     </>
   )
