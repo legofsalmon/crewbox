@@ -271,7 +271,7 @@ test('a light-theme device never paints dark first', async ({ browser }) => {
     await page.evaluate(() =>
       document.querySelector('meta[name="theme-color"]')?.getAttribute('content')
     )
-  ).toBe('#f5f2ec')
+  ).toBe('#ececef')
 
   await context.close()
 })
@@ -285,7 +285,7 @@ test('a dark-theme device gets the dark chrome', async ({ browser }) => {
     await page.evaluate(() =>
       document.querySelector('meta[name="theme-color"]')?.getAttribute('content')
     )
-  ).toBe('#0d1117')
+  ).toBe('#141415')
   await context.close()
 })
 

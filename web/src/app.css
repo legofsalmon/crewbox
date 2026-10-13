@@ -1,32 +1,73 @@
 /* ---------------------------------------------------------------- tokens */
+@import './ds/tokens.css';
+
 /*
- * Dark theme is navy, not brown.
+ * Colours come from the shared design system (web/src/ds/tokens.css, vendored
+ * by `npm run ds:sync`; never edit the copy). These are crewbox's own names
+ * pointed at its roles, so the rest of this file reads as it always has.
  *
- * The surfaces are hue-shifted but their *luminance* is unchanged, step for
- * step, from the warm palette they replace — so every contrast ratio the
- * theme spec guards holds, and the depth ladder reads the same. Amber stays:
- * amber on navy is the instrument-panel pairing, and it is the brand.
+ * Declared on every element that can set a theme, not on :root alone: a
+ * custom property is computed where it is declared, so an alias on :root only
+ * would keep the root's theme inside a [data-theme] island.
+ *
+ * The grammar (design-system docs/principles.md): neutral at rest; cyan is
+ * you (focus, the selection, the current item, the one primary action);
+ * amber is attention; red is stop; healthy is quiet. Crewbox's amber was its
+ * accent until 2026-10; it is now the warning colour, and the brand keeps it
+ * on the logo and the splash glow only.
+ *
+ * The design system checks every ink role against every surface in both
+ * themes (its docs/contrast.md); e2e/theme.spec.ts still guards the screens.
  */
+:root,
+[data-theme] {
+  /* Surfaces, darkest to lightest in the dark theme. --bg-hover is what
+     every button sits on and --bg-active the pressed or current row; in the
+     light theme both stay a step darker than the page, as they were. */
+  --bg: var(--ds-surface-ground);
+  --bg-raised: var(--ds-surface-panel);
+  --bg-hover: var(--ds-surface-inset);
+  --bg-active: var(--ds-surface-raised-hover);
+  --border: var(--ds-line-subtle);
+
+  /* Three text levels. --text-faint is read (times, hints), so it takes the
+     tertiary ink, which clears AA on every surface above. */
+  --text: var(--ds-ink-primary);
+  --text-muted: var(--ds-ink-secondary);
+  --text-faint: var(--ds-ink-tertiary);
+
+  /* You: buttons, the selection, the current item, focus. */
+  --accent: var(--ds-accent);
+  --accent-strong: var(--ds-accent-hover);
+  --accent-contrast: var(--ds-accent-on);
+  --accent-soft: var(--ds-accent-soft);
+  --focus: var(--ds-focus);
+
+  /* Attention: something needs a look, nothing is broken. --warn is a fill or
+     a dot, --warn-ink is text, --warn-on is text on a --warn fill. */
+  --warn: var(--ds-warn);
+  --warn-ink: var(--ds-warn-ink);
+  --warn-on: var(--ds-warn-on);
+  --warn-soft: var(--ds-warn-soft);
+
+  /* Stop. --danger and --danger-strong were two reds, one tuned for text on
+     the page and one for text on a button; the ink role clears AA on both.
+     A red fill takes --danger-fill with --danger-on text on it. */
+  --danger: var(--ds-bad-ink);
+  --danger-strong: var(--ds-bad-ink);
+  --danger-fill: var(--ds-bad);
+  --danger-on: var(--ds-bad-on);
+  --danger-soft: var(--ds-bad-soft);
+
+  /* Healthy, where working has to be told from off: voice, presence. */
+  --ok: var(--ds-ok-ink);
+}
+
 :root {
   color-scheme: dark;
-  --bg: #0d1117;
-  --bg-raised: #121820;
-  --bg-hover: #19212c;
-  --bg-active: #1f2938;
-  --border: rgba(255, 255, 255, 0.08);
-  --text: #eaeff7;
-  --text-muted: #9aa7ba;
-  --text-faint: #67748a;
-  --accent: #f5b73e;
-  --accent-strong: #ffcd66;
-  --accent-contrast: #10151d;
-  --danger: #ef6a5a;
-  /* --danger, lightened enough to stay AA as *text on a raised surface*.
-     --danger is tuned against --bg; on --bg-hover, which is what every
-     button sits on, it drops to 4.25 in the light theme — under AA at the
-     13.5px a button label is. Same hue, one step up the ladder. */
-  --danger-strong: #f47f70;
-  --ok: #58c98a;
+  /* The brand, not a token: the studio's amber, on the logo and the splash
+     glow and nowhere that means something. Inside the app amber is --warn. */
+  --brand: #f5b73e; /* not a token: the brand */
   --radius: 12px;
   --sidebar-w: 280px;
   --font:
@@ -35,28 +76,9 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f5f2ec;
-  --bg-raised: #fdfbf7;
-  --bg-hover: #ece7dd;
-  --bg-active: #e3dccd;
-  --border: rgba(30, 25, 15, 0.12);
-  --text: #26221b;
-  --text-muted: #5f594c;
-  --text-faint: #8d8574;
-  /* Darkened from #c07f00: with --accent-contrast text this only reached
-     ~3.2:1, under AA for button labels — and light theme is exactly what
-     crew get outdoors in daylight. Same amber family throughout.
-
-     Nudged again from #9a6600, which cleared AA as a button background but
-     only reached 4.40 as *text* on --bg, where it is also used. 4.52 now. */
-  --accent: #986400;
-  --accent-strong: #7d5300;
-  --accent-contrast: #fffaf0;
-  --danger: #c53a2a;
-  --danger-strong: #ad2f1e;
-  /* Was #1e8a54 — 3.90 on --bg, under AA. This is the "voice is running"
-     green, read off a phone in daylight, so it has to clear the bar. */
-  --ok: #1b7d4c;
+  /* The brand amber as the light theme always had it: 4.3:1 for the logo on
+     the light ground, where a graphic needs 3:1. */
+  --brand: #986400; /* not a token: the brand */
 }
 
 /* ----------------------------------------------------------------- base */
@@ -112,7 +134,7 @@ button {
 /* Keyboard navigation is visible on every control, not just text fields
    (which style their own :focus via border-color). */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -142,7 +164,12 @@ ul {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%), var(--bg);
+    radial-gradient(
+      1200px 600px at 50% -10%,
+      color-mix(in srgb, var(--brand) 8%, transparent),
+      transparent 60%
+    ),
+    var(--bg);
 }
 
 .join-card {
@@ -164,7 +191,7 @@ ul {
 .join-logo {
   width: 52px;
   height: 52px;
-  color: var(--accent);
+  color: var(--brand);
 }
 
 .join-brand h1 {
@@ -274,8 +301,8 @@ ul {
 }
 
 .join-error {
-  background: rgba(239, 106, 90, 0.12);
-  border: 1px solid rgba(239, 106, 90, 0.4);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
   /* --danger-strong, not --danger: on this red tint over a raised card,
      --danger reached 4.48 in the light theme, under AA, for the line that
      tells somebody stuck outside the event why. */
@@ -293,7 +320,12 @@ ul {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(245, 183, 62, 0.08), transparent 60%), var(--bg);
+    radial-gradient(
+      1200px 600px at 50% -10%,
+      color-mix(in srgb, var(--brand) 8%, transparent),
+      transparent 60%
+    ),
+    var(--bg);
 }
 
 .center-card {
@@ -308,7 +340,7 @@ ul {
 .center-logo {
   width: 56px;
   height: 56px;
-  color: var(--accent);
+  color: var(--brand);
 }
 
 .center-card h1 {
@@ -413,8 +445,8 @@ ul {
 }
 
 .conn-offline {
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--warn);
+  color: var(--warn-on);
 }
 
 .toast-stack {
@@ -468,7 +500,7 @@ ul {
   background: var(--bg-raised);
   color: var(--text);
   border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
+  border-left: 4px solid var(--warn);
   border-radius: var(--radius);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
@@ -621,13 +653,13 @@ ul {
 }
 
 .flash-warning {
-  background: var(--accent) !important;
-  color: var(--accent-contrast) !important;
+  background: var(--warn) !important;
+  color: var(--warn-on) !important;
 }
 
 .flash {
-  background: var(--danger);
-  color: #fff;
+  background: var(--danger-fill);
+  color: var(--danger-on);
   padding: 10px 18px;
   border-radius: var(--radius);
   font-size: 14px;
@@ -839,8 +871,8 @@ a.app-version:hover {
 }
 
 .confirm-delete {
-  background: var(--danger);
-  color: #fff;
+  background: var(--danger-fill);
+  color: var(--danger-on);
 }
 
 .confirm-delete:disabled {
@@ -917,12 +949,12 @@ a.app-version:hover {
 }
 
 .conn-dot-connecting {
-  background: var(--accent);
+  background: var(--warn);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .conn-dot-offline {
-  background: var(--danger);
+  background: var(--danger-fill);
 }
 
 @keyframes pulse {
@@ -1028,8 +1060,8 @@ a.app-version:hover {
 
 /* Someone @-mentioned you (or it's a DM) — louder than plain unread. */
 .badge-mention {
-  background: var(--danger);
-  color: #fff;
+  background: var(--danger-fill);
+  color: var(--danger-on);
 }
 
 /* Online from off-site (tunnel) — support staff at the office/warehouse. */
@@ -1351,7 +1383,7 @@ a.app-version:hover {
 
 .msg-state {
   font-size: 11.5px;
-  color: var(--accent);
+  color: var(--warn-ink);
 }
 
 .msg-body {
@@ -1585,7 +1617,7 @@ a.app-version:hover {
 
 /* ------------------------------------------------------------- mentions */
 .mention {
-  background: rgba(245, 183, 62, 0.18);
+  background: var(--accent-soft);
   color: var(--accent-strong);
   border-radius: 4px;
   padding: 0 3px;
@@ -1722,7 +1754,7 @@ a.app-version:hover {
 
 .voice-btn.voice-active {
   color: var(--accent);
-  background: rgba(245, 183, 62, 0.14);
+  background: var(--accent-soft);
 }
 
 .voice-bar {
@@ -1795,7 +1827,7 @@ a.app-version:hover {
 }
 
 .voice-leave:hover {
-  background: rgba(239, 106, 90, 0.12);
+  background: var(--danger-soft);
 }
 
 .ptt-dock {
@@ -1855,7 +1887,7 @@ a.app-version:hover {
   background: var(--accent);
   color: var(--accent-contrast);
   box-shadow:
-    0 0 0 8px rgba(245, 183, 62, 0.25),
+    0 0 0 8px color-mix(in srgb, var(--accent) 25%, transparent),
     0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -1882,7 +1914,7 @@ a.app-version:hover {
 
 .latch-btn.on {
   border-color: var(--accent);
-  background: rgba(245, 183, 62, 0.18);
+  background: var(--accent-soft);
 }
 
 .ptt-speaking {
@@ -1899,11 +1931,11 @@ a.app-version:hover {
 
 /* ----------------------------------------------------- connection quality */
 .conn-dot-fair {
-  background: var(--accent);
+  background: var(--warn);
 }
 
 .conn-dot-poor {
-  background: var(--danger);
+  background: var(--danger-fill);
 }
 
 .weak-signal {
@@ -1933,7 +1965,7 @@ a.app-version:hover {
 }
 
 .signal-fair {
-  color: var(--accent);
+  color: var(--warn-ink);
 }
 
 .signal-poor {
@@ -1956,16 +1988,16 @@ a.app-version:hover {
 }
 
 .q-dot.q-poor {
-  background: var(--accent);
+  background: var(--warn);
 }
 
 .q-dot.q-lost {
-  background: var(--danger);
+  background: var(--danger-fill);
 }
 
 .ptt-weak {
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--warn);
+  color: var(--warn-on);
   border-radius: 99px;
   padding: 5px 12px;
   font-size: 12.5px;
@@ -2114,7 +2146,7 @@ a.app-version:hover {
 
 .mic-meter-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--ok), var(--accent));
+  background: linear-gradient(90deg, var(--ok), var(--warn));
   border-radius: 99px;
   transition: width 0.1s linear;
 }
@@ -2291,7 +2323,7 @@ a.app-version:hover {
   align-items: center;
   gap: 12px;
   background: var(--bg-raised);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--warn);
   border-radius: 14px;
   padding: 12px 16px;
   font-size: 13.5px;
@@ -2471,7 +2503,7 @@ a.app-version:hover {
 .admin-note {
   padding: 10px 20px;
   font-size: 13.5px;
-  color: var(--accent);
+  color: var(--warn-ink);
   border-bottom: 1px solid var(--border);
 }
 
@@ -2554,8 +2586,8 @@ a.app-version:hover {
 
 .role-tag {
   font-size: 11px;
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  color: var(--text-muted);
+  border: 1px solid var(--ds-line-strong);
   border-radius: 99px;
   padding: 0 8px;
   line-height: 1.7;
@@ -2591,10 +2623,13 @@ a.app-version:hover {
      the surface toward the text and left the confirm state — the one that
      actually does the thing — at 3.52 in the light theme, worse than the
      state before it. The ring carries the escalation instead, and being
-     inset it thickens the border without moving anything. */
+     inset it thickens the border without moving anything.
+
+     The button's own surface, not --bg-active: the red ink is 4.47:1 on the
+     design system's raised-hover in the light theme, just under AA. */
   border-color: var(--danger-strong);
   box-shadow: inset 0 0 0 1px var(--danger-strong);
-  background: var(--bg-active);
+  background: var(--bg-hover);
 }
 
 .admin-inline-form {
@@ -2778,7 +2813,7 @@ a.app-version:hover {
  * to ignore the rows that are.
  */
 .admin-update {
-  color: var(--accent-strong);
+  color: var(--warn-ink);
   font-weight: 600;
 }
 
@@ -2814,7 +2849,7 @@ a.app-version:hover {
   color: var(--text);
   background: var(--bg-hover);
   border-bottom: 1px solid var(--border);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--warn);
 }
 
 .admin-licence-banner span {
@@ -2846,7 +2881,7 @@ a.app-version:hover {
 }
 
 .admin-licence-problem strong {
-  color: var(--accent);
+  color: var(--warn-ink);
 }
 
 .admin-licence-actions {
@@ -2950,7 +2985,7 @@ a.app-version:hover {
 }
 
 .admin-updater-lead strong {
-  color: var(--accent-strong);
+  color: var(--warn-ink);
 }
 
 .admin-updater-error {
@@ -3163,7 +3198,7 @@ a.app-version:hover {
 }
 
 .readiness-limited .readiness-state {
-  color: var(--accent);
+  color: var(--warn-ink);
 }
 
 .readiness-off .readiness-state {
@@ -3204,7 +3239,7 @@ a.app-version:hover {
    the accent rather than being buried as another muted line. */
 .readiness-fix {
   font-size: 12px;
-  color: var(--accent-strong);
+  color: var(--warn-ink);
   margin-top: 2px;
 }
 
@@ -3354,7 +3389,7 @@ button.boxes-pick:hover .boxes-name {
 .boxes-unsent {
   font-size: 13px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--warn-ink);
 }
 
 .boxes-badge {
@@ -3480,7 +3515,7 @@ button.boxes-pick:hover .boxes-name {
 .nearby-warn {
   font-size: 13px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--warn-ink);
 }
 
 .confirm-go {

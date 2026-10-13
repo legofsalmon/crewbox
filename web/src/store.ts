@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { color } from './ds/tokens.js'
 import {
   DEFAULT_CHANNEL_ALERTS,
   HOME_CHANNEL,
@@ -207,11 +208,15 @@ export type Theme = 'dark' | 'light'
 /**
  * The colour the browser paints around the page in each theme.
  *
- * Must match `--bg` in app.css. Duplicated as literals because this is read
- * before any stylesheet is guaranteed to have applied, and a
- * `getComputedStyle` here would sometimes return the wrong one.
+ * `--bg` in app.css, which is the design system's ground. Read from its
+ * tokens.js rather than the stylesheet because this runs before any
+ * stylesheet is guaranteed to have applied, and a `getComputedStyle` here
+ * would sometimes return the wrong one.
  */
-const THEME_COLOR: Record<Theme, string> = { dark: '#0d1117', light: '#f5f2ec' }
+const THEME_COLOR: Record<Theme, string> = {
+  dark: color.dark.surface.ground,
+  light: color.light.surface.ground,
+}
 
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme

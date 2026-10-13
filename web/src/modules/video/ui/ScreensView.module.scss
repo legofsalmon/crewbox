@@ -181,8 +181,8 @@
 }
 
 .warn {
-  background: color-mix(in srgb, var(--accent) 22%, var(--bg));
-  color: var(--accent);
+  background: color-mix(in srgb, var(--warn) 22%, var(--bg));
+  color: var(--warn-ink);
 }
 
 .bad {

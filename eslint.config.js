@@ -28,6 +28,8 @@ export default tseslint.config(
       '**/dist/',
       '**/dev-dist/',
       '**/build/',
+      // Vendored from the design system by `npm run ds:sync`; never edited here.
+      'web/src/ds/',
       '**/data/',
       // Generated native platform projects (Phase 5 owns these).
       'native/android/',

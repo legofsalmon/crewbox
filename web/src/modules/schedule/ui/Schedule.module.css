@@ -153,9 +153,9 @@
 .toggle[aria-pressed='true'] {
   background: var(--accent);
   /* `--accent-text` does not exist and never did, so this was always
-     #fff — white on the amber accent, 1.79:1 in the dark theme, on a
-     control somebody presses at a production desk. `--accent-contrast` is
-     the token that means "text on the accent": 10.2:1 dark, 4.9:1 light. */
+     #fff — white on what was then an amber accent, 1.79:1 in the dark
+     theme, on a control somebody presses at a production desk.
+     `--accent-contrast` is the token that means "text on the accent". */
   color: var(--accent-contrast);
   border-color: transparent;
 }
@@ -239,9 +239,9 @@
   align-self: start;
   background: var(--accent);
   /* `--accent-text` does not exist and never did, so this was always
-     #fff — white on the amber accent, 1.79:1 in the dark theme, on a
-     control somebody presses at a production desk. `--accent-contrast` is
-     the token that means "text on the accent": 10.2:1 dark, 4.9:1 light. */
+     #fff — white on what was then an amber accent, 1.79:1 in the dark
+     theme, on a control somebody presses at a production desk.
+     `--accent-contrast` is the token that means "text on the accent". */
   color: var(--accent-contrast);
   border: 0;
   border-radius: 10px;
