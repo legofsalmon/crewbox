@@ -1091,6 +1091,12 @@ a.app-version:hover {
   border-color: var(--ok);
 }
 
+/* The link that opens the people who are offline: quieter than a person. */
+.row-more {
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
 .muted-note {
   color: var(--text-faint);
   font-size: 13px;
