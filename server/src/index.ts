@@ -5,7 +5,7 @@ import { randomInt } from 'node:crypto'
 import { boxTunables, config, dmxMode, warnOnDefaults } from './config.ts'
 import { BOX_SETTING_NAMES, boxLookup, type BoxSettingName } from './boxSettings.ts'
 import { SETUP_DONE_KEY, attachWs, buildApp, mirrorOnLoopback } from './app.ts'
-import { adminLinkUrl, clearAdminLink, printAdminLink, writeAdminLink } from './adminLink.ts'
+import { adminLinkFile, clearAdminLink, printAdminLink, writeAdminLink } from './adminLink.ts'
 import {
   ANNOUNCE_KEY,
   Announcements,
@@ -29,6 +29,7 @@ import {
   advertisedUrls,
   boxDataDir,
   lanIps,
+  lanUrls,
   clearBoxStatus,
   extractWebDist,
   pruneWebDists,
@@ -678,8 +679,19 @@ async function main(): Promise<void> {
     // Not only for a packaged box: a Linux service run from source has no
     // menu to click, but its data directory is still where its owner can
     // read a link from, which beats editing the unit file to get back in.
+    // With a certificate the link uses its name, and a name that has
+    // stopped resolving here takes the link down with it; the file carries
+    // the same key at the box's address too, for the menu's fallback item.
+    // The address is read as each key is minted, and again when it moves.
     publishAdminLink: (key) =>
-      writeAdminLink(dataDir, { pid: process.pid, url: adminLinkUrl(origin, key) }),
+      writeAdminLink(
+        dataDir,
+        adminLinkFile(
+          origin,
+          key,
+          certName ? lanUrls(config.port, Boolean(tls), boot.iface)[0] : undefined
+        )
+      ),
     // Whether this box may go off-site at all — the same switch as the
     // update check, which the environment sweep used to ignore.
     outbound: tuned.updateCheck ?? box,
@@ -1031,6 +1043,22 @@ async function main(): Promise<void> {
       version: process.env.DEPLOY_VERSION ?? '',
     }
     publishStatus()
+
+    // A new DHCP lease, or the Mac moved to its other adapter: the menu's
+    // addresses and its admin link by address would otherwise keep the
+    // ones from start-up until the next restart.
+    const addressWatch = setInterval(() => {
+      if (!statusBase) return
+      const now = advertisedUrls(config.port, Boolean(tls), {
+        ...(certName ? { hostname: certName } : {}),
+        iface: boot.iface,
+      })
+      if (now.join(' ') === statusBase.urls.join(' ')) return
+      statusBase = { ...statusBase, joinUrl: now[0] ?? origin, urls: now }
+      publishStatus()
+      app.republishAdminLink()
+    }, 30_000)
+    addressWatch.unref()
 
     // Rewrite it when the answer arrives, so the tray icon picks the news up
     // on its next poll without the helper knowing what GitHub is.

@@ -11,6 +11,7 @@ import BinSection from './BinSection.tsx'
 import BackupSection from './BackupSection.tsx'
 import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
 import BoxSettingsSection from './BoxSettingsSection.tsx'
+import RouterDnsSection from './RouterDnsSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
 import { addressOf } from '../lib/discovery.ts'
 import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
@@ -183,6 +184,7 @@ export default function AdminPanel() {
               it.
             </p>
             <Environment onNote={setNote} />
+            <RouterDnsSection auth={auth} onNote={setNote} />
           </section>
           <section>
             <h3 className="admin-section-title">Box settings</h3>
