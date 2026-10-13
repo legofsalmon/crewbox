@@ -12,7 +12,7 @@ import { useStore } from '../store.ts'
  */
 
 beforeEach(() => {
-  useStore.setState({ adminToken: 'unlocked', adminOpen: true, adminLockedReason: null })
+  useStore.setState({ adminToken: 'unlocked', settingsOpen: true, adminLockedReason: null })
 })
 
 describe('reporting a failed admin request', () => {
@@ -24,11 +24,10 @@ describe('reporting a failed admin request', () => {
     expect(useStore.getState().adminLockedReason).toBe(message)
   })
 
-  it('leaves the panel open, so the password box comes up in its place', () => {
-    // Not `lockAdmin`, which closes the whole thing — that is the Lock
-    // button, a deliberate act. Being thrown out mid-task is not.
+  it('leaves Settings open, so the password box comes up in its place', () => {
+    // Being thrown out mid-task must not close the panel under somebody.
     adminError(new ApiError('admin unlock required', 403), 'Save failed')
-    expect(useStore.getState().adminOpen).toBe(true)
+    expect(useStore.getState().settingsOpen).toBe(true)
   })
 
   it('keeps the unlock for every other failure, and says what the box said', () => {

@@ -20,14 +20,15 @@ const openVideo = async (page: Page) => {
 }
 
 const unlockAdmin = async (page: Page) => {
-  await page.getByRole('button', { name: 'Admin panel' }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('tab', { name: /^Admin/ }).click()
   await page.getByLabel('Admin password').fill('e2e-admin-password')
   await page.getByRole('button', { name: 'Unlock' }).click()
   await expect(page.getByRole('heading', { name: 'Crew' })).toBeVisible()
   // Close the panel — the unlock survives it, and the video pane is where
   // the buttons actually are.
-  await page.getByRole('button', { name: 'Close admin panel' }).click()
-  await expect(page.getByRole('dialog', { name: 'Admin panel' })).toBeHidden()
+  await page.getByRole('button', { name: 'Close settings' }).click()
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
 }
 
 test('the pane belongs to the crew, except the sweep', async ({ browser }) => {

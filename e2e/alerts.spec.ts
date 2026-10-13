@@ -38,11 +38,12 @@ test("a channel's level is kept on the box, and follows the person", async ({ br
   await expect(page.getByRole('button', { name: 'Alerts for general: Muted' })).toBeVisible()
 
   // And the settings screen says the same, and sets it back.
-  await page.getByRole('button', { name: 'Alerts…' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Alerts' })
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('tab', { name: 'Alerts' }).click()
+  const dialog = page.getByRole('tabpanel', { name: 'Alerts' })
   await expect(dialog.getByLabel('#general')).toHaveValue('muted')
   await dialog.getByLabel('#general').selectOption('all')
-  await dialog.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
   await expect(page.getByRole('button', { name: 'Alerts for general: All messages' })).toBeVisible()
 })
 

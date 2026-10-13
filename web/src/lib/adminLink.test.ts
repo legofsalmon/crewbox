@@ -108,14 +108,14 @@ describe('spending it', () => {
 
 describe('what the panel does with the answer', () => {
   it('opens unlocked', () => {
-    useStore.setState({ adminToken: null, adminOpen: true, adminLockedReason: null })
+    useStore.setState({ adminToken: null, settingsOpen: true, adminLockedReason: null })
     useStore.getState().adminLinkAnswered({ adminToken: 'from-the-link' })
     expect(useStore.getState().adminToken).toBe('from-the-link')
     expect(useStore.getState().adminLockedReason).toBeNull()
   })
 
   it('shows the password box saying why the link did not work', () => {
-    useStore.setState({ adminToken: null, adminOpen: true, adminLockedReason: null })
+    useStore.setState({ adminToken: null, settingsOpen: true, adminLockedReason: null })
     useStore.getState().adminLinkAnswered({ problem: 'That admin link has already been used.' })
     expect(useStore.getState().adminToken).toBeNull()
     expect(useStore.getState().adminLockedReason).toBe('That admin link has already been used.')
@@ -124,7 +124,7 @@ describe('what the panel does with the answer', () => {
   it('says nothing about a spent link to a panel that is already unlocked', () => {
     useStore.setState({
       adminToken: 'typed-the-password',
-      adminOpen: true,
+      settingsOpen: true,
       adminLockedReason: null,
     })
     useStore.getState().adminLinkAnswered({ problem: 'That admin link has already been used.' })

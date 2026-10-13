@@ -56,10 +56,14 @@ test('the admin panel is behind a password, and everyone can reach the door', as
 }) => {
   const crew = await newDevice(browser, 'Ordinary Crew')
 
-  // Visible to a plain member — hiding it is how a box loses its admin.
-  const cog = crew.getByRole('button', { name: 'Admin panel' })
+  // Settings is everyone's, and its Admin tab is there for a plain member
+  // too, locked — hiding it is how a box loses its admin.
+  const cog = crew.getByRole('button', { name: 'Settings', exact: true })
   await expect(cog).toBeVisible()
   await cog.click()
+  const adminTab = crew.getByRole('tab', { name: 'Admin, locked' })
+  await expect(adminTab).toBeVisible()
+  await adminTab.click()
 
   const password = crew.getByLabel('Admin password')
   await expect(password).toBeVisible()
@@ -73,8 +77,12 @@ test('the admin panel is behind a password, and everyone can reach the door', as
   await crew.getByRole('button', { name: 'Unlock' }).click()
   await expect(crew.getByRole('heading', { name: 'Crew' })).toBeVisible()
 
+  await expect(crew.getByRole('tab', { name: 'Admin', exact: true })).toBeVisible()
+
   // Lock puts it back, so handing the phone over doesn't hand over the box.
   await crew.getByRole('button', { name: 'Lock' }).click()
+  await expect(crew.getByLabel('Admin password')).toBeVisible()
+  await crew.getByRole('button', { name: 'Close settings' }).click()
   await cog.click()
   await expect(crew.getByLabel('Admin password')).toBeVisible()
 
@@ -96,7 +104,8 @@ test('an env-configured box still shows the lighting fields it lets you change',
   browser,
 }) => {
   const admin = await newDevice(browser, 'Networks Admin')
-  await admin.getByRole('button', { name: 'Admin panel' }).click()
+  await admin.getByRole('button', { name: 'Settings', exact: true }).click()
+  await admin.getByRole('tab', { name: /^Admin/ }).click()
   await admin.getByLabel('Admin password').fill('e2e-admin-password')
   await admin.getByRole('button', { name: 'Unlock' }).click()
   await expect(admin.getByRole('heading', { name: 'Crew' })).toBeVisible()
@@ -126,7 +135,8 @@ test('the panel says whether the apps can find the box, and turns it on and off'
   browser,
 }) => {
   const admin = await newDevice(browser, 'Announce Admin')
-  await admin.getByRole('button', { name: 'Admin panel' }).click()
+  await admin.getByRole('button', { name: 'Settings', exact: true }).click()
+  await admin.getByRole('tab', { name: /^Admin/ }).click()
   await admin.getByLabel('Admin password').fill('e2e-admin-password')
   await admin.getByRole('button', { name: 'Unlock' }).click()
   await expect(admin.getByRole('heading', { name: 'Crew' })).toBeVisible()

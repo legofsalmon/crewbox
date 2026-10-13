@@ -11,7 +11,7 @@ const TYPE_LABELS: Record<FeedbackType, string> = {
 }
 
 /**
- * "Send feedback…": a bug, an idea, a question or some praise, to the people
+ * Settings → Feedback: a bug, an idea, a question or some praise, to the people
  * who make Crewbox.
  *
  * It goes to the crew box, which sends it on when it has internet — so this
@@ -22,8 +22,11 @@ const TYPE_LABELS: Record<FeedbackType, string> = {
  * The licence tick is only offered to an unlocked admin on a licensed box.
  * The box's licence is the organiser's, not a crew member's, and the key is
  * added by the box itself; it is never sent to this device.
+ *
+ * A tab rather than a dialog, so there is no Cancel: leaving the tab or
+ * closing Settings is the way out, and what was typed goes with it.
  */
-export default function FeedbackDialog({ onClose }: { onClose: () => void }) {
+export default function FeedbackForm() {
   const adminToken = useStore((s) => s.adminToken)
   const [type, setType] = useState<FeedbackType>('idea')
   const [message, setMessage] = useState('')
@@ -71,16 +74,16 @@ export default function FeedbackDialog({ onClose }: { onClose: () => void }) {
 
   const done = outcome === 'sent' || outcome === 'saved'
 
+  function another() {
+    setMessage('')
+    setIsPublic(false)
+    setIncludeLicence(false)
+    setOutcome(null)
+  }
+
   return (
-    <div
-      className="search-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose()
-      }}
-      onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}
-    >
-      <div className="confirm-panel feedback-panel" role="dialog" aria-label="Send feedback">
-        <h3>Send feedback</h3>
+    <div className="admin-scroll">
+      <div className="settings-pane feedback-panel">
         {done ? (
           <>
             <p>
@@ -89,8 +92,8 @@ export default function FeedbackDialog({ onClose }: { onClose: () => void }) {
                 : 'Saved on this device. It goes to the crew box as soon as the app can reach it, and on from there.'}
             </p>
             <div className="confirm-actions">
-              <button className="confirm-send" onClick={onClose}>
-                Done
+              <button className="confirm-cancel" onClick={another}>
+                Send more
               </button>
             </div>
           </>
@@ -161,9 +164,6 @@ export default function FeedbackDialog({ onClose }: { onClose: () => void }) {
               <div className="join-error">{outcome.refused}</div>
             )}
             <div className="confirm-actions">
-              <button className="confirm-cancel" onClick={onClose} disabled={busy}>
-                Cancel
-              </button>
               <button className="confirm-send" onClick={() => void onSend()} disabled={!canSend}>
                 {busy ? 'Sending…' : 'Send'}
               </button>

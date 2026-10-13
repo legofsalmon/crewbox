@@ -123,7 +123,7 @@ export default function MoveWorkOffer() {
   const ready = useStore((s) => s.phase === 'chat' && s.hasConnected && !s.elsewhere)
   // Not over Your boxes, where the same event's row offers it, nor over the
   // admin panel, where the admin saying so has only just said it.
-  const boxesOpen = useStore((s) => s.boxesOpen || s.adminOpen)
+  const boxesOpen = useStore((s) => s.boxesOpen || s.settingsOpen)
   const events = useSyncExternalStore(subscribeKnownEvents, knownEvents)
   const candidate = ready ? toOffer(events, openEvent())?.id : undefined
   const [asking, setAsking] = useState<{ from: KnownEvent; held: Movable } | null>(null)

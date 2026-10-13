@@ -148,7 +148,7 @@ strings removed on the box. Never messages, names, files or the event. If a
 screen on your phone breaks, the same kind of report goes only if you press
 **Send report**, and it goes via the box.
 
-**Feedback you choose to send.** "Send feedback…" sends the type and message
+**Feedback you choose to send.** Settings → Feedback sends the type and message
 you wrote, the Crewbox version and platform, and your email only if you typed
 it. It goes via the box.
 
