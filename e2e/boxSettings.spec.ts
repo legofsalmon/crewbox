@@ -14,7 +14,8 @@ import { newDevice, test } from './helpers.ts'
 test.describe.configure({ mode: 'serial' })
 
 const unlock = async (page: Page) => {
-  await page.getByRole('button', { name: 'Admin panel' }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('tab', { name: /^Admin/ }).click()
   await page.getByLabel('Admin password').fill('e2e-admin-password')
   await page.getByRole('button', { name: 'Unlock' }).click()
   await expect(page.getByRole('heading', { name: 'Crew' })).toBeVisible()

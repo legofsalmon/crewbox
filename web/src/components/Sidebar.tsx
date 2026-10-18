@@ -30,12 +30,6 @@ function Icon({ d, circle }: { d: string; circle?: boolean }) {
   )
 }
 
-const ICON_BELL = 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0'
-const ICON_BELL_OFF =
-  'M13.7 21a2 2 0 0 1-3.4 0M18.6 13A17.9 17.9 0 0 1 18 8a6 6 0 0 0-9.3-5M6.3 6.3C6.1 6.8 6 7.4 6 8c0 7-3 9-3 9h14M2 2l20 20'
-const ICON_SUN =
-  'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'
-const ICON_MOON = 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'
 const ICON_LOGOUT = 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9'
 const ICON_GEAR =
   'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'
@@ -57,14 +51,7 @@ export default function Sidebar() {
   const me = useStore((s) => s.me)
   const connection = useStore((s) => s.connection)
   const logout = useStore((s) => s.logout)
-  const theme = useStore((s) => s.theme)
-  const toggleTheme = useStore((s) => s.toggleTheme)
-  const sounds = useStore((s) => s.sounds)
-  const toggleSounds = useStore((s) => s.toggleSounds)
-  const setAdminOpen = useStore((s) => s.setAdminOpen)
-  const setFeedbackOpen = useStore((s) => s.setFeedbackOpen)
-  const setAlertSettingsOpen = useStore((s) => s.setAlertSettingsOpen)
-  const boxDecidesAlerts = useStore((s) => Boolean(s.config.alerts))
+  const openSettings = useStore((s) => s.openSettings)
   const latencyMs = useStore((s) => s.latencyMs)
   const configModules = useStore((s) => s.config.modules)
   const eventName = useStore((s) => displayName(s.config.eventName))
@@ -110,32 +97,16 @@ export default function Sidebar() {
                   : 'Offline'}
             </span>
           </div>
-          {/* Always shown. The panel asks for the admin password when it
-              opens, so hiding the cog would only mean nobody could find
-              their way in — which is how a box ends up with no admin. */}
+          {/* Settings, for everyone: theme, alert sounds, alerts, feedback,
+              and the Admin tab behind the box's password. Where the admin
+              cog always was, so the way in has not moved. */}
           <button
             className="icon-btn"
-            title="Admin panel"
-            aria-label="Admin panel"
-            onClick={() => setAdminOpen(true)}
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => openSettings()}
           >
             <Icon d={ICON_GEAR} circle />
-          </button>
-          <button
-            className="icon-btn"
-            title={sounds ? 'Mute alert sounds' : 'Unmute alert sounds'}
-            aria-label={sounds ? 'Mute alert sounds' : 'Unmute alert sounds'}
-            onClick={toggleSounds}
-          >
-            <Icon d={sounds ? ICON_BELL : ICON_BELL_OFF} />
-          </button>
-          <button
-            className="icon-btn"
-            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            onClick={toggleTheme}
-          >
-            <Icon d={theme === 'dark' ? ICON_SUN : ICON_MOON} />
           </button>
           <button
             className="icon-btn"
@@ -148,18 +119,6 @@ export default function Sidebar() {
         </div>
       )}
       <div className="sidebar-footer-links">
-        {/* Beside the version, where "about this app" lives: a bug, an idea,
-            a question or praise, to the people who make Crewbox. */}
-        {me && boxDecidesAlerts && (
-          <button className="feedback-link" onClick={() => setAlertSettingsOpen(true)}>
-            Alerts…
-          </button>
-        )}
-        {me && (
-          <button className="feedback-link" onClick={() => setFeedbackOpen(true)}>
-            Send feedback…
-          </button>
-        )}
         {me && (
           <button className="delete-account-link" onClick={() => setDeleteOpen(true)}>
             Delete account

@@ -761,7 +761,8 @@ test('the old event’s work comes across to the box that took its place', async
 
     // Its admin, on this phone, says it carries on the event it took over:
     // the one this phone has been on besides the spare's own.
-    await page.getByRole('button', { name: 'Admin panel' }).click()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('tab', { name: /^Admin/ }).click()
     await page.getByLabel('Admin password').fill('e2e-admin-password')
     await page.getByRole('button', { name: 'Unlock' }).click()
     const carries = page.getByLabel('Carries on another event')
@@ -777,7 +778,7 @@ test('the old event’s work comes across to the box that took its place', async
     // Not over the panel, where it has only just been said...
     const offer = page.getByRole('dialog', { name: 'Bring your work across?' })
     await expect(offer).toHaveCount(0)
-    await page.getByRole('button', { name: 'Close admin panel' }).click()
+    await page.getByRole('button', { name: 'Close settings' }).click()
 
     // ...and then, the box having said so, the phone asks.
     await expect(offer).toContainText('This box carries on an event this phone still has work from')

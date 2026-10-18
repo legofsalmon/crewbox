@@ -22,7 +22,8 @@ import { mintLicenceToken } from './licenceKey.ts'
 test.describe.configure({ mode: 'serial' })
 
 const unlock = async (page: Page) => {
-  await page.getByRole('button', { name: 'Admin panel' }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('tab', { name: /^Admin/ }).click()
   await page.getByLabel('Admin password').fill('e2e-admin-password')
   await page.getByRole('button', { name: 'Unlock' }).click()
   await expect(page.getByRole('heading', { name: 'Crew' })).toBeVisible()
@@ -43,7 +44,7 @@ test('releasing the licence locks event setup, marks the box, and never touches 
   // Release this box. Two presses, like retiring a channel.
   await admin.getByRole('button', { name: 'Release this box' }).click()
   await admin.getByRole('button', { name: 'Really release?' }).click()
-  await expect(admin.locator('.admin-panel > .admin-note')).toContainText(
+  await expect(admin.locator('.settings-tabpanel > .admin-note')).toContainText(
     /could not reach the service/
   )
 
@@ -70,7 +71,9 @@ test('releasing the licence locks event setup, marks the box, and never touches 
   // A pasted token that is not one is refused in words, and nothing changes.
   await admin.getByLabel('Licence token').fill('not-a-licence-token')
   await admin.getByRole('button', { name: 'Use this token' }).click()
-  await expect(admin.locator('.admin-panel > .admin-note')).toContainText(/Nothing was stored/)
+  await expect(admin.locator('.settings-tabpanel > .admin-note')).toContainText(
+    /Nothing was stored/
+  )
   await expect(banner).toBeVisible()
 })
 
@@ -116,7 +119,9 @@ test('offline activation: the request code, a token for it, pasted in', async ({
   // What the account page hands back, for exactly that box.
   await admin.getByLabel('Licence token').fill(mintLicenceToken(code))
   await admin.getByRole('button', { name: 'Use this token' }).click()
-  await expect(admin.locator('.admin-panel > .admin-note')).toContainText('Licence token accepted')
+  await expect(admin.locator('.settings-tabpanel > .admin-note')).toContainText(
+    'Licence token accepted'
+  )
 
   // Every mark goes, everywhere, and the event can be configured again.
   await expect(admin.locator('.admin-licence-banner')).toHaveCount(0)

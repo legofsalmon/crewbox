@@ -25,7 +25,7 @@ const ANNOUNCE_RECHECK_MS = 1000
  * Session plus unlock. Read from the store rather than passed down, because
  * every row in this panel needs it and threading it through would be noise.
  * The admin token is only ever non-null while this component is mounted —
- * App.tsx renders the unlock screen instead when it isn't.
+ * Settings.tsx renders the unlock screen instead when it isn't.
  */
 function auth(): api.AdminAuth {
   return {
@@ -34,8 +34,8 @@ function auth(): api.AdminAuth {
   }
 }
 
+/** Settings → Admin, once unlocked: the box's own settings. */
 export default function AdminPanel() {
-  const setAdminOpen = useStore((s) => s.setAdminOpen)
   const lockAdmin = useStore((s) => s.lockAdmin)
   const users = useStore((s) => s.users)
   const online = useStore((s) => s.online)
@@ -101,139 +101,115 @@ export default function AdminPanel() {
   }
 
   return (
-    <div
-      className="admin-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) setAdminOpen(false)
-      }}
-      onKeyDown={(e) => e.key === 'Escape' && setAdminOpen(false)}
-    >
-      <div className="admin-panel" role="dialog" aria-label="Admin panel">
-        <header className="admin-head">
-          <h2>Admin</h2>
-          {/* Closing the panel leaves it unlocked for the rest of the session,
-              which is what makes it usable during a shift. Lock is the way to
-              end that deliberately — before handing the phone to someone. */}
-          <button className="admin-btn" onClick={lockAdmin}>
-            Lock
-          </button>
-          <button
-            className="icon-btn"
-            aria-label="Close admin panel"
-            onClick={() => setAdminOpen(false)}
-          >
-            ✕
-          </button>
-        </header>
-        {/* Outside the scroll, so it stays put while the admin works: the
+    <>
+      {/* Closing Settings leaves this unlocked for the rest of the session,
+          which is what makes it usable during a shift. Lock is the way to end
+          that deliberately — before handing the phone to someone. Said, not
+          only offered: an unlocked tab looks like any other. */}
+      <div className="admin-lockbar">
+        <span>Unlocked on this device until the app closes.</span>
+        <button className="admin-btn" onClick={lockAdmin}>
+          Lock
+        </button>
+      </div>
+      {/* Outside the scroll, so it stays put while the admin works: the
             watermark policy's whole meaning is that this is not missed. */}
-        {banner && (
-          <div className="admin-licence-banner" role="status">
-            <span>{banner}</span>
-            <button
-              className="admin-btn"
-              onClick={() =>
-                document
-                  .getElementById('admin-licence')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              }
-            >
-              Licence
-            </button>
-          </div>
+      {banner && (
+        <div className="admin-licence-banner" role="status">
+          <span>{banner}</span>
+          <button
+            className="admin-btn"
+            onClick={() =>
+              document
+                .getElementById('admin-licence')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+          >
+            Licence
+          </button>
+        </div>
+      )}
+      {reports && (
+        <CrashPrompt reports={reports} auth={auth} onReports={setReports} onNote={setNote} />
+      )}
+      {note && <div className="admin-note">{note}</div>}
+      <div className="admin-scroll">
+        <section>
+          <h3 className="admin-section-title">Crew</h3>
+          <ul>
+            {crew.map((user) => (
+              <UserRow
+                key={user.id}
+                user={user}
+                online={!!online[user.id]}
+                isMe={user.id === me?.id}
+                onNote={setNote}
+              />
+            ))}
+          </ul>
+        </section>
+        <section>
+          <h3 className="admin-section-title">Channels</h3>
+          <ul>
+            {publicChannels.map((channel) => (
+              <ChannelRow key={channel.id} channel={channel} onNote={setNote} />
+            ))}
+          </ul>
+        </section>
+        <section>
+          <h3 className="admin-section-title">This box</h3>
+          <ServerSection onNote={setNote} locked={licence?.locked ?? false} />
+        </section>
+        <section>
+          <h3 className="admin-section-title">Backups</h3>
+          <BackupSection auth={auth} onNote={setNote} />
+        </section>
+        <section>
+          <h3 className="admin-section-title">This network</h3>
+          <p className="admin-hint">
+            What the box has been plugged into. No internet is normal on site — nothing here needs
+            it.
+          </p>
+          <Environment onNote={setNote} />
+          <RouterDnsSection auth={auth} onNote={setNote} />
+        </section>
+        <section>
+          <h3 className="admin-section-title">Box settings</h3>
+          <BoxSettingsSection auth={auth} onNote={setNote} locked={licence?.locked ?? false} />
+        </section>
+        {licence && (
+          <section>
+            <h3 className="admin-section-title">Licence</h3>
+            <LicenceSection licence={licence} auth={auth} onLicence={setLicence} onNote={setNote} />
+          </section>
         )}
         {reports && (
-          <CrashPrompt reports={reports} auth={auth} onReports={setReports} onNote={setNote} />
+          <section>
+            <h3 className="admin-section-title">Crash reports</h3>
+            <ReportsSection reports={reports} auth={auth} onReports={setReports} onNote={setNote} />
+          </section>
         )}
-        {note && <div className="admin-note">{note}</div>}
-        <div className="admin-scroll">
-          <section>
-            <h3 className="admin-section-title">Crew</h3>
-            <ul>
-              {crew.map((user) => (
-                <UserRow
-                  key={user.id}
-                  user={user}
-                  online={!!online[user.id]}
-                  isMe={user.id === me?.id}
-                  onNote={setNote}
-                />
-              ))}
-            </ul>
-          </section>
-          <section>
-            <h3 className="admin-section-title">Channels</h3>
-            <ul>
-              {publicChannels.map((channel) => (
-                <ChannelRow key={channel.id} channel={channel} onNote={setNote} />
-              ))}
-            </ul>
-          </section>
-          <section>
-            <h3 className="admin-section-title">This box</h3>
-            <ServerSection onNote={setNote} locked={licence?.locked ?? false} />
-          </section>
-          <section>
-            <h3 className="admin-section-title">Backups</h3>
-            <BackupSection auth={auth} onNote={setNote} />
-          </section>
-          <section>
-            <h3 className="admin-section-title">This network</h3>
-            <p className="admin-hint">
-              What the box has been plugged into. No internet is normal on site — nothing here needs
-              it.
-            </p>
-            <Environment onNote={setNote} />
-            <RouterDnsSection auth={auth} onNote={setNote} />
-          </section>
-          <section>
-            <h3 className="admin-section-title">Box settings</h3>
-            <BoxSettingsSection auth={auth} onNote={setNote} locked={licence?.locked ?? false} />
-          </section>
-          {licence && (
-            <section>
-              <h3 className="admin-section-title">Licence</h3>
-              <LicenceSection
-                licence={licence}
-                auth={auth}
-                onLicence={setLicence}
-                onNote={setNote}
-              />
-            </section>
-          )}
-          {reports && (
-            <section>
-              <h3 className="admin-section-title">Crash reports</h3>
-              <ReportsSection
-                reports={reports}
-                auth={auth}
-                onReports={setReports}
-                onNote={setNote}
-              />
-            </section>
-          )}
-          <section>
-            <h3 className="admin-section-title">Deleted this week</h3>
-            <BinSection auth={auth} onNote={setNote} />
-          </section>
-          <section>
-            <h3 className="admin-section-title">Export</h3>
-            <p className="admin-hint">
-              Download every user, channel and message as a JSON file for the post-event archive.
-            </p>
-            <div className="admin-export">
-              <button
-                className="admin-btn"
-                disabled={exporting}
-                onClick={() => void downloadExport()}
-              >
-                {exporting ? 'Preparing…' : 'Download chat logs'}
-              </button>
-            </div>
-          </section>
-        </div>
+        <section>
+          <h3 className="admin-section-title">Deleted this week</h3>
+          <BinSection auth={auth} onNote={setNote} />
+        </section>
+        <section>
+          <h3 className="admin-section-title">Export</h3>
+          <p className="admin-hint">
+            Download every user, channel and message as a JSON file for the post-event archive.
+          </p>
+          <div className="admin-export">
+            <button
+              className="admin-btn"
+              disabled={exporting}
+              onClick={() => void downloadExport()}
+            >
+              {exporting ? 'Preparing…' : 'Download chat logs'}
+            </button>
+          </div>
+        </section>
       </div>
-    </div>
+    </>
   )
 }
 

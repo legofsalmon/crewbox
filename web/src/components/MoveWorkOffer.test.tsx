@@ -62,7 +62,7 @@ beforeEach(() => {
     hasConnected: true,
     elsewhere: null,
     boxesOpen: false,
-    adminOpen: false,
+    settingsOpen: false,
   })
   host = document.createElement('div')
   document.body.append(host)
@@ -92,11 +92,11 @@ describe('asking to bring an event’s work across', () => {
   })
 
   it('waits for the admin panel to close, where its admin has just said so', async () => {
-    useStore.setState({ adminOpen: true })
+    useStore.setState({ settingsOpen: true })
     carriedOn('friday', 'spare')
     await render()
     expect(asking()).toBeNull()
-    act(() => useStore.setState({ adminOpen: false }))
+    act(() => useStore.setState({ settingsOpen: false }))
     await settle()
     expect(asking()).not.toBeNull()
   })

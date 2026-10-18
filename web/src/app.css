@@ -2457,17 +2457,206 @@ a.app-version:hover {
   margin-right: 8px;
 }
 
-/* The password gate in front of the panel — narrower than the panel proper,
-   because it is one field and a sentence. */
-.admin-unlock {
-  max-width: 400px;
-}
-
+/* The password gate on the Admin tab — narrower than the panel, because it
+   is one field and a sentence. */
 .admin-unlock-form {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-width: 440px;
   padding: 18px 20px 20px;
+}
+
+.admin-unlock-form .admin-unlock-why {
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+/* ------------------------------------------------------------- settings */
+
+/* Settings: the admin panel's frame, with tabs under its head. Its height
+   is fixed rather than following each tab, so moving between them does not
+   make the panel jump under a thumb. */
+.settings-panel {
+  height: 80vh;
+}
+
+/* Design system: components.md, Tabs. The chosen tab has a 2px accent line
+   and primary ink; the others are secondary ink, and hover washes. */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.settings-tab {
+  min-height: 44px;
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.settings-tab:hover {
+  background: var(--bg-hover);
+}
+
+.settings-tab[aria-selected='true'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-tab-lock {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Four tabs across a phone, with Admin's state under its name rather than
+   beside it, so none of them is cut off behind a sideways scroll. */
+@media (max-width: 599px) {
+  .settings-tabs {
+    gap: 0;
+    padding: 0 4px;
+  }
+
+  .settings-tab {
+    flex: 1 1 auto;
+    padding: 0 6px;
+    line-height: 1.15;
+  }
+
+  .settings-tab-lock {
+    display: block;
+    font-size: 11.5px;
+  }
+
+  .settings-tab-dot {
+    display: none;
+  }
+}
+
+.settings-tabpanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-tabpanel > .admin-scroll {
+  flex: 1;
+}
+
+/* A tab's own content where it is not rows: the alerts list and the
+   feedback form. */
+.settings-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+}
+
+.settings-pane p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Design system: components.md, Segmented control. */
+.settings-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+
+.settings-seg button {
+  min-width: 88px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.settings-seg button:hover:not([aria-pressed='true']) {
+  background: var(--bg-active);
+}
+
+.settings-seg button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Design system: components.md, Switch. Off: an inset track with a
+   secondary thumb. On: an accent track with the accent's own ink. */
+.settings-switch {
+  cursor: pointer;
+}
+
+.settings-switch input[role='switch'] {
+  appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  border-radius: 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--ds-line-control);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.settings-switch input[role='switch']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 120ms ease;
+}
+
+.settings-switch input[role='switch']:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.settings-switch input[role='switch']:checked::after {
+  background: var(--accent-contrast);
+  transform: translateX(16px);
+}
+
+.settings-hint {
+  padding: 0 20px;
+  margin: 0;
+}
+
+/* The Admin tab, unlocked: says so, with the way to stop it beside it. */
+.admin-lockbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 20px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .admin-unlock-form label {
@@ -3568,12 +3757,6 @@ button.boxes-pick:hover .boxes-name {
   color: var(--accent);
 }
 
-.feedback-panel {
-  width: min(480px, 100%);
-  max-height: 85vh;
-  overflow-y: auto;
-}
-
 .feedback-types {
   display: flex;
   flex-wrap: wrap;
@@ -3823,12 +4006,6 @@ button.boxes-pick:hover .boxes-name {
 .follow-stage.following,
 .lock-screen-stage.following {
   color: var(--accent);
-}
-
-.alert-settings-panel {
-  width: min(480px, 100%);
-  max-height: 85vh;
-  overflow-y: auto;
 }
 
 .alert-settings-panel h4 {

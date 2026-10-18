@@ -133,7 +133,7 @@ export default function ReportsSection({
         version, the operating system, a random id for this install and the error with its stack
         trace — home folders, user names, addresses and anything after “?” in a web address are
         removed on the box first. Never messages, names, files, the event or the licence. Feedback
-        goes only when somebody presses Send in “Send feedback…”.
+        goes only when somebody presses Send under Settings → Feedback.
       </p>
       <p className="admin-hint">
         {!reports.outbound

@@ -23,9 +23,21 @@ From top to bottom:
   **Network** — whichever this box has enabled. Running order carries what's
   on each stage right now, so the answer is there without opening anything.
 - Your **identity row**: your avatar and name, your connection ("Online ·
-  42 ms"), and four buttons — **admin panel** (the cog — visible to
-  everyone, but it wants the admin password), **mute/unmute alert sounds**
-  (the bell), **light/dark theme** (sun/moon), and **sign out**.
+  42 ms"), and two buttons — **Settings** (the cog) and **sign out**.
+
+## Settings
+
+The cog in your identity row opens **Settings**, which everyone has. It
+opens on the tab you left it on:
+
+- **General** — **Light** or **Dark**, and the **Alert sounds** switch for
+  the chime this device plays when an alert comes in.
+- **Alerts** — what buzzes your phone, channel by channel, and the stages
+  whose changeover calls you follow (see [Chat](/docs/chat)).
+- **Feedback** — a note to the people who make Crewbox (below).
+- **Admin** — the box's own settings. It says **locked** until someone types
+  the admin password, and is there for everyone so the way in can always be
+  found. See [the admin panel](/docs/admin).
 
 ## On a phone: the drawer
 
@@ -38,7 +50,7 @@ back. Every module's screens carry it too — you can't get stranded.
 
 ## Light and dark
 
-The sun/moon button in the identity row switches theme, and the choice
+**Light** and **Dark** under Settings → General switch theme, and the choice
 sticks on that device. Dark is the default and follows your system setting
 until you choose. Both themes are maintained deliberately: dark for a FOH
 tent at night, light for reading a patch sheet outdoors in daylight.
@@ -91,7 +103,7 @@ you press **Send report**.
 
 ## Send feedback
 
-**Send feedback…** at the bottom of the sidebar, beside the version, is for
+Settings → **Feedback** is for
 anything you'd tell the people who make Crewbox: something broken, an idea, a
 question, or something that worked. Add your email if you'd like a reply.
 Tick **OK to post this publicly** and a bug or idea may be filed on the public

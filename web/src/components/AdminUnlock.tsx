@@ -3,19 +3,18 @@ import { useStore } from '../store.ts'
 import { ApiError } from '../lib/api.ts'
 
 /**
- * The password gate in front of the admin panel.
+ * The password gate in front of Settings → Admin.
  *
  * Admin used to be a property of a person — the first crew member to join
  * got it, permanently, and took it with them if they ever deleted their
  * account, leaving the box with no way in at all. It is now something anyone
- * can unlock by knowing the password, which is why the cog is visible to
+ * can unlock by knowing the password, which is why the tab is there for
  * everyone: a control nobody can find is how a box loses its admin.
  *
  * The token this returns lives in memory only, so closing the app locks the
  * panel again without anyone having to remember to.
  */
 export default function AdminUnlock() {
-  const setAdminOpen = useStore((s) => s.setAdminOpen)
   const unlockAdmin = useStore((s) => s.unlockAdmin)
   /**
    * Why the panel locked itself, when it did rather than being locked by
@@ -45,63 +44,52 @@ export default function AdminUnlock() {
   }
 
   return (
-    <div
-      className="admin-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) setAdminOpen(false)
-      }}
-      onKeyDown={(e) => e.key === 'Escape' && setAdminOpen(false)}
-    >
-      <div className="admin-panel admin-unlock" role="dialog" aria-label="Unlock admin panel">
-        <header className="admin-head">
-          <h2>Admin</h2>
-          <button className="icon-btn" aria-label="Close" onClick={() => setAdminOpen(false)}>
-            ✕
-          </button>
-        </header>
-        <form className="admin-unlock-form" onSubmit={(e) => void submit(e)}>
-          <label htmlFor="admin-password">Admin password</label>
-          <input
-            id="admin-password"
-            type="password"
-            autoFocus
-            value={password}
-            disabled={busy}
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            placeholder="the box's admin password"
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {lockedReason && !error && (
-            <p className="admin-note" role="status">
-              {lockedReason}
-            </p>
-          )}
-          {/*
-           * Not the event PIN, and people will try the event PIN first. And
-           * not always written down: a Mac box has no console to print it
-           * to, so the way back in is said here, where it is missed.
-           */}
-          <p className="admin-muted">
-            Not the event PIN. Lost it? On the box itself, choose{' '}
-            <strong>Open the admin panel</strong> from the Crewbox icon beside the clock or in the
-            tray, then set a new one here.
+    <div className="admin-scroll">
+      <form
+        className="admin-unlock-form"
+        aria-label="Unlock admin"
+        onSubmit={(e) => void submit(e)}
+      >
+        <p className="admin-hint admin-unlock-why">
+          The box’s own settings: crew, channels, networks, backups and updates.
+        </p>
+        <label htmlFor="admin-password">Admin password</label>
+        <input
+          id="admin-password"
+          type="password"
+          autoFocus
+          value={password}
+          disabled={busy}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="the box's admin password"
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        {lockedReason && !error && (
+          <p className="admin-note" role="status">
+            {lockedReason}
           </p>
-          {error && (
-            <p className="admin-error" role="alert">
-              {error}
-            </p>
-          )}
-          <button
-            className="admin-btn admin-btn-primary"
-            type="submit"
-            disabled={busy || !password}
-          >
-            {busy ? 'Checking…' : 'Unlock'}
-          </button>
-        </form>
-      </div>
+        )}
+        {/*
+         * Not the event PIN, and people will try the event PIN first. And
+         * not always written down: a Mac box has no console to print it
+         * to, so the way back in is said here, where it is missed.
+         */}
+        <p className="admin-muted">
+          Not the event PIN. Lost it? On the box itself, choose{' '}
+          <strong>Open the admin panel</strong> from the Crewbox icon beside the clock or in the
+          tray, then set a new one under This box.
+        </p>
+        {error && (
+          <p className="admin-error" role="alert">
+            {error}
+          </p>
+        )}
+        <button className="admin-btn admin-btn-primary" type="submit" disabled={busy || !password}>
+          {busy ? 'Checking…' : 'Unlock'}
+        </button>
+      </form>
     </div>
   )
 }
