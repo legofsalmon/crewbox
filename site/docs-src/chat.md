@@ -27,11 +27,15 @@ unreads actually need you.
 
 ## Direct messages
 
-Every crew member on the box is listed under **Direct messages** — online
-people first, each with a presence dot. A DM is private between the two of
-you. An `office` tag beside a name means they're connected from off the
-event network (from the production office over a tunnel, say) — useful to
-know before you ask them to physically go and look at something.
+**Direct messages** lists the people who are online, each with a presence
+dot. Everyone else who has joined the box waits behind **Show N offline** at
+the bottom of the list; tap it to see them, and **Hide offline** to put them
+away again. Someone offline who has written to you stays in the list until
+you've read it, and so does the conversation you have open. A DM is private
+between the two of you. An `off-site` tag beside a name means they're
+connected from off the event network (from the production office over a
+tunnel, say) — useful to know before you ask them to physically go and look
+at something.
 
 ## Mentions
 
