@@ -565,7 +565,7 @@ export async function readWifi(io: SystemIo): Promise<Reading<WifiReading | null
   const radios = await wirelessAdapters(io)
   if (radios.length === 0) return missing(null, 'this box has no Wi-Fi adapter')
   const adapter = radios[0]!
-  let iwError: unknown = null
+  let iwError: unknown
   try {
     const networks = parseIwScanDump(await io.run('iw', ['dev', adapter, 'scan', 'dump']))
     const survey = parseIwSurvey(
