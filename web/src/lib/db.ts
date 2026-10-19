@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { Channel, Message, User } from '@crewbox/shared'
+import type { Channel, Department, Message, User } from '@crewbox/shared'
 import { openEvent, storageNameFor } from './eventScope.ts'
 import { holdUnsent, releaseAllUnsent, releaseUnsent, withHeld } from './unsent.ts'
 
@@ -45,6 +45,8 @@ export interface Snapshot {
   key: 'snapshot'
   me: User | null
   users: User[]
+  /** Absent in snapshots from before departments. */
+  departments?: Department[]
   channels: Channel[]
   readState: Record<string, number>
   /** Highest seq per channel that @-mentions me (absent in old snapshots). */

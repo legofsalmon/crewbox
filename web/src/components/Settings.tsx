@@ -1,5 +1,6 @@
-import { useRef, type KeyboardEvent } from 'react'
-import { useStore, type SettingsTab } from '../store.ts'
+import { useRef, useState, type KeyboardEvent } from 'react'
+import { sessionToken, useStore, type SettingsTab } from '../store.ts'
+import * as api from '../lib/api.ts'
 import AdminPanel from './AdminPanel.tsx'
 import AdminUnlock from './AdminUnlock.tsx'
 import AlertSettings from './AlertSettings.tsx'
@@ -151,6 +152,7 @@ function General() {
           </div>
         </div>
       </section>
+      <DepartmentPicker />
       <section>
         <h3 className="admin-section-title">Sound</h3>
         <label className="admin-row settings-switch">
@@ -162,5 +164,71 @@ function General() {
         </p>
       </section>
     </div>
+  )
+}
+
+/**
+ * Which department you are in: who an `@Lighting` reaches, and where you sit
+ * in the crew list. Everybody's own to pick, since it opens nothing; an
+ * admin can set it too. Not shown at all until the box has departments.
+ */
+function DepartmentPicker() {
+  const me = useStore((s) => s.me)
+  const departments = useStore((s) => s.departments)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sorted = Object.values(departments).sort((a, b) => a.name.localeCompare(b.name))
+  if (!me || sorted.length === 0) return null
+  const current = me.departmentId && departments[me.departmentId] ? me.departmentId : ''
+
+  async function choose(departmentId: string) {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.setMyDepartment(sessionToken() ?? '', departmentId || null)
+    } catch (err) {
+      setError(
+        err instanceof api.ApiError
+          ? err.message
+          : 'Could not reach the box. Your department is as it was; try again once you’re back.'
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const name = current ? departments[current]!.name : null
+  return (
+    <section>
+      <h3 className="admin-section-title" id="settings-department">
+        Department
+      </h3>
+      <div className="admin-row settings-department">
+        <select
+          aria-labelledby="settings-department"
+          value={current}
+          disabled={busy}
+          onChange={(e) => void choose(e.target.value)}
+        >
+          <option value="">None</option>
+          {sorted.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {error ? (
+        <p className="admin-error settings-hint" role="alert">
+          {error}
+        </p>
+      ) : (
+        <p className="admin-hint settings-hint">
+          {name
+            ? `@${name} in any channel reaches you, as your own name does.`
+            : 'Pick yours, and a message to @Lighting, say, reaches you if you’re in Lighting.'}
+        </p>
+      )}
+    </section>
   )
 }
