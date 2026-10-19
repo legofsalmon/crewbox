@@ -13,9 +13,10 @@ import UserNotifications
 ///
 /// What it reads from a notification, which the alerts provider sets on
 /// each one it posts (docs/ALERTS.md):
-/// - `kind`: the alert's kind. While the app is on screen, a show stop or a
-///   changeover call still shows as a banner; the page announces the rest
-///   with its own banner and chirp, as it does on Android.
+/// - `kind`: the alert's kind. While the app is on screen, a show stop, a
+///   changeover call or a call for help still shows as a banner; the page
+///   announces the rest with its own banner and chirp, and lights the whole
+///   screen for a cue light, as it does on Android.
 /// - `link`: a `crewbox://open` link, where a tap goes. It is handed to the
 ///   page the way a `crewbox://join` link is, once the bridge's view has
 ///   appeared, so a tap that started the app isn't lost before the page
@@ -24,7 +25,7 @@ final class AlertsNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let shared = AlertsNotifications()
 
     /// The kinds that show while the app is on screen.
-    static let shownInApp: Set<String> = ["showStop", "changeover"]
+    static let shownInApp: Set<String> = ["showStop", "changeover", "panic"]
 
     private var bridgeReady = false
     private var waiting: [URL] = []

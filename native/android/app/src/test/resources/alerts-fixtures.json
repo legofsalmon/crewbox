@@ -933,6 +933,44 @@
       "id": "c:a-2:changeover:2026-07-10:1290",
       "at": 1780003600000,
       "quiet": false
+    },
+    "cue": {
+      "cue": {
+        "id": "q-1",
+        "label": "Pyro 1",
+        "stage": "Main Stage",
+        "actName": "The Hollows",
+        "target": {
+          "id": "u-jo",
+          "name": "Jo"
+        },
+        "caller": {
+          "id": "u-sam",
+          "name": "Sam"
+        },
+        "state": "go",
+        "standbyAt": 1780000000000,
+        "readyAt": 1780000020000,
+        "goAt": 1780000030000,
+        "by": null,
+        "endedAt": 1780000030000
+      },
+      "at": 1780000030000
+    },
+    "panic": {
+      "panic": {
+        "id": "p-1",
+        "person": {
+          "id": "u-jo",
+          "name": "Jo"
+        },
+        "at": 1780000180000,
+        "channelId": "c-general",
+        "responders": [],
+        "endedBy": null,
+        "endedAt": null
+      },
+      "at": 1780000180000
     }
   },
   "frames": {
@@ -1122,6 +1160,41 @@
         "quiet": false,
         "urgent": true,
         "at": 1780003600000
+      }
+    },
+    "alertCue": {
+      "type": "alert",
+      "t": 1780005400000,
+      "alert": {
+        "id": "q:q-1",
+        "kind": "cue",
+        "title": "GO: Pyro 1",
+        "body": "Sam called GO · Main Stage, during The Hollows",
+        "target": {
+          "kind": "cues"
+        },
+        "thread": "cues",
+        "quiet": false,
+        "urgent": true,
+        "at": 1780000030000
+      }
+    },
+    "alertPanic": {
+      "type": "alert",
+      "t": 1780005400000,
+      "alert": {
+        "id": "p:p-1",
+        "kind": "panic",
+        "title": "Jo needs help",
+        "body": "Held the panic button. Open crewbox to say you are going.",
+        "target": {
+          "kind": "channel",
+          "channelId": "c-general"
+        },
+        "thread": "panic",
+        "quiet": false,
+        "urgent": true,
+        "at": 1780000180000
       }
     },
     "read": {

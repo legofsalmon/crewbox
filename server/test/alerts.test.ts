@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import {
   callAlert,
   callsDue,
+  cueAlert,
+  panicAlert,
   callsFor,
   countdownFor,
   incidentAlert,
@@ -22,7 +24,9 @@ import {
   type AlertKind,
   type AlertMessageInput,
   type ChannelAlertLevel,
+  type Cue,
   type Incident,
+  type Panic,
 } from '@crewbox/shared'
 // @ts-expect-error -- a plain .mjs script with no types, run by hand
 import { FIXTURES, render } from '../../scripts/alerts-fixtures.mjs'
@@ -70,6 +74,8 @@ interface Fixtures {
     desk: MessageInput
     showStop: { incident: Incident; quiet: boolean }
     changeover: { acts: Act[]; day: string; id: string; at: number; quiet: boolean }
+    cue: { cue: Cue; at: number }
+    panic: { panic: Panic; at: number }
   }
   frames: Record<string, { type: string; t?: number; alert?: Alert } & Record<string, unknown>>
 }
@@ -329,6 +335,8 @@ describe('the frames', () => {
     expect(callAlert(call, inputs.changeover.at, inputs.changeover.quiet)).toEqual(
       frames.alertChangeover!.alert
     )
+    expect(cueAlert(inputs.cue.cue, inputs.cue.at)).toEqual(frames.alertCue!.alert)
+    expect(panicAlert(inputs.panic.panic, inputs.panic.at)).toEqual(frames.alertPanic!.alert)
   })
 
   it('stamp every frame from the box with its clock', () => {

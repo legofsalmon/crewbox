@@ -81,6 +81,8 @@ public class AlertsService extends Service {
   private static final int NOTIF_COUNTDOWN = 3;
   /** Stage countdown: ongoing, low, and promoted to a Live Update where Android can. */
   static final String CH_COUNTDOWN = "countdown";
+  /** Two long buzzes: a cue light, told apart from a message in a pocket. */
+  static final long[] CUE_VIBRATION = {0, 600, 200, 600};
   /** In an alert notification's extras: its channel and seq, for a `read`. */
   private static final String EXTRA_ALERT_CHANNEL = "crewbox.channelId";
   private static final String EXTRA_ALERT_SEQ = "crewbox.seq";
@@ -747,7 +749,9 @@ public class AlertsService extends Service {
         .setAutoCancel(true)
         .setContentIntent(tap)
         .setSilent(notice.silent)
-        .setOnlyAlertOnce(true);
+        // A cue's GO replaces its standby under the same id, and is the one
+        // alert that must buzz again rather than update quietly.
+        .setOnlyAlertOnce(!AlertNotice.CH_CUES.equals(notice.channel));
     // Android 7 has no channels: without a priority a mention doesn't pop up.
     switch (notice.channel) {
       case AlertNotice.CH_SHOW_STOP:
@@ -755,6 +759,18 @@ public class AlertsService extends Service {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(notice.body));
+        break;
+      case AlertNotice.CH_PANIC:
+        builder.setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(notice.body));
+        break;
+      case AlertNotice.CH_CUES:
+        builder.setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVibrate(CUE_VIBRATION);
         break;
       case AlertNotice.CH_CHANGEOVER:
         builder.setCategory(NotificationCompat.CATEGORY_EVENT)
@@ -975,6 +991,28 @@ public class AlertsService extends Service {
         AlertNotice.CH_CHANGEOVER, "Changeover calls", NotificationManager.IMPORTANCE_HIGH);
     changeover.setDescription("Changeovers on the stages you follow.");
     changeover.enableVibration(true);
+    // A call for help rings as a show stop does, on the alarm stream.
+    NotificationChannel panic = new NotificationChannel(
+        AlertNotice.CH_PANIC, "Calls for help", NotificationManager.IMPORTANCE_HIGH);
+    panic.setDescription("Somebody held the panic button. Rings on silent.");
+    panic.setSound(
+        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+        new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build());
+    panic.enableVibration(true);
+    panic.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+    // A cue light is felt, not heard: whoever stands by is in a wing or
+    // beside a pyro desk, where a phone that rings is the wrong noise. A long
+    // buzz instead, and the sound is theirs to turn on.
+    NotificationChannel cues = new NotificationChannel(
+        AlertNotice.CH_CUES, "Cue lights", NotificationManager.IMPORTANCE_HIGH);
+    cues.setDescription("Standby and GO, when somebody calls a cue for you. Vibrates only.");
+    cues.setSound(null, null);
+    cues.enableVibration(true);
+    cues.setVibrationPattern(CUE_VIBRATION);
+    cues.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
     // Low, not Min: a promoted Live Update needs a channel above Min, and
     // the connection's channel is Min and can't be raised.
     NotificationChannel countdown = new NotificationChannel(
@@ -986,6 +1024,8 @@ public class AlertsService extends Service {
     nm.createNotificationChannel(mentions);
     nm.createNotificationChannel(showStop);
     nm.createNotificationChannel(changeover);
+    nm.createNotificationChannel(panic);
+    nm.createNotificationChannel(cues);
     nm.createNotificationChannel(countdown);
   }
 

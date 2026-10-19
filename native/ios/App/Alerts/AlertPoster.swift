@@ -36,7 +36,14 @@ final class AlertPoster {
         // Show stops and the first changeover calls come through a Focus that
         // allows Time Sensitive alerts; the capability is on both targets.
         content.interruptionLevel = (alert["urgent"] as? Bool ?? false) ? .timeSensitive : .active
-        content.relevanceScore = kind == "showStop" ? 1 : kind == "changeover" ? 0.8 : 0.5
+        // A call for help and a show stop lead the summary; a cue light next,
+        // because somebody is waiting on the answer.
+        switch kind {
+        case "panic", "showStop": content.relevanceScore = 1
+        case "cue": content.relevanceScore = 0.9
+        case "changeover": content.relevanceScore = 0.8
+        default: content.relevanceScore = 0.5
+        }
         var info: [String: Any] = ["kind": kind, "link": link, "event": eventId]
         if target["kind"] as? String == "channel", let channel = target["channelId"] as? String {
             info["channelId"] = channel
@@ -55,6 +62,8 @@ final class AlertPoster {
             open += "&channel=" + encode(channel)
         case "showlog":
             open += "&to=showlog"
+        case "cues":
+            open += "&to=cues"
         case "stage":
             guard let stage = target["stage"] as? String else { return nil }
             open += "&stage=" + encode(stage)
