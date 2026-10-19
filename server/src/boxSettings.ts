@@ -22,6 +22,7 @@ import type { Store } from './store.ts'
 /** Module ids a box can turn on beyond chat, which is always on. */
 export const OPTIONAL_MODULES = [
   'schedule',
+  'cues',
   'patch',
   'lighting',
   'incident',

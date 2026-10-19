@@ -54,7 +54,9 @@ describe('a cue light over the sockets', () => {
     expect(standby.alert).toMatchObject({ id: `q:${called.id}`, title: 'Standby: Pyro 1' })
 
     joChat.send({ type: 'cueStep', cueId: called.id, step: 'ready' })
-    await samChat.waitFor((m) => m.type === 'cue' && (m.cue as Cue).state === 'ready')
+    await samChat.waitFor(
+      (m) => m.type === 'cue' && (m as unknown as { cue: Cue }).cue.state === 'ready'
+    )
 
     samChat.send({ type: 'cueStep', cueId: called.id, step: 'go' })
     const go = await joPhone.waitFor<{ alert: { id: string; title: string; quiet: boolean } }>(
@@ -108,9 +110,9 @@ describe('the panic button over the sockets', () => {
 
     joChat.send({ type: 'panic' })
     const { panic } = await aliChat.waitFor<{ panic: Panic }>((m) => m.type === 'panic')
-    const ring = await aliPhone.waitFor<{ alert: { kind: string; title: string; urgent: boolean } }>(
-      (m) => m.type === 'alert'
-    )
+    const ring = await aliPhone.waitFor<{
+      alert: { kind: string; title: string; urgent: boolean }
+    }>((m) => m.type === 'alert')
     expect(ring.alert).toMatchObject({ kind: 'panic', title: 'Jo needs help', urgent: true })
     const record = await aliChat.waitFor<{ message: { body: string; kind: string } }>(
       (m) => m.type === 'msg'

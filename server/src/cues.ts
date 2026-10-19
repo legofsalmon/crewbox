@@ -54,12 +54,7 @@ export interface CueSink {
 export type OnNow = (stage: string) => string
 
 export type CueRefusal =
-  | 'no-such-person'
-  | 'no-such-cue'
-  | 'not-yours'
-  | 'too-many'
-  | 'no-channel'
-  | 'no-such-call'
+  'no-such-person' | 'no-such-cue' | 'not-yours' | 'too-many' | 'no-channel' | 'no-such-call'
 
 const person = (user: User): CuePerson => ({ id: user.id, name: user.name })
 
@@ -121,7 +116,10 @@ export class CueDesk {
 
   // -- cue lights -----------------------------------------------------------
 
-  standby(caller: User, input: { targetId: string; label: string; stage: string }): Cue | CueRefusal {
+  standby(
+    caller: User,
+    input: { targetId: string; label: string; stage: string }
+  ): Cue | CueRefusal {
     const target = this.users.getUserById(input.targetId)
     if (!target) return 'no-such-person'
     const mine = [...this.cues.values()].filter((cue) => cue.caller.id === caller.id)

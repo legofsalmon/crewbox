@@ -5,7 +5,7 @@ import { changesFrom, DEFAULT_MODULES, formFrom } from './boxsettings.ts'
 const data = (settings: BoxSettings['settings'] = {}): BoxSettings => ({
   settings,
   restartNeeded: false,
-  modules: ['schedule', 'patch', 'lighting', 'incident', 'video', 'network'],
+  modules: ['schedule', 'cues', 'patch', 'lighting', 'incident', 'video', 'network'],
   adapters: [],
 })
 

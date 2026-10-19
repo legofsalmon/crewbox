@@ -871,7 +871,9 @@ export function buildApp({
     (stage) => {
       const wall = wallClock(clock(), timeZone)
       const acts = readRunningOrder(docs.peek(TIMETABLE_ROOM)).map(toAgendaAct)
-      return agenda(acts, wall.now, wall.today).find((s) => s.stage === stage)?.onNow?.act.name ?? ''
+      return (
+        agenda(acts, wall.now, wall.today).find((s) => s.stage === stage)?.onNow?.act.name ?? ''
+      )
     }
   )
   hub.setCues(cues)

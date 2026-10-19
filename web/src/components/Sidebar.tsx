@@ -8,6 +8,7 @@ import { enabledModules } from '../shell/modules.ts'
 import Avatar from './Avatar.tsx'
 import { useBoxesOffered } from '../lib/useBoxesOffered.ts'
 import DeleteAccountDialog from './DeleteAccountDialog.tsx'
+import PanicButton from './PanicButton.tsx'
 
 /** Stroke icon in the same style as the channel-header buttons — emoji
  * render differently on every platform, SVG doesn't. */
@@ -58,6 +59,9 @@ export default function Sidebar() {
   const setBoxesOpen = useStore((s) => s.setBoxesOpen)
   const boxesOffered = useBoxesOffered()
   const unlicensed = useStore((s) => s.config.unlicensed === true)
+  // A box that knows cue lights knows the panic button; an older one sends
+  // neither, and a button that can only fail is worse than none.
+  const hasPanic = useStore((s) => s.cues !== null)
 
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -84,6 +88,9 @@ export default function Sidebar() {
         ))}
       </nav>
 
+      {/* Always in the same place, under the modules and above you, so it
+          is found without looking for it. Only on a box that has it. */}
+      {me && hasPanic && <PanicButton />}
       {me && (
         <div className="sidebar-me">
           <Avatar name={me.name} id={me.id} size={32} />

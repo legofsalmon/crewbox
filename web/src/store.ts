@@ -3,6 +3,7 @@ import { color } from './ds/tokens.js'
 import {
   DEFAULT_CHANNEL_ALERTS,
   HOME_CHANNEL,
+  isLiveCue,
   newId,
   OUTBOX_FLUSH_GAP_MS,
   PROTOCOL_VERSION,
@@ -11,9 +12,11 @@ import {
   type Channel,
   type ChannelAlertLevel,
   type ClientMessage,
+  type Cue,
   type DmxUniverseWire,
   type Message,
   type Incident,
+  type Panic,
   type PublicConfig,
   type ServerMessage,
   type StageCountdown,
@@ -345,6 +348,24 @@ export interface AppState {
    * looking for it.
    */
   onAir: string | null
+  /**
+   * Cue lights (shared/src/cues.ts): every live cue and the box's recent
+   * history, newest first. Null until a box that has them says hello, which
+   * is how the pane knows an older box can't.
+   */
+  cues: Cue[] | null
+  /** Calls for help still live, from anyone. */
+  panics: Panic[]
+  /**
+   * Call a standby for somebody. False when this phone can't reach the box:
+   * a cue is never queued, because one that turns up late is worse than
+   * one that never came.
+   */
+  callStandby: (targetId: string, label: string, stage: string) => boolean
+  cueStep: (cueId: string, step: 'ready' | 'go' | 'stand-down') => boolean
+  /** The panic button has been held. False when the box can't be reached. */
+  callForHelp: () => boolean
+  panicStep: (panicId: string, step: 'respond' | 'stand-down') => boolean
   /** Online with no on-site connection — joining from the office/warehouse. */
   remoteUsers: Record<string, boolean>
   readState: Record<string, number>
@@ -705,6 +726,15 @@ function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Me
   return [...byId.values()].sort((a, b) => a.seq - b.seq)
 }
 
+/** Cues as the pane lists them: live first, then history, each newest first. */
+function newestFirst(cues: Cue[]): Cue[] {
+  return [...cues].sort(
+    (a, b) =>
+      Number(isLiveCue(b)) - Number(isLiveCue(a)) ||
+      (b.endedAt ?? b.standbyAt) - (a.endedAt ?? a.standbyAt)
+  )
+}
+
 export const useStore = create<AppState>()((set, get) => {
   /**
    * The box at this address is running another event than the one open.
@@ -1015,7 +1045,9 @@ export const useStore = create<AppState>()((set, get) => {
     goTo(
       link.to === 'channel'
         ? { channelId: link.channelId }
-        : { moduleId: link.to === 'showlog' ? 'incident' : 'schedule' }
+        : {
+            moduleId: link.to === 'showlog' ? 'incident' : link.to === 'cues' ? 'cues' : 'schedule',
+          }
     )
   }
 
@@ -1053,6 +1085,15 @@ export const useStore = create<AppState>()((set, get) => {
   function onBoxAlert(alert: Alert): void {
     const channelId = alert.target.kind === 'channel' ? alert.target.channelId : undefined
     if (channelId && channelId === get().activeChannelId && document.hasFocus()) return
+    // A cue light and a call for help draw themselves over every view
+    // (CueLight, PanicBar); a banner on top would only say it twice. A cue
+    // light is felt, not heard (the lamp vibrates), so only a call for help
+    // chirps.
+    if (alert.kind === 'cue' || alert.kind === 'panic') {
+      if (!alert.quiet && alert.kind === 'panic') playAlert()
+      notify(alert.title, alert.body)
+      return
+    }
     const moduleId =
       alert.target.kind === 'showlog'
         ? 'incident'
@@ -1244,6 +1285,8 @@ export const useStore = create<AppState>()((set, get) => {
       remoteUsers: Object.fromEntries((msg.remote ?? []).map((id) => [id, true])),
       readState,
       alertSettings: msg.alertSettings ?? NO_ALERT_SETTINGS,
+      cues: msg.cues ? newestFirst(msg.cues) : null,
+      panics: msg.panics ?? [],
       messages,
       // Replay (or the truncated-channel reset) heals any search-jump gap.
       historyGapped: {},
@@ -1496,6 +1539,19 @@ export const useStore = create<AppState>()((set, get) => {
       case 'tally':
         set({ onAir: msg.userId })
         break
+      case 'cue':
+        set((state) => ({
+          cues: newestFirst([msg.cue, ...(state.cues ?? []).filter((c) => c.id !== msg.cue.id)]),
+        }))
+        break
+      case 'panic':
+        set((state) => ({
+          panics: [
+            ...state.panics.filter((p) => p.id !== msg.panic.id),
+            ...(msg.panic.endedAt === null ? [msg.panic] : []),
+          ],
+        }))
+        break
       case 'presence':
         set({
           online: { ...get().online, [msg.userId]: msg.online },
@@ -1621,6 +1677,8 @@ export const useStore = create<AppState>()((set, get) => {
     channels: {},
     online: {},
     onAir: null,
+    cues: null,
+    panics: [],
     remoteUsers: {},
     readState: {},
     mentionSeqs: {},
@@ -2510,6 +2568,30 @@ export const useStore = create<AppState>()((set, get) => {
       else channels[channelId] = level
       set({ alertSettings: { ...get().alertSettings, channels } })
       ws?.send({ type: 'setChannelAlerts', channelId, level })
+    },
+
+    callStandby(targetId, label, stage) {
+      if (get().connection !== 'online' || !ws) return false
+      ws.send({ type: 'cueStandby', targetId, label, stage })
+      return true
+    },
+
+    cueStep(cueId, step) {
+      if (get().connection !== 'online' || !ws) return false
+      ws.send({ type: 'cueStep', cueId, step })
+      return true
+    },
+
+    callForHelp() {
+      if (get().connection !== 'online' || !ws) return false
+      ws.send({ type: 'panic' })
+      return true
+    },
+
+    panicStep(panicId, step) {
+      if (get().connection !== 'online' || !ws) return false
+      ws.send({ type: 'panicStep', panicId, step })
+      return true
     },
 
     followStage(stage, follow) {

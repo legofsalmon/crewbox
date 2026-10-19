@@ -91,11 +91,7 @@ describe('a cue light', () => {
       to: jo.id,
       alert: { id: `q:${cue.id}`, title: 'GO: Pyro 1', quiet: false },
     })
-    expect(d.told.map((m) => m.type === 'cue' && m.cue.state)).toEqual([
-      'standby',
-      'ready',
-      'go',
-    ])
+    expect(d.told.map((m) => m.type === 'cue' && m.cue.state)).toEqual(['standby', 'ready', 'go'])
   })
 
   it('is answered by the operator alone', () => {
@@ -113,9 +109,7 @@ describe('a cue light', () => {
     const d = desk()
     const cue = standby(d)
     expect(d.cues.step(cue.id, 'go', ali)).toMatchObject({ state: 'go', by: { id: ali.id } })
-    expect(d.alerts.at(-1)!.alert.body).toBe(
-      'Ali called GO · Main Stage, during The Hollows'
-    )
+    expect(d.alerts.at(-1)!.alert.body).toBe('Ali called GO · Main Stage, during The Hollows')
   })
 
   it('stood down, comes off the lock screen', () => {
@@ -231,7 +225,10 @@ describe('the panic button', () => {
     d.cues.panicStep(panic.id, 'respond', jo)
     expect(d.cues.snapshot().panics[0]!.responders.map((r) => r.name)).toEqual(['Ali'])
     expect(d.alerts).toEqual([
-      expect.objectContaining({ to: jo.id, alert: expect.objectContaining({ title: 'Ali is on the way' }) }),
+      expect.objectContaining({
+        to: jo.id,
+        alert: expect.objectContaining({ title: 'Ali is on the way' }),
+      }),
     ])
     expect(d.posted.at(-1)).toBe('Ali is on the way to Jo.')
   })

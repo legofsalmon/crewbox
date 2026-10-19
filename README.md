@@ -35,13 +35,14 @@ Crewbox is a shell (identity, chat, offline storage, routing) plus department
 modules. A box chooses which to run under Admin → Box settings (or
 `CREWBOX_MODULES`); chat is always on.
 
-Seven ship, and all seven are on unless a box says otherwise: the default is
-`schedule,patch,lighting,incident,video,network` on top of chat.
+Eight ship, and all eight are on unless a box says otherwise: the default is
+`schedule,cues,patch,lighting,incident,video,network` on top of chat.
 
 | Module            | id         | What it does                                                                                                                                                                                                                             |
 | ----------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Chat**          | `chat`     | Channels, DMs, mentions, files, push-to-talk voice. Always enabled; cannot be turned off.                                                                                                                                                |
 | **Running order** | `schedule` | The event's timetable — who is on which stage when, with the countdown to the next changeover.                                                                                                                                           |
+| **Cue lights**    | `cues`     | Standby, standing by, GO, sent silently to one person's phone, for pyro, CO2, walk-ons and playback when the stage is too loud to talk.                                                                                                    |
 | **Patch Sheets**  | `patch`    | Input patch per artist — channels × artists, sub-boxes, lineup, CSV in/out.                                                                                                                                                              |
 | **Lighting**      | `lighting` | Fixture patch with DMX collision detection, rigging positions at their trim heights, plan / front / 3D views of the rig, truss-length estimates, and MVR/GDTF + Lightwright/console CSV import.                                          |
 | **Show log**      | `incident` | The record of what happened and when — append-only, corrected underneath rather than edited, exported as the show report.                                                                                                                |
