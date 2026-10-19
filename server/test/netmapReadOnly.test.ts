@@ -50,7 +50,9 @@ describe('the network map is structurally read-only', () => {
         "arp '-an'",
         "iw 'dev', adapter, 'scan', 'dump'",
         "iw 'dev', adapter, 'survey', 'dump'",
+        "netstat '-rn', '-f', 'inet'",
         "networkctl 'lldp', '--json=short'",
+        "route 'print', '-4'",
         "nmcli '-t', '-f', NMCLI_FIELDS, 'dev', 'wifi', 'list', 'ifname', adapter, '--rescan', 'no',",
       ].sort()
     )

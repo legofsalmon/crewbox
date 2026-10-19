@@ -10,6 +10,8 @@ import {
   parseProcArp,
   parseProcIgmp,
   parseProcRoute,
+  parseNetstatMac,
+  parseRouteWindows,
   readNeighbours,
   readWifi,
   type SystemIo,
@@ -90,7 +92,25 @@ describe('the Linux tables', () => {
   })
 })
 
-describe('the macOS and Windows neighbour tables', () => {
+describe('the macOS and Windows tables', () => {
+  it('reads the default route on a Mac and on Windows', () => {
+    const mac = [
+      'Routing tables',
+      '',
+      'Internet:',
+      'Destination        Gateway            Flags               Netif Expire',
+      'default            10.0.0.1           UGScg                 en0       ',
+      '10.0.0/24          link#6             UCS                   en0      !',
+    ].join('\n')
+    expect(parseNetstatMac(mac)).toEqual({ gateway: '10.0.0.1', iface: 'en0' })
+    const win = [
+      'IPv4 Route Table',
+      'Network Destination        Netmask          Gateway       Interface  Metric',
+      '          0.0.0.0          0.0.0.0         10.0.0.1        10.0.0.2     25',
+    ].join('\r\n')
+    expect(parseRouteWindows(win)).toEqual({ gateway: '10.0.0.1', iface: '10.0.0.2' })
+  })
+
   it('reads arp -an on a Mac, padding short octets and skipping broadcast', () => {
     const text = [
       '? (10.0.0.1) at 0:1b:c:2:3:4 on en0 ifscope [ethernet]',

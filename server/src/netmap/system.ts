@@ -15,7 +15,8 @@ import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os'
  *
  * The commands run are a short fixed list, every one a read, and
  * server/test/netmapReadOnly.test.ts holds them to it: `arp` always with
- * `-n` (without it, macOS looks every address up in DNS), `nmcli` always
+ * `-n` (without it, macOS looks every address up in DNS), `netstat -rn`
+ * and `route print` for the default route, `nmcli` always
  * with `--rescan no` (without it, a list older than 30 s starts a scan),
  * and `iw` only ever `scan dump` and `survey dump`, never `scan` itself.
  *
@@ -138,12 +139,38 @@ export function parseProcRoute(text: string): { iface: string; gateway: string }
   return null
 }
 
+/** `netstat -rn -f inet` on macOS: "default  10.0.0.1  UGScg  en0". */
+export function parseNetstatMac(text: string): { iface: string; gateway: string } | null {
+  for (const line of text.split('\n')) {
+    const [dest, gateway, , iface] = line.trim().split(/\s+/)
+    if (dest === 'default' && gateway && /^\d+\.\d+\.\d+\.\d+$/.test(gateway) && iface)
+      return { gateway, iface }
+  }
+  return null
+}
+
+/**
+ * `route print -4` on Windows: "0.0.0.0  0.0.0.0  10.0.0.1  10.0.0.2  25".
+ * The adapter is named by its address, as `arp -a` names it.
+ */
+export function parseRouteWindows(text: string): { iface: string; gateway: string } | null {
+  for (const line of text.split('\n')) {
+    const m = /^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)/.exec(line)
+    if (m) return { gateway: m[1]!, iface: m[2]! }
+  }
+  return null
+}
+
 export async function readGateway(
   io: SystemIo
 ): Promise<Reading<{ iface: string; gateway: string } | null>> {
-  if (io.platform !== 'linux') return missing(null, 'read on Linux boxes only')
   try {
-    return got(parseProcRoute(await io.readFile('/proc/net/route')))
+    if (io.platform === 'linux') return got(parseProcRoute(await io.readFile('/proc/net/route')))
+    if (io.platform === 'darwin')
+      return got(parseNetstatMac(await io.run('netstat', ['-rn', '-f', 'inet'])))
+    if (io.platform === 'win32')
+      return got(parseRouteWindows(await io.run('route', ['print', '-4'])))
+    return missing(null, 'not read on this platform')
   } catch {
     return missing(null, 'the route table could not be read')
   }

@@ -1,0 +1,288 @@
+/* The map view. Theme tokens only; healthy is quiet, so a heard device
+   gets a neutral dot and only quiet (amber) and not answering (red) colour. */
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-raised);
+  z-index: 2;
+}
+
+.title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-right: auto;
+}
+
+.age {
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.note {
+  padding: 14px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.lede {
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 70ch;
+}
+
+.lanes {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  align-items: start;
+}
+
+.lane {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.laneHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+}
+
+.laneTitle {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.summary {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.facts {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+
+  div {
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  dt {
+    color: var(--text-faint);
+    flex: 0 0 92px;
+  }
+
+  dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.devices {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.device {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  min-height: 44px;
+}
+
+.wifiRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-sizing: border-box;
+}
+
+.deviceText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.deviceName {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ago {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.quiet {
+  .dot {
+    background: var(--warn);
+  }
+
+  .state {
+    color: var(--warn-ink);
+  }
+}
+
+.silent {
+  .dot {
+    background: var(--danger);
+  }
+
+  .state {
+    color: var(--danger);
+  }
+}
+
+/* Signed off, or only typed in: there, but not sending. Hollow. */
+.left .dot,
+.listed .dot {
+  background: transparent;
+  border: 1.5px solid var(--text-faint);
+}
+
+/* The crew Wi-Fi where the box is, when it is weak there: attention. */
+.weak .state {
+  color: var(--warn-ink);
+}
+
+.crewTag {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 8px;
+}
+
+.more {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+
+  @media (hover: hover) {
+    &:hover {
+      background: var(--bg-hover);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+.laneNote {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.channels {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.channel {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.channelName {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.footnote {
+  color: var(--text-muted);
+  font-size: 13px;
+
+  ul {
+    padding-left: 18px;
+    display: grid;
+    gap: 2px;
+  }
+}
+
+.footHead {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}

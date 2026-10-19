@@ -235,7 +235,9 @@ export function buildNetworkMap(input: MapInput): NetmapPayload {
   // the one the default route leaves by, which is where phones reach it.
   const crewAdapter =
     adapterFor(adapters, watch.crew) ??
-    adapters.find((a) => input.gateway && a.name === input.gateway.iface) ??
+    adapters.find(
+      (a) => input.gateway && (a.name === input.gateway.iface || a.ipv4 === input.gateway.iface)
+    ) ??
     adapters[0] ??
     null
   const lanes: NetmapLane[] = []
@@ -437,7 +439,11 @@ export function buildNetworkMap(input: MapInput): NetmapPayload {
       counted++
     }
     // The route says where the gateway is even before the box has talked to it.
-    if (input.gateway && crewAdapter && input.gateway.iface === crewAdapter.name) {
+    if (
+      input.gateway &&
+      crewAdapter &&
+      (input.gateway.iface === crewAdapter.name || input.gateway.iface === crewAdapter.ipv4)
+    ) {
       const d = devices.get(input.gateway.gateway, input.gateway.gateway)
       d.name = 'Router'
       d.roles.add('Gateway')
