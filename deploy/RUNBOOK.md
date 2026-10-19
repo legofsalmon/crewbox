@@ -13,6 +13,7 @@ The one document to print and keep in the production office.
   DNS override means no HTTPS by name, and so no microphone in the browser.
   With no uplink to use, a two-port travel router's WAN port can be
   reassigned as a second LAN port — but plan a small switch in anyway.
+  Buying one for a rack: [Choosing the router](#choosing-the-router).
 - Enough Wi-Fi APs to cover stages/gates (wired backhaul if possible). A
   travel router covers a production office, not a site.
 - USB stick for backups, gaffer-taped to the server
@@ -23,6 +24,59 @@ The one document to print and keep in the production office.
   when it couldn't, and why. Print them again if the event starts afresh on
   a spare without its backup.
 - This runbook
+
+## Choosing the router
+
+On a site with no uplink the router does two jobs for crewbox, and nothing
+else: DHCP (a fixed address for the box, and itself handed out as the DNS
+server) and the local DNS entries from **Admin → This network**. It does not
+route to the internet, and it should not be the Wi-Fi — the APs are. So the
+job is a sturdy wired box that serves DHCP and DNS and comes up on its own
+every time the rack is powered.
+
+Best fit first. Check models and prices at the time of buying; this was
+written in September 2026.
+
+- **MikroTik RB4011iGS+RM — the pick for a fleet of racks.** 1U with ears,
+  metal, no fan; ten gigabit ports and one SFP+. Powered by an external 24 V
+  brick, or 12–57 V DC or PoE on port 1. Its whole configuration exports as
+  a text script, so set up one rack and clone it to the rest, changing the IP
+  and name. It runs RouterOS, not dnsmasq: its entries come from **Download
+  for MikroTik** (`crewbox-dns.rsc`), not the `.conf`. That script is tested
+  on RouterOS 7 and 6 in virtual machines, not yet on the hardware itself.
+- **MikroTik CCR2004-16G-2S+** — the same software at about twice the price,
+  with two built-in mains supplies on IEC sockets: feed it from both sides of
+  the rack power, and there is no brick to lose. It has fans, which matters
+  in dust.
+- **A 1U fanless N100 box running OpenWrt** — for keeping dnsmasq exactly.
+  It takes the same `crewbox-dns.conf` as a GL.iNet (whose firmware is
+  OpenWrt underneath), so every step in this runbook stays as written. Mains
+  power built in, four to six ports. These are no-name brands of uneven
+  quality and you install OpenWrt yourself: buy a spare, and run them for a
+  while before one tours.
+- **A GL.iNet travel router** — fine for one or two racks, but not loose in
+  the case. Screw or tie it to a vented 1U shelf, power it from the rack's strip
+  with the cable secured (the plug-in brick is what fails in a truck), and
+  turn its Wi-Fi off: a Wi-Fi router shut in a rack case has almost no range.
+  The wired-only Brume 2 is a tidier version of the same thing.
+- **A UniFi gateway, only if the APs are already UniFi.** It is slow to come
+  up after power-on, and its local DNS records have been reported not to
+  answer while the internet link is down — which on site is always. Test one
+  with the WAN unplugged before buying more.
+
+pfSense and OPNsense can do it, but a full firewall is a lot to set up for
+DHCP and DNS on a network with no uplink.
+
+**Or take DNS off the router.** `deploy/dnsmasq.conf` can run on the server
+box itself, with the router's DHCP handing out the box as the DNS server.
+Then almost any router with DHCP will do, including a managed switch that
+has it. Three things to know first:
+
+- On a box on two networks, set the commented `interface=` line so dnsmasq
+  answers on the crew network only, not the lighting one.
+- `deploy/backup.sh` and `restore.sh` do not carry the dnsmasq config: set
+  it up on the spare too.
+- A Mac laptop box does not do this at all.
 
 ## A laptop box — trials, small rooms, and the spare in the car
 
