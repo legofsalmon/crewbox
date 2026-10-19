@@ -1,4 +1,4 @@
-import { escapeHtml, PAGE_CSS } from './html.ts'
+import { CONTROL_RADIUS, escapeHtml, PAGE_CSS, PANEL_RADIUS } from './html.ts'
 
 /**
  * First-run setup: the three things an admin needs to set before crew arrive,
@@ -195,24 +195,28 @@ function page(body: string): string {
 <style>${PAGE_CSS}
   form { text-align: left; margin-top: 24px; }
   label { display: block; font-weight: 600; margin-top: 18px; }
-  input { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 12px 14px;
-          font: inherit; font-size: 16px; color: #f2eee7; background: #1b1815;
-          border: 1px solid #3a342c; border-radius: 10px; }
-  input:focus, select:focus { outline: 2px solid #f5b73e; outline-offset: 1px; }
-  select { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 12px 14px;
-           font: inherit; font-size: 16px; color: #f2eee7; background: #1b1815;
-           border: 1px solid #3a342c; border-radius: 10px; }
-  details { margin-top: 22px; border: 1px solid #3a342c; border-radius: 10px; padding: 4px 14px 14px; }
+  input, select { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 12px 14px;
+          font: inherit; font-size: 16px; color: var(--ink); background: var(--field);
+          border: 1px solid var(--field-line); border-radius: ${CONTROL_RADIUS}; }
+  input:focus, select:focus { border-color: var(--focus); }
+  details { margin-top: 22px; border: 1px solid var(--line); border-radius: ${PANEL_RADIUS}; padding: 4px 14px 14px; }
   summary { font-weight: 700; padding: 10px 0 6px; cursor: pointer; }
-  .hint { display: block; color: #a29a8c; font-size: 13px; margin-top: 5px; }
+  .hint { display: block; color: var(--muted); font-size: 13px; margin-top: 5px; }
+  /* The one action on the page: the accent, as every primary button is. */
   button { width: 100%; margin-top: 26px; padding: 14px; font: inherit; font-size: 17px;
-           font-weight: 700; color: #12100e; background: #f5b73e;
-           border: 0; border-radius: 10px; cursor: pointer; }
-  .error { margin-top: 18px; padding: 10px 12px; border-radius: 10px;
-           background: #4a1f1c; color: #ffd9d4; text-align: left; font-size: 15px; }
-  .warn { margin-top: 18px; padding: 12px 14px; border-radius: 10px; text-align: left;
-          background: #3a2c14; color: #f6e3bd; font-size: 14px; }
-  .warn b { display: block; color: #f5b73e; }
+           font-weight: 700; color: var(--accent-on); background: var(--accent);
+           border: 0; border-radius: ${CONTROL_RADIUS}; cursor: pointer; }
+  button:active { background: var(--accent-hover); }
+  @media (hover: hover) { button:hover { background: var(--accent-hover); } }
+  /* A form that bounced (stop) and a problem worth a look (attention): the
+     soft fill with the page's own ink, and the status colour on the edge. */
+  .error { margin-top: 18px; padding: 10px 12px; border-radius: ${PANEL_RADIUS};
+           background: var(--bad-soft); border: 1px solid var(--bad-ink);
+           color: var(--ink); text-align: left; font-size: 15px; }
+  .warn { margin-top: 18px; padding: 12px 14px; border-radius: ${PANEL_RADIUS}; text-align: left;
+          background: var(--warn-soft); border: 1px solid var(--warn-ink);
+          color: var(--ink); font-size: 14px; }
+  .warn b { display: block; color: var(--warn-ink); }
   .warn p { margin: 4px 0 0; }
   .warn + .warn { margin-top: 8px; }
   .skip { display: block; margin-top: 18px; font-size: 14px; }

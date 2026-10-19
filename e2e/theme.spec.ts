@@ -209,6 +209,32 @@ for (const scheme of ['light', 'dark'] as const) {
   })
 }
 
+for (const scheme of ['light', 'dark'] as const) {
+  test(`the current channel row stays readable in ${scheme} theme`, async ({ browser }) => {
+    const context = await browser.newContext({ colorScheme: scheme })
+    const page = await context.newPage()
+    page.on('pageerror', (e) => {
+      throw new Error(`Page error: ${e.message}`)
+    })
+
+    await page.goto('/?pin=4242')
+    await page.getByLabel('Your name').fill(`Row ${scheme}`)
+    await page.getByLabel('Your PIN').fill('1234')
+    await page.getByRole('button', { name: 'Join' }).click()
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible()
+
+    // The open channel is the selected row, said with aria-current. Its # was
+    // the tertiary ink on the current row's fill, 3.8:1 in the dark theme;
+    // tertiary sits only where content sits, so there it is secondary.
+    const current = '.row[aria-current="page"]'
+    await expect(page.locator(current).first()).toBeVisible()
+    expect(await textContrast(page, `${current} .row-hash`)).toBeGreaterThan(4.5)
+    expect(await textContrast(page, `${current} .row-name`)).toBeGreaterThan(4.5)
+
+    await context.close()
+  })
+}
+
 /**
  * The dark flash a light-theme crew member got on every cold open.
  *

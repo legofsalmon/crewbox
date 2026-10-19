@@ -281,21 +281,21 @@ export default function Composer({
           aria-haspopup={offersCamera ? 'menu' : undefined}
           aria-expanded={offersCamera ? attachOpen : undefined}
           disabled={uploading}
+          aria-busy={uploading || undefined}
           onClick={onAttach}
         >
-          {uploading ? (
-            <span className="spinner" aria-hidden />
-          ) : (
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
-              <path
-                d="M8 12.5 15.5 5a3.5 3.5 0 0 1 5 5l-9 9a5.5 5.5 0 0 1-7.8-7.8L11 4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          )}
+          {/* Busy: the spinner takes the paperclip's place only once the
+              upload has run a second (app.css, .attach-btn). */}
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
+            <path
+              d="M8 12.5 15.5 5a3.5 3.5 0 0 1 5 5l-9 9a5.5 5.5 0 0 1-7.8-7.8L11 4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+          {uploading && <span className="spinner" aria-hidden />}
         </button>
         <textarea
           ref={ref}

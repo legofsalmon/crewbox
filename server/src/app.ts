@@ -36,7 +36,7 @@ import { boxProbes, certNames, createEnvironmentCache, type Probes } from './env
 import { dnsConfigFile, dnsPlan, probesConfigFile, routerosScript } from './dnsconfig.ts'
 import { loadRouterDns, RouterDnsSync, type SshRunner } from './routerDns.ts'
 import { redirectConfigFile, redirectPlan } from './portredirect.ts'
-import { escapeHtml, PAGE_CSS } from './html.ts'
+import { escapeHtml, PAGE_CSS, PANEL_RADIUS, QR_PAPER } from './html.ts'
 import { LIVEKIT_PORT, probeSfu, type SfuFailure } from './livekit.ts'
 import { lanAdapters, lanIps, latestApk } from './box.ts'
 import { boxReadiness, freeBytes, worstState } from './readiness.ts'
@@ -1510,10 +1510,10 @@ export function buildApp({
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Join ${escapeHtml(config.eventName || 'Crewbox')}</title>
 <style>${PAGE_CSS}
-  .qr { background: #fff; padding: 12px; border-radius: 16px; margin: 20px auto; box-sizing: border-box; }
+  .qr { background: ${QR_PAPER}; padding: 12px; border-radius: ${PANEL_RADIUS}; margin: 20px auto; box-sizing: border-box; }
   .qr svg { display: block; width: 100%; height: auto; }
   .url { font-size: 20px; font-weight: 700; word-break: break-all; }
-  .pin { font-size: 17px; margin-top: 10px; color: #f5b73e; }
+  .pin { font-size: 17px; margin-top: 10px; color: var(--ink); }
 </style></head><body><div class="card">
   <h1>${escapeHtml(config.eventName || 'Crewbox')}</h1>
   <p class="meta">Crew chat, voice &amp; patch sheets — on the event network</p>

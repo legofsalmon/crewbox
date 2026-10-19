@@ -30,7 +30,7 @@ $grid-header-bg: var(--bg-hover);
 $grid-cell-focus: color-mix(in srgb, var(--accent) 14%, transparent);
 
 // Layout
-$radius: 8px;
+$radius: var(--radius-panel);
 $radius-small: 4px;
 $shadow-card: 0 2px 10px rgba(0, 0, 0, 0.18);
 $shadow-popover: 0 8px 30px rgba(0, 0, 0, 0.35);

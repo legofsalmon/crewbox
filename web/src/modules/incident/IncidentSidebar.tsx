@@ -29,7 +29,8 @@ export default function IncidentSidebar() {
       <ul>
         <li>
           <button
-            className={`row ${active ? 'active' : ''}`}
+            className="row"
+            aria-current={active ? 'page' : undefined}
             aria-label={
               latest
                 ? `Show log: last entry ${when}, ${INCIDENT_KIND_LABELS[latest.kind]}`

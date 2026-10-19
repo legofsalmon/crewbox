@@ -139,7 +139,7 @@
   display: flex;
   gap: 2px;
   background: var(--bg-hover);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 2px;
 }
 
@@ -257,7 +257,7 @@
 .shareMenu {
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-overlay);
   padding: 12px;
   min-width: 220px;
   max-height: 70vh;

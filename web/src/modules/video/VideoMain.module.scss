@@ -109,7 +109,7 @@
   input {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     color: var(--text);
     font-size: 15px;
     padding: 9px 10px;
@@ -124,7 +124,7 @@
   font-size: 13px;
   font-weight: 600;
   padding: 9px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   min-height: 40px;
   background: var(--accent);
@@ -169,7 +169,7 @@
 
   li {
     // Verifiable against a packet capture, so it has to read exactly.
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--text-faint);
     overflow-wrap: anywhere;
@@ -190,7 +190,7 @@
 }
 
 .foundRaw {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-faint);
   overflow-wrap: anywhere;

@@ -17,7 +17,7 @@
   overflow-y: auto;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-overlay);
   padding: 18px;
 }
 
@@ -42,7 +42,7 @@
   padding: 10px 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
 
   li {
     font-size: 13px;
@@ -50,7 +50,7 @@
     color: var(--text);
     // The point of this box is that it can be checked against a capture, so
     // addresses and ports have to be readable character by character.
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
 }
 
@@ -78,7 +78,7 @@
   font-size: 14px;
   font-weight: 600;
   padding: 9px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   min-height: 40px;
 }

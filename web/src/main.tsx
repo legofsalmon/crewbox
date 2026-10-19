@@ -4,6 +4,15 @@ import ErrorBoundary from './components/ErrorBoundary.tsx'
 import { APP_VERSION } from './lib/pwa.ts'
 import { sendCrash } from './lib/reports.ts'
 import { sessionToken } from './store.ts'
+// IBM Plex, bundled so it works with no internet: the weights the app uses.
+// The stylesheets give every subset a unicode-range, so a phone fetches only
+// the scripts it shows; the service worker precaches Latin (vite.config.ts).
+import '@fontsource/ibm-plex-sans/400.css'
+import '@fontsource/ibm-plex-sans/500.css'
+import '@fontsource/ibm-plex-sans/600.css'
+import '@fontsource/ibm-plex-sans/700.css'
+import '@fontsource/ibm-plex-mono/400.css'
+import '@fontsource/ibm-plex-mono/600.css'
 import './app.css'
 import './lib/viewport.ts'
 import './shell/title.ts'

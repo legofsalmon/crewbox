@@ -24,7 +24,7 @@
   height: 8px;
   border-radius: 50%;
   background: var(--ok);
-  animation: live-pulse 2s ease-in-out infinite;
+  animation: live-pulse var(--ds-motion-cycle-pulse) ease-in-out infinite;
 }
 
 @keyframes live-pulse {

@@ -68,10 +68,21 @@
   /* The brand, not a token: the studio's amber, on the logo and the splash
      glow and nowhere that means something. Inside the app amber is --warn. */
   --brand: #f5b73e; /* not a token: the brand */
-  --radius: 12px;
+  /* Corners, from the touch density (data-density="touch" on <html>): about
+     an eighth of the control's height, so a 44px button gets 6px. A control
+     is anything pressed or typed in, a panel anything that holds content in
+     the page, an overlay anything that floats (a sheet, a dialog, a menu, a
+     toast). --radius is the panel, as the modules' cards and canvases use it. */
+  --radius-control: var(--ds-radius-control);
+  --radius-panel: var(--ds-radius-panel);
+  --radius-overlay: var(--ds-radius-overlay);
+  --radius: var(--radius-panel);
   --sidebar-w: 280px;
-  --font:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* IBM Plex Sans for what you read and operate, IBM Plex Mono for numbers
+     that change, addresses and codes; both bundled (main.tsx), both falling
+     back to the system stack until the files arrive. */
+  --font: var(--ds-font-sans);
+  --font-mono: var(--ds-font-mono);
 }
 
 :root[data-theme='light'] {
@@ -96,6 +107,8 @@ body,
 
 body {
   font-family: var(--font);
+  /* Columns of times and counts line up. */
+  font-variant-numeric: tabular-nums;
   background: var(--bg);
   color: var(--text);
   font-size: 15px;
@@ -138,6 +151,15 @@ button {
   outline-offset: 2px;
 }
 
+/* Pressed (states.md): every press shows at once that it landed. A wash
+   over whatever the button is drawn in, so it works on a fill, an edge or
+   nothing; drawn as an inset shadow so no button's own hover background
+   can paint over it. The current row is already the strongest wash. */
+button:not(:disabled, [aria-disabled='true'], [aria-current='page']):active {
+  box-shadow: inset 0 0 0 100vmax var(--ds-wash-pressed);
+  transition-duration: var(--ds-duration-instant);
+}
+
 input,
 textarea {
   font: inherit;
@@ -176,7 +198,7 @@ ul {
   width: min(400px, 100%);
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--radius-overlay);
   padding: 36px 32px;
   display: flex;
   flex-direction: column;
@@ -218,12 +240,12 @@ ul {
 .join-card input {
   height: 48px;
   padding: 0 14px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   font-size: 16px; /* prevents iOS zoom-on-focus */
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .join-card input:focus {
@@ -238,16 +260,18 @@ ul {
 
 .join-card button[type='submit'] {
   height: 50px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
   font-size: 16px;
-  transition: background 0.15s;
+  transition: background-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
-.join-card button[type='submit']:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .join-card button[type='submit']:hover {
+    background: var(--accent-strong);
+  }
 }
 
 .join-card button[type='submit']:disabled {
@@ -264,8 +288,10 @@ ul {
   font-size: 14px;
 }
 
-.join-boxes:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .join-boxes:hover {
+    text-decoration: underline;
+  }
 }
 
 /* In a phone's browser: the same form in the app, when the app is on the phone. */
@@ -308,7 +334,7 @@ ul {
      tells somebody stuck outside the event why. */
   color: var(--danger-strong);
   padding: 10px 14px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   font-size: 14px;
 }
 
@@ -357,7 +383,7 @@ ul {
   height: 50px;
   min-width: 180px;
   padding: 0 24px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -376,7 +402,7 @@ ul {
   min-width: 180px;
   padding: 0 24px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: var(--bg-hover);
   color: var(--text);
   font-weight: 600;
@@ -399,7 +425,7 @@ ul {
   border-radius: 50%;
   border: 3px solid var(--border);
   border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--ds-motion-cycle-spin) linear infinite;
 }
 
 /* --------------------------------------------------------------- layout */
@@ -501,7 +527,7 @@ ul {
   color: var(--text);
   border: 1px solid var(--border);
   border-left: 4px solid var(--warn);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
@@ -540,8 +566,10 @@ ul {
   color: var(--text-muted);
 }
 
-.alert-banner-close:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .alert-banner-close:hover {
+    color: var(--text);
+  }
 }
 
 /*
@@ -560,7 +588,7 @@ ul {
   background: var(--bg-raised);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   font-size: 14px;
   font-weight: 600;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -586,27 +614,31 @@ ul {
   flex-shrink: 0;
   min-height: 40px;
   padding: 0 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
 }
 
-.file-offer-act:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .file-offer-act:hover {
+    background: var(--accent-strong);
+  }
 }
 
 .file-offer-close {
   flex-shrink: 0;
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
 }
 
-.file-offer-close:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .file-offer-close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 .updated-dot {
@@ -629,8 +661,10 @@ ul {
   vertical-align: 1px;
 }
 
-.msg-applink:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .msg-applink:hover {
+    background: var(--accent-strong);
+  }
 }
 
 /* Underlined as well as coloured: colour alone isn't a link to someone who
@@ -642,8 +676,10 @@ ul {
   overflow-wrap: anywhere;
 }
 
-.msg-link:hover {
-  color: var(--accent-strong);
+@media (hover: hover) {
+  .msg-link:hover {
+    color: var(--accent-strong);
+  }
 }
 
 .flash-info {
@@ -661,7 +697,7 @@ ul {
   background: var(--danger-fill);
   color: var(--danger-on);
   padding: 10px 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-overlay);
   font-size: 14px;
   font-weight: 600;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -743,8 +779,10 @@ ul {
   color: var(--text-muted);
 }
 
-.screens-note-close:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .screens-note-close:hover {
+    color: var(--text);
+  }
 }
 
 .sidebar-footer-links {
@@ -764,8 +802,10 @@ ul {
   flex-shrink: 0;
 }
 
-.delete-account-link:hover {
-  color: var(--danger);
+@media (hover: hover) {
+  .delete-account-link:hover {
+    color: var(--danger);
+  }
 }
 
 /*
@@ -794,9 +834,11 @@ a.app-version {
   text-decoration: none;
 }
 
-a.app-version:hover {
-  color: var(--text-muted);
-  text-decoration: underline;
+@media (hover: hover) {
+  a.app-version:hover {
+    color: var(--text-muted);
+    text-decoration: underline;
+  }
 }
 
 /* -------------------------------------------------- confirm dialog */
@@ -807,7 +849,7 @@ a.app-version:hover {
   align-self: flex-start;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -837,7 +879,7 @@ a.app-version:hover {
 .confirm-field input {
   height: 42px;
   padding: 0 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   font-size: 16px; /* prevents iOS zoom-on-focus */
@@ -859,7 +901,7 @@ a.app-version:hover {
 .confirm-delete {
   height: 40px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
 }
@@ -926,9 +968,11 @@ a.app-version:hover {
   font-weight: 600;
 }
 
-.sidebar-boxes:hover {
-  background: var(--bg-active);
-  color: var(--text);
+@media (hover: hover) {
+  .sidebar-boxes:hover {
+    background: var(--bg-active);
+    color: var(--text);
+  }
 }
 
 @media (pointer: coarse) {
@@ -950,7 +994,7 @@ a.app-version:hover {
 
 .conn-dot-connecting {
   background: var(--warn);
-  animation: pulse 1.2s ease-in-out infinite;
+  animation: pulse var(--ds-motion-cycle-pulse) ease-in-out infinite;
 }
 
 .conn-dot-offline {
@@ -986,14 +1030,16 @@ a.app-version:hover {
   height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   font-size: 16px;
 }
 
-.icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .icon-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 .new-channel input {
@@ -1001,7 +1047,7 @@ a.app-version:hover {
   height: 36px;
   padding: 0 10px;
   margin: 2px 0 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--accent);
   background: var(--bg);
   outline: none;
@@ -1014,19 +1060,25 @@ a.app-version:hover {
   align-items: center;
   gap: 9px;
   padding: 8px 10px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   text-align: left;
   min-height: 38px;
 }
 
-.row:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .row:hover:not([aria-current='page']) {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
-.row.active {
-  background: var(--bg-active);
+/* The current channel, plot or view: the selected state (cyan is you), drawn
+   from aria-current so the look is what a screen reader hears. A selection
+   does not hover. */
+.row[aria-current='page'] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
   color: var(--text);
 }
 
@@ -1038,6 +1090,19 @@ a.app-version:hover {
 .row-hash {
   color: var(--text-faint);
   font-weight: 600;
+}
+
+/* Tertiary ink sits only where content sits: on the current row, or under
+   the pointer, the # takes the secondary ink (it was 3.8:1 there). */
+.row[aria-current='page'] .row-hash {
+  color: var(--text-muted);
+}
+
+@media (hover: hover) {
+  .row:hover .row-hash,
+  .row-more:hover {
+    color: var(--text-muted);
+  }
 }
 
 .row-name {
@@ -1203,7 +1268,7 @@ a.app-version:hover {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 6px 8px;
   font-size: 13px;
   max-width: 50%;
@@ -1236,8 +1301,10 @@ a.app-version:hover {
   min-height: 32px;
 }
 
-.filter-chip:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .filter-chip:hover {
+    color: var(--text);
+  }
 }
 
 .filter-chip.on {
@@ -1347,8 +1414,10 @@ a.app-version:hover {
   margin-top: 12px;
 }
 
-.msg:hover {
-  background: rgba(255, 255, 255, 0.02);
+@media (hover: hover) {
+  .msg:hover {
+    background: var(--ds-wash-hover);
+  }
 }
 
 .msg-gutter {
@@ -1456,13 +1525,13 @@ a.app-version:hover {
   resize: none;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   padding: 13px 16px;
   font-size: 16px; /* prevents iOS zoom-on-focus */
   line-height: 1.4;
   outline: none;
   max-height: 160px;
-  transition: border-color 0.15s;
+  transition: border-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .composer textarea:focus {
@@ -1476,19 +1545,21 @@ a.app-version:hover {
 .send-btn {
   width: 48px;
   height: 48px;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   display: grid;
   place-items: center;
   flex-shrink: 0;
   transition:
-    background 0.15s,
-    opacity 0.15s;
+    background-color var(--ds-duration-fast) var(--ds-ease-standard),
+    opacity var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
-.send-btn:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .send-btn:hover {
+    background: var(--accent-strong);
+  }
 }
 
 .send-btn:disabled {
@@ -1505,7 +1576,7 @@ a.app-version:hover {
 .attach-btn {
   width: 48px;
   height: 48px;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   display: grid;
   place-items: center;
   color: var(--text-muted);
@@ -1514,9 +1585,40 @@ a.app-version:hover {
   flex-shrink: 0;
 }
 
-.attach-btn:hover {
-  color: var(--text);
-  border-color: var(--accent);
+@media (hover: hover) {
+  .attach-btn:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+}
+
+/* Busy (rule 16): no second press at once, but the paperclip stays until
+   the upload has run --ds-timing-wait, and only then does the spinner take
+   its place, so a quick upload never flashes one. */
+.attach-btn > * {
+  grid-area: 1 / 1;
+}
+
+.attach-btn[aria-busy='true'] > svg {
+  animation: busy-hide 0s var(--ds-timing-wait) both;
+}
+
+.attach-btn > .spinner {
+  animation:
+    spin var(--ds-motion-cycle-spin) linear infinite,
+    busy-show 0s var(--ds-timing-wait) both;
+}
+
+@keyframes busy-hide {
+  to {
+    visibility: hidden;
+  }
+}
+
+@keyframes busy-show {
+  from {
+    visibility: hidden;
+  }
 }
 
 .spinner {
@@ -1525,7 +1627,7 @@ a.app-version:hover {
   border-radius: 50%;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--ds-motion-cycle-spin) linear infinite;
 }
 
 @keyframes spin {
@@ -1548,7 +1650,7 @@ a.app-version:hover {
   display: block;
   max-width: min(360px, 100%);
   max-height: 300px;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   margin-top: 4px;
   object-fit: contain;
@@ -1561,7 +1663,7 @@ a.app-version:hover {
   gap: 10px;
   margin-top: 4px;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   background: var(--bg-raised);
   color: var(--text);
@@ -1572,8 +1674,10 @@ a.app-version:hover {
   cursor: pointer;
 }
 
-.file-card:hover {
-  border-color: var(--accent);
+@media (hover: hover) {
+  .file-card:hover {
+    border-color: var(--accent);
+  }
 }
 
 .file-card svg {
@@ -1642,7 +1746,7 @@ a.app-version:hover {
   margin-bottom: 6px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-overlay);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1654,13 +1758,15 @@ a.app-version:hover {
 .mention-pop button {
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-size: 14px;
   font-weight: 600;
 }
 
-.mention-pop button:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .mention-pop button:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .mention-hint {
@@ -1677,7 +1783,7 @@ a.app-version:hover {
   margin-bottom: 6px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-overlay);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1692,7 +1798,7 @@ a.app-version:hover {
   gap: 12px;
   min-height: 44px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-size: 15px;
   font-weight: 600;
   text-align: left;
@@ -1721,7 +1827,7 @@ a.app-version:hover {
   padding: 10px 6px 10px 14px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   color: var(--text);
   font-size: 14px;
 }
@@ -1744,13 +1850,15 @@ a.app-version:hover {
   width: 40px;
   height: 40px;
   margin-top: -6px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
 }
 
-.camera-note-close:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .camera-note-close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 /* ---------------------------------------------------------------- voice */
@@ -1783,7 +1891,7 @@ a.app-version:hover {
   height: 9px;
   border-radius: 50%;
   background: var(--accent);
-  animation: pulse 1.6s ease-in-out infinite;
+  animation: pulse var(--ds-motion-cycle-pulse) ease-in-out infinite;
   flex-shrink: 0;
 }
 
@@ -1808,8 +1916,8 @@ a.app-version:hover {
   white-space: nowrap;
   font-size: 12.5px;
   transition:
-    border-color 0.1s,
-    color 0.1s;
+    border-color var(--ds-duration-fast) var(--ds-ease-standard),
+    color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .voice-chip.speaking {
@@ -1829,11 +1937,13 @@ a.app-version:hover {
   font-weight: 700;
   font-size: 13px;
   padding: 6px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
-.voice-leave:hover {
-  background: var(--danger-soft);
+@media (hover: hover) {
+  .voice-leave:hover {
+    background: var(--danger-soft);
+  }
 }
 
 .ptt-dock {
@@ -2056,7 +2166,7 @@ a.app-version:hover {
 
 .on-air-me .on-air-dot {
   background: #fff;
-  animation: on-air-pulse 1.6s ease-in-out infinite;
+  animation: on-air-pulse var(--ds-motion-cycle-pulse) ease-in-out infinite;
 }
 
 @keyframes on-air-pulse {
@@ -2096,7 +2206,7 @@ a.app-version:hover {
   width: min(440px, 100%);
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -2121,7 +2231,7 @@ a.app-version:hover {
 .audio-field select {
   height: 44px;
   padding: 0 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2154,7 +2264,7 @@ a.app-version:hover {
   height: 100%;
   background: linear-gradient(90deg, var(--ok), var(--warn));
   border-radius: 99px;
-  transition: width 0.1s linear;
+  /* A live level: it changes at once, never eases (motion.md). */
 }
 
 .audio-hint {
@@ -2170,7 +2280,7 @@ a.app-version:hover {
 
 .audio-done {
   height: 46px;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -2181,7 +2291,7 @@ a.app-version:hover {
   width: min(520px, 100%);
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   align-self: flex-start;
   padding: 16px 20px 20px;
@@ -2216,7 +2326,7 @@ a.app-version:hover {
 .file-preview-media {
   max-width: 100%;
   max-height: 55vh;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   object-fit: contain;
   background: var(--bg);
@@ -2256,7 +2366,7 @@ a.app-version:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2267,9 +2377,10 @@ a.app-version:hover {
   cursor: pointer;
 }
 
-.file-act:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+@media (hover: hover) {
+  .file-act:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .file-act.danger {
@@ -2294,7 +2405,7 @@ a.app-version:hover {
   line-height: 0;
   max-width: 100%;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   touch-action: none;
   cursor: zoom-in;
 }
@@ -2330,7 +2441,7 @@ a.app-version:hover {
   gap: 12px;
   background: var(--bg-raised);
   border: 1px solid var(--warn);
-  border-radius: 14px;
+  border-radius: var(--radius-overlay);
   padding: 12px 16px;
   font-size: 13.5px;
   max-width: min(420px, calc(100vw - 24px));
@@ -2360,7 +2471,7 @@ a.app-version:hover {
   max-height: 70vh;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2397,8 +2508,10 @@ a.app-version:hover {
   border-bottom: 1px solid var(--border);
 }
 
-.search-hit:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .search-hit:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .search-hit-meta {
@@ -2430,7 +2543,7 @@ a.app-version:hover {
   max-height: 80vh;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2503,8 +2616,10 @@ a.app-version:hover {
   white-space: nowrap;
 }
 
-.settings-tab:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .settings-tab:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .settings-tab[aria-selected='true'] {
@@ -2574,7 +2689,7 @@ a.app-version:hover {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--bg-hover);
 }
 
@@ -2582,14 +2697,16 @@ a.app-version:hover {
   min-width: 88px;
   min-height: 40px;
   padding: 0 16px;
-  border-radius: 8px;
+  border-radius: calc(var(--radius-control) - 2px);
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 500;
 }
 
-.settings-seg button:hover:not([aria-pressed='true']) {
-  background: var(--bg-active);
+@media (hover: hover) {
+  .settings-seg button:hover:not([aria-pressed='true']) {
+    background: var(--bg-active);
+  }
 }
 
 .settings-seg button[aria-pressed='true'] {
@@ -2616,7 +2733,7 @@ a.app-version:hover {
   background: var(--bg-hover);
   border: 1px solid var(--ds-line-control);
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .settings-switch input[role='switch']::after {
@@ -2628,7 +2745,9 @@ a.app-version:hover {
   height: 16px;
   border-radius: 50%;
   background: var(--text-muted);
-  transition: transform 120ms ease;
+  /* The knob travels, so under reduced motion it moves at once. */
+  transition: transform calc(var(--ds-duration-fast) * var(--ds-motion-travel))
+    var(--ds-ease-standard);
 }
 
 .settings-switch input[role='switch']:checked {
@@ -2668,7 +2787,7 @@ a.app-version:hover {
 .admin-unlock-form input {
   height: 44px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2691,8 +2810,10 @@ a.app-version:hover {
   font-weight: 600;
 }
 
-.admin-btn.admin-btn-primary:hover:not(:disabled) {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .admin-btn.admin-btn-primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+  }
 }
 
 .admin-note {
@@ -2792,13 +2913,15 @@ a.app-version:hover {
   padding: 6px 12px;
   font-size: 13.5px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--bg-hover);
   white-space: nowrap;
 }
 
-.admin-btn:hover:not(:disabled) {
-  background: var(--bg-active);
+@media (hover: hover) {
+  .admin-btn:hover:not(:disabled) {
+    background: var(--bg-active);
+  }
 }
 
 .admin-btn:disabled {
@@ -2836,7 +2959,7 @@ a.app-version:hover {
 .admin-channel-form input {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 6px 10px;
   font-size: 14px;
   outline: none;
@@ -2900,7 +3023,7 @@ a.app-version:hover {
   flex: 1;
   height: 40px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2926,7 +3049,7 @@ a.app-version:hover {
 .admin-setting select {
   height: 40px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -3018,7 +3141,7 @@ a.app-version:hover {
  * selects the whole of it.
  */
 .admin-key {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12.5px;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -3089,7 +3212,7 @@ a.app-version:hover {
 .admin-licence-name {
   height: 40px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -3100,7 +3223,7 @@ a.app-version:hover {
   margin: 4px 20px 8px;
   padding: 4px 14px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
 }
 
 .admin-licence-offline summary {
@@ -3136,7 +3259,7 @@ a.app-version:hover {
   display: block;
   margin-top: 4px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg);
   color: var(--text);
   font-size: 13.5px;
@@ -3145,11 +3268,11 @@ a.app-version:hover {
 .admin-licence-token {
   width: 100%;
   padding: 8px 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12.5px;
   resize: vertical;
 }
@@ -3210,7 +3333,7 @@ a.app-version:hover {
   overflow-y: auto;
   padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: var(--bg-raised);
   display: flex;
   flex-direction: column;
@@ -3262,9 +3385,13 @@ a.app-version:hover {
     height: var(--app-height, 100dvh);
     z-index: 50;
     transform: translateX(-100%);
+    /* A sheet travels its own size from its edge: in at slow on the
+       emphasized curve, out a step quicker. Under reduced motion it does not
+       travel (--ds-motion-travel is 0), it is simply there. */
     transition:
-      transform 0.22s ease,
-      box-shadow 0.22s ease;
+      transform calc(var(--ds-duration-base) * var(--ds-motion-travel))
+        var(--ds-ease-emphasized-exit),
+      box-shadow var(--ds-duration-base) var(--ds-ease-emphasized-exit);
     width: min(var(--sidebar-w), 85vw);
     /* Fixed drawer escapes .app's safe-area padding — re-apply both ends, or
        the bottom row sits under the home indicator. */
@@ -3280,6 +3407,9 @@ a.app-version:hover {
    */
   .sidebar-open .sidebar {
     transform: translateX(0);
+    transition-duration:
+      calc(var(--ds-duration-slow) * var(--ds-motion-travel)), var(--ds-duration-slow);
+    transition-timing-function: var(--ds-ease-emphasized-enter);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
   }
 
@@ -3344,12 +3474,13 @@ a.app-version:hover {
 }
 
 /* -------------------------------------------------------- reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
-    transition: none !important;
-  }
-}
+/*
+ * Reduced motion removes movement, not meaning (design-system motion.md).
+ * Durations, offsets and travel come from the tokens, which switch to their
+ * reduced values under prefers-reduced-motion, so nothing travels and fades
+ * and colour changes stay short. Loops that say "working" (the spinner, a
+ * pulsing dot) keep going in place.
+ */
 
 /* ---------------------------------------------------- box readiness */
 /* What this box can actually do right now (admin panel). Replaces the
@@ -3379,7 +3510,7 @@ a.app-version:hover {
   display: flex;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg);
 }
 
@@ -3462,7 +3593,7 @@ a.app-version:hover {
   align-self: flex-start;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -3514,7 +3645,7 @@ a.app-version:hover {
   align-self: flex-start;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -3549,7 +3680,7 @@ a.app-version:hover {
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   background: var(--bg);
 }
 
@@ -3565,8 +3696,10 @@ a.app-version:hover {
   color: var(--text);
 }
 
-button.boxes-pick:hover .boxes-name {
-  text-decoration: underline;
+@media (hover: hover) {
+  button.boxes-pick:hover .boxes-name {
+    text-decoration: underline;
+  }
 }
 
 .boxes-name {
@@ -3633,7 +3766,7 @@ button.boxes-pick:hover .boxes-name {
   min-width: 0;
   height: 42px;
   padding: 0 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   font-size: 16px; /* prevents iOS zoom-on-focus */
@@ -3716,15 +3849,17 @@ button.boxes-pick:hover .boxes-name {
 .confirm-go {
   height: 40px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
   background: var(--accent);
   color: var(--accent-contrast);
 }
 
-.confirm-go:hover:not(:disabled) {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .confirm-go:hover:not(:disabled) {
+    background: var(--accent-strong);
+  }
 }
 
 .confirm-go:disabled {
@@ -3753,8 +3888,10 @@ button.boxes-pick:hover .boxes-name {
   flex-shrink: 0;
 }
 
-.feedback-link:hover {
-  color: var(--accent);
+@media (hover: hover) {
+  .feedback-link:hover {
+    color: var(--accent);
+  }
 }
 
 .feedback-types {
@@ -3794,7 +3931,7 @@ button.boxes-pick:hover .boxes-name {
 
 .confirm-field textarea {
   padding: 10px 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -3811,7 +3948,7 @@ button.boxes-pick:hover .boxes-name {
 .confirm-send {
   height: 40px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
   background: var(--accent);
@@ -3871,7 +4008,7 @@ button.boxes-pick:hover .boxes-name {
 .crash-secondary {
   height: 42px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
 }
@@ -3914,7 +4051,7 @@ button.boxes-pick:hover .boxes-name {
 .crash-detail {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg-raised);
   border: 1px solid var(--border);
   color: var(--text);
@@ -3966,7 +4103,7 @@ button.boxes-pick:hover .boxes-name {
   gap: 2px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-overlay);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
@@ -3975,7 +4112,7 @@ button.boxes-pick:hover .boxes-name {
   gap: 2px;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text);
 }
 
@@ -4036,13 +4173,13 @@ button.boxes-pick:hover .boxes-name {
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 0 8px;
 }
 
 .alert-settings-off {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 10px 12px;
   margin: 10px 0;
   background: var(--bg-hover);

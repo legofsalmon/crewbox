@@ -115,6 +115,15 @@ export default defineConfig({
          * megabyte only the Network page's tools use would reach every
          * phone on install. Its runtime rule is below too.
          */
+        /**
+         * Workbox's own default, plus IBM Plex's Latin files (about 130 KB
+         * for the six weights main.tsx imports), so the type is there the
+         * first time the app opens with no network. The other scripts'
+         * subsets (Cyrillic, Greek, Vietnamese, Latin Extended) are fetched
+         * only when a name or message needs them, and kept by the runtime
+         * rule below; until then the system font draws them.
+         */
+        globPatterns: ['**/*.{js,wasm,css,html}', '**/ibm-plex-*-latin-[0-9]00-normal-*.woff2'],
         globIgnores: [
           '**/voice-*.js',
           '**/voice-*.js.br',
@@ -124,6 +133,16 @@ export default defineConfig({
           '**/st2110_wasm_bg-*.wasm.gz',
         ],
         runtimeCaching: [
+          {
+            // IBM Plex's other subsets, kept once a phone has needed one.
+            // Content-hashed, so a cached copy can never be the wrong one.
+            urlPattern: ({ url }) => /\/assets\/ibm-plex-.*\.woff2?$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'crewbox-fonts',
+              expiration: { maxEntries: 40 },
+            },
+          },
           {
             // Content-hashed, so a cached copy can never be the wrong one.
             urlPattern: ({ url }) => /\/assets\/voice-.*\.js$/.test(url.pathname),

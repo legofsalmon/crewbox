@@ -37,7 +37,8 @@ export default function VideoSidebar() {
       <ul>
         <li>
           <button
-            className={`row ${videoActive && !activeModuleSubpath ? 'active' : ''}`}
+            className="row"
+            aria-current={videoActive && !activeModuleSubpath ? 'page' : undefined}
             aria-label="Open LED walls"
             onClick={() => setActiveModule('video')}
           >
@@ -51,7 +52,8 @@ export default function VideoSidebar() {
           return (
             <li key={entry.id}>
               <button
-                className={`row ${active ? 'active' : ''}`}
+                className="row"
+                aria-current={active ? 'page' : undefined}
                 aria-label={`Open screen map ${entry.title}${updated ? ', updated' : ''}`}
                 onClick={() => setActiveModule('video', `screens/${entry.id}`)}
               >
@@ -66,7 +68,8 @@ export default function VideoSidebar() {
         })}
         <li>
           <button
-            className={`row ${videoActive && activeModuleSubpath === 'screens' ? 'active' : ''}`}
+            className="row"
+            aria-current={videoActive && activeModuleSubpath === 'screens' ? 'page' : undefined}
             onClick={() => setActiveModule('video', 'screens')}
           >
             <span className="row-name muted-note">All screen maps…</span>
