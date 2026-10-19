@@ -1,9 +1,28 @@
+/**
+ * `admin` is a person an admin has made one: they open Settings → Admin with
+ * their own PIN rather than the box's password. Everyone joins as `member`.
+ */
 export type Role = 'admin' | 'member'
 
 export interface User {
   id: string
   name: string
   role: Role
+  /**
+   * The department they are in, by id (see Department). Absent when they
+   * are in none, and from a box that predates departments.
+   */
+  departmentId?: string
+  createdAt: number
+}
+
+/**
+ * A group of crew: Lighting, Stage, Production. Admins keep the list; each
+ * person is in at most one. `@name` mentions everyone in it (alerts.ts).
+ */
+export interface Department {
+  id: string
+  name: string
   createdAt: number
 }
 
