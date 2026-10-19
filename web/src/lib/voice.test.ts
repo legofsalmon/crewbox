@@ -65,6 +65,8 @@ class FakeRoom {
     this.state = 'connected'
   }
 
+  switchActiveDevice = vi.fn(async () => true)
+
   async startAudio(): Promise<void> {
     if (FakeRoom.playbackBehaviour === 'blocked') {
       this.canPlaybackAudio = false
@@ -797,6 +799,25 @@ describe('the party line: hear several channels, talk on one', () => {
     await pending
 
     expect(inside(manager).listens.size).toBe(0)
+  })
+
+  it('gives up hearing a channel that is joined while still connecting', async () => {
+    const { manager } = await onVoiceHearing()
+    const pending = manager.listen('stage', 'token', 'ws://box')
+    await manager.join('stage', 'token', 'ws://box')
+    await pending
+
+    expect(inside(manager).listens.size).toBe(0)
+    expect((manager as unknown as { channelId: string }).channelId).toBe('stage')
+  })
+
+  it('points every heard channel at a newly picked mic, ready for Talk here', async () => {
+    const { manager } = await onVoiceHearing('stage')
+    const stage = inside(manager).listens.get('stage')!.room
+
+    await manager.setDevice('audioinput', 'headset')
+
+    expect(stage.switchActiveDevice).toHaveBeenCalledWith('audioinput', 'headset')
   })
 
   it('reports a heard channel that cannot be reached, and keeps the call', async () => {

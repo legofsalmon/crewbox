@@ -205,6 +205,10 @@ export class VoiceManager {
     iceServers?: RTCIceServer[]
   ): Promise<void> {
     if (this.promote(channelId, { keepOld: false })) return
+    // Still connecting as a channel heard: give that up first. The same
+    // person in the same room twice is one too many, and LiveKit settles it
+    // by throwing the older one out.
+    this.stopListening(channelId)
     await this.dropTalkRoom()
     this.channelId = channelId
     this.publish({
@@ -355,6 +359,9 @@ export class VoiceManager {
   private promote(channelId: string, { keepOld }: { keepOld: boolean }): boolean {
     const entry = this.listens.get(channelId)
     if (!entry || entry.status === 'joining' || !this.room || !this.channelId) return false
+    // Not mid-join either: the join still has its own room to finish setting
+    // up, and would do it over the top of this one.
+    if (!this.connected.has(this.room)) return false
     const old = this.room
     const oldChannelId = this.channelId
 
@@ -755,10 +762,8 @@ export class VoiceManager {
               : { selectedOutput: null, error: 'Speaker disconnected — using default' }
           )
           if (this.room) void this.room.switchActiveDevice(kind, 'default')
-          if (kind === 'audiooutput') {
-            for (const { room } of this.listens.values()) {
-              void room.switchActiveDevice(kind, 'default').catch(() => {})
-            }
+          for (const { room } of this.listens.values()) {
+            void room.switchActiveDevice(kind, 'default').catch(() => {})
           }
         }
       }
@@ -771,11 +776,11 @@ export class VoiceManager {
     saveDeviceId(kind, deviceId)
     this.publish(kind === 'audioinput' ? { selectedInput: deviceId } : { selectedOutput: deviceId })
     if (!this.room) return
-    // A speaker is every room's; a microphone is only the talk room's.
-    if (kind === 'audiooutput') {
-      for (const { room } of this.listens.values()) {
-        void room.switchActiveDevice(kind, deviceId ?? 'default').catch(() => {})
-      }
+    // Every room's, not only the talk room's: a speaker plays them all, and
+    // a channel heard now captures with this mic the moment it is talked on
+    // (LiveKit keeps it as the room's capture default until then).
+    for (const { room } of this.listens.values()) {
+      void room.switchActiveDevice(kind, deviceId ?? 'default').catch(() => {})
     }
     try {
       await this.room.switchActiveDevice(kind, deviceId ?? 'default')
