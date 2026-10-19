@@ -94,7 +94,7 @@ test('a stage is followed from the running order', async ({ browser }) => {
   await editor.getByLabel('Stage', { exact: true }).last().fill(stage)
   await editor.getByLabel('On', { exact: true }).last().fill('21:00')
   await editor.getByLabel('Off', { exact: true }).last().fill('22:00')
-  await page.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
 
   const follow = page.getByRole('button', { name: `Changeover calls for ${stage}` })
   await expect(follow).toHaveAttribute('aria-pressed', 'false')
