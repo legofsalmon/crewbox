@@ -70,6 +70,11 @@ export interface StageSource {
   close?(): void
 }
 
+/** Cue lights and calls for help still live (server/src/cues.ts), for a catch-up. */
+export interface LiveSource {
+  liveAlertsFor(userId: string): Alert[]
+}
+
 interface AlertsConn {
   ws: WebSocket
   user: User | null
@@ -102,6 +107,7 @@ export class AlertsHub {
   private sounded = new Map<string, number>()
   private hub: AlertsHubLink | undefined
   private stageSource: StageSource | undefined
+  private liveSource: LiveSource | undefined
   readonly beatMs: number
   private readonly now: () => number
 
@@ -120,6 +126,10 @@ export class AlertsHub {
 
   setStages(source: StageSource): void {
     this.stageSource = source
+  }
+
+  setLive(source: LiveSource): void {
+    this.liveSource = source
   }
 
   start(): void {
@@ -263,7 +273,22 @@ export class AlertsHub {
       []) {
       if (call.target.kind === 'stage' && followed.has(call.target.stage)) alerts.push(call)
     }
-    return shapeCatchUp(alerts)
+    const shaped = shapeCatchUp(alerts)
+    // A standby or a call for help that is still live rings however old it
+    // is: it is not history yet. They go last, sounding, and the newest of
+    // the rest goes quiet, so the phone sounds for the thing that matters.
+    const live = this.liveSource?.liveAlertsFor(user.id) ?? []
+    if (live.length === 0) return shaped
+    const ids = new Set(live.map((alert) => alert.id))
+    return {
+      catchUp: [
+        ...shaped.catchUp
+          .filter((alert) => !ids.has(alert.id))
+          .map((alert) => ({ ...alert, quiet: true })),
+        ...live.map((alert) => ({ ...alert, quiet: false })),
+      ],
+      more: shaped.more,
+    }
   }
 
   /** Every `beatMs`: a beat to each socket, and the ones gone quiet for three closed. */
@@ -328,6 +353,23 @@ export class AlertsHub {
     for (const userId of this.hub.onlineUserIds()) {
       if (!this.store.getAlertSettings(userId).stages.includes(stage)) continue
       this.deliver(userId, { ...alert, quiet: this.soundedRecently(userId, alert.thread) })
+    }
+  }
+
+  /**
+   * A cue light or a call for help, for one person. Always sounding: the
+   * one-sound-per-30-seconds rule is for chatty channels, and a GO twenty
+   * seconds after its standby is the alert that matters most.
+   */
+  alertPerson(userId: string, alert: Alert): void {
+    this.deliver(userId, { ...alert, quiet: false })
+  }
+
+  /** A call for help, for everybody connected but `except`. */
+  alertEveryone(alert: Alert, except: string[]): void {
+    if (!this.hub) return
+    for (const userId of this.hub.onlineUserIds()) {
+      if (!except.includes(userId)) this.alertPerson(userId, alert)
     }
   }
 

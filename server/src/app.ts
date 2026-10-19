@@ -22,11 +22,14 @@ import QRCode from 'qrcode-svg'
 import {
   ALERTS_PATH,
   ALERTS_VERSION,
+  agenda,
   HOME_CHANNEL,
   MAX_MESSAGE_LENGTH,
   MAX_PROCESSOR_NAME,
   VIDEO_ACTIONS,
   newId,
+  toAgendaAct,
+  wallClock,
   type PublicConfig,
   type User,
 } from '@crewbox/shared'
@@ -95,6 +98,7 @@ import {
 } from './control.ts'
 import { StageCalls } from './alertCalls.ts'
 import { AlertsHub } from './alerts.ts'
+import { CueDesk } from './cues.ts'
 import { DELETION_REPLAY_MS, Hub, isPrivateIp, isRemoteConnection } from './hub.ts'
 import type { VideoService } from './video/service.ts'
 import type { UpdateChecker } from './update/check.ts'
@@ -850,6 +854,30 @@ export function buildApp({
   // Changeover calls and the countdown, off the running order the relay
   // carries, on the festival's clock (docs/ALERTS.md).
   alerts.setStages(new StageCalls(docs, alerts, clock, timeZone))
+
+  // Cue lights and the panic button (docs/CUES.md): live state every device
+  // is shown, buzzing through the alerts above, with calls for help recorded
+  // in #general.
+  const cues = new CueDesk(
+    {
+      broadcast: (msg) => hub.announce(msg),
+      alert: (userId, alert) => alerts.alertPerson(userId, alert),
+      alertEveryone: (alert, except) => alerts.alertEveryone(alert, except),
+      withdraw: (ids, audience) => alerts.withdraw(ids, audience),
+      systemMessage: (channelId, body) => void hub.systemMessage(channelId, body),
+    },
+    store,
+    () => store.getChannelByName(HOME_CHANNEL)?.id,
+    (stage) => {
+      const wall = wallClock(clock(), timeZone)
+      const acts = readRunningOrder(docs.peek(TIMETABLE_ROOM)).map(toAgendaAct)
+      return agenda(acts, wall.now, wall.today).find((s) => s.stage === stage)?.onNow?.act.name ?? ''
+    }
+  )
+  hub.setCues(cues)
+  alerts.setLive(cues)
+  cues.start()
+  fastify.addHook('onClose', () => cues.close())
 
   // The network audit's collector: strictly a reader over the state the
   // passive listeners already keep — it opens no sockets and sends nothing.

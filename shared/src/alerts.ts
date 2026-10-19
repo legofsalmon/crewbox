@@ -113,6 +113,10 @@ export const levelFor = (settings: AlertSettings, channelId: string): ChannelAle
  *    iPhone; the alarm stream on Android.
  *  - `changeover`: a changeover call for a followed stage. Time Sensitive,
  *    except a moved set, which is not.
+ *  - `cue`: a cue light: standby, then GO, for the operator it is called to
+ *    (shared/src/cues.ts). Time Sensitive; its own channel on Android.
+ *  - `panic`: somebody held the panic button. Time Sensitive; the alarm
+ *    stream on Android, as a show stop is.
  */
 export const ALERT_KINDS = [
   'dm',
@@ -122,12 +126,18 @@ export const ALERT_KINDS = [
   'message',
   'showStop',
   'changeover',
+  'cue',
+  'panic',
 ] as const
 export type AlertKind = (typeof ALERT_KINDS)[number]
 
 /** Where a tap on an alert takes somebody. */
 export type AlertTarget =
-  { kind: 'channel'; channelId: string } | { kind: 'showlog' } | { kind: 'stage'; stage: string }
+  | { kind: 'channel'; channelId: string }
+  | { kind: 'showlog' }
+  | { kind: 'stage'; stage: string }
+  /** The cue lights: the operator's lamp, or the caller's pane. */
+  | { kind: 'cues' }
 
 export interface Alert {
   /**
