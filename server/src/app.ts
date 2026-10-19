@@ -105,6 +105,7 @@ import { LicenceProblem, type LicenceService } from './licence/service.ts'
 import type { ReportService } from './reports/service.ts'
 import { FEEDBACK_TYPES, OSES } from './reports/payload.ts'
 import type { Store } from './store.ts'
+import { NetmapService } from './netmap/service.ts'
 import { st2110 } from './st2110.ts'
 import {
   BOX_SETTINGS,
@@ -513,6 +514,12 @@ export interface AppDeps {
    */
   video?: VideoService
   /**
+   * The box's own network readings for the map (neighbour table, querier,
+   * LLDP, cached Wi-Fi scans). Injected in tests so nothing reads this
+   * machine's tables; the real one only reads, and sends nothing.
+   */
+  netmap?: NetmapService
+  /**
    * Asks whether a newer crewbox exists. Omit and the panel simply never
    * mentions updates — which is what a box told not to check should look
    * like, rather than a row saying it doesn't know.
@@ -664,6 +671,7 @@ export function buildApp({
   dmx,
   netwatch,
   video,
+  netmap,
   updates,
   outbound = true,
   updater,
@@ -2083,6 +2091,64 @@ export function buildApp({
       const { beforeSeq, limit } = parsed.data
       const before = beforeSeq ?? store.latestIncidentSeq() + 1
       return { incidents: store.listIncidentsBefore(before, limit) }
+    })
+  }
+
+  // -- network map -----------------------------------------------------------
+  //
+  // What the box can say is on each network it has a leg on, from what the
+  // watchers overheard and the tables its operating system keeps. It sends
+  // nothing: every input is already in memory or a read of a local table
+  // (server/src/netmap). Session-authed like the audit, and the crew network
+  // is a count, never a list of phones.
+  if (modules.includes('network')) {
+    const maps = netmap ?? new NetmapService()
+    fastify.get('/api/netmap', async (req, reply) => {
+      const user = authUser(req)
+      if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+      const now = Date.now()
+      const boot = network?.boot
+      const ptp = netwatch?.ptp.status(now)
+      return maps.build({
+        watch: {
+          crew: boot?.iface ?? iface,
+          ...(dmx ? { lighting: boot?.dmxIface ?? '' } : {}),
+          ...(netwatch ? { media: netwatch.snapshot().interfaceIp ?? '' } : {}),
+          ...(video ? { video: video.interfaceIp ?? '' } : {}),
+        },
+        crewSsid: publicConfig().wifiSsid,
+        ...(dmx
+          ? {
+              dmx: {
+                heard: dmx.heard.list(),
+                nodes: dmx.state.nodes(),
+                sources: dmx.state.health().flatMap((u) =>
+                  u.sources.map((s) => ({
+                    id: s.id,
+                    name: s.name,
+                    protocol: s.protocol,
+                    lastSeen: s.lastSeen,
+                  }))
+                ),
+                overflow: dmx.heard.overflow(),
+              },
+            }
+          : {}),
+        ...(netwatch
+          ? {
+              media: {
+                heard: netwatch.heard.list(),
+                services: netwatch.mdns.roster(),
+                streams: netwatch.sap.roster(),
+                grandmaster: ptp?.grandmasterId
+                  ? { id: ptp.grandmasterId, lastAnnounce: ptp.lastAnnounce }
+                  : null,
+                overflow: netwatch.heard.overflow() + netwatch.mdns.overflow(),
+              },
+            }
+          : {}),
+        ...(video ? { processors: video.watcher.statuses() } : {}),
+      })
     })
   }
 
