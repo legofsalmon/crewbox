@@ -236,7 +236,7 @@ ul {
   background: var(--bg);
   font-size: 16px; /* prevents iOS zoom-on-focus */
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .join-card input:focus {
@@ -256,7 +256,7 @@ ul {
   color: var(--accent-contrast);
   font-weight: 700;
   font-size: 16px;
-  transition: background 0.15s;
+  transition: background-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .join-card button[type='submit']:hover {
@@ -412,7 +412,7 @@ ul {
   border-radius: 50%;
   border: 3px solid var(--border);
   border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--ds-motion-cycle-spin) linear infinite;
 }
 
 /* --------------------------------------------------------------- layout */
@@ -963,7 +963,7 @@ a.app-version:hover {
 
 .conn-dot-connecting {
   background: var(--warn);
-  animation: pulse 1.2s ease-in-out infinite;
+  animation: pulse var(--ds-motion-cycle-pulse) ease-in-out infinite;
 }
 
 .conn-dot-offline {
@@ -1498,7 +1498,7 @@ a.app-version:hover {
   line-height: 1.4;
   outline: none;
   max-height: 160px;
-  transition: border-color 0.15s;
+  transition: border-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .composer textarea:focus {
@@ -1519,8 +1519,8 @@ a.app-version:hover {
   place-items: center;
   flex-shrink: 0;
   transition:
-    background 0.15s,
-    opacity 0.15s;
+    background-color var(--ds-duration-fast) var(--ds-ease-standard),
+    opacity var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .send-btn:hover {
@@ -1561,7 +1561,7 @@ a.app-version:hover {
   border-radius: 50%;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--ds-motion-cycle-spin) linear infinite;
 }
 
 @keyframes spin {
@@ -1819,7 +1819,7 @@ a.app-version:hover {
   height: 9px;
   border-radius: 50%;
   background: var(--accent);
-  animation: pulse 1.6s ease-in-out infinite;
+  animation: pulse var(--ds-motion-cycle-pulse) ease-in-out infinite;
   flex-shrink: 0;
 }
 
@@ -1844,8 +1844,8 @@ a.app-version:hover {
   white-space: nowrap;
   font-size: 12.5px;
   transition:
-    border-color 0.1s,
-    color 0.1s;
+    border-color var(--ds-duration-fast) var(--ds-ease-standard),
+    color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .voice-chip.speaking {
@@ -2092,7 +2092,7 @@ a.app-version:hover {
 
 .on-air-me .on-air-dot {
   background: #fff;
-  animation: on-air-pulse 1.6s ease-in-out infinite;
+  animation: on-air-pulse var(--ds-motion-cycle-pulse) ease-in-out infinite;
 }
 
 @keyframes on-air-pulse {
@@ -2190,7 +2190,7 @@ a.app-version:hover {
   height: 100%;
   background: linear-gradient(90deg, var(--ok), var(--warn));
   border-radius: 99px;
-  transition: width 0.1s linear;
+  /* A live level: it changes at once, never eases (motion.md). */
 }
 
 .audio-hint {
@@ -2652,7 +2652,7 @@ a.app-version:hover {
   background: var(--bg-hover);
   border: 1px solid var(--ds-line-control);
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
 .settings-switch input[role='switch']::after {
@@ -2664,7 +2664,9 @@ a.app-version:hover {
   height: 16px;
   border-radius: 50%;
   background: var(--text-muted);
-  transition: transform 120ms ease;
+  /* The knob travels, so under reduced motion it moves at once. */
+  transition: transform calc(var(--ds-duration-fast) * var(--ds-motion-travel))
+    var(--ds-ease-standard);
 }
 
 .settings-switch input[role='switch']:checked {
@@ -3298,9 +3300,13 @@ a.app-version:hover {
     height: var(--app-height, 100dvh);
     z-index: 50;
     transform: translateX(-100%);
+    /* A sheet travels its own size from its edge: in at slow on the
+       emphasized curve, out a step quicker. Under reduced motion it does not
+       travel (--ds-motion-travel is 0), it is simply there. */
     transition:
-      transform 0.22s ease,
-      box-shadow 0.22s ease;
+      transform calc(var(--ds-duration-base) * var(--ds-motion-travel))
+        var(--ds-ease-emphasized-exit),
+      box-shadow var(--ds-duration-base) var(--ds-ease-emphasized-exit);
     width: min(var(--sidebar-w), 85vw);
     /* Fixed drawer escapes .app's safe-area padding — re-apply both ends, or
        the bottom row sits under the home indicator. */
@@ -3316,6 +3322,9 @@ a.app-version:hover {
    */
   .sidebar-open .sidebar {
     transform: translateX(0);
+    transition-duration:
+      calc(var(--ds-duration-slow) * var(--ds-motion-travel)), var(--ds-duration-slow);
+    transition-timing-function: var(--ds-ease-emphasized-enter);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
   }
 
@@ -3380,12 +3389,13 @@ a.app-version:hover {
 }
 
 /* -------------------------------------------------------- reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
-    transition: none !important;
-  }
-}
+/*
+ * Reduced motion removes movement, not meaning (design-system motion.md).
+ * Durations, offsets and travel come from the tokens, which switch to their
+ * reduced values under prefers-reduced-motion, so nothing travels and fades
+ * and colour changes stay short. Loops that say "working" (the spinner, a
+ * pulsing dot) keep going in place.
+ */
 
 /* ---------------------------------------------------- box readiness */
 /* What this box can actually do right now (admin panel). Replaces the

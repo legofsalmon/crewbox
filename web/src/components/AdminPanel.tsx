@@ -120,9 +120,13 @@ export default function AdminPanel() {
           <button
             className="admin-btn"
             onClick={() =>
-              document
-                .getElementById('admin-licence')
-                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              document.getElementById('admin-licence')?.scrollIntoView({
+                // A scroll is travel: under reduced motion it jumps.
+                behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+                  ? 'auto'
+                  : 'smooth',
+                block: 'start',
+              })
             }
           >
             Licence

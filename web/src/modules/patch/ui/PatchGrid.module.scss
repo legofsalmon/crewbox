@@ -175,7 +175,7 @@ $act-row-height: 38px;
   display: flex;
   flex-direction: column;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--ds-duration-fast) var(--ds-ease-standard);
 
   button {
     border: none;
