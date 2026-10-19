@@ -50,7 +50,7 @@
     color: var(--text);
     // The point of this box is that it can be checked against a capture, so
     // addresses and ports have to be readable character by character.
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
 }
 

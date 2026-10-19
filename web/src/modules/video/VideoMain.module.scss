@@ -169,7 +169,7 @@
 
   li {
     // Verifiable against a packet capture, so it has to read exactly.
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--text-faint);
     overflow-wrap: anywhere;
@@ -190,7 +190,7 @@
 }
 
 .foundRaw {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-faint);
   overflow-wrap: anywhere;
