@@ -151,6 +151,15 @@ button {
   outline-offset: 2px;
 }
 
+/* Pressed (states.md): every press shows at once that it landed. A wash
+   over whatever the button is drawn in, so it works on a fill, an edge or
+   nothing; drawn as an inset shadow so no button's own hover background
+   can paint over it. The current row is already the strongest wash. */
+button:not(:disabled, [aria-disabled='true'], [aria-current='page']):active {
+  box-shadow: inset 0 0 0 100vmax var(--ds-wash-pressed);
+  transition-duration: var(--ds-duration-instant);
+}
+
 input,
 textarea {
   font: inherit;
@@ -259,8 +268,10 @@ ul {
   transition: background-color var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
-.join-card button[type='submit']:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .join-card button[type='submit']:hover {
+    background: var(--accent-strong);
+  }
 }
 
 .join-card button[type='submit']:disabled {
@@ -277,8 +288,10 @@ ul {
   font-size: 14px;
 }
 
-.join-boxes:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .join-boxes:hover {
+    text-decoration: underline;
+  }
 }
 
 /* In a phone's browser: the same form in the app, when the app is on the phone. */
@@ -553,8 +566,10 @@ ul {
   color: var(--text-muted);
 }
 
-.alert-banner-close:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .alert-banner-close:hover {
+    color: var(--text);
+  }
 }
 
 /*
@@ -605,8 +620,10 @@ ul {
   font-weight: 700;
 }
 
-.file-offer-act:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .file-offer-act:hover {
+    background: var(--accent-strong);
+  }
 }
 
 .file-offer-close {
@@ -617,9 +634,11 @@ ul {
   color: var(--text-muted);
 }
 
-.file-offer-close:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .file-offer-close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 .updated-dot {
@@ -642,8 +661,10 @@ ul {
   vertical-align: 1px;
 }
 
-.msg-applink:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .msg-applink:hover {
+    background: var(--accent-strong);
+  }
 }
 
 /* Underlined as well as coloured: colour alone isn't a link to someone who
@@ -655,8 +676,10 @@ ul {
   overflow-wrap: anywhere;
 }
 
-.msg-link:hover {
-  color: var(--accent-strong);
+@media (hover: hover) {
+  .msg-link:hover {
+    color: var(--accent-strong);
+  }
 }
 
 .flash-info {
@@ -756,8 +779,10 @@ ul {
   color: var(--text-muted);
 }
 
-.screens-note-close:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .screens-note-close:hover {
+    color: var(--text);
+  }
 }
 
 .sidebar-footer-links {
@@ -777,8 +802,10 @@ ul {
   flex-shrink: 0;
 }
 
-.delete-account-link:hover {
-  color: var(--danger);
+@media (hover: hover) {
+  .delete-account-link:hover {
+    color: var(--danger);
+  }
 }
 
 /*
@@ -807,9 +834,11 @@ a.app-version {
   text-decoration: none;
 }
 
-a.app-version:hover {
-  color: var(--text-muted);
-  text-decoration: underline;
+@media (hover: hover) {
+  a.app-version:hover {
+    color: var(--text-muted);
+    text-decoration: underline;
+  }
 }
 
 /* -------------------------------------------------- confirm dialog */
@@ -939,9 +968,11 @@ a.app-version:hover {
   font-weight: 600;
 }
 
-.sidebar-boxes:hover {
-  background: var(--bg-active);
-  color: var(--text);
+@media (hover: hover) {
+  .sidebar-boxes:hover {
+    background: var(--bg-active);
+    color: var(--text);
+  }
 }
 
 @media (pointer: coarse) {
@@ -1004,9 +1035,11 @@ a.app-version:hover {
   font-size: 16px;
 }
 
-.icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .icon-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 .new-channel input {
@@ -1038,10 +1071,6 @@ a.app-version:hover {
     background: var(--bg-hover);
     color: var(--text);
   }
-}
-
-.row:active:not([aria-current='page']) {
-  background: var(--ds-wash-pressed);
 }
 
 /* The current channel, plot or view: the selected state (cyan is you), drawn
@@ -1272,8 +1301,10 @@ a.app-version:hover {
   min-height: 32px;
 }
 
-.filter-chip:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .filter-chip:hover {
+    color: var(--text);
+  }
 }
 
 .filter-chip.on {
@@ -1383,8 +1414,10 @@ a.app-version:hover {
   margin-top: 12px;
 }
 
-.msg:hover {
-  background: rgba(255, 255, 255, 0.02);
+@media (hover: hover) {
+  .msg:hover {
+    background: var(--ds-wash-hover);
+  }
 }
 
 .msg-gutter {
@@ -1523,8 +1556,10 @@ a.app-version:hover {
     opacity var(--ds-duration-fast) var(--ds-ease-standard);
 }
 
-.send-btn:hover {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .send-btn:hover {
+    background: var(--accent-strong);
+  }
 }
 
 .send-btn:disabled {
@@ -1550,9 +1585,40 @@ a.app-version:hover {
   flex-shrink: 0;
 }
 
-.attach-btn:hover {
-  color: var(--text);
-  border-color: var(--accent);
+@media (hover: hover) {
+  .attach-btn:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+}
+
+/* Busy (rule 16): no second press at once, but the paperclip stays until
+   the upload has run --ds-timing-wait, and only then does the spinner take
+   its place, so a quick upload never flashes one. */
+.attach-btn > * {
+  grid-area: 1 / 1;
+}
+
+.attach-btn[aria-busy='true'] > svg {
+  animation: busy-hide 0s var(--ds-timing-wait) both;
+}
+
+.attach-btn > .spinner {
+  animation:
+    spin var(--ds-motion-cycle-spin) linear infinite,
+    busy-show 0s var(--ds-timing-wait) both;
+}
+
+@keyframes busy-hide {
+  to {
+    visibility: hidden;
+  }
+}
+
+@keyframes busy-show {
+  from {
+    visibility: hidden;
+  }
 }
 
 .spinner {
@@ -1608,8 +1674,10 @@ a.app-version:hover {
   cursor: pointer;
 }
 
-.file-card:hover {
-  border-color: var(--accent);
+@media (hover: hover) {
+  .file-card:hover {
+    border-color: var(--accent);
+  }
 }
 
 .file-card svg {
@@ -1695,8 +1763,10 @@ a.app-version:hover {
   font-weight: 600;
 }
 
-.mention-pop button:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .mention-pop button:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .mention-hint {
@@ -1784,9 +1854,11 @@ a.app-version:hover {
   color: var(--text-muted);
 }
 
-.camera-note-close:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .camera-note-close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 /* ---------------------------------------------------------------- voice */
@@ -1868,8 +1940,10 @@ a.app-version:hover {
   border-radius: var(--radius-control);
 }
 
-.voice-leave:hover {
-  background: var(--danger-soft);
+@media (hover: hover) {
+  .voice-leave:hover {
+    background: var(--danger-soft);
+  }
 }
 
 .ptt-dock {
@@ -2303,9 +2377,10 @@ a.app-version:hover {
   cursor: pointer;
 }
 
-.file-act:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+@media (hover: hover) {
+  .file-act:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .file-act.danger {
@@ -2433,8 +2508,10 @@ a.app-version:hover {
   border-bottom: 1px solid var(--border);
 }
 
-.search-hit:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .search-hit:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .search-hit-meta {
@@ -2539,8 +2616,10 @@ a.app-version:hover {
   white-space: nowrap;
 }
 
-.settings-tab:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .settings-tab:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .settings-tab[aria-selected='true'] {
@@ -2624,8 +2703,10 @@ a.app-version:hover {
   font-weight: 500;
 }
 
-.settings-seg button:hover:not([aria-pressed='true']) {
-  background: var(--bg-active);
+@media (hover: hover) {
+  .settings-seg button:hover:not([aria-pressed='true']) {
+    background: var(--bg-active);
+  }
 }
 
 .settings-seg button[aria-pressed='true'] {
@@ -2729,8 +2810,10 @@ a.app-version:hover {
   font-weight: 600;
 }
 
-.admin-btn.admin-btn-primary:hover:not(:disabled) {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .admin-btn.admin-btn-primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+  }
 }
 
 .admin-note {
@@ -2835,8 +2918,10 @@ a.app-version:hover {
   white-space: nowrap;
 }
 
-.admin-btn:hover:not(:disabled) {
-  background: var(--bg-active);
+@media (hover: hover) {
+  .admin-btn:hover:not(:disabled) {
+    background: var(--bg-active);
+  }
 }
 
 .admin-btn:disabled {
@@ -3611,8 +3696,10 @@ a.app-version:hover {
   color: var(--text);
 }
 
-button.boxes-pick:hover .boxes-name {
-  text-decoration: underline;
+@media (hover: hover) {
+  button.boxes-pick:hover .boxes-name {
+    text-decoration: underline;
+  }
 }
 
 .boxes-name {
@@ -3769,8 +3856,10 @@ button.boxes-pick:hover .boxes-name {
   color: var(--accent-contrast);
 }
 
-.confirm-go:hover:not(:disabled) {
-  background: var(--accent-strong);
+@media (hover: hover) {
+  .confirm-go:hover:not(:disabled) {
+    background: var(--accent-strong);
+  }
 }
 
 .confirm-go:disabled {
@@ -3799,8 +3888,10 @@ button.boxes-pick:hover .boxes-name {
   flex-shrink: 0;
 }
 
-.feedback-link:hover {
-  color: var(--accent);
+@media (hover: hover) {
+  .feedback-link:hover {
+    color: var(--accent);
+  }
 }
 
 .feedback-types {
