@@ -88,7 +88,7 @@
   color: var(--text-muted);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   padding: 8px 10px;
 }
 
@@ -112,7 +112,7 @@
   font-size: 13px;
   font-weight: 600;
   padding: 7px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   min-height: 36px;
 }

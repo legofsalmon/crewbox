@@ -8,7 +8,7 @@
 
 .btn {
   padding: 8px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg-raised);
   color: var(--text);
@@ -32,7 +32,7 @@
   z-index: 5;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -45,7 +45,7 @@
 .channel {
   text-align: left;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text);
   font-size: 13px;
 }

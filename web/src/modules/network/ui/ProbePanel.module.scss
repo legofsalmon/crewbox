@@ -27,7 +27,7 @@
 
 .run {
   padding: 8px 16px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -62,7 +62,7 @@
 
 .result {
   background: var(--bg);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   padding: 10px 12px;
 }
 

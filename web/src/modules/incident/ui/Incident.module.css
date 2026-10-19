@@ -45,7 +45,7 @@
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--warn);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg-raised);
   color: var(--text-muted);
   font-size: 13px;
@@ -115,7 +115,7 @@
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 10px 12px;
   min-height: 44px;
 }
@@ -239,7 +239,7 @@
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-left: 3px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   padding: 12px 14px;
 }
 

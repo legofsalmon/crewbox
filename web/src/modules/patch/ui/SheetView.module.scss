@@ -213,7 +213,7 @@
   overflow-y: auto;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: $radius;
+  border-radius: var(--radius-overlay);
   box-shadow: $shadow-popover;
   padding: 10px;
   display: flex;

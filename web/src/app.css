@@ -68,7 +68,15 @@
   /* The brand, not a token: the studio's amber, on the logo and the splash
      glow and nowhere that means something. Inside the app amber is --warn. */
   --brand: #f5b73e; /* not a token: the brand */
-  --radius: 12px;
+  /* Corners, from the touch density (data-density="touch" on <html>): about
+     an eighth of the control's height, so a 44px button gets 6px. A control
+     is anything pressed or typed in, a panel anything that holds content in
+     the page, an overlay anything that floats (a sheet, a dialog, a menu, a
+     toast). --radius is the panel, as the modules' cards and canvases use it. */
+  --radius-control: var(--ds-radius-control);
+  --radius-panel: var(--ds-radius-panel);
+  --radius-overlay: var(--ds-radius-overlay);
+  --radius: var(--radius-panel);
   --sidebar-w: 280px;
   --font:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -176,7 +184,7 @@ ul {
   width: min(400px, 100%);
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--radius-overlay);
   padding: 36px 32px;
   display: flex;
   flex-direction: column;
@@ -218,7 +226,7 @@ ul {
 .join-card input {
   height: 48px;
   padding: 0 14px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   font-size: 16px; /* prevents iOS zoom-on-focus */
@@ -238,7 +246,7 @@ ul {
 
 .join-card button[type='submit'] {
   height: 50px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -308,7 +316,7 @@ ul {
      tells somebody stuck outside the event why. */
   color: var(--danger-strong);
   padding: 10px 14px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   font-size: 14px;
 }
 
@@ -357,7 +365,7 @@ ul {
   height: 50px;
   min-width: 180px;
   padding: 0 24px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -376,7 +384,7 @@ ul {
   min-width: 180px;
   padding: 0 24px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: var(--bg-hover);
   color: var(--text);
   font-weight: 600;
@@ -501,7 +509,7 @@ ul {
   color: var(--text);
   border: 1px solid var(--border);
   border-left: 4px solid var(--warn);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
@@ -560,7 +568,7 @@ ul {
   background: var(--bg-raised);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   font-size: 14px;
   font-weight: 600;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -586,7 +594,7 @@ ul {
   flex-shrink: 0;
   min-height: 40px;
   padding: 0 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -600,7 +608,7 @@ ul {
   flex-shrink: 0;
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
 }
 
@@ -661,7 +669,7 @@ ul {
   background: var(--danger-fill);
   color: var(--danger-on);
   padding: 10px 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-overlay);
   font-size: 14px;
   font-weight: 600;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -807,7 +815,7 @@ a.app-version:hover {
   align-self: flex-start;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -837,7 +845,7 @@ a.app-version:hover {
 .confirm-field input {
   height: 42px;
   padding: 0 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   font-size: 16px; /* prevents iOS zoom-on-focus */
@@ -859,7 +867,7 @@ a.app-version:hover {
 .confirm-delete {
   height: 40px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
 }
@@ -986,7 +994,7 @@ a.app-version:hover {
   height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   font-size: 16px;
 }
@@ -1001,7 +1009,7 @@ a.app-version:hover {
   height: 36px;
   padding: 0 10px;
   margin: 2px 0 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--accent);
   background: var(--bg);
   outline: none;
@@ -1014,7 +1022,7 @@ a.app-version:hover {
   align-items: center;
   gap: 9px;
   padding: 8px 10px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   text-align: left;
   min-height: 38px;
@@ -1203,7 +1211,7 @@ a.app-version:hover {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 6px 8px;
   font-size: 13px;
   max-width: 50%;
@@ -1456,7 +1464,7 @@ a.app-version:hover {
   resize: none;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   padding: 13px 16px;
   font-size: 16px; /* prevents iOS zoom-on-focus */
   line-height: 1.4;
@@ -1476,7 +1484,7 @@ a.app-version:hover {
 .send-btn {
   width: 48px;
   height: 48px;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   display: grid;
@@ -1505,7 +1513,7 @@ a.app-version:hover {
 .attach-btn {
   width: 48px;
   height: 48px;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   display: grid;
   place-items: center;
   color: var(--text-muted);
@@ -1548,7 +1556,7 @@ a.app-version:hover {
   display: block;
   max-width: min(360px, 100%);
   max-height: 300px;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   margin-top: 4px;
   object-fit: contain;
@@ -1561,7 +1569,7 @@ a.app-version:hover {
   gap: 10px;
   margin-top: 4px;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   background: var(--bg-raised);
   color: var(--text);
@@ -1642,7 +1650,7 @@ a.app-version:hover {
   margin-bottom: 6px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-overlay);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1654,7 +1662,7 @@ a.app-version:hover {
 .mention-pop button {
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-size: 14px;
   font-weight: 600;
 }
@@ -1677,7 +1685,7 @@ a.app-version:hover {
   margin-bottom: 6px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-overlay);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1692,7 +1700,7 @@ a.app-version:hover {
   gap: 12px;
   min-height: 44px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-size: 15px;
   font-weight: 600;
   text-align: left;
@@ -1721,7 +1729,7 @@ a.app-version:hover {
   padding: 10px 6px 10px 14px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   color: var(--text);
   font-size: 14px;
 }
@@ -1744,7 +1752,7 @@ a.app-version:hover {
   width: 40px;
   height: 40px;
   margin-top: -6px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
 }
 
@@ -1829,7 +1837,7 @@ a.app-version:hover {
   font-weight: 700;
   font-size: 13px;
   padding: 6px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .voice-leave:hover {
@@ -2096,7 +2104,7 @@ a.app-version:hover {
   width: min(440px, 100%);
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -2121,7 +2129,7 @@ a.app-version:hover {
 .audio-field select {
   height: 44px;
   padding: 0 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2170,7 +2178,7 @@ a.app-version:hover {
 
 .audio-done {
   height: 46px;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -2181,7 +2189,7 @@ a.app-version:hover {
   width: min(520px, 100%);
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   align-self: flex-start;
   padding: 16px 20px 20px;
@@ -2216,7 +2224,7 @@ a.app-version:hover {
 .file-preview-media {
   max-width: 100%;
   max-height: 55vh;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   object-fit: contain;
   background: var(--bg);
@@ -2256,7 +2264,7 @@ a.app-version:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2294,7 +2302,7 @@ a.app-version:hover {
   line-height: 0;
   max-width: 100%;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   touch-action: none;
   cursor: zoom-in;
 }
@@ -2330,7 +2338,7 @@ a.app-version:hover {
   gap: 12px;
   background: var(--bg-raised);
   border: 1px solid var(--warn);
-  border-radius: 14px;
+  border-radius: var(--radius-overlay);
   padding: 12px 16px;
   font-size: 13.5px;
   max-width: min(420px, calc(100vw - 24px));
@@ -2360,7 +2368,7 @@ a.app-version:hover {
   max-height: 70vh;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2430,7 +2438,7 @@ a.app-version:hover {
   max-height: 80vh;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2574,7 +2582,7 @@ a.app-version:hover {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--bg-hover);
 }
 
@@ -2582,7 +2590,7 @@ a.app-version:hover {
   min-width: 88px;
   min-height: 40px;
   padding: 0 16px;
-  border-radius: 8px;
+  border-radius: calc(var(--radius-control) - 2px);
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 500;
@@ -2668,7 +2676,7 @@ a.app-version:hover {
 .admin-unlock-form input {
   height: 44px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2792,7 +2800,7 @@ a.app-version:hover {
   padding: 6px 12px;
   font-size: 13.5px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--bg-hover);
   white-space: nowrap;
 }
@@ -2836,7 +2844,7 @@ a.app-version:hover {
 .admin-channel-form input {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 6px 10px;
   font-size: 14px;
   outline: none;
@@ -2900,7 +2908,7 @@ a.app-version:hover {
   flex: 1;
   height: 40px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -2926,7 +2934,7 @@ a.app-version:hover {
 .admin-setting select {
   height: 40px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -3089,7 +3097,7 @@ a.app-version:hover {
 .admin-licence-name {
   height: 40px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -3100,7 +3108,7 @@ a.app-version:hover {
   margin: 4px 20px 8px;
   padding: 4px 14px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
 }
 
 .admin-licence-offline summary {
@@ -3136,7 +3144,7 @@ a.app-version:hover {
   display: block;
   margin-top: 4px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg);
   color: var(--text);
   font-size: 13.5px;
@@ -3145,7 +3153,7 @@ a.app-version:hover {
 .admin-licence-token {
   width: 100%;
   padding: 8px 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -3210,7 +3218,7 @@ a.app-version:hover {
   overflow-y: auto;
   padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: var(--bg-raised);
   display: flex;
   flex-direction: column;
@@ -3379,7 +3387,7 @@ a.app-version:hover {
   display: flex;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg);
 }
 
@@ -3462,7 +3470,7 @@ a.app-version:hover {
   align-self: flex-start;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -3514,7 +3522,7 @@ a.app-version:hover {
   align-self: flex-start;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-overlay);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -3549,7 +3557,7 @@ a.app-version:hover {
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   background: var(--bg);
 }
 
@@ -3633,7 +3641,7 @@ button.boxes-pick:hover .boxes-name {
   min-width: 0;
   height: 42px;
   padding: 0 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   font-size: 16px; /* prevents iOS zoom-on-focus */
@@ -3716,7 +3724,7 @@ button.boxes-pick:hover .boxes-name {
 .confirm-go {
   height: 40px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
   background: var(--accent);
@@ -3794,7 +3802,7 @@ button.boxes-pick:hover .boxes-name {
 
 .confirm-field textarea {
   padding: 10px 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -3811,7 +3819,7 @@ button.boxes-pick:hover .boxes-name {
 .confirm-send {
   height: 40px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
   background: var(--accent);
@@ -3871,7 +3879,7 @@ button.boxes-pick:hover .boxes-name {
 .crash-secondary {
   height: 42px;
   padding: 0 18px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   font-weight: 700;
   font-size: 14px;
 }
@@ -3914,7 +3922,7 @@ button.boxes-pick:hover .boxes-name {
 .crash-detail {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg-raised);
   border: 1px solid var(--border);
   color: var(--text);
@@ -3966,7 +3974,7 @@ button.boxes-pick:hover .boxes-name {
   gap: 2px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-overlay);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
@@ -3975,7 +3983,7 @@ button.boxes-pick:hover .boxes-name {
   gap: 2px;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text);
 }
 
@@ -4036,13 +4044,13 @@ button.boxes-pick:hover .boxes-name {
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 0 8px;
 }
 
 .alert-settings-off {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 10px 12px;
   margin: 10px 0;
   background: var(--bg-hover);

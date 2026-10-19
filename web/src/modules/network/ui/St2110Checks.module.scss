@@ -37,7 +37,7 @@
   min-height: 8em;
   resize: vertical;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -64,7 +64,7 @@
 
 .run {
   padding: 8px 16px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
@@ -82,7 +82,7 @@
 
 .quiet {
   padding: 8px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg-hover);
   color: var(--text);
@@ -150,7 +150,7 @@
 .finding {
   font-size: 13px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--bg);
   border-left: 3px solid var(--text-faint);
   overflow-wrap: anywhere;
@@ -256,7 +256,7 @@
 
   li {
     background: var(--bg);
-    border-radius: 10px;
+    border-radius: var(--radius-panel);
     padding: 8px 12px;
     overflow-wrap: anywhere;
   }
