@@ -36,8 +36,10 @@ class FakeRoom {
   localParticipant = {
     identity: 'me',
     isSpeaking: false,
+    connectionQuality: 'good',
     audioTrackPublications: new Map(),
     setMicrophoneEnabled: vi.fn(),
+    unpublishTrack: vi.fn(),
     // No published track in the fake, so the level meter is a no-op — the
     // control flow under test is the mic enable/disable, not metering.
     getTrackPublication: vi.fn(() => undefined),
@@ -93,9 +95,15 @@ vi.mock('livekit-client', () => ({
     ConnectionQualityChanged: 'connectionQualityChanged',
     LocalTrackPublished: 'localTrackPublished',
     AudioPlaybackStatusChanged: 'audioPlaybackChanged',
+    TrackPublished: 'trackPublished',
+    TrackUnpublished: 'trackUnpublished',
   },
   ConnectionQuality: { Excellent: 'excellent', Good: 'good', Poor: 'poor', Lost: 'lost' },
-  ConnectionState: { Connected: 'connected', Disconnected: 'disconnected' },
+  ConnectionState: {
+    Connected: 'connected',
+    Disconnected: 'disconnected',
+    Reconnecting: 'reconnecting',
+  },
   Track: { Kind: { Audio: 'audio' }, Source: { Microphone: 'microphone' } },
 }))
 
@@ -604,5 +612,199 @@ describe('the Silent switch on an iPhone', () => {
 
     expect(seen).toEqual(['auto'])
     expect(session.type).toBe('auto')
+  })
+})
+
+describe('the party line: hear several channels, talk on one', () => {
+  type Internals = { room: FakeRoom; listens: Map<string, { room: FakeRoom }> }
+  const inside = (m: unknown) => m as Internals
+  const micOf = (room: FakeRoom) =>
+    room.localParticipant.setMicrophoneEnabled as ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    FakeRoom.connectBehaviour = 'ok'
+    FakeRoom.playbackBehaviour = 'allowed'
+    FakeRoom.connectCalls = []
+    FakeRoom.disconnectCalls = 0
+  })
+
+  async function onVoiceHearing(...heard: string[]) {
+    const states: Array<Record<string, unknown>> = []
+    const notices: string[] = []
+    const manager = new VoiceManager(
+      (partial) => states.push({ ...partial }),
+      (message) => notices.push(message),
+      () => {},
+      (id) => `#${id}`
+    )
+    await manager.join('foh', 'token', 'ws://box')
+    for (const id of heard) await manager.listen(id, 'token', 'ws://box')
+    const lastListening = () =>
+      [...states].reverse().find((st) => 'listening' in st)?.listening as
+        Array<{ channelId: string; status: string }> | undefined
+    return { manager, states, notices, lastListening }
+  }
+
+  it('only hears a channel while on voice somewhere', async () => {
+    // A channel heard rides on the talk channel's call: the iPhone's audio
+    // session, the headset bridge, and the bar that says you are on comms.
+    const manager = new VoiceManager(() => {})
+    await expect(manager.listen('stage', 'token', 'ws://box')).rejects.toThrow(/join voice/)
+    expect(FakeRoom.connectCalls).toEqual([])
+  })
+
+  it('connects a room for the channel, and never opens a mic in it', async () => {
+    const { manager, lastListening } = await onVoiceHearing('stage')
+    const heard = inside(manager).listens.get('stage')!.room
+
+    expect(FakeRoom.connectCalls).toHaveLength(2)
+    expect(lastListening()).toEqual([
+      { channelId: 'stage', status: 'connected', speaking: [], others: 0 },
+    ])
+    // Pressing talk goes to the talk channel only.
+    await manager.setTalking(true)
+    expect(micOf(heard)).not.toHaveBeenCalled()
+    expect(micOf(inside(manager).room)).toHaveBeenLastCalledWith(true)
+  })
+
+  it('does not hear the talk channel a second time', async () => {
+    const { manager } = await onVoiceHearing()
+    await manager.listen('foh', 'token', 'ws://box')
+    expect(FakeRoom.connectCalls).toHaveLength(1)
+  })
+
+  it('stops at the cap, and says so', async () => {
+    const { manager } = await onVoiceHearing('a', 'b', 'c')
+    await expect(manager.listen('d', 'token', 'ws://box')).rejects.toThrow(/3 other channels/)
+    expect(inside(manager).listens.size).toBe(3)
+  })
+
+  it('swaps on Talk here: the old talk channel stays heard, nothing reconnects', async () => {
+    const { manager, states, lastListening } = await onVoiceHearing('stage')
+    const foh = inside(manager).room
+    const stage = inside(manager).listens.get('stage')!.room
+
+    expect(manager.talkOn('stage')).toBe(true)
+
+    expect(inside(manager).room).toBe(stage)
+    expect(inside(manager).listens.get('foh')?.room).toBe(foh)
+    expect(lastListening()).toEqual([
+      { channelId: 'foh', status: 'connected', speaking: [], others: 0 },
+    ])
+    expect(states).toContainEqual(expect.objectContaining({ channelId: 'stage' }))
+    expect(FakeRoom.connectCalls).toHaveLength(2)
+    expect(FakeRoom.disconnectCalls).toBe(0)
+  })
+
+  it('closes the mic, latch and all, before the talk channel changes', async () => {
+    // A target that moves under an open mic is how a word meant for one
+    // channel lands on another, mid-sentence.
+    const { manager, states } = await onVoiceHearing('stage')
+    await manager.setTalking(true)
+    states.length = 0
+
+    manager.talkOn('stage')
+
+    expect(states[0]).toMatchObject({ channelId: 'stage', talking: false, latched: false })
+    expect((manager as unknown as { talking: boolean }).talking).toBe(false)
+  })
+
+  it('opens the mic on the new talk channel, not the old one, for a press during the swap', async () => {
+    const { manager } = await onVoiceHearing('stage')
+    const foh = inside(manager).room
+    manager.talkOn('stage')
+    micOf(foh).mockClear()
+
+    await manager.setTalking(true)
+
+    expect(micOf(inside(manager).room)).toHaveBeenLastCalledWith(true)
+    expect(micOf(foh)).not.toHaveBeenCalledWith(true)
+  })
+
+  it('takes the mic out of the room it leaves', async () => {
+    const { manager } = await onVoiceHearing('stage')
+    const foh = inside(manager).room
+    const track = { kind: 'audio' }
+    foh.localParticipant.getTrackPublication = vi.fn(() => ({ track }) as never)
+
+    manager.talkOn('stage')
+    await vi.waitFor(() =>
+      expect(foh.localParticipant.unpublishTrack).toHaveBeenCalledWith(track, true)
+    )
+  })
+
+  it('moves on the header join: a heard channel is promoted and the old one left', async () => {
+    const { manager, lastListening } = await onVoiceHearing('stage')
+    const foh = inside(manager).room
+
+    await manager.join('stage', 'token', 'ws://box')
+
+    expect(FakeRoom.connectCalls).toHaveLength(2)
+    expect(lastListening()).toEqual([])
+    await vi.waitFor(() => expect(foh.state).toBe('disconnected'))
+  })
+
+  it('keeps hearing its channels when the talk channel moves somewhere new', async () => {
+    const { manager, notices } = await onVoiceHearing('stage')
+    await manager.join('lx', 'token', 'ws://box')
+
+    expect([...inside(manager).listens.keys()]).toEqual(['stage'])
+    expect(notices).toEqual([])
+  })
+
+  it('says so when a heard channel drops, and stays on the talk channel', async () => {
+    const { manager, notices, lastListening } = await onVoiceHearing('stage')
+    inside(manager).listens.get('stage')!.room.emit('disconnected')
+
+    expect(notices).toEqual(['Stopped hearing #stage — its connection dropped'])
+    expect(lastListening()).toEqual([])
+    expect(inside(manager).room).not.toBeNull()
+  })
+
+  it('stops hearing on request without a word', async () => {
+    const { manager, notices, lastListening } = await onVoiceHearing('stage')
+    manager.stopListening('stage')
+
+    expect(lastListening()).toEqual([])
+    expect(FakeRoom.disconnectCalls).toBe(1)
+    expect(notices).toEqual([])
+  })
+
+  it('takes every heard channel with it when the talk channel drops', async () => {
+    // A drop that left them playing would leave somebody hearing comms with
+    // no voice bar to say they are on it.
+    const { manager, notices } = await onVoiceHearing('stage', 'lx')
+    const heard = [...inside(manager).listens.values()].map((l) => l.room)
+    inside(manager).room.emit('disconnected')
+
+    expect(heard.every((r) => r.state === 'disconnected')).toBe(true)
+    expect(notices).toEqual(['Voice dropped — you are no longer on the intercom'])
+  })
+
+  it('hangs up every room on leave, quietly', async () => {
+    const { manager, notices, states } = await onVoiceHearing('stage', 'lx')
+    await manager.leave()
+
+    expect(FakeRoom.disconnectCalls).toBe(3)
+    expect(notices).toEqual([])
+    expect(states.at(-1)).toMatchObject({ channelId: null, listening: [] })
+  })
+
+  it('forgets a channel stopped while it was still connecting', async () => {
+    const { manager } = await onVoiceHearing()
+    const pending = manager.listen('stage', 'token', 'ws://box')
+    manager.stopListening('stage')
+    await pending
+
+    expect(inside(manager).listens.size).toBe(0)
+  })
+
+  it('reports a heard channel that cannot be reached, and keeps the call', async () => {
+    const { manager } = await onVoiceHearing()
+    FakeRoom.connectBehaviour = 'fail'
+    await expect(manager.listen('stage', 'token', 'ws://box')).rejects.toThrow(/signal/)
+
+    expect(inside(manager).listens.size).toBe(0)
+    expect(inside(manager).room).not.toBeNull()
   })
 })
