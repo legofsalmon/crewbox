@@ -75,6 +75,14 @@ the phones' own agenda maths so a call and the sidebar agree on who is next:
 The first two are urgent. A call's id includes the set's start, so a set that
 moves re-arms its calls.
 
+### Cue lights and calls for help
+
+A standby and its GO go to the one person on the cue; a call for help goes
+to everyone online but the person who held the button. The rules, the ids
+(`q:<cue id>`, `p:<call id>`) and who hears what are in [CUES.md](CUES.md).
+Neither is ever quiet: one sound per 30 seconds is right for a channel and
+wrong for a GO twenty seconds after its standby.
+
 ### Coming back
 
 A phone that reconnects says when it last heard from the box, in the box's
@@ -82,12 +90,14 @@ own clock. The box answers with what it missed since then, unread, within
 the last **12 hours**: at most **20** alerts, and a count of the rest.
 Changeover calls come back only from the last **two minutes**. The phone
 posts them all quietly but the newest, so it sounds once. A first connection
-has no catch-up.
+has no catch-up. After them, sounding whatever their age, come what is still
+live for that person: a standby waiting for them, a GO from the last minute,
+and any call for help that hasn't been stood down.
 
 ### Ids
 
-Every alert has a stable id: `m:<message id>`, `i:<entry id>`, or
-`c:<act id>:<call>:<show day>:<start>`. A phone sent one twice replaces the
+Every alert has a stable id: `m:<message id>`, `i:<entry id>`,
+`c:<act id>:<call>:<show day>:<start>`, `q:<cue id>` or `p:<call id>`. A phone sent one twice replaces the
 notification instead of adding another, so a catch-up errs towards overlap.
 With a margin of two minutes, a box clock that steps back by less than that
 loses nothing.
@@ -181,11 +191,13 @@ skipped, never an error: a newer box may send more.
 }
 ```
 
-- `kind`: `dm`, `mention`, `everyone`, `desk`, `message`, `showStop` or
-  `changeover`.
+- `kind`: `dm`, `mention`, `everyone`, `desk`, `message`, `showStop`,
+  `changeover`, `cue` or `panic`.
 - `target`: where a tap goes: `{ "kind": "channel", "channelId" }`,
-  `{ "kind": "showlog" }` or `{ "kind": "stage", "stage" }`.
-- `thread`: groups notifications: the channel, `showlog`, or `stage:<name>`.
+  `{ "kind": "showlog" }`, `{ "kind": "stage", "stage" }` or
+  `{ "kind": "cues" }`.
+- `thread`: groups notifications: the channel, `showlog`, `stage:<name>` or
+  `cues`.
 - `quiet`: post it without sound.
 - `urgent`: Time Sensitive on an iPhone; the Show stops or Changeover calls
   channel on Android.
@@ -196,19 +208,21 @@ skipped, never an error: a newer box may send more.
 
 Both apps post an alert under its `id`, so a repeat replaces it, without
 sound when `quiet`. A tap opens a `crewbox://open` link naming the event and
-where to go: `&channel=<id>`, `&to=showlog` or `&stage=<name>`. The page
+where to go: `&channel=<id>`, `&to=showlog`, `&stage=<name>` or `&to=cues`. The page
 follows it only for the event it has open.
 
 - **Android** (`AlertNotice.java`): messages as conversations on the
   Mentions or Messages channel, show stops on Show stops (the alarm stream),
-  calls on Changeover calls. While the app is on screen it posts only show
-  stops and calls; the page announces the rest.
+  calls on Changeover calls, cues on Cue lights (vibrates, no sound), calls
+  for help on Calls for help (the alarm stream). While the app is on screen
+  it posts only show stops, changeover calls and calls for help; the page
+  announces the rest.
 - **iPhone** (`native/ios/App/Alerts/AlertPoster.swift`, the Local Push provider): the
   notification's `userInfo` carries `kind` (the alert's), `link`, `event`,
   and for a channel `channelId` and `seq`, which a `read` uses to take it
   back. `threadIdentifier` is `thread`; `urgent` is Time Sensitive. The
-  app's delegate (`AlertsNotifications.swift`) shows `showStop` and
-  `changeover` while the app is open and opens `link` on a tap.
+  app's delegate (`AlertsNotifications.swift`) shows `showStop`,
+  `changeover` and `panic` while the app is open and opens `link` on a tap.
 
 ### The countdown
 
