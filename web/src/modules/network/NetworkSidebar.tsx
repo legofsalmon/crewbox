@@ -16,7 +16,8 @@ export default function NetworkSidebar() {
       <ul>
         <li>
           <button
-            className={`row ${activeModuleId === 'network' ? 'active' : ''}`}
+            className="row"
+            aria-current={activeModuleId === 'network' ? 'page' : undefined}
             aria-label="Open network audit"
             onClick={() => setActiveModule('network')}
           >

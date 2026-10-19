@@ -27,7 +27,8 @@ export default function ScheduleSidebar() {
         {stages.length === 0 ? (
           <li>
             <button
-              className={`row ${active ? 'active' : ''}`}
+              className="row"
+              aria-current={active ? 'page' : undefined}
               onClick={() => setActiveModule('schedule')}
             >
               <span className="row-name muted-note">Now &amp; Next</span>
@@ -42,7 +43,8 @@ export default function ScheduleSidebar() {
             return (
               <li key={stage.stage}>
                 <button
-                  className={`row ${active ? 'active' : ''}`}
+                  className="row"
+                  aria-current={active ? 'page' : undefined}
                   aria-label={`${stage.stage}: ${who}, ${countdown}`}
                   onClick={() => setActiveModule('schedule')}
                 >

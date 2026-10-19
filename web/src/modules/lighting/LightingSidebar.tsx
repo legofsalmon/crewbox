@@ -41,7 +41,8 @@ export default function LightingSidebar() {
           return (
             <li key={entry.plotId}>
               <button
-                className={`row ${active ? 'active' : ''}`}
+                className="row"
+                aria-current={active ? 'page' : undefined}
                 aria-label={`Open plot ${entry.title}${updated ? ', updated' : ''}`}
                 onClick={() => setActiveModule('lighting', `plot/${entry.plotId}`)}
               >
@@ -56,7 +57,8 @@ export default function LightingSidebar() {
         })}
         <li>
           <button
-            className={`row ${lightingActive && !activeModuleSubpath ? 'active' : ''}`}
+            className="row"
+            aria-current={lightingActive && !activeModuleSubpath ? 'page' : undefined}
             onClick={() => setActiveModule('lighting')}
           >
             <span className="row-name muted-note">All plots…</span>

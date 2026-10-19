@@ -42,7 +42,8 @@ export default function PatchSidebar() {
           return (
             <li key={entry.sheetId}>
               <button
-                className={`row ${active ? 'active' : ''}`}
+                className="row"
+                aria-current={active ? 'page' : undefined}
                 aria-label={`Open sheet ${entry.title}${updated ? ', updated' : ''}`}
                 onClick={() => setActiveModule('patch', `sheet/${entry.sheetId}`)}
               >
@@ -57,7 +58,8 @@ export default function PatchSidebar() {
         })}
         <li>
           <button
-            className={`row ${patchActive && !activeModuleSubpath ? 'active' : ''}`}
+            className="row"
+            aria-current={patchActive && !activeModuleSubpath ? 'page' : undefined}
             onClick={() => setActiveModule('patch')}
           >
             <span className="row-name muted-note">All sheets…</span>

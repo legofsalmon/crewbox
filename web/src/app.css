@@ -1028,13 +1028,23 @@ a.app-version:hover {
   min-height: 38px;
 }
 
-.row:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .row:hover:not([aria-current='page']) {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
-.row.active {
-  background: var(--bg-active);
+.row:active:not([aria-current='page']) {
+  background: var(--ds-wash-pressed);
+}
+
+/* The current channel, plot or view: the selected state (cyan is you), drawn
+   from aria-current so the look is what a screen reader hears. A selection
+   does not hover. */
+.row[aria-current='page'] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
   color: var(--text);
 }
 
@@ -1046,6 +1056,19 @@ a.app-version:hover {
 .row-hash {
   color: var(--text-faint);
   font-weight: 600;
+}
+
+/* Tertiary ink sits only where content sits: on the current row, or under
+   the pointer, the # takes the secondary ink (it was 3.8:1 there). */
+.row[aria-current='page'] .row-hash {
+  color: var(--text-muted);
+}
+
+@media (hover: hover) {
+  .row:hover .row-hash,
+  .row-more:hover {
+    color: var(--text-muted);
+  }
 }
 
 .row-name {

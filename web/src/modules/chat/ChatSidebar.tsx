@@ -79,7 +79,8 @@ export default function ChatSidebar() {
     return (
       <li key={user.id}>
         <button
-          className={`row ${chatVisible && dmId && dmId === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
+          className={`row ${unread ? 'has-unread' : ''}`}
+          aria-current={chatVisible && dmId && dmId === activeChannelId ? 'page' : undefined}
           aria-label={`Message ${user.name}${online[user.id] ? (remoteUsers[user.id] ? ' (online remotely)' : ' (online)') : ''}${unread ? `, ${unread} unread` : ''}`}
           onClick={() => openDm(user.id)}
         >
@@ -141,7 +142,8 @@ export default function ChatSidebar() {
           return (
             <li key={channel.id}>
               <button
-                className={`row ${chatVisible && channel.id === activeChannelId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
+                className={`row ${unread ? 'has-unread' : ''}`}
+                aria-current={chatVisible && channel.id === activeChannelId ? 'page' : undefined}
                 aria-label={`#${channelLabel(channel, users, me?.id)}${unread ? `, ${unread} unread` : ''}${mentioned ? ', mentions you' : ''}`}
                 onClick={() => setActiveChannel(channel.id)}
               >
