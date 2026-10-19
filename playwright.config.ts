@@ -67,7 +67,7 @@ export default defineConfig({
       // box that stopped reading it fails one unit test rather than sixty
       // specs at once with an unexplained 429.
       JOIN_RATE_LIMIT: '1000',
-      CREWBOX_MODULES: 'schedule,patch,lighting,incident,video,network',
+      CREWBOX_MODULES: 'schedule,cues,patch,lighting,incident,video,network',
       // The video module's scan needs an interface to sweep. Loopback, so a
       // spec can drive the confirmation flow without a packet leaving the
       // machine — the box refuses to raise a scan intent without one.
