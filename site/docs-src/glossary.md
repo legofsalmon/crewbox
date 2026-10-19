@@ -99,6 +99,9 @@ mean that machine.
 name in the DM list marked `office` is connected from somewhere else (over a
 tunnel or from off the LAN).
 
+**Party line** — hearing several voice channels at once while talking on
+one, like an intercom beltpack. See [Voice intercom](/docs/voice#party-line-hear-several-channels-talk-on-one).
+
 **PTT (push-to-talk)** — hold to speak, release to stop. The voice
 intercom's normal mode; there's a latch for gloved hands.
 
