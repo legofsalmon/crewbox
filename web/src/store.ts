@@ -459,6 +459,11 @@ export interface AppState {
 
   boot: () => Promise<void>
   joinVoice: (channelId: string) => Promise<void>
+  /** Hear a channel as well as the one talked on (party line). */
+  listenVoice: (channelId: string) => Promise<void>
+  stopListening: (channelId: string) => void
+  /** Talk on a channel being heard, keeping the old talk channel heard. */
+  talkOn: (channelId: string) => void
   leaveVoice: () => Promise<void>
   setTalking: (on: boolean) => void
   toggleLatch: () => void
@@ -1677,7 +1682,8 @@ export const useStore = create<AppState>()((set, get) => {
               lossPct: qos.lossPct,
               jitterMs: qos.jitterMs,
               concealedPct: qos.concealedPct,
-            })
+            }),
+          (id) => voiceChannelName(id)
         )
       }
       // Browsers only hand over a microphone in a secure context, and a box
@@ -1710,6 +1716,26 @@ export const useStore = create<AppState>()((set, get) => {
               : String(err)
         get().toast(`Could not join voice: ${detail}`, 'error')
       }
+    },
+
+    async listenVoice(channelId) {
+      if (!voiceManager || get().voice.channelId === null) return
+      try {
+        const { url, token, iceServers } = await api.voiceToken(getToken() ?? '', channelId)
+        await voiceManager.listen(channelId, token, url, iceServers)
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err)
+        get().toast(`Could not hear ${voiceChannelName(channelId)}: ${detail}`, 'error')
+      }
+    },
+
+    stopListening(channelId) {
+      voiceManager?.stopListening(channelId)
+    },
+
+    talkOn(channelId) {
+      // Not one being heard (yet): the ordinary join, which moves.
+      if (!voiceManager?.talkOn(channelId)) void get().joinVoice(channelId)
     },
 
     async leaveVoice() {
@@ -2647,6 +2673,15 @@ if (import.meta.env.DEV) {
 /** Unread count for a channel, given current read state. */
 export function unreadCount(channel: Channel, readState: Record<string, number>): number {
   return Math.max(0, channel.lastSeq - (channel.id in readState ? readState[channel.id]! : 0))
+}
+
+/** A channel as a voice notice names it: "#foh", or the person for a DM. */
+export function voiceChannelName(channelId: string): string {
+  const { channels, users, me } = useStore.getState()
+  const channel = channels[channelId]
+  if (!channel) return 'a channel'
+  const label = channelLabel(channel, users, me?.id)
+  return channel.kind === 'dm' ? label : `#${label}`
 }
 
 /** Display name for a channel (DMs show the other participant). */
