@@ -98,6 +98,13 @@ syncs from whichever phone reconnects, and "what may this box send packets to"
 must not change because somebody's pocket came back into range. See
 `docs/VIDEO_MONITORING.md`.
 
+**Cue lights** are the third shape: live state the box owns that the crew
+change, pushed on the chat socket as the on-air tally is. A cue and a call
+for help are what is happening now, so they live in the box's memory
+(`server/src/cues.ts`) and go with a restart; what must outlive them is
+written as system messages in `#general`. Copy it for anything that is a
+signal rather than a record or a document. See `docs/CUES.md`.
+
 ## What the shared doc-store gives you
 
 `web/src/lib/docs/` is the lifecycle every doc-backed module

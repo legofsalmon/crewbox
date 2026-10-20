@@ -186,6 +186,10 @@ describe('a tapped alert', () => {
       event: 'evt-3f9c2a',
       to: 'showlog',
     })
+    expect(readOpenLink('crewbox://open?event=evt-3f9c2a&to=cues')).toEqual({
+      event: 'evt-3f9c2a',
+      to: 'cues',
+    })
     // As the Android service writes it: a space as %20.
     expect(readOpenLink('crewbox://open?event=evt-3f9c2a&stage=Main%20Stage')).toEqual({
       event: 'evt-3f9c2a',

@@ -25,6 +25,10 @@ final class AlertNotice {
   static final String CH_SHOW_STOP = "showstop";
   /** Changeover calls for the stages a person follows. */
   static final String CH_CHANGEOVER = "changeover";
+  /** Cue lights: standby and GO, felt rather than heard. */
+  static final String CH_CUES = "cues";
+  /** Somebody held the panic button: the alarm stream, as a show stop. */
+  static final String CH_PANIC = "panic";
 
   final String id;
   final String kind;
@@ -63,7 +67,12 @@ final class AlertNotice {
         ? alert.getAsJsonObject("target")
         : new JsonObject();
     String to = text(target, "kind");
-    channelId = "channel".equals(to) ? text(target, "channelId") : "";
+    boolean panic = "panic".equals(kind);
+    // A call for help opens #general, where its record and clip are, but it
+    // is not a message in it: never a conversation, and nothing a read of
+    // #general should take back.
+    String opens = "channel".equals(to) ? text(target, "channelId") : "";
+    channelId = panic ? "" : opens;
 
     switch (kind) {
       case "showStop":
@@ -71,6 +80,12 @@ final class AlertNotice {
         break;
       case "changeover":
         channel = CH_CHANGEOVER;
+        break;
+      case "cue":
+        channel = CH_CUES;
+        break;
+      case "panic":
+        channel = CH_PANIC;
         break;
       case "message":
         channel = CH_MESSAGES;
@@ -88,8 +103,9 @@ final class AlertNotice {
     shortcutId = conversation ? eventId + "/" + channelId : "";
 
     StringBuilder open = new StringBuilder("crewbox://open?event=").append(encode(eventId));
-    if (conversation) open.append("&channel=").append(encode(channelId));
+    if (!opens.isEmpty()) open.append("&channel=").append(encode(opens));
     else if ("showlog".equals(to)) open.append("&to=showlog");
+    else if ("cues".equals(to)) open.append("&to=cues");
     else if ("stage".equals(to)) open.append("&stage=").append(encode(text(target, "stage")));
     link = open.toString();
   }
@@ -107,11 +123,14 @@ final class AlertNotice {
 
   /**
    * Whether it is posted while the app is on screen. The page announces
-   * messages there with its own banner and chirp; a show stop or a
-   * changeover call is worth the system's own alert even so.
+   * messages there with its own banner and chirp; a show stop, a
+   * changeover call or a call for help is worth the system's own alert even
+   * so. A cue light is not: the page lights the whole screen for it.
    */
   boolean postWhileVisible() {
-    return CH_SHOW_STOP.equals(channel) || CH_CHANGEOVER.equals(channel);
+    return CH_SHOW_STOP.equals(channel)
+        || CH_CHANGEOVER.equals(channel)
+        || CH_PANIC.equals(channel);
   }
 
   /** What a conversation is called: "#foh", or the other person in a DM. */

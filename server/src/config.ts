@@ -20,7 +20,7 @@ function positiveDays(value: string | undefined, fallback: number): number {
  * saved values behind it, so both are read by exactly this code.
  */
 export function boxTunables(get: (name: string) => string | undefined = (n) => process.env[n]) {
-  const modules = get('CREWBOX_MODULES') ?? 'schedule,patch,lighting,incident,video,network'
+  const modules = get('CREWBOX_MODULES') ?? 'schedule,cues,patch,lighting,incident,video,network'
   const updateCheck = get('CREWBOX_UPDATE_CHECK')
   const captive = get('CREWBOX_CAPTIVE')
   const captivePort = get('CREWBOX_CAPTIVE_PORT')

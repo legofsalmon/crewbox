@@ -342,6 +342,36 @@ const alertInputs = () => ({
     at: T0 + 60 * 60_000,
     quiet: false,
   },
+  /** A cue light gone to GO, called by Sam for Jo (shared/src/cues.ts). */
+  cue: {
+    cue: {
+      id: 'q-1',
+      label: 'Pyro 1',
+      stage: 'Main Stage',
+      actName: 'The Hollows',
+      target: JO,
+      caller: SAM,
+      state: 'go',
+      standbyAt: T0,
+      readyAt: T0 + 20_000,
+      goAt: T0 + 30_000,
+      by: null,
+      endedAt: T0 + 30_000,
+    },
+    at: T0 + 30_000,
+  },
+  panic: {
+    panic: {
+      id: 'p-1',
+      person: JO,
+      at: T0 + 3 * 60_000,
+      channelId: 'c-general',
+      responders: [],
+      endedBy: null,
+      endedAt: null,
+    },
+    at: T0 + 3 * 60_000,
+  },
 })
 
 const ALERTS = {
@@ -407,6 +437,28 @@ const ALERTS = {
     urgent: true,
     at: T0 + 60 * 60_000,
   },
+  cue: {
+    id: 'q:q-1',
+    kind: 'cue',
+    title: 'GO: Pyro 1',
+    body: 'Sam called GO · Main Stage, during The Hollows',
+    target: { kind: 'cues' },
+    thread: 'cues',
+    quiet: false,
+    urgent: true,
+    at: T0 + 30_000,
+  },
+  panic: {
+    id: 'p:p-1',
+    kind: 'panic',
+    title: 'Jo needs help',
+    body: 'Held the panic button. Open crewbox to say you are going.',
+    target: { kind: 'channel', channelId: 'c-general' },
+    thread: 'panic',
+    quiet: false,
+    urgent: true,
+    at: T0 + 3 * 60_000,
+  },
 }
 
 const T = T0 + 90 * 60_000
@@ -449,6 +501,8 @@ const frames = () => ({
   alertDesk: { type: 'alert', t: T, alert: ALERTS.desk },
   alertShowStop: { type: 'alert', t: T, alert: ALERTS.showStop },
   alertChangeover: { type: 'alert', t: T, alert: ALERTS.changeover },
+  alertCue: { type: 'alert', t: T, alert: ALERTS.cue },
+  alertPanic: { type: 'alert', t: T, alert: ALERTS.panic },
   read: { type: 'read', t: T, channelId: 'c-foh', seq: 12 },
   withdraw: { type: 'withdraw', t: T, ids: ['m:m-7', 'c:a-2:changeover:2026-07-10:1290'] },
   settings: { type: 'settings', t: T, settings: SETTINGS },

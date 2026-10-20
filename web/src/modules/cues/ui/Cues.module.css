@@ -1,0 +1,269 @@
+/* Cue lights: read and pressed standing up, on a phone, in a wing or at FOH.
+   Every colour is a role from the design system. Amber is a standby waiting
+   on its answer (attention, nothing wrong yet); GO is the one primary action
+   in a lamp, so it takes the accent; history is quiet. */
+
+.cues {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 0 32px;
+}
+
+.hero {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.heroTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.heroTop h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.sub {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+.empty {
+  padding: 24px 16px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- form */
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.form .hint {
+  flex-basis: 100%;
+}
+
+.field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--ds-surface-inset);
+  border: 1px solid var(--ds-line-control);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+  min-height: 44px;
+}
+
+.primary,
+.go,
+.quiet {
+  font: inherit;
+  min-height: 44px;
+  padding: 8px 18px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color var(--ds-duration-fast) var(--ds-ease-standard);
+}
+
+.primary,
+.go {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.primary:disabled {
+  background: transparent;
+  border-color: var(--ds-line-subtle);
+  color: var(--ds-ink-disabled);
+  cursor: not-allowed;
+}
+
+.quiet {
+  background: var(--ds-surface-raised);
+  border-color: var(--ds-line-control);
+  color: var(--text);
+}
+
+@media (hover: hover) {
+  .primary:hover:not(:disabled),
+  .go:hover:not([data-armed]) {
+    background: var(--accent-strong);
+  }
+  .quiet:hover {
+    background: var(--ds-surface-raised-hover);
+  }
+}
+
+.primary:active:not(:disabled),
+.go:active,
+.quiet:active {
+  transition-duration: var(--ds-duration-instant);
+  filter: brightness(0.92);
+}
+
+/* Armed: GO to somebody who hasn't said they are standing by. The design
+   system's armed state: the stop fill, its own ink, and a label that says
+   what the next press does. */
+.go[data-armed] {
+  background: var(--danger-fill);
+  color: var(--danger-on);
+}
+
+.go {
+  min-width: 96px;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+}
+
+/* --------------------------------------------------------------- lamps */
+
+.section {
+  padding: 16px 16px 0;
+}
+
+.sectionHead {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lamp {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--warn);
+  border-radius: var(--radius-panel);
+  padding: 12px 14px;
+}
+
+/* Standing by: the operator has answered, and GO is what is left. The edge
+   steps from amber to the accent, and the words say it too. */
+.lamp[data-state='ready'] {
+  border-left-color: var(--accent);
+}
+
+.lampHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lampLabel {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.lampFor {
+  color: var(--text-muted);
+}
+
+.lampStatus {
+  margin: 6px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+}
+
+/* Waiting for an answer: hollow, so the state is a shape as well as a colour. */
+.lamp[data-state='standby'] .dot {
+  background: transparent;
+  border: 2px solid var(--warn);
+}
+
+.lamp[data-state='ready'] .dot {
+  background: var(--accent);
+}
+
+.lampMeta {
+  margin: 4px 0 0;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.lampActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------- history */
+
+.history {
+  display: flex;
+  flex-direction: column;
+}
+
+.past {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.pastLabel {
+  font-weight: 600;
+}
+
+.pastWho {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.pastWhat {
+  grid-column: 1 / -1;
+  color: var(--text-faint);
+  font-size: 13px;
+}

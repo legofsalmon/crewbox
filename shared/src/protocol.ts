@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { Channel, Department, Message, User } from './types.js'
 import { CHANNEL_ALERT_LEVELS, type Alert, type AlertSettings } from './alerts.js'
+import { MAX_CUE_LABEL, type Cue, type Panic } from './cues.js'
 import {
   INCIDENT_KINDS,
   INCIDENT_SEVERITIES,
@@ -198,6 +199,40 @@ export const followStageSchema = z.object({
   follow: z.boolean(),
 })
 
+/**
+ * Call a standby on somebody's cue light (shared/src/cues.ts).
+ *
+ * Live state rather than a record, so there is no client id to dedupe on: a
+ * standby sent from a phone that has lost the box is refused by the page
+ * before it is sent, never queued, because a cue that turns up late is worse
+ * than one that never came. Additive: an older box drops the type.
+ */
+export const cueStandbySchema = z.object({
+  type: z.literal('cueStandby'),
+  targetId: z.string().min(1).max(64),
+  label: z.string().trim().min(1).max(MAX_CUE_LABEL),
+  stage: z.string().trim().max(80).default(''),
+})
+
+/** The operator standing by, GO, or calling it off. */
+export const cueStepSchema = z.object({
+  type: z.literal('cueStep'),
+  cueId: z.string().min(1).max(64),
+  step: z.enum(['ready', 'go', 'stand-down']),
+})
+
+/** Held the panic button: every phone on site rings. */
+export const panicSchema = z.object({
+  type: z.literal('panic'),
+})
+
+/** Somebody is going to them, or the call for help is over. */
+export const panicStepSchema = z.object({
+  type: z.literal('panicStep'),
+  panicId: z.string().min(1).max(64),
+  step: z.enum(['respond', 'stand-down']),
+})
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   helloSchema,
   sendSchema,
@@ -212,6 +247,10 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   logIncidentSchema,
   setChannelAlertsSchema,
   followStageSchema,
+  cueStandbySchema,
+  cueStepSchema,
+  panicSchema,
+  panicStepSchema,
 ])
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -355,6 +394,14 @@ export interface WelcomeMessage {
    * Optional: a box that predates them doesn't send them.
    */
   alertSettings?: AlertSettings
+  /**
+   * The cue lights as they stand: every live cue, and the most recent
+   * finished ones for the pane's history. Optional: a box that predates cue
+   * lights doesn't send them, and the pane says the box can't.
+   */
+  cues?: Cue[]
+  /** Calls for help still live. Optional, as `cues` is. */
+  panics?: Panic[]
 }
 
 export interface MsgMessage {
@@ -567,6 +614,18 @@ export interface AlertMessage {
   alert: Alert
 }
 
+/** A cue light changed: called, answered, gone or stood down. To every device. */
+export interface CueMessage {
+  type: 'cue'
+  cue: Cue
+}
+
+/** A call for help changed: called, somebody going, or stood down. To every device. */
+export interface PanicMessage {
+  type: 'panic'
+  panic: Panic
+}
+
 /** The departments changed: the whole list, as it now is. */
 export interface DepartmentsMessage {
   type: 'departments'
@@ -574,6 +633,8 @@ export interface DepartmentsMessage {
 }
 
 export type ServerMessage =
+  | CueMessage
+  | PanicMessage
   | DepartmentsMessage
   | AlertMessage
   | AlertSettingsMessage

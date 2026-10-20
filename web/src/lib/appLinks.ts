@@ -50,7 +50,10 @@ export function clearJoinLink(): void {
  * in another event's box.
  */
 export type OpenLink = { event: string } & (
-  { to: 'channel'; channelId: string } | { to: 'showlog' } | { to: 'stage'; stage: string }
+  | { to: 'channel'; channelId: string }
+  | { to: 'showlog' }
+  | { to: 'stage'; stage: string }
+  | { to: 'cues' }
 )
 
 export function readOpenLink(link: string): OpenLink | null {
@@ -62,6 +65,7 @@ export function readOpenLink(link: string): OpenLink | null {
   const channelId = params.get('channel')
   if (channelId) return { event, to: 'channel', channelId }
   if (params.get('to') === 'showlog') return { event, to: 'showlog' }
+  if (params.get('to') === 'cues') return { event, to: 'cues' }
   const stage = params.get('stage')
   if (stage) return { event, to: 'stage', stage }
   return null

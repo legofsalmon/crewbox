@@ -8,6 +8,8 @@ import ChannelView from './components/ChannelView.tsx'
 import SearchOverlay from './components/SearchOverlay.tsx'
 import Settings from './components/Settings.tsx'
 import OnAirBar from './components/OnAirBar.tsx'
+import PanicBar from './components/PanicBar.tsx'
+import CueLight from './components/CueLight.tsx'
 import VoiceBar from './components/VoiceBar.tsx'
 import AudioSettings from './components/AudioSettings.tsx'
 import FileDetail from './components/FileDetail.tsx'
@@ -300,8 +302,10 @@ function Shell() {
           </button>
         </div>
       )}
+      <PanicBar />
       <OnAirBar />
       <VoiceBar />
+      <CueLight />
       <div className={`layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <Sidebar />
         {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}

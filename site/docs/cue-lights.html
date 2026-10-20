@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Cue lights and the panic button — Crewbox docs</title>
+    <meta name="description" content="A silent standby and GO sent to one person's phone, and a held button that rings every phone on site when somebody needs help." />
+    <link rel="stylesheet" href="/docs/docs.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button class="menu" aria-label="Open the docs menu" aria-expanded="false">☰</button>
+      <a class="brand" href="/">Crewbox</a>
+      <a class="doclink" href="/docs">Docs</a>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search the docs… ( / )"
+          aria-label="Search the docs"
+          autocomplete="off"
+        />
+        <ul class="results" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav aria-label="Docs pages"><section><h2>Start here</h2><ul><li><a href="/docs">Overview</a></li><li><a href="/docs/getting-connected">Getting connected</a></li><li><a href="/docs/around-the-app">Around the app</a></li></ul></section><section><h2>Chat &amp; voice</h2><ul><li><a href="/docs/chat">Chat</a></li><li><a href="/docs/chat-files-and-search">Files, filtering and search</a></li><li><a href="/docs/voice">Voice intercom</a></li></ul></section><section><h2>Running order</h2><ul><li><a href="/docs/schedule">Running order</a></li><li><a href="/docs/cue-lights" aria-current="page">Cue lights and the panic button</a></li></ul></section><section><h2>Show log</h2><ul><li><a href="/docs/show-log">The show log</a></li></ul></section><section><h2>Patch sheets</h2><ul><li><a href="/docs/patch">Patch sheets</a></li><li><a href="/docs/patch-paste-and-import">Paste and import</a></li><li><a href="/docs/patch-stage-and-lineup">Stage patch and lineup</a></li></ul></section><section><h2>Lighting</h2><ul><li><a href="/docs/lighting">Lighting plots</a></li><li><a href="/docs/lighting-views">Plan, Front and 3D</a></li><li><a href="/docs/lighting-live">Live DMX on the plot</a></li><li><a href="/docs/lighting-import">Importing rigs</a></li></ul></section><section><h2>Video</h2><ul><li><a href="/docs/video">LED walls</a></li></ul></section><section><h2>Network</h2><ul><li><a href="/docs/network">Network audit</a></li></ul></section><section><h2>Running the box</h2><ul><li><a href="/docs/run-the-box">Running the box</a></li><li><a href="/docs/admin">The admin panel</a></li><li><a href="/docs/https-and-voice">HTTPS, names and certificates</a></li><li><a href="/docs/phones-and-platforms">Phones and platforms</a></li><li><a href="/docs/updating">Updating the box</a></li><li><a href="/docs/control-api">Driving the box from a desk</a></li></ul></section><section><h2>Reference</h2><ul><li><a href="/docs/shortcuts">Keyboard shortcuts</a></li><li><a href="/docs/glossary">Glossary</a></li><li><a href="/docs/troubleshooting">Troubleshooting</a></li><li><a href="/docs/privacy">Privacy and your data</a></li></ul></section></nav>
+      </aside>
+      <main class="content">
+        <h1 id="cue-lights-and-the-panic-button"><a class="anchor" href="#cue-lights-and-the-panic-button">Cue lights and the panic button</a></h1>
+<p>Two calls that go to people rather than to a channel. A <strong>cue light</strong> is the silent standby and GO a stage manager gives a pyro operator, a CO2 op, a walk-on or playback when the stage is too loud to talk. The <strong>panic button</strong> is the other direction: somebody working alone holds it, and every phone on site rings.</p>
+<h2 id="calling-a-cue"><a class="anchor" href="#calling-a-cue">Calling a cue</a></h2>
+<p><strong>Cue lights</strong> in the sidebar. Choose <strong>Who</strong>, type the <strong>Cue</strong> (&quot;Pyro 1&quot;, &quot;Walk-on&quot;, &quot;VT&quot;), and, if the running order has stages, pick one. Then <strong>Call standby</strong>.</p>
+<p>The operator's whole screen turns amber and says <strong>Standby</strong>, with your name and the cue, whatever they were looking at. Their phone buzzes twice. When they press <strong>Standing by</strong>, your lamp says so, and <strong>GO</strong> is one press. Their screen turns green and says <strong>GO</strong>.</p>
+<ul><li><strong>GO before they answer</strong> asks first. The button turns red and says <strong>GO without standby?</strong>; press it again within three seconds to send it. An operator who hasn't answered may not have seen it.</li><li><strong>Stand down</strong> calls a cue off. The operator's screen clears and their notification goes.</li><li><strong>Can't stand by</strong> is the operator's way of saying no. Your lamp says they couldn't.</li><li>Anybody can press GO or stand a cue down, not only whoever called it, because the caller's phone is the one that dies at the wrong moment. The history says who did.</li></ul>
+<p>Picking a stage puts what is on it now beside the cue (&quot;Main Stage, during The Hollows&quot;), and that stays in the history after the running order moves.</p>
+<p>Below the live cues, <strong>Earlier</strong> lists the night's cues: when each went and how long the operator took to answer.</p>
+<h3 id="on-a-locked-phone"><a class="anchor" href="#on-a-locked-phone">On a locked phone</a></h3>
+<p>A standby reaches a locked phone as a notification, and GO replaces it, so there's only ever one. On Android it's on its own <strong>Cue lights</strong> channel, which vibrates and makes no sound, because a phone that rings in a wing is the wrong noise. You can give it a sound in Android's settings for the app. On an iPhone it is Time Sensitive and makes the usual sound. Either way, open the app to answer: there's no answer button on the notification yet.</p>
+<p>A phone that comes back onto the Wi-Fi while a standby is waiting for it rings then. A standby nobody finishes is stood down after 30 minutes.</p>
+<h3 id="without-the-box"><a class="anchor" href="#without-the-box">Without the box</a></h3>
+<p>A cue needs the box. With no connection, <strong>Call standby</strong> is greyed out and says so: a standby is never queued to arrive late, because a cue that turns up late is worse than one that never came. Use your radio.</p>
+<h2 id="the-panic-button"><a class="anchor" href="#the-panic-button">The panic button</a></h2>
+<p><strong>Hold for help</strong> is at the bottom of the sidebar, above your name. Hold it for two seconds. The red fill shows the hold counting; let go early and nothing is sent.</p>
+<p>Then:</p>
+<ul><li>Every other phone signed in to the box rings, through silent and Do Not Disturb on Android (the <strong>Calls for help</strong> channel, on the alarm stream, as show stops are), and as a Time Sensitive alert on an iPhone.</li><li>A red bar at the top of every screen says who needs help and asks everyone else <strong>I'm going</strong>. Each person who says so is shown to everyone, so three people don't all run and nobody assumes someone else went.</li><li>Your phone records five seconds of what you say next and posts it in <strong>#general</strong>. Say where you are. If the microphone isn't allowed, the call still goes, without the recording.</li><li><strong>#general</strong> gets a line for the call, for each person who goes, and for when it ends, so the record is there for anyone who missed it.</li></ul>
+<p><strong>I'm OK</strong> (yours) or <strong>Stand down</strong> (anyone's) ends it, after a second press within three seconds, and takes it off every phone. A call nobody stands down lapses after two hours.</p>
+<p>Until departments exist, a call for help rings everyone on the box. It is not narrowed to a channel, because a muted channel must never swallow one.</p>
+<h2 id="things-to-know"><a class="anchor" href="#things-to-know">Things to know</a></h2>
+<ul><li>Both need the box to be on crewbox 1.5 or later. On an older box the pane says so and the panic button isn't shown.</li><li>Both are live, not kept: a box that restarts loses a standby the way a cue light loses power, visibly, and the caller calls it again. The record of a call for help is in #general and survives.</li><li>The panic button is not a replacement for the site's emergency plan or for calling the emergency services. It gets the crew around you moving.</li></ul>
+        <footer class="prevnext"><a class="prev" href="/docs/schedule"><span>Previous</span>Running order</a><a class="next" href="/docs/show-log"><span>Next</span>The show log</a></footer>
+      </main>
+    </div>
+    <script src="/docs/docs.js"></script>
+  </body>
+</html>

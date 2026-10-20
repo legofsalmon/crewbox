@@ -18,6 +18,7 @@ import {
 import type { DmxListener } from './dmx/listener.ts'
 import type { UniverseHealth } from './dmx/state.ts'
 import type { AlertsHub } from './alerts.ts'
+import type { CueDesk, CueRefusal } from './cues.ts'
 import type { Store } from './store.ts'
 import { APP_VERSION } from './version.ts'
 
@@ -226,6 +227,9 @@ export class Hub {
   /** What buzzes whom, when this box decides (server/src/alerts.ts). */
   private alerts: AlertsHub | undefined
 
+  /** Cue lights and calls for help (server/src/cues.ts). */
+  private cues: CueDesk | undefined
+
   constructor(
     private readonly store: Store,
     private readonly log: Logger,
@@ -256,6 +260,16 @@ export class Hub {
       onlineUserIds: () => [...this.online.keys()],
       alertPage: (userId, alert) => this.sendToUser(userId, { type: 'alert', alert }),
     })
+  }
+
+  /** Where cue lights and calls for help live, so a device joining is told of them. */
+  setCues(cues: CueDesk): void {
+    this.cues = cues
+  }
+
+  /** To every signed-in device: a cue or a call for help changed. */
+  announce(msg: ServerMessage): void {
+    this.broadcastAll(msg)
   }
 
   /** Where the on-air state lives, so a late joiner is told with the rest. */
@@ -512,6 +526,20 @@ export class Hub {
         }
         this.onFollowStage(conn, conn.user, msg.stage, msg.follow)
         break
+      case 'cueStandby':
+      case 'cueStep':
+      case 'panicStep':
+        if (this.overActionLimit(conn)) {
+          this.send(conn.ws, { type: 'error', code: 'bad_request', message: 'slow down' })
+          break
+        }
+        this.onCue(conn, conn.user, msg)
+        break
+      case 'panic':
+        // Never throttled. A person pressing it again and again is a person
+        // in trouble, and the desk makes a repeat the same call anyway.
+        this.onCue(conn, conn.user, msg)
+        break
       case 'logIncident': {
         // The same flood guard as `send`, and rejected the same way, because
         // this ends in the same place: a durable row and a broadcast to every
@@ -625,6 +653,7 @@ export class Hub {
       // and its cached messages belong to one that is no longer here.
       dbEpoch: this.store.dbEpoch(),
       alertSettings: this.store.getAlertSettings(user.id),
+      ...(this.cues ? this.cues.snapshot() : {}),
     })
     // Straight after the welcome, and only when somebody is actually live:
     // a device joining mid-show has to arrive already knowing, or its red
@@ -739,6 +768,39 @@ export class Hub {
       this.broadcastAll({ type: 'incident', incident }, conn.ws)
       this.alerts?.onIncident(incident)
     }
+  }
+
+  /**
+   * A cue light or the panic button. The desk decides and tells every
+   * device; this only turns a refusal into words for the one who asked.
+   */
+  private onCue(
+    conn: Conn,
+    user: User,
+    msg: Extract<ClientMessage, { type: 'cueStandby' | 'cueStep' | 'panic' | 'panicStep' }>
+  ): void {
+    if (!this.cues) {
+      this.send(conn.ws, { type: 'error', code: 'not_found', message: 'no cue lights on this box' })
+      return
+    }
+    const result =
+      msg.type === 'cueStandby'
+        ? this.cues.standby(user, msg)
+        : msg.type === 'cueStep'
+          ? this.cues.step(msg.cueId, msg.step, user)
+          : msg.type === 'panic'
+            ? this.cues.panic(user)
+            : this.cues.panicStep(msg.panicId, msg.step, user)
+    if (typeof result !== 'string') return
+    const words: Record<CueRefusal, string> = {
+      'no-such-person': 'That person is no longer on this box.',
+      'no-such-cue': 'That cue has already gone or been stood down.',
+      'not-yours': 'Only the person on standby can say they are standing by.',
+      'too-many': 'You have 20 standbys called. Send or stand some down first.',
+      'no-channel': 'This box has no #general to post the call for help in.',
+      'no-such-call': 'That call for help has already been stood down.',
+    }
+    this.send(conn.ws, { type: 'error', code: 'bad_request', message: words[result] })
   }
 
   /** True (and records the attempt) once a socket is over its action limit. */
@@ -875,6 +937,7 @@ export class Hub {
     // goes now rather than waiting out the grace period below.
     this.clearTallyGrace(userId)
     if (this.tally?.forget(userId)) this.broadcastTally(this.tally.current())
+    this.cues?.forget(userId)
     this.alerts?.disconnectUser(userId)
     for (const conn of this.conns) {
       if (conn.user?.id === userId) {

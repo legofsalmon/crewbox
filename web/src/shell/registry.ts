@@ -5,6 +5,7 @@ import { lightingModule } from '../modules/lighting/index.ts'
 import { incidentModule } from '../modules/incident/index.ts'
 import { videoModule } from '../modules/video/index.ts'
 import { networkModule } from '../modules/network/index.ts'
+import { cuesModule } from '../modules/cues/index.ts'
 import type { CrewboxModule } from './modules.ts'
 
 /**
@@ -15,6 +16,7 @@ import type { CrewboxModule } from './modules.ts'
 export const allModules: CrewboxModule[] = [
   chatModule,
   scheduleModule,
+  cuesModule,
   patchModule,
   lightingModule,
   incidentModule,

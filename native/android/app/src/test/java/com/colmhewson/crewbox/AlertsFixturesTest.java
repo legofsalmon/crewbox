@@ -191,6 +191,29 @@ public class AlertsFixturesTest {
   }
 
   @Test
+  public void aCueLightBuzzesOnItsOwnChannelAndOpensTheCueLights() {
+    AlertNotice n = notice("alertCue");
+    assertEquals(AlertNotice.CH_CUES, n.channel);
+    assertEquals("q:q-1", n.id);
+    assertFalse(n.conversation);
+    assertEquals("crewbox://open?event=evt-3f9c2a&to=cues", n.link);
+    // The page lights the whole screen for it while the app is open.
+    assertFalse(n.postWhileVisible());
+  }
+
+  @Test
+  public void aCallForHelpRingsAsAnAlarmAndOpensGeneralWithoutBeingAMessageInIt() {
+    AlertNotice n = notice("alertPanic");
+    assertEquals(AlertNotice.CH_PANIC, n.channel);
+    assertFalse(n.conversation);
+    assertEquals("", n.shortcutId);
+    assertEquals("crewbox://open?event=evt-3f9c2a&channel=c-general", n.link);
+    assertTrue(n.postWhileVisible());
+    // A read of #general takes nothing back from it.
+    assertFalse(AlertNotice.readCovers(n.channelId, n.seq, "c-general", 999));
+  }
+
+  @Test
   public void everyCatchUpAlertCanBePosted() {
     for (com.google.gson.JsonElement alert : frame("welcome").getAsJsonArray("catchUp")) {
       assertNotNull(AlertNotice.from(alert.getAsJsonObject(), "evt-3f9c2a"));

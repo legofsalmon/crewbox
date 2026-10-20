@@ -11,7 +11,7 @@ import type { BoxSettingName, BoxSettings } from './api.ts'
  */
 export type BoxForm = Record<BoxSettingName, string>
 
-export const DEFAULT_MODULES = 'schedule,patch,lighting,incident,video,network'
+export const DEFAULT_MODULES = 'schedule,cues,patch,lighting,incident,video,network'
 
 /** What a field shows: the saved value, else what the box started with, else the default. */
 export function formFrom(data: BoxSettings): BoxForm {

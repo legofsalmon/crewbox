@@ -4399,3 +4399,271 @@ a.app-version {
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* -------------------------------------------------------------- cue light */
+/* The operator's lamp: the whole screen, over every view, for a standby and
+   then GO (components/CueLight.tsx). Read from a metre away, in a wing, in
+   daylight or a dark tent: one word, as large as the screen allows, on a
+   fill, and the buttons at the thumb. Standby is the attention fill; GO is
+   the healthy green every cue light uses for go, the one place crewbox
+   gives green a meaning of its own (docs/CUES.md). */
+.cue-light {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+  text-align: center;
+}
+
+.cue-light-standby {
+  background: var(--warn);
+  color: var(--warn-on);
+}
+
+.cue-light-go {
+  background: var(--ds-ok);
+  color: var(--ds-ok-on);
+}
+
+.cue-light-word {
+  font-size: clamp(56px, 18vw, 140px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Standing by: the same fill, a quieter word, because what is left is to
+   wait. The word changes, so the state is never colour alone. */
+.cue-light-standby[data-state='ready'] .cue-light-word {
+  font-size: clamp(40px, 12vw, 96px);
+}
+
+.cue-light-label {
+  font-size: clamp(24px, 7vw, 44px);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.cue-light-about {
+  font-size: 16px;
+  max-width: 40ch;
+}
+
+.cue-light-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* On a fill, a control is the ground colour with its own ink: the one
+   pairing the fills' "on" inks are measured against. */
+.cue-light-ready,
+.cue-light-done {
+  min-height: 64px;
+  min-width: 220px;
+  padding: 12px 28px;
+  font-size: 20px;
+  font-weight: 700;
+  border-radius: var(--radius-control);
+  border: 2px solid currentColor;
+  background: var(--ds-surface-ground);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cue-light-quiet {
+  min-height: 48px;
+  padding: 8px 18px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: var(--radius-control);
+  border: 2px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cue-light-ready:active,
+.cue-light-done:active,
+.cue-light-quiet:active {
+  filter: brightness(0.9);
+}
+
+.cue-light :focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}
+
+/* Hidden, a standby is still on screen: a bar that brings it back. */
+.cue-light-bar {
+  position: sticky;
+  top: 0;
+  z-index: 61;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-weight: 700;
+  border: 0;
+  background: var(--warn);
+  color: var(--warn-on);
+  cursor: pointer;
+}
+
+/* -------------------------------------------------------------- panic */
+/* Hold for help, in the drawer above you (components/PanicButton.tsx). At
+   rest a raised control with the stop ink, so it is found but not shouted;
+   held, the stop fill sweeps across it for the two seconds it takes. */
+.panic-hold {
+  position: relative;
+  overflow: hidden;
+  margin: 8px 10px 0;
+  min-height: 48px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--ds-line-control);
+  background: var(--ds-surface-raised);
+  color: var(--danger);
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.panic-hold:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.panic-hold-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--danger-fill);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.panic-hold[data-holding] .panic-hold-fill {
+  transform: scaleX(1);
+  /* The hold itself, not decoration: it shows how long is left, so it runs
+     under reduced motion too (as a fade there, below). */
+  transition: transform 2s linear;
+}
+
+.panic-hold[data-holding] {
+  color: var(--danger-on);
+}
+
+.panic-hold-text {
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panic-hold-fill {
+    transform: none;
+    opacity: 0;
+  }
+  .panic-hold[data-holding] .panic-hold-fill {
+    transform: none;
+    opacity: 1;
+    transition: opacity 2s linear;
+  }
+}
+
+/* A call for help, top of every screen for everybody until stood down. */
+.panic-bars {
+  position: sticky;
+  top: 0;
+  z-index: 62;
+}
+
+.panic-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: calc(8px + env(safe-area-inset-top)) 14px 8px;
+  background: var(--danger-fill);
+  color: var(--danger-on);
+}
+
+.panic-bar + .panic-bar {
+  padding-top: 8px;
+  border-top: 1px solid currentColor;
+}
+
+.panic-bar-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.panic-bar-text strong {
+  font-size: 16px;
+}
+
+.panic-bar-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.panic-bar-rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.panic-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.panic-bar-going,
+.panic-bar-quiet {
+  min-height: 44px;
+  padding: 6px 14px;
+  border-radius: var(--radius-control);
+  border: 2px solid currentColor;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panic-bar-going {
+  background: var(--ds-surface-ground);
+  color: var(--text);
+}
+
+.panic-bar-going[aria-pressed='true'] {
+  cursor: default;
+}
+
+.panic-bar-quiet {
+  background: transparent;
+  color: inherit;
+}
+
+/* Armed on a red bar: the fill can't go redder, so it inverts, and the label
+   already says what the next press does. */
+.panic-bar-quiet[data-armed] {
+  background: var(--ds-surface-ground);
+  color: var(--danger);
+}
+
+.panic-bar :focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
