@@ -12,12 +12,34 @@ export interface VoiceParticipant {
   name: string
   speaking: boolean
   quality: VoiceQuality
+  /** In the room to hear it, with no microphone here (party line). */
+  listening: boolean
+}
+
+/**
+ * How many channels can be heard besides the one talked on.
+ *
+ * Each is its own connection to the voice server, kept open all shift on a
+ * phone. A beltpack's channel count, not a mixing desk's.
+ */
+export const MAX_LISTEN = 3
+
+/** A channel being heard but not talked on. */
+export interface VoiceListen {
+  channelId: string
+  status: 'joining' | 'connected' | 'reconnecting'
+  /** Whoever is speaking on it right now, by name. */
+  speaking: string[]
+  /** People on it, not counting me. */
+  others: number
 }
 
 export interface VoiceState {
   channelId: string | null
   status: 'idle' | 'joining' | 'connected' | 'reconnecting'
   participants: VoiceParticipant[]
+  /** Channels being heard besides `channelId`, in the order they were added. */
+  listening: VoiceListen[]
   talking: boolean
   /** Latch mode keeps the mic open without holding the button (gloves!). */
   latched: boolean
@@ -46,6 +68,7 @@ export const initialVoiceState: VoiceState = {
   channelId: null,
   status: 'idle',
   participants: [],
+  listening: [],
   talking: false,
   latched: false,
   micReady: false,
