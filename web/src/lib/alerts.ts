@@ -143,6 +143,8 @@ export function summariseMissed(input: {
   }[]
   myId: string | undefined
   myName: string | undefined
+  /** Their department's name, which `@` mentions reach them by too. */
+  myDepartment?: string | undefined
   channels: Record<string, { kind?: string; name?: string; memberIds?: string[] } | undefined>
   users: Record<string, { name?: string } | undefined>
   /** Highest seq already read per channel, after the welcome has merged. */
@@ -172,13 +174,17 @@ export function summariseMissed(input: {
             kind: channel.kind === 'dm' ? 'dm' : 'public',
             ...(channel.memberIds ? { memberIds: channel.memberIds } : {}),
           },
-          person: { id: input.myId, name: input.myName ?? '' },
+          person: {
+            id: input.myId,
+            name: input.myName ?? '',
+            ...(input.myDepartment ? { department: input.myDepartment } : {}),
+          },
           level: levelFor(input.settings, m.channelId),
           readSeq: input.readState[m.channelId] ?? 0,
         }) !== null
       )
     }
-    return channel?.kind === 'dm' || isMentioned(m.body, input.myName)
+    return channel?.kind === 'dm' || isMentioned(m.body, input.myName, input.myDepartment)
   })
   if (wanted.length === 0) return null
 

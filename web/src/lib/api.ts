@@ -1,4 +1,12 @@
-import type { Channel, FileMeta, Incident, Message, PublicConfig, User } from '@crewbox/shared'
+import type {
+  Channel,
+  Department,
+  FileMeta,
+  Incident,
+  Message,
+  PublicConfig,
+  User,
+} from '@crewbox/shared'
 import { apiUrl } from './server.ts'
 
 export type ReadinessState = 'ok' | 'limited' | 'off'
@@ -268,11 +276,15 @@ export function fetchHistory(
 }
 
 /** Trade the admin password for a token. Held in memory only — see the store. */
-export function adminUnlock(token: string, password: string): Promise<{ adminToken: string }> {
+/** Unlock with the box's admin password, or an admin's own `{ pin }`. */
+export function adminUnlock(
+  token: string,
+  secret: { password: string } | { pin: string }
+): Promise<{ adminToken: string }> {
   return request('/api/admin/unlock', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(secret),
   })
 }
 
@@ -291,6 +303,61 @@ export function adminUnlockWithLink(key: string): Promise<{ adminToken: string }
 /** Hand the unlock back rather than waiting for it to expire. */
 export function adminLock(auth: AdminAuth): Promise<{ ok: true }> {
   return request('/api/admin/lock', { method: 'POST', headers: adminHeaders(auth) })
+}
+
+/** Make somebody an admin or not, and/or put them in a department (null: none). */
+export function adminUpdateUser(
+  auth: AdminAuth,
+  userId: string,
+  patch: { role?: 'admin' | 'member'; departmentId?: string | null }
+): Promise<{ user: User }> {
+  return request(`/api/admin/users/${userId}`, {
+    method: 'PATCH',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+}
+
+export function adminCreateDepartment(
+  auth: AdminAuth,
+  name: string
+): Promise<{ department: Department }> {
+  return request('/api/admin/departments', {
+    method: 'POST',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function adminRenameDepartment(
+  auth: AdminAuth,
+  id: string,
+  name: string
+): Promise<{ department: Department }> {
+  return request(`/api/admin/departments/${id}`, {
+    method: 'PATCH',
+    headers: { ...adminHeaders(auth), 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function adminDeleteDepartment(auth: AdminAuth, id: string): Promise<{ ok: true }> {
+  return request(`/api/admin/departments/${id}`, {
+    method: 'DELETE',
+    headers: adminHeaders(auth),
+  })
+}
+
+/** Pick your own department, or none. */
+export function setMyDepartment(
+  token: string,
+  departmentId: string | null
+): Promise<{ user: User }> {
+  return request('/api/me', {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ departmentId }),
+  })
 }
 
 export function adminResetPin(auth: AdminAuth, userId: string, pin: string): Promise<{ ok: true }> {

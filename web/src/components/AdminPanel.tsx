@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { Channel, User } from '@crewbox/shared'
+import type { Channel } from '@crewbox/shared'
 import { sessionToken, useStore } from '../store.ts'
 import * as api from '../lib/api.ts'
 import { deliveredNote, deliverFile, NO_DOWNLOADS } from '../lib/download.ts'
@@ -12,11 +12,10 @@ import BackupSection from './BackupSection.tsx'
 import ReportsSection, { CrashPrompt } from './ReportsSection.tsx'
 import BoxSettingsSection from './BoxSettingsSection.tsx'
 import RouterDnsSection from './RouterDnsSection.tsx'
+import PeopleSection from './PeopleSection.tsx'
 import { licenceBanner } from '../lib/licence.ts'
 import { addressOf } from '../lib/discovery.ts'
 import { knownEvents, openEvent, subscribeKnownEvents, type KnownEvent } from '../lib/eventScope.ts'
-
-const PIN_RE = /^\d{4,8}$/
 
 /** How soon the panel asks again while the box is still claiming its name. */
 const ANNOUNCE_RECHECK_MS = 1000
@@ -37,10 +36,7 @@ function auth(): api.AdminAuth {
 /** Settings → Admin, once unlocked: the box's own settings. */
 export default function AdminPanel() {
   const lockAdmin = useStore((s) => s.lockAdmin)
-  const users = useStore((s) => s.users)
-  const online = useStore((s) => s.online)
   const channels = useStore((s) => s.channels)
-  const me = useStore((s) => s.me)
 
   const [note, setNote] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -70,15 +66,6 @@ export default function AdminPanel() {
 
   const banner = licenceBanner(licence)
 
-  const crew = useMemo(
-    () =>
-      Object.values(users).sort(
-        (a, b) =>
-          Number(online[b.id] ?? false) - Number(online[a.id] ?? false) ||
-          a.name.localeCompare(b.name)
-      ),
-    [users, online]
-  )
   const publicChannels = useMemo(
     () =>
       Object.values(channels)
@@ -138,20 +125,7 @@ export default function AdminPanel() {
       )}
       {note && <div className="admin-note">{note}</div>}
       <div className="admin-scroll">
-        <section>
-          <h3 className="admin-section-title">Crew</h3>
-          <ul>
-            {crew.map((user) => (
-              <UserRow
-                key={user.id}
-                user={user}
-                online={!!online[user.id]}
-                isMe={user.id === me?.id}
-                onNote={setNote}
-              />
-            ))}
-          </ul>
-        </section>
+        <PeopleSection auth={auth} onNote={setNote} />
         <section>
           <h3 className="admin-section-title">Channels</h3>
           <ul>
@@ -1062,71 +1036,6 @@ function AdminPasswordField({
         that had the panel open.
       </p>
     </form>
-  )
-}
-
-function UserRow({
-  user,
-  online,
-  isMe,
-  onNote,
-}: {
-  user: User
-  online: boolean
-  isMe: boolean
-  onNote: (note: string) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [pin, setPin] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!PIN_RE.test(pin)) return
-    setBusy(true)
-    try {
-      await api.adminResetPin(auth(), user.id, pin)
-      onNote(`PIN reset for ${user.name}`)
-      setEditing(false)
-      setPin('')
-    } catch (err) {
-      onNote(adminError(err, 'PIN reset failed'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <li className="admin-row">
-      <span className={`presence-dot ${online ? 'on' : ''}`} />
-      <span className="admin-row-name">
-        {user.name}
-        {isMe && <span className="admin-muted"> (you)</span>}
-      </span>
-      {user.role === 'admin' && <span className="role-tag">admin</span>}
-      <span className="admin-muted">{online ? 'online' : 'offline'}</span>
-      {editing ? (
-        <form className="admin-inline-form" onSubmit={(e) => void submit(e)}>
-          <input
-            autoFocus
-            inputMode="numeric"
-            maxLength={8}
-            placeholder="New PIN"
-            aria-label={`New PIN for ${user.name}`}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-            onKeyDown={(e) => e.key === 'Escape' && setEditing(false)}
-          />
-          <button className="admin-btn" disabled={busy || !PIN_RE.test(pin)}>
-            Save
-          </button>
-        </form>
-      ) : (
-        <button className="admin-btn" onClick={() => setEditing(true)}>
-          Reset PIN
-        </button>
-      )}
-    </li>
   )
 }
 

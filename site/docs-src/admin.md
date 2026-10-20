@@ -2,7 +2,7 @@
 title: The admin panel
 section: Running the box
 order: 20
-blurb: Unlocking it, the sections, resetting PINs, readiness lists, the licence, crash reports and the post-event export.
+blurb: Unlocking it, admins and departments, the sections, resetting PINs, readiness lists, the licence, crash reports and the post-event export.
 ---
 
 # The admin panel
@@ -14,6 +14,15 @@ sidebar's identity row opens. Everyone can see the tab — a hidden control is
 how a box loses its admin — but it says **locked** until someone types the
 **admin password**, which is not the event PIN and not
 anyone's personal PIN ([the three codes](/docs/getting-connected#the-three-codes-untangled)).
+
+**Admins** open it with their own PIN instead. Anyone in the panel can make
+somebody an admin (**Make admin** beside their name, under Crew); from then
+on the tab asks them for the PIN they sign in with, and **Use the box's
+admin password** is one press away. The first time you get in with the
+password or the menu link, the panel offers **Make me an admin**, so next
+time is your PIN. Taking admin away ends their unlock at once. The admin
+password and the menu link keep working for anyone, so there is no last
+admin to lose.
 
 The unlock lives in memory only: closing the app re-locks it, and the
 **Lock** button at the top of the tab does it on the spot — use it before handing your phone to
@@ -29,9 +38,23 @@ works once. Set a new password under **This box** while you're in
 
 ![The crew list with Reset PIN](shot:admin-crew)
 
-Every account on the box, with presence and role. The one action you'll
-actually use mid-event is **Reset PIN** — for the crew member who invented
-a PIN at 9am and lost it by noon. Type a new one, tell them, done.
+Every account on the box, with presence, grouped by department once the
+box has departments. Beside each person: their department, **Make admin** or
+**Remove admin**, and **Reset PIN**. The one you'll actually use mid-event
+is Reset PIN — for the crew member who invented a PIN at 9am and lost it by
+noon. Type a new one, tell them, done.
+
+## Departments
+
+Lighting, Stage, Sound: the groups your crew work in. A new box has none;
+**Add Production, Stage, Lighting, Sound, Video** adds the usual set in one
+press, and you can rename or delete any of them, or add your own. Deleting
+one asks a second time, and leaves the people who were in it in none.
+
+Each person is in one department or none. Crew pick their own under
+Settings → **General**, and you can set anyone's from the crew list.
+A department decides two things: where somebody sits in the crew list, and
+who `@Lighting` reaches. It doesn't hide anything from anyone.
 
 ## Channels
 

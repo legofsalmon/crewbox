@@ -17,6 +17,7 @@ import {
   type PublicConfig,
   type ServerMessage,
   type StageCountdown,
+  type Department,
   type User,
   type WelcomeMessage,
 } from '@crewbox/shared'
@@ -335,6 +336,8 @@ export interface AppState {
   config: PublicConfig
   me: User | null
   users: Record<string, User>
+  /** The box's departments, by id. Empty on a box that has none, or predates them. */
+  departments: Record<string, Department>
   channels: Record<string, Channel>
   online: Record<string, boolean>
   /**
@@ -520,7 +523,8 @@ export interface AppState {
   closeSettings: () => void
   setSettingsTab: (tab: SettingsTab) => void
   /** Trade the admin password for a token; throws with the server's message. */
-  unlockAdmin: (password: string) => Promise<void>
+  /** With the box's admin password, or an admin's own `{ pin }`. */
+  unlockAdmin: (secret: { password: string } | { pin: string }) => Promise<void>
   /**
    * What the box made of the admin link this page was opened with
    * (lib/adminLink.ts): an unlock, or why not, for the unlock screen to say.
@@ -545,6 +549,12 @@ export interface AppState {
   adminUnlockLost: (reason: string) => void
   /** Why the panel locked itself, for the unlock screen to explain. */
   adminLockedReason: string | null
+  /**
+   * True while the unlock is one this person made with their own PIN. That
+   * one is theirs as an admin, so it ends when they stop being one; the box
+   * has already let go of it, and this says so without waiting for a 403.
+   */
+  adminByPin: boolean
   /**
    * Replace the unlock token. Changing the admin password revokes every
    * token including this device's, and the server hands back a replacement
@@ -705,6 +715,12 @@ function mergeMessages(existing: Message[] | undefined, incoming: Message[]): Me
   return [...byId.values()].sort((a, b) => a.seq - b.seq)
 }
 
+/** The name of this person's department, which `@` mentions reach them by. */
+export function departmentName(state: Pick<AppState, 'me' | 'departments'>): string | undefined {
+  const id = state.me?.departmentId
+  return id ? state.departments[id]?.name : undefined
+}
+
 export const useStore = create<AppState>()((set, get) => {
   /**
    * The box at this address is running another event than the one open.
@@ -834,7 +850,10 @@ export const useStore = create<AppState>()((set, get) => {
     let mentionsChanged = false
     for (const m of incoming) {
       if (!m.authorId || m.authorId === state.me?.id) continue
-      if (isMentioned(m.body, state.me?.name) && m.seq > (mentionSeqs[m.channelId] ?? 0)) {
+      if (
+        isMentioned(m.body, state.me?.name, departmentName(state)) &&
+        m.seq > (mentionSeqs[m.channelId] ?? 0)
+      ) {
         mentionSeqs[m.channelId] = m.seq
         mentionsChanged = true
       }
@@ -952,10 +971,11 @@ export const useStore = create<AppState>()((set, get) => {
   }
 
   function persistSnapshot(): void {
-    const { me, users, channels, readState, mentionSeqs } = get()
+    const { me, users, departments, channels, readState, mentionSeqs } = get()
     void cache.saveSnapshot({
       me,
       users: Object.values(users),
+      departments: Object.values(departments),
       channels: Object.values(channels),
       readState,
       mentionSeqs,
@@ -1239,6 +1259,7 @@ export const useStore = create<AppState>()((set, get) => {
       config: msg.config,
       me: msg.me,
       users: Object.fromEntries(msg.users.map((u) => [u.id, u])),
+      departments: Object.fromEntries((msg.departments ?? []).map((d) => [d.id, d])),
       channels: Object.fromEntries(msg.channels.map((c) => [c.id, c])),
       online: Object.fromEntries(msg.online.map((id) => [id, true])),
       remoteUsers: Object.fromEntries((msg.remote ?? []).map((id) => [id, true])),
@@ -1278,6 +1299,7 @@ export const useStore = create<AppState>()((set, get) => {
         missed: msg.missed,
         myId: msg.me.id,
         myName: msg.me.name,
+        myDepartment: departmentName(get()),
         channels: get().channels,
         users: get().users,
         readState,
@@ -1448,7 +1470,10 @@ export const useStore = create<AppState>()((set, get) => {
         } else if (msg.message.authorId && msg.message.authorId !== me?.id) {
           const channel = channels[msg.message.channelId]
           const author = users[msg.message.authorId]?.name ?? 'Someone'
-          if (channel?.kind === 'dm' || isMentioned(msg.message.body, me?.name)) {
+          if (
+            channel?.kind === 'dm' ||
+            isMentioned(msg.message.body, me?.name, departmentName(get()))
+          ) {
             announce({
               title:
                 channel?.kind === 'dm' ? author : `${author} in #${channel?.name ?? 'channel'}`,
@@ -1514,8 +1539,24 @@ export const useStore = create<AppState>()((set, get) => {
         set({ typing })
         break
       }
-      case 'user':
-        set({ users: { ...get().users, [msg.user.id]: msg.user } })
+      case 'user': {
+        // Their own row too: being made an admin, or put in a department,
+        // reaches this device without a reconnect.
+        const mine = get().me?.id === msg.user.id
+        set({
+          users: { ...get().users, [msg.user.id]: msg.user },
+          ...(mine ? { me: msg.user } : {}),
+        })
+        if (mine && msg.user.role !== 'admin' && get().adminByPin) {
+          get().adminUnlockLost(
+            'You’re no longer an admin, so your PIN doesn’t open this any more. The box’s admin password still does.'
+          )
+        }
+        persistSnapshot()
+        break
+      }
+      case 'departments':
+        set({ departments: Object.fromEntries(msg.departments.map((d) => [d.id, d])) })
         persistSnapshot()
         break
       case 'channel': {
@@ -1618,6 +1659,7 @@ export const useStore = create<AppState>()((set, get) => {
     fileDetail: null,
     me: null,
     users: {},
+    departments: {},
     channels: {},
     online: {},
     onAir: null,
@@ -1645,6 +1687,7 @@ export const useStore = create<AppState>()((set, get) => {
     settingsTab: 'general',
     adminToken: null,
     adminLockedReason: null,
+    adminByPin: false,
     audioSettingsOpen: false,
     latencyMs: null,
     updateReady: false,
@@ -1797,6 +1840,7 @@ export const useStore = create<AppState>()((set, get) => {
         pending,
         me: snapshot?.me ?? null,
         users: Object.fromEntries((snapshot?.users ?? []).map((u) => [u.id, u])),
+        departments: Object.fromEntries((snapshot?.departments ?? []).map((d) => [d.id, d])),
         channels: Object.fromEntries((snapshot?.channels ?? []).map((c) => [c.id, c])),
         readState: snapshot?.readState ?? {},
         mentionSeqs: snapshot?.mentionSeqs ?? {},
@@ -2315,14 +2359,14 @@ export const useStore = create<AppState>()((set, get) => {
       set({ settingsTab })
     },
 
-    async unlockAdmin(password) {
-      const { adminToken } = await api.adminUnlock(getToken() ?? '', password)
-      set({ adminToken, adminLockedReason: null })
+    async unlockAdmin(secret) {
+      const { adminToken } = await api.adminUnlock(getToken() ?? '', secret)
+      set({ adminToken, adminLockedReason: null, adminByPin: 'pin' in secret })
     },
 
     adminLinkAnswered(outcome) {
       if ('adminToken' in outcome) {
-        set({ adminToken: outcome.adminToken, adminLockedReason: null })
+        set({ adminToken: outcome.adminToken, adminLockedReason: null, adminByPin: false })
         return
       }
       // Already unlocked some other way: the panel is open, so a spent link
@@ -2332,19 +2376,19 @@ export const useStore = create<AppState>()((set, get) => {
 
     adminUnlockLost(reason) {
       if (!get().adminToken) return
-      set({ adminToken: null, adminLockedReason: reason })
+      set({ adminToken: null, adminLockedReason: reason, adminByPin: false })
     },
 
     lockAdmin() {
       const adminToken = get().adminToken
-      set({ adminToken: null, adminLockedReason: null })
+      set({ adminToken: null, adminLockedReason: null, adminByPin: false })
       // Best effort: the token is already gone from this device, and the
       // server expires it anyway. A failed call must not keep the panel open.
       if (adminToken) void api.adminLock({ token: getToken() ?? '', adminToken }).catch(() => {})
     },
 
     setAdminToken(adminToken) {
-      set({ adminToken })
+      set({ adminToken, adminByPin: false })
     },
 
     setAudioSettingsOpen(open) {

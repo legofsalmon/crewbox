@@ -7,6 +7,7 @@ import type {
   ChannelAlertLevel,
   Channel,
   ChannelKind,
+  Department,
   FileMeta,
   Incident,
   IncidentKind,
@@ -23,6 +24,14 @@ interface UserRow {
   name: string
   role: string
   pin_hash: string
+  /** v16. Absent from a row read through a query that names its columns. */
+  department_id?: string | null
+  created_at: number
+}
+
+interface DepartmentRow {
+  id: string
+  name: string
   created_at: number
 }
 
@@ -106,7 +115,17 @@ function toFileMeta(f: {
 }
 
 function toUser(row: UserRow): User {
-  return { id: row.id, name: row.name, role: row.role as Role, createdAt: row.created_at }
+  return {
+    id: row.id,
+    name: row.name,
+    role: row.role === 'admin' ? 'admin' : 'member',
+    ...(row.department_id ? { departmentId: row.department_id } : {}),
+    createdAt: row.created_at,
+  }
+}
+
+function toDepartment(row: DepartmentRow): Department {
+  return { id: row.id, name: row.name, createdAt: row.created_at }
 }
 
 function toMessage(row: MessageRow): Message {
@@ -256,6 +275,73 @@ export class Store {
   updateUserPin(id: string, pinHash: string): boolean {
     const result = this.db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(pinHash, id)
     return result.changes > 0
+  }
+
+  /** This person's PIN hash, for checking it again once they are signed in. */
+  getUserPinHash(id: string): string | undefined {
+    const row = this.db.prepare('SELECT pin_hash FROM users WHERE id = ?').get(id) as
+      { pin_hash: string } | undefined
+    return row?.pin_hash
+  }
+
+  setUserRole(id: string, role: Role): User | undefined {
+    this.db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id)
+    return this.getUserById(id)
+  }
+
+  /** Null takes them out of whatever department they were in. */
+  setUserDepartment(id: string, departmentId: string | null): User | undefined {
+    this.db.prepare('UPDATE users SET department_id = ? WHERE id = ?').run(departmentId, id)
+    return this.getUserById(id)
+  }
+
+  // -- departments ----------------------------------------------------------
+
+  listDepartments(): Department[] {
+    const rows = this.db
+      .prepare('SELECT * FROM departments ORDER BY name COLLATE NOCASE')
+      .all() as unknown as DepartmentRow[]
+    return rows.map(toDepartment)
+  }
+
+  getDepartment(id: string): Department | undefined {
+    const row = this.db.prepare('SELECT * FROM departments WHERE id = ?').get(id) as
+      DepartmentRow | undefined
+    return row ? toDepartment(row) : undefined
+  }
+
+  getDepartmentByName(name: string): Department | undefined {
+    const row = this.db.prepare('SELECT * FROM departments WHERE name = ?').get(name) as
+      DepartmentRow | undefined
+    return row ? toDepartment(row) : undefined
+  }
+
+  createDepartment(name: string): Department {
+    const department: Department = { id: newId(), name, createdAt: Date.now() }
+    this.db
+      .prepare('INSERT INTO departments (id, name, created_at) VALUES (?, ?, ?)')
+      .run(department.id, department.name, department.createdAt)
+    return department
+  }
+
+  renameDepartment(id: string, name: string): Department | undefined {
+    this.db.prepare('UPDATE departments SET name = ? WHERE id = ?').run(name, id)
+    return this.getDepartment(id)
+  }
+
+  /**
+   * Delete a department. The people in it stay, in no department; their ids
+   * come back so the caller can tell everyone they changed.
+   */
+  deleteDepartment(id: string): string[] {
+    return transaction(this.db, () => {
+      const rows = this.db
+        .prepare('SELECT id FROM users WHERE department_id = ?')
+        .all(id) as unknown as { id: string }[]
+      this.db.prepare('UPDATE users SET department_id = NULL WHERE department_id = ?').run(id)
+      this.db.prepare('DELETE FROM departments WHERE id = ?').run(id)
+      return rows.map((row) => row.id)
+    })
   }
 
   // -- sessions -------------------------------------------------------------
