@@ -384,6 +384,33 @@ const MIGRATIONS: Migration[] = [
     deleted_at INTEGER NOT NULL
   );
   `,
+  // v16: people and departments.
+  //
+  // - `departments`: the box's groups of crew, kept by its admins.
+  // - `users.department_id`: the one department somebody is in, or NULL.
+  // - `users.role` back to 'member' for everybody. The column has been there
+  //   since v0, but nothing has read it since admin became a password
+  //   (app.ts, /api/join): it only says who happened to join first on a box
+  //   that old. From now on 'admin' opens the admin panel with that person's
+  //   own PIN, so it has to mean that an admin chose them, never that they
+  //   were early.
+  //
+  // Guarded as v13 and v14 are, so a database walked up again from an older
+  // number doesn't stop the box from starting.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS departments (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        created_at INTEGER NOT NULL
+      );
+    `)
+    const columns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[]
+    if (!columns.some((column) => column.name === 'department_id')) {
+      db.exec('ALTER TABLE users ADD COLUMN department_id TEXT REFERENCES departments(id)')
+    }
+    db.exec("UPDATE users SET role = 'member' WHERE role <> 'member'")
+  },
 ]
 
 /**

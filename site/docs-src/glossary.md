@@ -95,9 +95,20 @@ mean that machine.
 **Event PIN / Your PIN / Admin password** — the three codes, explained in
 [Getting connected](/docs/getting-connected#the-three-codes-untangled).
 
+**Admin** — a crew member an admin has made one. Their own PIN opens the
+admin panel; anyone else needs the admin password
+([the admin panel](/docs/admin)).
+
+**Department** — a group of crew (Lighting, Stage, Sound) that an admin
+keeps on the box. Each person is in one or none, and `@Lighting` reaches
+everyone in Lighting ([departments](/docs/admin#departments)).
+
 **On-site / office** — someone joining from the event network is on-site; a
 name in the DM list marked `office` is connected from somewhere else (over a
 tunnel or from off the LAN).
+
+**Party line** — hearing several voice channels at once while talking on
+one, like an intercom beltpack. See [Voice intercom](/docs/voice#party-line-hear-several-channels-talk-on-one).
 
 **PTT (push-to-talk)** — hold to speak, release to stop. The voice
 intercom's normal mode; there's a latch for gloved hands.

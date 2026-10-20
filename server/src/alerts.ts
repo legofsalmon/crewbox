@@ -16,6 +16,7 @@ import {
   SOUND_GAP_MS,
   type Alert,
   type AlertChannelInput,
+  type AlertPerson,
   type AlertsServerFrame,
   type Channel,
   type Incident,
@@ -239,7 +240,7 @@ export class AlertsHub {
       const kind = messageAlertKind({
         message,
         channel: channelInput(channel),
-        person: user,
+        person: this.person(user),
         level: levelFor(settings, channel.id),
         readSeq: read[channel.id] ?? 0,
       })
@@ -294,7 +295,7 @@ export class AlertsHub {
       const kind = messageAlertKind({
         message,
         channel: channelInput(channel),
-        person,
+        person: this.person(person),
         level: mine?.level ?? DEFAULT_CHANNEL_ALERTS,
         readSeq: mine?.readSeq ?? 0,
       })
@@ -387,6 +388,12 @@ export class AlertsHub {
   }
 
   // -- plumbing -------------------------------------------------------------
+
+  /** Who the rules read: the person, and their department's name for `@Lighting`. */
+  private person(user: User): AlertPerson {
+    const department = user.departmentId ? this.store.getDepartment(user.departmentId) : undefined
+    return { id: user.id, name: user.name, ...(department ? { department: department.name } : {}) }
+  }
 
   private deliver(userId: string, alert: Alert): void {
     if (!alert.quiet) this.sounded.set(`${userId}\n${alert.thread}`, this.now())

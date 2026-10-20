@@ -21,6 +21,8 @@ export default function VoiceBar() {
   const toggleLatch = useStore((s) => s.toggleLatch)
   const setAudioSettingsOpen = useStore((s) => s.setAudioSettingsOpen)
   const resumeVoiceAudio = useStore((s) => s.resumeVoiceAudio)
+  const talkOn = useStore((s) => s.talkOn)
+  const stopListening = useStore((s) => s.stopListening)
 
   const connected = voice.status === 'connected'
   const latched = voice.latched
@@ -70,6 +72,21 @@ export default function VoiceBar() {
   const channel = channels[voice.channelId]
   const label = channel ? channelLabel(channel, users, me?.id) : 'voice'
   const speaking = voice.participants.filter((p) => p.speaking)
+  /** "#stage", or the person, for a channel being heard. */
+  const nameOf = (channelId: string): string => {
+    const c = channels[channelId]
+    if (!c) return 'channel'
+    const l = channelLabel(c, users, me?.id)
+    return c.kind === 'dm' ? l : `#${l}`
+  }
+  const talkName = channel?.kind === 'dm' ? label : `#${label}`
+  // Who is talking where. The channel is named only once there is more than
+  // one to hear: otherwise it is the one on the bar.
+  const partyLine = voice.listening.length > 0
+  const speakingLines = [
+    ...speaking.map((p) => (partyLine ? `${p.name} · ${talkName}` : p.name)),
+    ...voice.listening.flatMap((l) => l.speaking.map((name) => `${name} · ${nameOf(l.channelId)}`)),
+  ]
 
   function pttDown(e: PointerEvent<HTMLButtonElement>) {
     if (!connected) return
@@ -90,13 +107,20 @@ export default function VoiceBar() {
             ? 'Joining voice…'
             : voice.status === 'reconnecting'
               ? 'Voice reconnecting…'
-              : `Voice · ${channel?.kind === 'dm' ? label : `#${label}`}`}
+              : `Voice · ${talkName}`}
         </span>
         <span className="voice-people">
           {voice.participants.map((p) => (
-            <span key={p.id} className={`voice-chip ${p.speaking ? 'speaking' : ''}`}>
+            <span
+              key={p.id}
+              className={`voice-chip ${p.speaking ? 'speaking' : ''} ${p.listening ? 'listening' : ''}`}
+              title={
+                p.listening ? `${p.name} can hear this channel but is not talking on it` : undefined
+              }
+            >
               <span className={`q-dot q-${p.quality}`} aria-hidden />
               {p.name}
+              {p.listening && <span className="sr-only"> (listening)</span>}
             </span>
           ))}
         </span>
@@ -121,6 +145,59 @@ export default function VoiceBar() {
         </button>
       </div>
 
+      {partyLine && (
+        <div className="voice-listens" role="group" aria-label="Channels you can also hear">
+          <span className="voice-listens-label">Also hearing</span>
+          {voice.listening.map((l) => {
+            const name = nameOf(l.channelId)
+            const ready = l.status === 'connected'
+            return (
+              <span
+                key={l.channelId}
+                className={`voice-listen ${l.speaking.length > 0 ? 'speaking' : ''} ${ready ? '' : 'pending'}`}
+              >
+                <span className="voice-listen-name">{name}</span>
+                <span className="voice-listen-state">
+                  {l.status === 'joining'
+                    ? 'connecting…'
+                    : l.status === 'reconnecting'
+                      ? 'reconnecting…'
+                      : l.speaking.length > 0
+                        ? l.speaking.join(', ')
+                        : l.others === 0
+                          ? 'nobody on'
+                          : `${l.others} on`}
+                </span>
+                <button
+                  className="voice-listen-talk"
+                  disabled={!ready}
+                  title={`Talk on ${name}, and keep hearing ${talkName}`}
+                  onClick={() => talkOn(l.channelId)}
+                >
+                  Talk here
+                </button>
+                <button
+                  className="icon-btn voice-listen-stop"
+                  aria-label={`Stop hearing ${name}`}
+                  title={`Stop hearing ${name}`}
+                  onClick={() => stopListening(l.channelId)}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
+                    <path
+                      d="M6 6l12 12M18 6L6 18"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      )}
+
       {/* Mounted through a reconnect, not only while connected: unmounting
           this under a finger is how the mic used to stick open. Disabled
           instead, so the button is visibly there and does nothing. */}
@@ -141,8 +218,8 @@ export default function VoiceBar() {
                 Weak signal — your voice may be choppy
               </span>
             )}
-            {speaking.length > 0 && (
-              <span className="ptt-speaking">🔊 {speaking.map((p) => p.name).join(', ')}</span>
+            {speakingLines.length > 0 && (
+              <span className="ptt-speaking">🔊 {speakingLines.join(', ')}</span>
             )}
           </div>
           <button
@@ -155,9 +232,9 @@ export default function VoiceBar() {
           </button>
           <button
             className={`ptt-btn ${voice.talking ? 'talking' : ''}`}
-            aria-label="Hold to talk"
+            aria-label={partyLine ? `Hold to talk on ${talkName}` : 'Hold to talk'}
             aria-keyshortcuts="Space"
-            title="Hold to talk (or hold Space)"
+            title={`Hold to talk${partyLine ? ` on ${talkName}` : ''} (or hold Space)`}
             // Live mic level drives the halo ring — visible proof you're heard.
             // Boosted like the settings meter so normal speech reads clearly.
             // Inline (not a CSS var): Chromium won't retarget a shadow
@@ -184,6 +261,14 @@ export default function VoiceBar() {
             </svg>
             <span>{voice.talking ? 'LIVE' : 'HOLD'}</span>
           </button>
+          {/* Where the voice goes, once there is more than one place it
+              could: the mode, said a second time, under the thumb. Out of
+              flow, like the pills above, so the button never moves. */}
+          {partyLine && (
+            <span className="ptt-target" aria-hidden>
+              to {talkName}
+            </span>
+          )}
         </div>
       )}
     </>

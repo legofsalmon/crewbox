@@ -46,6 +46,7 @@ export default function Composer({
   const uploading = useStore((s) => s.uploading)
   const users = useStore((s) => s.users)
   const me = useStore((s) => s.me)
+  const departments = useStore((s) => s.departments)
   const [value, setValue] = useState('')
   const [mention, setMention] = useState<MentionState | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -120,10 +121,12 @@ export default function Composer({
       ...Object.values(users)
         .filter((u) => u.id !== me?.id)
         .map((u) => u.name),
+      // `@Lighting` reaches everyone in Lighting (shared/src/alerts.ts).
+      ...Object.values(departments).map((d) => d.name),
       'all',
     ]
     return names.filter((n) => n.toLowerCase().startsWith(q)).slice(0, 6)
-  }, [mention, users, me])
+  }, [mention, users, departments, me])
 
   function autogrow() {
     const el = ref.current

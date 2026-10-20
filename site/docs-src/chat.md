@@ -42,8 +42,11 @@ at something.
 ![The @ mention picker open in the composer](shot:chat-mention)
 
 Type `@` and pick a name — `@Maya` lights the message up for Maya and makes
-her unread badge urgent. `@all`, `@everyone` and `@channel` flag everyone in
-the channel; use them like a PA announcement, sparingly. Your own mentions
+her unread badge urgent. A department's name works the same way for
+everyone in it: `@Lighting` reaches the lighting crew, as their own names
+would ([departments](/docs/admin#departments)). `@all`, `@everyone` and
+`@channel` flag everyone in the channel; use them like a PA announcement,
+sparingly. Your own mentions
 are highlighted more strongly, so skimming a busy channel for "things aimed
 at me" is fast.
 
@@ -52,11 +55,11 @@ at me" is fast.
 The box decides what buzzes, the same for your phone and your laptop. Each
 channel has a bell in its header with three settings:
 
-- **Mentions**, where every channel starts: your name, `@channel` and the
-  production desk.
+- **Mentions**, where every channel starts: your name, your department's,
+  `@channel` and the production desk.
 - **All messages**: everything in it.
-- **Muted**: only your own name gets through, because somebody needs you in
-  particular.
+- **Muted**: only your own name, or your department's, gets through,
+  because somebody needs you in particular.
 
 A DM buzzes for every message unless you mute it. Settings → **Alerts** (the
 cog beside your name) lists every channel's setting in one place, with the stages you

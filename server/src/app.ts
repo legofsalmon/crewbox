@@ -199,6 +199,33 @@ const resetPinBodySchema = z.object({
   pin: z.string().regex(/^\d{4,8}$/, '4–8 digits'),
 })
 
+/**
+ * A department's name, as typed. It is also how crew mention it ("@Lighting",
+ * shared/src/alerts.ts), so it can't be one of the words that already mention
+ * everybody, and it can't carry the @ or # that would start another mention.
+ */
+const departmentNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Give the department a name.')
+  .max(32, 'Keep the name to 32 characters.')
+  .refine((name) => !/[@#]/.test(name), 'A department name can’t have @ or # in it.')
+  .refine(
+    (name) => !['all', 'everyone', 'channel'].includes(name.toLowerCase()),
+    '@all, @everyone and @channel already mention everybody. Pick another name.'
+  )
+
+const departmentBodySchema = z.object({ name: departmentNameSchema })
+
+/** Somebody's department: an id, or null for none. */
+const departmentChoiceSchema = z.object({ departmentId: z.string().min(1).max(64).nullable() })
+
+/** What an admin can change about a person. Either or both. */
+const userPatchSchema = z.object({
+  role: z.enum(['admin', 'member']).optional(),
+  departmentId: z.string().min(1).max(64).nullable().optional(),
+})
+
 const channelPatchSchema = z.object({
   name: z
     .string()
@@ -284,9 +311,14 @@ const controlMessageSchema = z.object({
   body: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH),
 })
 
-const unlockBodySchema = z.object({
-  password: z.string().min(1).max(128),
-})
+/**
+ * The box's admin password, or, for somebody an admin has made an admin,
+ * their own personal PIN.
+ */
+const unlockBodySchema = z.union([
+  z.object({ password: z.string().min(1).max(128) }),
+  z.object({ pin: z.string().regex(/^\d{4,8}$/) }),
+])
 
 /** An admin link's key as the page read it from its own address (adminLink.ts). */
 const unlockLinkBodySchema = z.object({
@@ -1653,6 +1685,25 @@ export function buildApp({
   // Delete your own account and personal data (App Store requirement).
   // Sessions, DM memberships and read state are removed; authored messages
   // are anonymized. Live sockets are dropped and the name frees up again.
+  /**
+   * Pick your own department. Departments decide who an `@Lighting` reaches
+   * and how the crew list is grouped, not what anybody can see, so choosing
+   * one is everybody's own business; an admin can set it for them too.
+   */
+  fastify.patch('/api/me', (req, reply) => {
+    const user = authUser(req)
+    if (!user) return reply.code(401).send({ error: 'unauthenticated' })
+    const parsed = departmentChoiceSchema.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Pick a department, or none.' })
+    const { departmentId } = parsed.data
+    if (departmentId && !store.getDepartment(departmentId)) {
+      return reply.code(404).send({ error: 'That department has just been deleted.' })
+    }
+    const updated = store.setUserDepartment(user.id, departmentId)!
+    hub.announceUser(updated)
+    return { user: updated }
+  })
+
   fastify.delete('/api/me', (req, reply) => {
     const user = authUser(req)
     if (!user) return reply.code(401).send({ error: 'unauthenticated' })
@@ -1874,7 +1925,7 @@ export function buildApp({
     if (message.kind !== 'file') {
       return reply.code(400).send({ error: 'only shared files can be deleted' })
     }
-    if (message.authorId !== user.id && !unlocked(req)) {
+    if (message.authorId !== user.id && !unlocked(req, user)) {
       return reply.code(403).send({ error: 'you can only delete your own files' })
     }
     store.deleteMessage(id)
@@ -2470,7 +2521,8 @@ export function buildApp({
   }
 
   /** True when this request carries a live unlock. Used for moderation too. */
-  const unlocked = (req: FastifyRequest): boolean => adminTokens.valid(adminTokenOf(req))
+  const unlocked = (req: FastifyRequest, user: User): boolean =>
+    adminTokens.valid(adminTokenOf(req), user.id)
 
   const authAdmin = (req: FastifyRequest, reply: FastifyReply): User | undefined => {
     const user = authUser(req)
@@ -2481,7 +2533,7 @@ export function buildApp({
     // 403 rather than 401: the session is fine, it is the unlock that is
     // missing or stale. The client tells them apart — 403 re-prompts for the
     // password, 401 sends them back to the join screen.
-    if (!unlocked(req)) {
+    if (!unlocked(req, user)) {
       void reply.code(403).send({ error: 'admin panel is locked' })
       return undefined
     }
@@ -2489,11 +2541,17 @@ export function buildApp({
   }
 
   /**
-   * Unlock the admin panel by password.
+   * Unlock the admin panel by password, or by the person's own PIN.
    *
-   * Requires a signed-in crew member as well as the password, so an unlock
-   * always belongs to somebody — and so this route is not reachable at all
-   * from an unauthenticated internet client when the box is behind a tunnel.
+   * Requires a signed-in crew member as well, so an unlock always belongs to
+   * somebody — and so this route is not reachable at all from an
+   * unauthenticated internet client when the box is behind a tunnel.
+   *
+   * The PIN works only for somebody an admin has made an admin, and only for
+   * them: the token it returns opens nothing in anyone else's hands, and
+   * goes when they stop being one. It is checked against the same per-name
+   * limiter as signing in, because it is the same PIN: two routes must not
+   * mean two budgets of guesses at it.
    */
   fastify.post('/api/admin/unlock', async (req, reply) => {
     const user = authUser(req)
@@ -2507,6 +2565,29 @@ export function buildApp({
     const parsed = unlockBodySchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Enter the admin password.' })
+    }
+    if ('pin' in parsed.data) {
+      if (user.role !== 'admin') {
+        return reply.code(403).send({
+          error: "You're not an admin on this box. Use the box's admin password, or ask an admin.",
+        })
+      }
+      const accountKey = user.name.trim().toLowerCase()
+      if (!pinLimiter.allow(accountKey)) {
+        return reply
+          .code(429)
+          .send({ error: 'Too many wrong PINs for your name — wait a few minutes and try again.' })
+      }
+      const stored = store.getUserPinHash(user.id)
+      if (!stored || !(await verifyPinAsync(parsed.data.pin, stored))) {
+        return reply
+          .code(401)
+          .send({ error: "That's not your PIN. It's the one you sign in with." })
+      }
+      pinLimiter.clear(accountKey)
+      adminLimiter.clear(limitKey(req))
+      fastify.log.info(`admin panel unlocked by ${user.name}, an admin, with their PIN`)
+      return { adminToken: adminTokens.issue(user.id) }
     }
     // Async: scrypt is up to ~200 ms on an ARM box and this route is
     // reachable by any crew member, so the synchronous form froze the one
@@ -2796,7 +2877,7 @@ export function buildApp({
       // phone: the box adds it here, from its own settings.
       let key: string | undefined
       if (parsed.data.includeLicence) {
-        if (!unlocked(req)) {
+        if (!unlocked(req, user)) {
           return reply.code(403).send({ error: 'Only an admin can include the box’s licence.' })
         }
         const status = licence?.status()
@@ -2891,6 +2972,94 @@ export function buildApp({
     const { id } = req.params as { id: string }
     if (!store.updateUserPin(id, hashPin(parsed.data.pin))) {
       return reply.code(404).send({ error: 'user not found' })
+    }
+    return { ok: true }
+  })
+
+  /**
+   * Make somebody an admin, or not, and put them in a department.
+   *
+   * Taking admin away ends any unlock they made with their own PIN at once,
+   * rather than when their app next closes: a demotion that lets them carry
+   * on for the evening has not happened. Anybody can be made an admin by an
+   * admin, including the one doing it, and anybody can be taken off, also
+   * including them: the box's password and its admin link stay a way in, so
+   * there is no last admin to protect.
+   */
+  fastify.patch('/api/admin/users/:id', (req, reply) => {
+    const admin = authAdmin(req, reply)
+    if (!admin) return reply
+    const parsed = userPatchSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    const { id } = req.params as { id: string }
+    const person = store.getUserById(id)
+    if (!person) return reply.code(404).send({ error: 'That person has deleted their account.' })
+    const { role, departmentId } = parsed.data
+    if (departmentId && !store.getDepartment(departmentId)) {
+      return reply.code(404).send({ error: 'That department has just been deleted.' })
+    }
+    let updated = person
+    if (departmentId !== undefined) updated = store.setUserDepartment(id, departmentId)!
+    if (role && role !== person.role) {
+      updated = store.setUserRole(id, role)!
+      if (role === 'member') adminTokens.revokeUser(id)
+      fastify.log.info(
+        `${person.name} ${role === 'admin' ? 'made an admin' : 'is no longer an admin'} (by ${admin.name})`
+      )
+    }
+    hub.announceUser(updated)
+    return { user: updated }
+  })
+
+  /** Add a department. */
+  fastify.post('/api/admin/departments', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const parsed = departmentBodySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    const { name } = parsed.data
+    if (store.getDepartmentByName(name)) {
+      return reply.code(409).send({ error: `There's already a department called ${name}.` })
+    }
+    const department = store.createDepartment(name)
+    hub.announceDepartments()
+    return { department }
+  })
+
+  /** Rename a department. Who is in it stays as it was. */
+  fastify.patch('/api/admin/departments/:id', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const parsed = departmentBodySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    }
+    const { id } = req.params as { id: string }
+    if (!store.getDepartment(id)) {
+      return reply.code(404).send({ error: 'That department has just been deleted.' })
+    }
+    const { name } = parsed.data
+    const clash = store.getDepartmentByName(name)
+    if (clash && clash.id !== id) {
+      return reply.code(409).send({ error: `There's already a department called ${name}.` })
+    }
+    const department = store.renameDepartment(id, name)!
+    hub.announceDepartments()
+    return { department }
+  })
+
+  /** Delete a department. The people in it stay, in none. */
+  fastify.delete('/api/admin/departments/:id', (req, reply) => {
+    if (!authAdmin(req, reply)) return reply
+    const { id } = req.params as { id: string }
+    if (!store.getDepartment(id)) return { ok: true }
+    const moved = store.deleteDepartment(id)
+    hub.announceDepartments()
+    for (const userId of moved) {
+      const user = store.getUserById(userId)
+      if (user) hub.announceUser(user)
     }
     return { ok: true }
   })
@@ -3477,6 +3646,7 @@ export function buildApp({
       .send({
         exportedAt: Date.now(),
         users: store.listUsers(),
+        departments: store.listDepartments(),
         channels: store.listAllChannels(),
         messages: store.listAllMessages(),
       })

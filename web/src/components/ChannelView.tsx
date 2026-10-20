@@ -8,6 +8,7 @@ import Composer from './Composer.tsx'
 import SignalBars from './SignalBars.tsx'
 import DrawerButton from '../shell/DrawerButton.tsx'
 import AlertLevelMenu from './AlertLevelMenu.tsx'
+import { MAX_LISTEN } from '../lib/voice-state.ts'
 
 export default function ChannelView({ channelId }: { channelId: string }) {
   const channel = useStore((s) => s.channels[channelId])
@@ -19,6 +20,8 @@ export default function ChannelView({ channelId }: { channelId: string }) {
   const voiceEnabled = useStore((s) => s.config.voiceEnabled)
   const joinVoice = useStore((s) => s.joinVoice)
   const leaveVoice = useStore((s) => s.leaveVoice)
+  const listenVoice = useStore((s) => s.listenVoice)
+  const stopListening = useStore((s) => s.stopListening)
   const latencyMs = useStore((s) => s.latencyMs)
   const connection = useStore((s) => s.connection)
 
@@ -93,6 +96,17 @@ export default function ChannelView({ channelId }: { channelId: string }) {
             </svg>
           </button>
         )}
+        {/* Party line: hear this channel as well as the one you talk on.
+            Only while on voice somewhere else, because a channel heard rides
+            on the talk channel's call (lib/voice.ts). */}
+        {voiceEnabled && voice.channelId !== null && voice.channelId !== channelId && (
+          <ListenButton
+            hearing={voice.listening.some((l) => l.channelId === channelId)}
+            full={voice.listening.length >= MAX_LISTEN}
+            onListen={() => void listenVoice(channelId)}
+            onStop={() => stopListening(channelId)}
+          />
+        )}
         <button
           className={`icon-btn filter-btn ${isFiltering(filter) ? 'filter-on' : ''}`}
           aria-label={filterOpen ? 'Hide message filter' : 'Filter messages'}
@@ -161,5 +175,54 @@ function TypingLine({ channelId }: { channelId: string }) {
       {names.length > 0 &&
         (names.length === 1 ? `${names[0]} is typing…` : `${names.join(', ')} are typing…`)}
     </div>
+  )
+}
+
+/**
+ * One name, its state in `aria-pressed` (the system's toggle), and a hover
+ * that says the gesture. At the cap it stays focusable and says why it will
+ * not, rather than going dead (`aria-disabled`, not `disabled`).
+ */
+function ListenButton({
+  hearing,
+  full,
+  onListen,
+  onStop,
+}: {
+  hearing: boolean
+  full: boolean
+  onListen: () => void
+  onStop: () => void
+}) {
+  const blocked = full && !hearing
+  return (
+    <button
+      className="icon-btn listen-btn"
+      aria-label="Listen to this channel"
+      aria-pressed={hearing}
+      aria-disabled={blocked || undefined}
+      title={
+        hearing
+          ? 'Hearing this channel too: click to stop'
+          : blocked
+            ? `You can hear ${MAX_LISTEN} other channels at most: stop one first`
+            : 'Hear this channel too, and keep talking where you are'
+      }
+      onClick={() => {
+        if (hearing) onStop()
+        else if (!blocked) onListen()
+      }}
+    >
+      <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden>
+        <path
+          d="M7 10a5 5 0 0 1 10 0c0 3-3 4-3 7a3 3 0 0 1-5.5 1.6M10 10a2 2 0 0 1 4 0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
   )
 }
