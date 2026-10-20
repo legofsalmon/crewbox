@@ -83,25 +83,35 @@ export function newAdminPassword(): string {
  * whole map dying with the process means a box restart re-locks every panel.
  */
 export class AdminTokens {
-  private issued = new Map<string, number>()
+  /**
+   * `userId` is set on an unlock by somebody's own PIN (an admin as a
+   * person): that token opens the panel for them and nobody else, and goes
+   * when they stop being an admin. The password and the admin link unlock
+   * whoever holds them, so their tokens belong to nobody in particular.
+   */
+  private issued = new Map<string, { expires: number; userId?: string }>()
 
   constructor(private readonly ttlMs: number) {}
 
-  issue(): string {
+  issue(userId?: string): string {
     const token = newToken()
-    this.issued.set(token, Date.now() + this.ttlMs)
+    this.issued.set(token, {
+      expires: Date.now() + this.ttlMs,
+      ...(userId ? { userId } : {}),
+    })
     return token
   }
 
-  valid(token: string | undefined): boolean {
+  /** True for a live token, and for a person's own, only in their hands. */
+  valid(token: string | undefined, userId?: string): boolean {
     if (!token) return false
-    const expires = this.issued.get(token)
-    if (expires === undefined) return false
-    if (expires <= Date.now()) {
+    const entry = this.issued.get(token)
+    if (entry === undefined) return false
+    if (entry.expires <= Date.now()) {
       this.issued.delete(token)
       return false
     }
-    return true
+    return entry.userId === undefined || entry.userId === userId
   }
 
   revoke(token: string | undefined): void {
@@ -113,9 +123,14 @@ export class AdminTokens {
     this.issued.clear()
   }
 
+  /** Drop the tokens somebody unlocked with their own PIN: they are no longer an admin. */
+  revokeUser(userId: string): void {
+    for (const [token, entry] of this.issued) if (entry.userId === userId) this.issued.delete(token)
+  }
+
   sweep(): void {
     const now = Date.now()
-    for (const [token, expires] of this.issued) if (expires <= now) this.issued.delete(token)
+    for (const [token, entry] of this.issued) if (entry.expires <= now) this.issued.delete(token)
   }
 }
 

@@ -57,7 +57,7 @@ them up at least once:
 | Code               | Who uses it        | What it's for                                                                                                                                                                                                             |
 | ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Event PIN**      | Everyone, once     | Lets a new person join this event. It's on the poster — it's not meant to be very secret.                                                                                                                                 |
-| **Your PIN**       | Just you           | Signs you back in as you, on any device. Made up by you when you first join.                                                                                                                                              |
+| **Your PIN**       | Just you           | Signs you back in as you, on any device. Made up by you when you first join. If an admin has made you an admin, it opens the admin panel too.                                                                             |
 | **Admin password** | The box's operator | Unlocks the admin panel — settings, crew management, exports. The box showed it when it was first set up; if it's lost, **Open the admin panel** in the Crewbox menu on the box gets you in. It is **not** the event PIN. |
 
 ## Signing back in
