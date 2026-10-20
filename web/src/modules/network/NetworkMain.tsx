@@ -5,6 +5,7 @@ import { fetchAudit, fetchSeries } from './model/api.ts'
 import { reportAge } from './model/age.ts'
 import { GRADE_LABELS, overallGrade, seriesWanted } from './model/grade.ts'
 import type { AuditPayload, SeriesPoint } from './model/types.ts'
+import NetworkMap from './NetworkMap.tsx'
 import EventStrip from './ui/EventStrip.tsx'
 import ExportBar from './ui/ExportBar.tsx'
 import NetworkCard from './ui/NetworkCard.tsx'
@@ -33,7 +34,12 @@ const GRADE_CLASS: Record<string, string> = {
   unknown: styles.verdictUnknown!,
 }
 
-export default function NetworkMain(_props: { subpath: string }) {
+/** The module's main pane, routed by subpath: the audit at /m/network, the map at /m/network/map. */
+export default function NetworkMain({ subpath }: { subpath: string }) {
+  return subpath === 'map' ? <NetworkMap /> : <NetworkAudit />
+}
+
+function NetworkAudit() {
   const [payload, setPayload] = useState<AuditPayload | null>(null)
   const [series, setSeries] = useState<Map<string, SeriesPoint[]>>(new Map())
   const [error, setError] = useState('')
