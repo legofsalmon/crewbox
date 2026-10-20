@@ -199,6 +199,13 @@ verbatim, in its results. Three kinds of number involve crew devices:
   with how many phones reported in each minute and nothing to say which.
 - Connection counts — how many devices are on, not who.
 
+The [network map](/docs/network#the-network-map) adds no number from any
+phone. It reads the box's own tables, such as which addresses the box has
+exchanged traffic with, and on the crew network it shows those as a count:
+the router is the only device it names there. It never shows a name a
+device announced for itself unless that device is show equipment (a Dante,
+NDI or NMOS device), and it keeps nothing it reads.
+
 ## The formal bit
 
 The full privacy policy — written for the app stores, covering the same

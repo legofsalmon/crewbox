@@ -638,6 +638,7 @@ export class Hub {
       config: this.getPublicConfig(),
       me: user,
       users: this.store.listUsers(),
+      departments: this.store.listDepartments(),
       channels,
       readState: this.store.getReadState(user.id),
       online: [...this.online.keys()],
@@ -907,6 +908,11 @@ export class Hub {
   /** Announce a brand-new user to everyone connected. */
   announceUser(user: User): void {
     this.broadcastAll({ type: 'user', user })
+  }
+
+  /** The departments changed: everyone gets the whole list again. */
+  announceDepartments(): void {
+    this.broadcastAll({ type: 'departments', departments: this.store.listDepartments() })
   }
 
   /** Announce a created or admin-edited channel to everyone connected. */

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Channel, Message, User } from './types.js'
+import type { Channel, Department, Message, User } from './types.js'
 import { CHANNEL_ALERT_LEVELS, type Alert, type AlertSettings } from './alerts.js'
 import { MAX_CUE_LABEL, type Cue, type Panic } from './cues.js'
 import {
@@ -349,6 +349,8 @@ export interface WelcomeMessage {
   config: PublicConfig
   me: User
   users: User[]
+  /** The box's departments. Optional: a box that predates them sends none. */
+  departments?: Department[]
   channels: Channel[]
   /** channelId → my last read seq. */
   readState: Record<string, number>
@@ -624,9 +626,16 @@ export interface PanicMessage {
   panic: Panic
 }
 
+/** The departments changed: the whole list, as it now is. */
+export interface DepartmentsMessage {
+  type: 'departments'
+  departments: Department[]
+}
+
 export type ServerMessage =
   | CueMessage
   | PanicMessage
+  | DepartmentsMessage
   | AlertMessage
   | AlertSettingsMessage
   | IncidentMessage

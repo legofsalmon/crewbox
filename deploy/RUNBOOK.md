@@ -488,8 +488,10 @@ the box decides that person should hear: DMs, mentions, the production desk,
 and show stops and holds, which ring on the alarm stream. `docs/ALERTS.md`
 has the rules.
 
-1. Every release attaches the APK (`crewbox-vX.Y.Z.apk`). Copy it into
-   `/var/lib/crewbox/` on the crew box — any `crewbox*.apk` name works as-is,
+1. Every release attaches the APK (`crewbox-vX.Y.Z.apk`). Copy it into the
+   box's data directory — `/var/lib/crewbox/` on a Linux rig,
+   `~/.crewbox/data` on a laptop box (the Mac menu's and Windows tray's
+   **Open the data folder**) — any `crewbox*.apk` name works as-is,
    and the newest file wins. The box serves it at `/crewbox.apk` and links it
    from `/connect`.
 2. Add a line to the QR poster: "Android? Scan to install the app — it buzzes

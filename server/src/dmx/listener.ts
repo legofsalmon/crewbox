@@ -1,5 +1,6 @@
 import dgram from 'node:dgram'
 import { parseArtNet } from './artnet.ts'
+import { HeardHosts } from '../netmap/hosts.ts'
 import { DISCOVERY_UNIVERSE, parseSacn, parseSacnDiscovery, parseSacnSync } from './sacn.ts'
 import { DmxState } from './state.ts'
 
@@ -96,6 +97,8 @@ export function receiveOnly(socket: dgram.Socket): dgram.Socket {
 
 export class DmxListener {
   readonly state: DmxState
+  /** Who sent what this listener parsed, by address, for the network map. */
+  readonly heard = new HeardHosts()
   private readonly options: DmxListenerOptions
   private readonly create: (options: dgram.SocketOptions) => dgram.Socket
   private artnetSocket: dgram.Socket | null = null
@@ -163,6 +166,7 @@ export class DmxListener {
     this.status.sacn.listening = false
     this.status.sacn.discovery = false
     this.state.clear()
+    this.heard.clear()
   }
 
   snapshot(): DmxListenerStatus {
@@ -188,6 +192,7 @@ export class DmxListener {
         return
       }
       this.status.packets++
+      this.heard.note(rinfo.address, 'artnet', Date.now())
       if (packet.kind === 'pollReply') {
         this.state.noteNode(packet.reply, Date.now())
         return
@@ -215,10 +220,11 @@ export class DmxListener {
       this.status.sacn.listening = false
       this.options.log?.warn(`sACN listener: ${err.message}`)
     })
-    socket.on('message', (buf) => {
+    socket.on('message', (buf, rinfo) => {
       const frame = parseSacn(buf)
       if (frame) {
         this.status.packets++
+        this.heard.note(rinfo.address, 'sacn', Date.now(), frame.sourceName, frame.sourceId)
         this.state.apply(frame, Date.now())
         return
       }
@@ -228,12 +234,14 @@ export class DmxListener {
       const sync = parseSacnSync(buf)
       if (sync) {
         this.status.packets++
+        this.heard.note(rinfo.address, 'sacn', Date.now())
         this.state.noteSacnSync(sync.syncAddress, Date.now())
         return
       }
       const discovery = parseSacnDiscovery(buf)
       if (discovery) {
         this.status.packets++
+        this.heard.note(rinfo.address, 'sacn', Date.now(), discovery.sourceName, discovery.sourceId)
         this.state.noteDiscovery(discovery, Date.now())
         return
       }

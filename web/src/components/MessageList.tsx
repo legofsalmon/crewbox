@@ -51,13 +51,13 @@ const APP_LINK_RE = /\/m\/[a-z0-9-]+(?:\/[A-Za-z0-9._:%/-]+)?/g
 
 /** Render a message body: in-app module links become navigation chips,
  * everything between them gets mention highlighting. */
-function renderBody(body: string, names: string[], myName: string | undefined): ReactNode {
+function renderBody(body: string, names: string[], mine: readonly string[]): ReactNode {
   const matches = [...body.matchAll(APP_LINK_RE)]
-  if (matches.length === 0) return renderMentions(body, names, myName)
+  if (matches.length === 0) return renderMentions(body, names, mine)
   const nodes: ReactNode[] = []
   let cursor = 0
   matches.forEach((m, i) => {
-    if (m.index! > cursor) nodes.push(renderMentions(body.slice(cursor, m.index), names, myName))
+    if (m.index! > cursor) nodes.push(renderMentions(body.slice(cursor, m.index), names, mine))
     const path = m[0]
     nodes.push(
       <button
@@ -76,7 +76,7 @@ function renderBody(body: string, names: string[], myName: string | undefined): 
     )
     cursor = m.index! + path.length
   })
-  if (cursor < body.length) nodes.push(renderMentions(body.slice(cursor), names, myName))
+  if (cursor < body.length) nodes.push(renderMentions(body.slice(cursor), names, mine))
   return nodes
 }
 
@@ -108,8 +108,12 @@ function renderLinks(text: string, keyBase: string): ReactNode {
   )
 }
 
-/** Highlight @mentions of known names (plus @all/@everyone/@channel). */
-function renderMentions(body: string, names: string[], myName: string | undefined): ReactNode {
+/**
+ * Highlight @mentions of known names and departments (plus @all/@everyone/
+ * @channel). `mine` is this person's name and their department's: those, and
+ * the broadcasts, are the ones drawn as for them.
+ */
+function renderMentions(body: string, names: string[], mine: readonly string[]): ReactNode {
   const candidates = [...names, 'all', 'everyone', 'channel'].sort((a, b) => b.length - a.length)
   const nodes: ReactNode[] = []
   let cursor = 0
@@ -128,7 +132,7 @@ function renderMentions(body: string, names: string[], myName: string | undefine
     if (!hit) continue
     if (i > cursor) nodes.push(renderLinks(body.slice(cursor, i), `pre${key}`))
     const text = body.slice(i, i + hit.length + 1)
-    const isMe = myName !== undefined && hit.toLowerCase() === myName.toLowerCase()
+    const isMe = mine.some((name) => hit.toLowerCase() === name.toLowerCase())
     const isBroadcast = ['all', 'everyone', 'channel'].includes(hit.toLowerCase())
     nodes.push(
       <mark key={key++} className={`mention ${isMe || isBroadcast ? 'mention-me' : ''}`}>
@@ -279,7 +283,19 @@ export default function MessageList({
   const lastSeq = list.at(-1)?.seq ?? 0
   const lastPendingId = pendingList.at(-1)?.clientMsgId
 
-  const userNames = useMemo(() => Object.values(users).map((u) => u.name), [users])
+  const departments = useStore((s) => s.departments)
+  const userNames = useMemo(
+    () => [
+      ...Object.values(users).map((u) => u.name),
+      ...Object.values(departments).map((d) => d.name),
+    ],
+    [users, departments]
+  )
+  const myDepartment = me?.departmentId ? departments[me.departmentId]?.name : undefined
+  const mine = useMemo(
+    () => [me?.name, myDepartment].filter((name): name is string => Boolean(name)),
+    [me?.name, myDepartment]
+  )
 
   // Jump straight to the bottom when switching channels — unless we're
   // arriving on a search jump, which positions itself below.
@@ -508,7 +524,7 @@ export default function MessageList({
         authorId={msg.authorId ?? '?'}
         grouped={grouped}
         userNames={userNames}
-        myName={me?.name}
+        mine={mine}
         onImgLoad={onImgLoad}
         flashed={msg.seq === flashSeq}
       />
@@ -524,7 +540,7 @@ export default function MessageList({
         authorId={me?.id ?? '?'}
         grouped={false}
         userNames={userNames}
-        myName={me?.name}
+        mine={mine}
       />
     )
   }
@@ -579,22 +595,14 @@ const MessageRow = memo(function MessageRow(props: {
   authorId: string
   grouped: boolean
   userNames: string[]
-  myName?: string
+  /** This person's name and their department's: mentions drawn as for them. */
+  mine: readonly string[]
   onImgLoad?: () => void
   /** Briefly highlighted as a search-jump landing. */
   flashed?: boolean
 }) {
-  const {
-    msg,
-    pendingEntry,
-    authorName,
-    authorId,
-    grouped,
-    userNames,
-    myName,
-    onImgLoad,
-    flashed,
-  } = props
+  const { msg, pendingEntry, authorName, authorId, grouped, userNames, mine, onImgLoad, flashed } =
+    props
   const openFileDetail = useStore((s) => s.openFileDetail)
 
   const pending = !msg
@@ -627,7 +635,7 @@ const MessageRow = memo(function MessageRow(props: {
             {pending && <span className="msg-state">sending…</span>}
           </div>
         )}
-        {body && <div className="msg-body">{renderBody(body, userNames, myName)}</div>}
+        {body && <div className="msg-body">{renderBody(body, userNames, mine)}</div>}
         {file &&
           (msg ? (
             <FileAttachment file={file} onOpen={() => openFileDetail(msg)} onImgLoad={onImgLoad} />

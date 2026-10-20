@@ -1,5 +1,6 @@
 import dgram from 'node:dgram'
 import { receiveOnly } from '../dmx/listener.ts'
+import { HeardHosts } from '../netmap/hosts.ts'
 import { MDNS_GROUP, MDNS_PORT, MdnsState, parseMdns } from './mdns.ts'
 import { PTP_EVENT_PORT, PTP_GENERAL_PORT, PTP_GROUP, PtpState, parsePtp } from './ptp.ts'
 import { SAP_GROUP, SAP_PORT, SapState, parseSap } from './sap.ts'
@@ -67,6 +68,8 @@ export class NetWatch {
   })
   /** The PTP messages above, held to ST 2059-2 where a domain runs it. */
   readonly video = new VideoClockState({ decode: (buf) => st2110()?.decodePtp(buf) ?? null })
+  /** Who sent what the watchers parsed, by address, for the network map. */
+  readonly heard = new HeardHosts()
   private readonly options: NetWatchOptions
   private readonly create: (options: dgram.SocketOptions) => dgram.Socket
   private readonly sockets: dgram.Socket[] = []
@@ -93,26 +96,34 @@ export class NetWatch {
     // (Announce carries the grandmaster, Sync carries the beat) and both
     // land in the one PtpState, and in the video clock's checks.
     const ports = this.options.ports ?? {}
-    const handlePtp = (buf: Buffer): boolean => {
+    const handlePtp = (buf: Buffer, from: string): boolean => {
       const now = Date.now()
       this.video.apply(buf, now)
       const message = parsePtp(buf)
       if (!message) return false
       this.ptp.apply(message, now)
+      this.heard.note(from, 'ptp', now)
       return true
     }
     this.open(ports.ptpEvent ?? PTP_EVENT_PORT, PTP_GROUP, this.status.ptp, handlePtp)
     this.open(ports.ptpGeneral ?? PTP_GENERAL_PORT, PTP_GROUP, this.status.ptp, handlePtp)
-    this.open(ports.mdns ?? MDNS_PORT, MDNS_GROUP, this.status.mdns, (buf) => {
+    this.open(ports.mdns ?? MDNS_PORT, MDNS_GROUP, this.status.mdns, (buf, from) => {
       const records = parseMdns(buf)
       if (records.length === 0) return false
-      this.mdns.applyPacket(records, Date.now())
+      const now = Date.now()
+      this.mdns.applyPacket(records, now)
+      // The address only. A host name here is as often "Sams-iPhone" as a
+      // stage box, and the map never names a device by what its owner called
+      // it: Dante, NDI and NMOS devices are named by the roster above.
+      this.heard.note(from, 'mdns', now)
       return true
     })
-    this.open(ports.sap ?? SAP_PORT, SAP_GROUP, this.status.sap, (buf) => {
+    this.open(ports.sap ?? SAP_PORT, SAP_GROUP, this.status.sap, (buf, from) => {
       const message = parseSap(buf)
       if (!message) return false
-      this.sap.apply(message, Date.now())
+      const now = Date.now()
+      this.sap.apply(message, now)
+      this.heard.note(from, 'sap', now)
       return true
     })
 
@@ -129,7 +140,7 @@ export class NetWatch {
     port: number,
     group: string,
     status: WatcherStatus,
-    handle: (buf: Buffer) => boolean
+    handle: (buf: Buffer, from: string) => boolean
   ): void {
     const socket = receiveOnly(this.create({ type: 'udp4', reuseAddr: true }))
     this.sockets.push(socket)
@@ -138,8 +149,8 @@ export class NetWatch {
       status.listening = false
       this.options.log?.warn(`netwatch :${port}: ${err.message}`)
     })
-    socket.on('message', (buf) => {
-      if (handle(buf)) status.packets++
+    socket.on('message', (buf, rinfo) => {
+      if (handle(buf, rinfo.address)) status.packets++
     })
     // Bind 0.0.0.0, never a unicast address — binding to an interface's own
     // IP stops multicast arriving on Linux. The interface is chosen at join.
@@ -187,5 +198,6 @@ export class NetWatch {
     this.video.clear()
     this.mdns.clear()
     this.sap.clear()
+    this.heard.clear()
   }
 }

@@ -313,9 +313,10 @@ anything mid-task** (the service worker registers in `prompt` mode):
 
 Build: `npm run build:native` (web build + `cap sync`), then
 `cd native/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug`
-for the APK, or open `native/ios/App` in Xcode for the iOS archive. The
-join screen in native builds asks for the crew server address (also
-reachable via a `?server=` deep-link on the QR poster).
+for the APK, or open `native/ios/App/App.xcodeproj` in Xcode for the iOS
+archive. The native apps open on a start screen that lists the boxes
+announcing themselves on the Wi-Fi and the events the phone already holds
+(`docs/DISCOVERY.md`); the QR poster's link or a typed address still work.
 
 ## Licence
 

@@ -2,7 +2,7 @@
 title: Network audit
 section: Network
 order: 10
-blurb: Three graded networks, the history behind every finding, the admin deep probe, ST 2110 checks, and the report for venue IT.
+blurb: Three graded networks, the history behind every finding, the admin deep probe, ST 2110 checks, the network map, and the report for venue IT.
 ---
 
 # Network audit
@@ -97,6 +97,36 @@ included, and they work even while the box doesn't answer.
 
 The first check fetches the checks from the box, a few hundred kilobytes;
 after that they work offline.
+
+## The network map
+
+**Network → Network map** shows what the box can say is on each network it
+has a leg on: the consoles, nodes, Dante and NDI devices, clocks and stream
+senders it has heard, the LED processors someone named, and the router on
+the crew network. Each device has a dot and a word:
+
+- **Heard**: it has spoken recently.
+- **Gone quiet**: it was heard, and hasn't been for longer than it normally
+  goes without, with how long ago. A node that only answers a console's
+  polls goes quiet when nobody is polling it.
+- **Not answering**: the box tried to reach it and got nothing back.
+- **Signed off**: it said goodbye on purpose.
+
+Each network also says which adapter the box uses for it and, on a Linux
+box, which switch port that adapter is plugged into and whether an IGMP
+querier has been heard. Problems come first in each list.
+
+The map is **never the whole network**. A device that never announces
+itself and never talks to the box isn't on it, and the page says so. It
+sends nothing to build it: everything comes from what the box already
+overhears and from its own tables. **Phones and laptops on the crew
+network are counted, never listed.**
+
+On a Linux box with a Wi-Fi radio, **Wi-Fi around the box** lists the
+networks the system's own scans found, with their signal, channel, how many
+devices each access point says it has and how busy it says its channel is.
+The box never starts a scan. A Mac or Windows box can't read Wi-Fi names yet
+without a location permission, and the map says so.
 
 ## The HTML report
 

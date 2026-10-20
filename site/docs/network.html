@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Network audit — Crewbox docs</title>
-    <meta name="description" content="Three graded networks, the history behind every finding, the admin deep probe, ST 2110 checks, and the report for venue IT." />
+    <meta name="description" content="Three graded networks, the history behind every finding, the admin deep probe, ST 2110 checks, the network map, and the report for venue IT." />
     <link rel="stylesheet" href="/docs/docs.css" />
   </head>
   <body>
@@ -47,6 +47,12 @@
 <p>Two tools at the bottom of the page check ST 2110 files on your own device, with the same checks the box runs. The file goes nowhere, the box included, and they work even while the box doesn't answer.</p>
 <ul><li><strong>Check an SDP file</strong> — paste one, open one, or drop one on the panel. It comes back line by line, with each problem under the line it's about: a <strong>fault</strong> is something a receiver would refuse or misread, a <strong>warning</strong> is worth a look, and each names the standard behind it.</li><li><strong>Check a capture</strong> — choose a pcap or pcapng file from Wireshark or tcpdump and, if you have them, the SDP files of the streams in it. Each RTP flow is measured as SMPTE RP 2110-25 describes (packet timing, latency, the ST 2110-21 sender models), the PTP messages are followed, and every fault is listed with its flow and when it first happened. It runs in the background, so the page stays usable while a big capture is read. Up to 1 GB: cut a bigger one down with Wireshark's <code>editcap</code> first.</li></ul>
 <p>The first check fetches the checks from the box, a few hundred kilobytes; after that they work offline.</p>
+<h2 id="the-network-map"><a class="anchor" href="#the-network-map">The network map</a></h2>
+<p><strong>Network → Network map</strong> shows what the box can say is on each network it has a leg on: the consoles, nodes, Dante and NDI devices, clocks and stream senders it has heard, the LED processors someone named, and the router on the crew network. Each device has a dot and a word:</p>
+<ul><li><strong>Heard</strong>: it has spoken recently.</li><li><strong>Gone quiet</strong>: it was heard, and hasn't been for longer than it normally goes without, with how long ago. A node that only answers a console's polls goes quiet when nobody is polling it.</li><li><strong>Not answering</strong>: the box tried to reach it and got nothing back.</li><li><strong>Signed off</strong>: it said goodbye on purpose.</li></ul>
+<p>Each network also says which adapter the box uses for it and, on a Linux box, which switch port that adapter is plugged into and whether an IGMP querier has been heard. Problems come first in each list.</p>
+<p>The map is <strong>never the whole network</strong>. A device that never announces itself and never talks to the box isn't on it, and the page says so. It sends nothing to build it: everything comes from what the box already overhears and from its own tables. <strong>Phones and laptops on the crew network are counted, never listed.</strong></p>
+<p>On a Linux box with a Wi-Fi radio, <strong>Wi-Fi around the box</strong> lists the networks the system's own scans found, with their signal, channel, how many devices each access point says it has and how busy it says its channel is. The box never starts a scan. A Mac or Windows box can't read Wi-Fi names yet without a location permission, and the map says so.</p>
 <h2 id="the-html-report"><a class="anchor" href="#the-html-report">The HTML report</a></h2>
 <p><strong>Download HTML report</strong> produces a single self-contained file — findings, grades, charts, the event log, the probe's verbatim send-list — that opens anywhere with no internet and prints cleanly. It's built to be handed to venue IT or attached to the post-event report: the good and the bad, with evidence.</p>
 <p><strong>Share to channel</strong> posts the audit into chat as an <strong>Open ↗</strong> chip, for &quot;have a look at this&quot; moments.</p>

@@ -1,5 +1,6 @@
 import {
   ConnectionQuality,
+  ConnectionState,
   Room,
   RoomEvent,
   Track,
@@ -28,12 +29,14 @@ import { qosBetween, worstQos, type ReceiverSample, type VoiceQos } from './voic
 
 import {
   initialVoiceState,
+  MAX_LISTEN,
+  type VoiceListen,
   type VoiceParticipant,
   type VoiceQuality,
   type VoiceState,
 } from './voice-state.ts'
 
-export type { VoiceParticipant, VoiceQuality, VoiceState }
+export type { VoiceListen, VoiceParticipant, VoiceQuality, VoiceState }
 
 const CONNECT_TIMEOUT_MS = 10_000
 const LEVEL_INTERVAL_MS = 100
@@ -61,6 +64,9 @@ export type ReportQos = (qos: VoiceQos) => void
  */
 type Notify = (message: string) => void
 
+/** A channel's name as the crew read it ("#foh", "Sam"), for a notice. */
+type NameOf = (channelId: string) => string
+
 function toQuality(q: ConnectionQuality): VoiceQuality {
   switch (q) {
     case ConnectionQuality.Excellent:
@@ -76,10 +82,6 @@ function toQuality(q: ConnectionQuality): VoiceQuality {
   }
 }
 
-/**
- * Owns the LiveKit room across channel switches — an intercom stays live
- * while you read other channels. UI state flows out through `publish`.
- */
 /**
  * One audio receiver's raw inbound-rtp counters.
  *
@@ -125,10 +127,47 @@ async function inboundAudioSample(track: RemoteAudioTrack): Promise<ReceiverSamp
   }
 }
 
+/** A channel being heard but not talked on. See `VoiceManager.listen`. */
+interface ListenRoom {
+  room: Room
+  status: VoiceListen['status']
+}
+
+/**
+ * Owns the LiveKit rooms across channel switches — an intercom stays live
+ * while you read other channels. UI state flows out through `publish`.
+ *
+ * Party line: one room is the talk channel (`room`), where the microphone is
+ * published and push-to-talk opens it; up to `MAX_LISTEN` more are channels
+ * being heard (`listens`), each its own room with nothing published. One room
+ * per channel, as before, so a channel's membership is still what the box's
+ * token says it is: a private channel or a DM is never audible to somebody
+ * who is not in it, which a single box-wide room with a track per channel
+ * could not promise. The cost is a connection per channel heard, which is
+ * why there is a cap.
+ *
+ * Talk and listen are roles a room has, not kinds of room. Talking on a
+ * channel already being heard moves its room into the talk slot rather than
+ * connecting again, so there is no gap in hearing it and nobody on it sees
+ * you leave and come back.
+ */
 export class VoiceManager {
   private room: Room | null = null
   private channelId: string | null = null
-  private audioEls = new Set<HTMLAudioElement>()
+  private listens = new Map<string, ListenRoom>()
+  /** Rooms whose `connect()` resolved — see the Disconnected handler. */
+  private connected = new WeakSet<Room>()
+  private audioEls = new Map<Room, Set<HTMLAudioElement>>()
+  /**
+   * The one Web Audio graph every room mixes through, where mixing is on.
+   *
+   * Shared rather than one per room: iOS caps how many contexts a page may
+   * hold, each starts suspended, and each would need its own tap to unlock.
+   * One context means "Tap to hear comms" unlocks every channel at once.
+   * LiveKit leaves a context it was handed open when its room disconnects,
+   * so `reset` closes it.
+   */
+  private mixCtx: AudioContext | null = null
   private levelTimer: number | null = null
   private analyser: AnalyserNode | null = null
   private analyserCtx: AudioContext | null = null
@@ -141,7 +180,8 @@ export class VoiceManager {
   constructor(
     private readonly publish: Publish,
     private readonly notify: Notify = () => {},
-    private readonly reportQos: ReportQos = () => {}
+    private readonly reportQos: ReportQos = () => {},
+    private readonly nameOf: NameOf = (channelId) => channelId
   ) {
     navigator.mediaDevices?.addEventListener?.('devicechange', () => {
       void this.refreshDevices()
@@ -152,6 +192,11 @@ export class VoiceManager {
    * `iceServers` is the box's list, when it sent one, and replaces the SFU's.
    * Empty means ask no STUN server at all, which is what a box sends for its
    * own SFU (see /api/voice/token). Absent, the SFU's list stands.
+   *
+   * Moves the talk channel here. Channels being heard stay heard, and a
+   * channel that was one of them is promoted rather than joined again; the
+   * channel talked on before is left, as it always was. `talkOn` is the swap
+   * that keeps hearing it.
    */
   async join(
     channelId: string,
@@ -159,9 +204,22 @@ export class VoiceManager {
     url: string,
     iceServers?: RTCIceServer[]
   ): Promise<void> {
-    await this.leave()
+    if (this.promote(channelId, { keepOld: false })) return
+    // Still connecting as a channel heard: give that up first. The same
+    // person in the same room twice is one too many, and LiveKit settles it
+    // by throwing the older one out.
+    this.stopListening(channelId)
+    await this.dropTalkRoom()
     this.channelId = channelId
-    this.publish({ channelId, status: 'joining', error: null, participants: [] })
+    this.publish({
+      channelId,
+      status: 'joining',
+      error: null,
+      participants: [],
+      talking: false,
+      latched: false,
+      micReady: false,
+    })
     // Before anything below opens audio. The Android web view reads the
     // Bluetooth permission once, when its audio first starts, so this is the
     // moment asking about a headset can still count (VoicePlugin.java). A
@@ -177,102 +235,11 @@ export class VoiceManager {
 
     const savedIn = savedDeviceId('audioinput')
     const savedOut = savedDeviceId('audiooutput')
-    const room = new Room({
-      // Tuned for intercom: tiny buffers beat pristine audio.
-      audioCaptureDefaults: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        ...(savedIn ? { deviceId: savedIn } : {}),
-      },
-      ...(savedOut && canSelectOutput() ? { audioOutput: { deviceId: savedOut } } : {}),
-      publishDefaults: { dtx: true, red: true, stopMicTrackOnMute: false },
-      // One mixed audio graph instead of an element per speaker, on the
-      // browsers that need it. See voice-playback.ts for why it is not
-      // simply on everywhere.
-      webAudioMix: shouldMixThroughWebAudio({ ios: isIOS(), safari: isSafari() }),
-    })
+    const room = this.newRoom()
     this.room = room
-    /** Set once `connect()` has resolved — see the Disconnected handler. */
-    let joined = false
-
-    room
-      .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-        if (track.kind === Track.Kind.Audio) {
-          const el = track.attach()
-          this.audioEls.add(el)
-          document.body.appendChild(el)
-        }
-      })
-      .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
-        for (const el of track.detach()) {
-          this.audioEls.delete(el as HTMLAudioElement)
-          el.remove()
-        }
-      })
-      .on(RoomEvent.ParticipantConnected, () => this.publishParticipants())
-      .on(RoomEvent.ParticipantDisconnected, () => this.publishParticipants())
-      .on(RoomEvent.ActiveSpeakersChanged, () => this.publishParticipants())
-      .on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
-        if (participant.identity === room.localParticipant.identity) {
-          this.publish({ myQuality: toQuality(quality) })
-        }
-        this.publishParticipants()
-      })
-      .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
-        // Covers the first-ever talk press, where the track publishes after
-        // setTalking already tried (and failed) to find one to meter.
-        if (pub.kind === Track.Kind.Audio && this.talking && !this.micTestStream) {
-          this.startLevelMeter()
-        }
-      })
-      .on(RoomEvent.AudioPlaybackStatusChanged, () => {
-        // Truthful either way: it goes up when the browser blocks playback
-        // and down again the moment a gesture unblocks it, including when
-        // that gesture was somewhere else entirely.
-        this.publish({ audioBlocked: !room.canPlaybackAudio })
-      })
-      .on(RoomEvent.Reconnecting, () => this.publish({ status: 'reconnecting' }))
-      .on(RoomEvent.Reconnected, () => {
-        this.publish({ status: 'connected' })
-        // Reconcile the mic to the intent captured during the outage. If a
-        // release was dropped while reconnecting, this is what finally closes
-        // the mic; if a press was, it opens it. Without this the mic state
-        // after a reconnect is whatever LiveKit last published, not what the
-        // crew member is actually asking for.
-        void this.applyMic()
-      })
-      .on(RoomEvent.Disconnected, () => {
-        // Only an *unexpected* drop reaches this: `leave()` nulls `this.room`
-        // before disconnecting, so a deliberate exit fails this guard and
-        // stays silent.
-        //
-        // `joined` is the other half. A *failed* connect also fires this,
-        // with `this.room` still set — so every join against an unreachable
-        // SFU told the crew member they had been dropped off the intercom
-        // they had never been on, on top of the join error they were
-        // already being shown. Two toasts, one of them false.
-        if (this.room === room && joined) {
-          this.reset()
-          // Being dropped off comms without being told is worse than a failed
-          // join. A failed join is at least visibly nothing happening — this
-          // leaves someone believing they are on the intercom, talking to a
-          // channel that stopped hearing them, which on a show is how a call
-          // for help goes unanswered.
-          this.notify('Voice dropped — you are no longer on the intercom')
-        }
-      })
 
     try {
-      await Promise.race([
-        // An empty list has to reach the SDK as a list: it applies the SFU's
-        // servers whenever `rtcConfig.iceServers` is missing, and an empty
-        // array is not missing (makeRTCConfiguration, in livekit-client).
-        room.connect(url, token, iceServers ? { rtcConfig: { iceServers } } : undefined),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS)
-        ),
-      ])
-      joined = true
+      await this.connect(room, url, token, iceServers)
       // Deliberately not awaited into the join's failure path. Blocked
       // autoplay is the *normal* first join on iOS, and treating it as a
       // failed join was worse than useless: the crew member was told the
@@ -285,7 +252,7 @@ export class VoiceManager {
         status: 'connected',
         talking: false,
         latched: false,
-        audioBlocked: !room.canPlaybackAudio,
+        audioBlocked: this.playbackBlocked(),
         selectedInput: savedIn,
         selectedOutput: savedOut,
       })
@@ -312,6 +279,335 @@ export class VoiceManager {
       // where no crew member will ever look.
       throw err instanceof Error ? err : new Error(message)
     }
+  }
+
+  /**
+   * Hear another channel as well as the one you talk on.
+   *
+   * Only while on voice: a channel heard rides on the talk channel's call
+   * (the iPhone's audio session, the Android headset bridge, the voice bar
+   * that shows it), so leaving voice leaves every channel. Nothing is ever
+   * published here; the microphone only exists in the talk room.
+   *
+   * Throws with a sentence for the crew when it cannot, like `join`.
+   */
+  async listen(
+    channelId: string,
+    token: string,
+    url: string,
+    iceServers?: RTCIceServer[]
+  ): Promise<void> {
+    if (!this.room) throw new Error('join voice first')
+    if (channelId === this.channelId || this.listens.has(channelId)) return
+    if (this.listens.size >= MAX_LISTEN) {
+      throw new Error(`you can hear ${MAX_LISTEN} other channels at most`)
+    }
+    const room = this.newRoom()
+    const entry: ListenRoom = { room, status: 'joining' }
+    this.listens.set(channelId, entry)
+    this.publishListening()
+    try {
+      await this.connect(room, url, token, iceServers)
+    } catch (err) {
+      if (this.listens.get(channelId) === entry) this.listens.delete(channelId)
+      this.dropRoom(room)
+      this.publishListening()
+      throw err instanceof Error ? err : new Error('could not reach that channel')
+    }
+    // Stopped, or left voice altogether, while it was connecting.
+    if (this.listens.get(channelId) !== entry) {
+      this.dropRoom(room)
+      return
+    }
+    entry.status = 'connected'
+    void room
+      .startAudio()
+      .catch(() => {})
+      .finally(() => this.publish({ audioBlocked: this.playbackBlocked() }))
+    this.publishListening()
+  }
+
+  /** Stop hearing a channel. Quietly: it was asked for. */
+  stopListening(channelId: string): void {
+    const entry = this.listens.get(channelId)
+    if (!entry) return
+    this.listens.delete(channelId)
+    this.dropRoom(entry.room)
+    this.publishListening()
+    this.publish({ audioBlocked: this.playbackBlocked() })
+  }
+
+  /**
+   * Talk on a channel being heard, and keep hearing the one talked on
+   * before: the party-line swap. False when it is not one being heard (or is
+   * still connecting), so the caller can fall back to a join.
+   */
+  talkOn(channelId: string): boolean {
+    return this.promote(channelId, { keepOld: true })
+  }
+
+  /**
+   * Move a heard channel's room into the talk slot.
+   *
+   * The mic closes first, latch and all, and the talk target only changes
+   * once it has: a target that moves under an open mic is how a word meant
+   * for one channel lands on another, mid-sentence, with the speaker none the
+   * wiser. The new room is the talk room before the old one gives up its
+   * mic, so a press that lands during the swap opens the mic where the
+   * button now says it will, never back where it was.
+   */
+  private promote(channelId: string, { keepOld }: { keepOld: boolean }): boolean {
+    const entry = this.listens.get(channelId)
+    if (!entry || entry.status === 'joining' || !this.room || !this.channelId) return false
+    // Not mid-join either: the join still has its own room to finish setting
+    // up, and would do it over the top of this one.
+    if (!this.connected.has(this.room)) return false
+    const old = this.room
+    const oldChannelId = this.channelId
+
+    this.talking = false
+    if (!this.micTestStream) this.stopLevelMeter()
+    this.listens.delete(channelId)
+    this.room = entry.room
+    this.channelId = channelId
+    this.publish({
+      channelId,
+      status: entry.status,
+      talking: false,
+      latched: false,
+      micReady: false,
+      ...(this.micTestStream ? {} : { micLevel: null }),
+      myQuality: toQuality(entry.room.localParticipant.connectionQuality),
+    })
+
+    if (keepOld) {
+      this.listens.set(oldChannelId, {
+        room: old,
+        status: old.state === ConnectionState.Reconnecting ? 'reconnecting' : 'connected',
+      })
+    }
+    void this.unpublishMic(old).finally(() => {
+      if (!keepOld) this.dropRoom(old)
+    })
+    this.publishParticipants()
+    this.publishListening()
+    void this.acquireMic()
+    return true
+  }
+
+  /** Close a room that is leaving the talk slot. Its mic goes with it. */
+  private async unpublishMic(room: Room): Promise<void> {
+    const track = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+    if (!track) return
+    try {
+      await room.localParticipant.unpublishTrack(track, true)
+    } catch {
+      // A room on its way out may refuse; muted is still muted, and a
+      // dropped room takes the track with it.
+      await room.localParticipant.setMicrophoneEnabled(false).catch(() => {})
+    }
+  }
+
+  /** Hang up the talk channel only, keeping the channels being heard. */
+  private async dropTalkRoom(): Promise<void> {
+    const room = this.room
+    this.room = null
+    this.channelId = null
+    this.talking = false
+    if (!this.micTestStream) this.stopLevelMeter()
+    this.stopQosSampling()
+    if (room) {
+      this.removeAudio(room)
+      await room.disconnect().catch(() => {})
+    }
+  }
+
+  private newRoom(): Room {
+    const savedIn = savedDeviceId('audioinput')
+    const savedOut = savedDeviceId('audiooutput')
+    const room = new Room({
+      // Tuned for intercom: tiny buffers beat pristine audio.
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        ...(savedIn ? { deviceId: savedIn } : {}),
+      },
+      ...(savedOut && canSelectOutput() ? { audioOutput: { deviceId: savedOut } } : {}),
+      publishDefaults: { dtx: true, red: true, stopMicTrackOnMute: false },
+      // One mixed audio graph instead of an element per speaker, on the
+      // browsers that need it. See voice-playback.ts for why it is not
+      // simply on everywhere.
+      webAudioMix: this.mixSetting(),
+    })
+    this.wire(room)
+    return room
+  }
+
+  private mixSetting(): boolean | { audioContext: AudioContext } {
+    if (!shouldMixThroughWebAudio({ ios: isIOS(), safari: isSafari() })) return false
+    if (!this.mixCtx || this.mixCtx.state === 'closed') {
+      try {
+        this.mixCtx = new AudioContext({ latencyHint: 'interactive' })
+      } catch {
+        // No Web Audio to share: LiveKit makes its own, as it always did.
+        return true
+      }
+    }
+    return { audioContext: this.mixCtx }
+  }
+
+  private async connect(
+    room: Room,
+    url: string,
+    token: string,
+    iceServers?: RTCIceServer[]
+  ): Promise<void> {
+    await Promise.race([
+      // An empty list has to reach the SDK as a list: it applies the SFU's
+      // servers whenever `rtcConfig.iceServers` is missing, and an empty
+      // array is not missing (makeRTCConfiguration, in livekit-client).
+      room.connect(url, token, iceServers ? { rtcConfig: { iceServers } } : undefined),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('voice server not reachable')), CONNECT_TIMEOUT_MS)
+      ),
+    ])
+    this.connected.add(room)
+  }
+
+  /** The channel a room is heard on, when it is one being heard. */
+  private listenIdOf(room: Room): string | undefined {
+    for (const [id, entry] of this.listens) if (entry.room === room) return id
+    return undefined
+  }
+
+  private playbackBlocked(): boolean {
+    const rooms = [this.room, ...[...this.listens.values()].map((l) => l.room)]
+    return rooms.some((r) => r !== null && this.connected.has(r) && !r.canPlaybackAudio)
+  }
+
+  private removeAudio(room: Room): void {
+    for (const el of this.audioEls.get(room) ?? []) el.remove()
+    this.audioEls.delete(room)
+  }
+
+  /** Hang up a room nothing should be holding any more. */
+  private dropRoom(room: Room): void {
+    this.removeAudio(room)
+    void room.disconnect().catch(() => {})
+  }
+
+  /**
+   * One set of handlers for every room, asking on each event which role the
+   * room has now, because a room can change role (see `promote`).
+   */
+  private wire(room: Room): void {
+    room
+      .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+        if (track.kind === Track.Kind.Audio) {
+          const el = track.attach()
+          const els = this.audioEls.get(room) ?? new Set<HTMLAudioElement>()
+          els.add(el)
+          this.audioEls.set(room, els)
+          document.body.appendChild(el)
+        }
+      })
+      .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        for (const el of track.detach()) {
+          this.audioEls.get(room)?.delete(el as HTMLAudioElement)
+          el.remove()
+        }
+      })
+      .on(RoomEvent.ParticipantConnected, () => this.refresh(room))
+      .on(RoomEvent.ParticipantDisconnected, () => this.refresh(room))
+      .on(RoomEvent.ActiveSpeakersChanged, () => this.refresh(room))
+      .on(RoomEvent.TrackPublished, () => this.refresh(room))
+      .on(RoomEvent.TrackUnpublished, () => this.refresh(room))
+      .on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+        if (this.room === room && participant.identity === room.localParticipant.identity) {
+          this.publish({ myQuality: toQuality(quality) })
+        }
+        this.refresh(room)
+      })
+      .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
+        // Covers the first-ever talk press, where the track publishes after
+        // setTalking already tried (and failed) to find one to meter.
+        if (
+          this.room === room &&
+          pub.kind === Track.Kind.Audio &&
+          this.talking &&
+          !this.micTestStream
+        ) {
+          this.startLevelMeter()
+        }
+      })
+      .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        // Truthful either way: it goes up when the browser blocks playback
+        // and down again the moment a gesture unblocks it, including when
+        // that gesture was somewhere else entirely.
+        this.publish({ audioBlocked: this.playbackBlocked() })
+      })
+      .on(RoomEvent.Reconnecting, () => {
+        if (this.room === room) this.publish({ status: 'reconnecting' })
+        else this.setListenStatus(room, 'reconnecting')
+      })
+      .on(RoomEvent.Reconnected, () => {
+        if (this.room !== room) {
+          this.setListenStatus(room, 'connected')
+          return
+        }
+        this.publish({ status: 'connected' })
+        // Reconcile the mic to the intent captured during the outage. If a
+        // release was dropped while reconnecting, this is what finally closes
+        // the mic; if a press was, it opens it. Without this the mic state
+        // after a reconnect is whatever LiveKit last published, not what the
+        // crew member is actually asking for.
+        void this.applyMic()
+      })
+      .on(RoomEvent.Disconnected, () => {
+        // Only an *unexpected* drop reaches either branch: `leave()` nulls
+        // `this.room` and empties `listens` before disconnecting, and every
+        // other hang-up takes the room out of both first, so a deliberate
+        // exit fails these guards and stays silent.
+        //
+        // `connected` is the other half. A *failed* connect also fires this,
+        // with `this.room` still set — so every join against an unreachable
+        // SFU told the crew member they had been dropped off the intercom
+        // they had never been on, on top of the join error they were
+        // already being shown. Two toasts, one of them false.
+        if (!this.connected.has(room)) return
+        if (this.room === room) {
+          this.reset()
+          // Being dropped off comms without being told is worse than a failed
+          // join. A failed join is at least visibly nothing happening — this
+          // leaves someone believing they are on the intercom, talking to a
+          // channel that stopped hearing them, which on a show is how a call
+          // for help goes unanswered.
+          this.notify('Voice dropped — you are no longer on the intercom')
+          return
+        }
+        const heard = this.listenIdOf(room)
+        if (heard === undefined) return
+        // The same reasoning, smaller: a channel somebody chose to keep an
+        // ear on has gone quiet, and silence is what it sounds like when
+        // nobody is talking. Said, or it reads as a quiet channel.
+        this.listens.delete(heard)
+        this.removeAudio(room)
+        this.publishListening()
+        this.notify(`Stopped hearing ${this.nameOf(heard)} — its connection dropped`)
+      })
+  }
+
+  private setListenStatus(room: Room, status: VoiceListen['status']): void {
+    const id = this.listenIdOf(room)
+    const entry = id === undefined ? undefined : this.listens.get(id)
+    if (!entry) return
+    entry.status = status
+    this.publishListening()
+  }
+
+  private refresh(room: Room): void {
+    if (this.room === room) this.publishParticipants()
+    else if (this.listenIdOf(room) !== undefined) this.publishListening()
   }
 
   /**
@@ -348,11 +644,13 @@ export class VoiceManager {
     }
   }
 
+  /** Leave voice: the talk channel and every channel being heard. */
   async leave(): Promise<void> {
-    const room = this.room
+    const rooms = [this.room, ...[...this.listens.values()].map((l) => l.room)]
     this.room = null
     this.channelId = null
-    if (room) await room.disconnect()
+    this.listens.clear()
+    await Promise.all(rooms.map((room) => room?.disconnect()))
     this.reset()
   }
 
@@ -366,12 +664,20 @@ export class VoiceManager {
   async resumeAudio(): Promise<void> {
     const room = this.room
     if (!room) return
+    // Every room from the one tap: a gesture is spent once it has been
+    // handled, and a second "Tap to hear" per channel would be a game.
+    const heard = [...this.listens.values()].map((l) => l.room.startAudio())
+    let refused = false
     try {
       await room.startAudio()
-      this.publish({ audioBlocked: !room.canPlaybackAudio })
     } catch {
-      this.publish({ audioBlocked: true })
+      refused = true
     }
+    if (heard.length > 0) {
+      const results = await Promise.allSettled(heard)
+      refused ||= results.some((r) => r.status === 'rejected')
+    }
+    this.publish({ audioBlocked: refused || this.playbackBlocked() })
   }
 
   /** Open/close the mic. Mute-based, so open latency is near-zero. */
@@ -456,6 +762,9 @@ export class VoiceManager {
               : { selectedOutput: null, error: 'Speaker disconnected — using default' }
           )
           if (this.room) void this.room.switchActiveDevice(kind, 'default')
+          for (const { room } of this.listens.values()) {
+            void room.switchActiveDevice(kind, 'default').catch(() => {})
+          }
         }
       }
     } catch {
@@ -467,6 +776,12 @@ export class VoiceManager {
     saveDeviceId(kind, deviceId)
     this.publish(kind === 'audioinput' ? { selectedInput: deviceId } : { selectedOutput: deviceId })
     if (!this.room) return
+    // Every room's, not only the talk room's: a speaker plays them all, and
+    // a channel heard now captures with this mic the moment it is talked on
+    // (LiveKit keeps it as the room's capture default until then).
+    for (const { room } of this.listens.values()) {
+      void room.switchActiveDevice(kind, deviceId ?? 'default').catch(() => {})
+    }
     try {
       await this.room.switchActiveDevice(kind, deviceId ?? 'default')
       // Re-point the meter at the new mic: the live test if the panel is open,
@@ -505,12 +820,16 @@ export class VoiceManager {
   }
 
   private async sampleQos(): Promise<void> {
-    const room = this.room
-    if (!room) return
+    if (!this.room) return
     const readings: VoiceQos[] = []
     const seen = new Set<string>()
+    // Every channel being heard, not only the one talked on: comms breaking
+    // up on a channel somebody is monitoring is still comms breaking up.
+    const participants = [this.room, ...[...this.listens.values()].map((l) => l.room)].flatMap(
+      (room) => [...room.remoteParticipants.values()]
+    )
 
-    for (const participant of room.remoteParticipants.values()) {
+    for (const participant of participants) {
       for (const publication of participant.audioTrackPublications.values()) {
         // Audio by construction, but the SDK types the map's value as any
         // remote track — and an older client may not carry the stats call at
@@ -631,23 +950,49 @@ export class VoiceManager {
         name: room.localParticipant.name || 'me',
         speaking: speakingIds.has(room.localParticipant.identity),
         quality: toQuality(room.localParticipant.connectionQuality),
+        listening: false,
       },
       ...[...room.remoteParticipants.values()].map((p) => ({
         id: p.identity,
         name: p.name || p.identity,
         speaking: speakingIds.has(p.identity),
         quality: toQuality(p.connectionQuality),
+        // Here to hear, not to talk: they are listening in from their own
+        // talk channel (or have no microphone). Everyone in a talk room
+        // publishes a muted mic as they join, so no mic is the tell.
+        listening: p.audioTrackPublications.size === 0,
       })),
     ]
     this.publish({ participants: list })
+  }
+
+  private publishListening(): void {
+    const listening: VoiceListen[] = [...this.listens].map(([channelId, { room, status }]) => {
+      const me = room.localParticipant.identity
+      return {
+        channelId,
+        status,
+        speaking: room.activeSpeakers
+          .filter((p) => p.identity !== me)
+          .map((p) => p.name || p.identity),
+        others: room.remoteParticipants.size,
+      }
+    })
+    this.publish({ listening })
   }
 
   private reset(error: string | null = null): void {
     this.talking = false
     this.stopMicTest()
     this.stopQosSampling()
-    for (const el of this.audioEls) el.remove()
+    for (const els of this.audioEls.values()) for (const el of els) el.remove()
     this.audioEls.clear()
+    // Every channel being heard goes with the talk channel: they ride on its
+    // call (see `listen`), and a drop that left them playing would leave
+    // somebody hearing comms with no voice bar to say they are on it.
+    const heard = [...this.listens.values()].map((l) => l.room)
+    this.listens.clear()
+    for (const room of heard) void room.disconnect().catch(() => {})
     // Hang up on the way out. `reset` used to only drop the reference, so a
     // join that failed after `connect` had already succeeded left a live
     // room with nothing pointing at it: the crew member vanished from their
@@ -657,6 +1002,8 @@ export class VoiceManager {
     this.room = null
     this.channelId = null
     if (room) void room.disconnect().catch(() => {})
+    void this.mixCtx?.close().catch(() => {})
+    this.mixCtx = null
     releaseCallAudio()
     this.publish({ ...initialVoiceState, devices: initialVoiceState.devices, error })
   }

@@ -175,15 +175,19 @@ export interface Alert {
 // ---------------------------------------------------------------------------
 
 /**
- * True when the text @-mentions this person, or everyone.
+ * True when the text @-mentions this person, their department, or everyone.
  *
  * The page's test, moved here so the box, the page and the phones agree. A
  * name needs a boundary after it, so "@Sammy" doesn't mention Sam, and
  * "@allison" doesn't mention everyone. Android had neither boundary and
  * buzzed for both.
  */
-export function isMentioned(body: string, myName: string | undefined): boolean {
-  return mentionsEveryone(body) || mentionsName(body, myName)
+export function isMentioned(
+  body: string,
+  myName: string | undefined,
+  myDepartment?: string
+): boolean {
+  return mentionsEveryone(body) || mentionsName(body, myName) || mentionsName(body, myDepartment)
 }
 
 /** `@all`, `@everyone` or `@channel`, as a word. */
@@ -224,6 +228,8 @@ export interface AlertChannelInput {
 export interface AlertPerson {
   id: string
   name: string
+  /** Their department's name: `@Lighting` is for everyone in Lighting. */
+  department?: string
 }
 
 /**
@@ -234,7 +240,7 @@ export interface AlertPerson {
  * setting for the channel:
  *
  *  - a DM alerts unless muted;
- *  - their own name alerts even when muted;
+ *  - their own name, or their department's, alerts even when muted;
  *  - `@all`, `@everyone`, `@channel` and the desk alert unless muted;
  *  - anything else only in a channel set to All messages.
  */
@@ -258,7 +264,12 @@ export function messageAlertKind(input: {
 
   const muted = level === 'muted'
   if (channel.kind === 'dm') return muted ? null : 'dm'
-  if (mentionsName(message.body, person.name)) return 'mention'
+  // A department's name is addressed to each person in it, as their own
+  // name is: "@Lighting, house lights" is for the lighting crew whatever
+  // they set the channel to.
+  if (mentionsName(message.body, person.name) || mentionsName(message.body, person.department)) {
+    return 'mention'
+  }
   if (muted) return null
   if (desk) return 'desk'
   if (mentionsEveryone(message.body)) return 'everyone'
