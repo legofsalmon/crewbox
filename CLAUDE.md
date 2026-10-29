@@ -89,5 +89,7 @@ against), `navigation.md`, `states.md`, `components.md` and `motion.md`.
 
 crewbox takes the colour tokens (`npm run ds:sync`, and `npm run ds:check` to
 see whether the copy is behind). Buttons and selection are cyan; amber is
-attention; the brand amber stays on the icon, splash and site. Density, fonts,
-corners and the shared components come later.
+attention; the brand amber stays on the icon, splash and site. It also takes
+the touch density's corners, IBM Plex (bundled, so it works offline), the
+shared states and the motion, drawn on its own components rather than
+`components.css`; the server-rendered setup and PIN pages use the roles too.
