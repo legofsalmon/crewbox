@@ -31,8 +31,8 @@
     "docs:test:ui": "playwright test --config playwright.docs.config.ts",
     "docs:shots": "npm run build -w web && rm -rf \"${RUNNER_TEMP:-/tmp}/crewbox-shots-data\" && playwright test --config playwright.screenshots.config.ts",
     "docs:preview": "node site/preview.mjs",
-    "ds:sync": "node ../design-system/scripts/sync.mjs --to web/src/ds --files tokens.css,tokens.js,tokens.d.ts",
-    "ds:check": "node ../design-system/scripts/sync.mjs --check web/src/ds"
+    "ds:sync": "node web/src/ds/ds-check.mjs web/src/ds --sync --offline",
+    "ds:check": "node web/src/ds/ds-check.mjs web/src/ds --reads web/src"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

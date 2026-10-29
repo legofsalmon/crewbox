@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -6,10 +6,10 @@ import { describe, expect, it } from 'vitest'
 /**
  * The shared design system, as crewbox takes it.
  *
- * web/src/ds/ holds only what the design system's scripts/sync.mjs vendored.
- * Whether a copy is *behind* the design system needs a checkout of that
- * private repository beside this one (`npm run ds:check`); whether it was
- * edited here, or is read wrongly, does not, so these hold that half.
+ * web/src/ds/ holds only what the design system's scripts/sync.mjs vendored,
+ * with the design system's own checker among it. Whether a copy is *behind*
+ * the published system is `npm run ds:check`, which warns; whether it was
+ * edited here, or is read wrongly, fails these.
  */
 
 const SRC = join(import.meta.dirname, '..', 'src')
@@ -25,39 +25,26 @@ function* sources(dir: string): Generator<string> {
 }
 
 describe('the vendored design system', () => {
-  it('holds tokens.css, tokens.js and tokens.d.ts', () => {
-    expect(readdirSync(DS).sort()).toEqual(['tokens.css', 'tokens.d.ts', 'tokens.js'])
+  it('holds tokens.css, tokens.js, tokens.d.ts and the checker', () => {
+    expect(readdirSync(DS).sort()).toEqual([
+      'ds-check.mjs',
+      'tokens.css',
+      'tokens.d.ts',
+      'tokens.js',
+    ])
   })
 
-  for (const file of ['tokens.css', 'tokens.d.ts', 'tokens.js']) {
-    it(`${file} is unedited since it was vendored`, () => {
-      // A hand edit here is a fix the design-system repo should get; the next
-      // `npm run ds:sync` would refuse to run over it.
-      const text = readFileSync(join(DS, file), 'utf8')
-      const newline = text.indexOf('\n')
-      const stamp = /@letissier\/design-system \S+ · (\S+) · sha256-([0-9a-f]{16}) · /.exec(
-        text.slice(0, newline)
-      )
-      expect(stamp?.[1]).toBe(file)
-      const sum = createHash('sha256')
-        .update(text.slice(newline + 1))
-        .digest('hex')
-        .slice(0, 16)
-      expect(sum).toBe(stamp?.[2])
-    })
-  }
-
-  it('defines every --ds- role the app reads', () => {
-    // A misspelt role computes to nothing, silently: no colour at all.
-    const css = readFileSync(join(DS, 'tokens.css'), 'utf8')
-    const defined = new Set([...css.matchAll(/^\s*(--ds-[a-z0-9-]+)\s*:/gm)].map((m) => m[1]))
-    const unknown: string[] = []
-    for (const file of sources(SRC)) {
-      for (const m of readFileSync(file, 'utf8').matchAll(/var\((--ds-[a-z0-9-]+)/g)) {
-        if (!defined.has(m[1])) unknown.push(`${relative(SRC, file)}: ${m[1]}`)
-      }
-    }
-    expect(unknown).toEqual([])
+  it('is unedited since it was vendored, and defines every --ds- role the app reads', () => {
+    // A hand edit here is a fix the design-system repo should get, and the
+    // next `npm run ds:sync` would drop it; a misspelt role computes to
+    // nothing, silently. The design system's checker holds both.
+    const run = spawnSync(
+      process.execPath,
+      [join(DS, 'ds-check.mjs'), 'web/src/ds', '--reads', 'web/src', '--offline'],
+      { cwd: join(SRC, '..', '..'), encoding: 'utf8', env: { PATH: process.env.PATH } }
+    )
+    expect(run.stderr).toBe('')
+    expect(run.status).toBe(0)
   })
 
   it('keeps the brand amber to the brand', () => {

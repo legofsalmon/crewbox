@@ -25,6 +25,8 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      # Whether web/src/ds is behind the published design system: a warning, not a failure.
+      - run: npm run ds:check
       - run: npm run docs:test
       - name: Docs output is fresh
         # The generated docs are committed (the site deploys with no build
