@@ -10,8 +10,9 @@ import type { SeriesPoint } from './types.ts'
  * and "how wild it got".
  */
 
-export const SPARK_W = 120
-export const SPARK_H = 28
+/** Four times as wide as tall, as the design system's sparkline is (`size.sparkline`). */
+export const SPARK_W = 96
+export const SPARK_H = 24
 /** Breathing room so a flat line isn't glued to the frame's edge. */
 const PAD = 2
 
@@ -23,13 +24,15 @@ export interface SparklinePaths {
   viewBox: string
   /** Latest average, for the number beside the drawing. */
   last: number | null
+  /** Where the latest average sits, for the point that marks it. */
+  lastAt: { x: number; y: number } | null
 }
 
 const round = (n: number): number => Math.round(n * 100) / 100
 
 export function sparklinePaths(points: SeriesPoint[]): SparklinePaths {
   const viewBox = `0 0 ${SPARK_W} ${SPARK_H}`
-  if (points.length === 0) return { d: '', bandD: '', viewBox, last: null }
+  if (points.length === 0) return { d: '', bandD: '', viewBox, last: null, lastAt: null }
 
   const t0 = points[0]![0]
   const t1 = points[points.length - 1]![0]
@@ -56,5 +59,6 @@ export function sparklinePaths(points: SeriesPoint[]): SparklinePaths {
   const bottom = [...points].reverse().map(([ts, min]) => `L${x(ts)} ${y(min)}`)
   const bandD = points.length > 1 ? `${top.join(' ')} ${bottom.join(' ')} Z` : ''
 
-  return { d: avgLine, bandD, viewBox, last: points[points.length - 1]![2] }
+  const [lastTs, , lastAvg] = points[points.length - 1]!
+  return { d: avgLine, bandD, viewBox, last: lastAvg, lastAt: { x: x(lastTs), y: y(lastAvg) } }
 }

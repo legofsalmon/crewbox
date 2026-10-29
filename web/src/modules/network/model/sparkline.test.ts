@@ -16,6 +16,13 @@ describe('sparklinePaths', () => {
     expect(p.d).toBe('')
     expect(p.bandD).toBe('')
     expect(p.last).toBeNull()
+    expect(p.lastAt).toBeNull()
+  })
+
+  it('puts the latest point where the line ends', () => {
+    const p = sparklinePaths([point(0, 1, 2, 3), point(60_000, 2, 4, 6)])
+    const end = p.d.split(' L').pop()!
+    expect(`${p.lastAt!.x} ${p.lastAt!.y}`).toBe(end)
   })
 
   it('centres a single point with no band', () => {

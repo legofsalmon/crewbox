@@ -5,8 +5,10 @@ import styles from './Sparkline.module.scss'
 
 /**
  * A minute-resolution sparkline: min–max band with the average line through
- * it. Inline SVG in the house style — no chart library, colours only via
- * the theme classes on the wrapper.
+ * it and a point on the latest. Inline SVG, no chart library. It is the
+ * design system's sparkline (charts.md): one series is neutral, so the line
+ * is the chart mark's grey and never the accent; the finding's glyph beside
+ * it says whether anything is wrong.
  */
 export default function Sparkline({
   points,
@@ -31,6 +33,9 @@ export default function Sparkline({
       >
         {paths.bandD && <path d={paths.bandD} className={styles.band} />}
         <path d={paths.d} className={styles.line} fill="none" />
+        {paths.lastAt && (
+          <circle cx={paths.lastAt.x} cy={paths.lastAt.y} r={4} className={styles.point} />
+        )}
       </svg>
       {latest && <span className={styles.value}>{latest}</span>}
     </span>
