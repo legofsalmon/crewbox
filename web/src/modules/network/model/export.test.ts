@@ -108,7 +108,9 @@ describe('buildAuditHtml', () => {
 
   it('draws the referenced series as an inline SVG', () => {
     expect(html).toContain('<svg')
-    expect(html).toContain('stroke="#9a6600"')
+    // One series is neutral (the design system's chart mark), never amber or cyan.
+    expect(html).toContain('stroke="#3c3c44"')
+    expect(html).toContain('<circle')
   })
 
   it('lists events and the probe log with its verbatim sent line', () => {

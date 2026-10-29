@@ -1,27 +1,44 @@
-/* Theme tokens only — the drawing must read in daylight and a dark tent. */
+/*
+ * The design system's sparkline (charts.md, components.md#sparkline), in
+ * its roles so it reads in daylight and a dark tent: one series is neutral
+ * (`chart.mark`), the min–max band is the chart wash, the latest value is
+ * secondary ink. size.sparkline tall and four times as wide.
+ */
 
 .spark {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ds-space-2);
+  vertical-align: middle;
 }
 
 .svg {
-  width: 120px;
-  height: 28px;
+  display: block;
+  width: calc(var(--ds-size-sparkline) * 4);
+  height: var(--ds-size-sparkline);
   flex-shrink: 0;
+  overflow: visible;
 }
 
 .band {
-  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+  fill: var(--ds-chart-band);
   stroke: none;
 }
 
 .line {
-  stroke: var(--accent);
-  stroke-width: 1.5;
+  stroke: var(--ds-chart-mark);
+  stroke-width: var(--ds-size-chart-line);
   stroke-linejoin: round;
   stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The latest, ringed in the card's surface so it stays a dot on the line. */
+.point {
+  fill: var(--ds-chart-mark);
+  stroke: var(--bg-raised);
+  stroke-width: var(--ds-space-half);
+  vector-effect: non-scaling-stroke;
 }
 
 .value {
@@ -29,4 +46,14 @@
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+@media (forced-colors: active) {
+  .line {
+    stroke: CanvasText;
+  }
+  .point {
+    fill: CanvasText;
+    stroke: Canvas;
+  }
 }

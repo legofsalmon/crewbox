@@ -59,7 +59,7 @@ const STYLE = `
   .flabel { font-weight:600; }
   .fdetail { color:var(--muted); }
   .ffix { color:var(--warn); }
-  .fseries svg { vertical-align:middle; margin-left:8px; }
+  .fseries svg { vertical-align:middle; margin-left:8px; overflow:visible; }
   .events td { padding:3px 12px 3px 0; vertical-align:top; }
   .events .t { color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
   .sent { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted); }
@@ -72,13 +72,19 @@ const STYLE = `
 function chartSvg(points: SeriesPoint[]): string {
   const p = sparklinePaths(points)
   if (!p.d) return ''
-  const band = p.bandD ? `<path d="${p.bandD}" fill="rgba(154,102,0,0.18)" stroke="none"/>` : ''
+  // The design system's sparkline in the report's fixed light palette: the
+  // light theme's chart mark (#3c3c44) for the one series, its wash for the
+  // band, never a status colour.
+  const band = p.bandD ? `<path d="${p.bandD}" fill="rgba(0,0,0,0.1)" stroke="none"/>` : ''
+  const dot = p.lastAt
+    ? `<circle cx="${p.lastAt.x}" cy="${p.lastAt.y}" r="4" fill="#3c3c44" stroke="#fdfbf7" stroke-width="2"/>`
+    : ''
   // No xmlns: inline SVG inside an HTML5 document needs none, and it keeps
   // the report literally free of any http(s) reference.
   return (
     `<svg width="${SPARK_W}" height="${SPARK_H}" viewBox="${p.viewBox}">${band}` +
-    `<path d="${p.d}" fill="none" stroke="#9a6600" stroke-width="1.5" ` +
-    `stroke-linejoin="round" stroke-linecap="round"/></svg>`
+    `<path d="${p.d}" fill="none" stroke="#3c3c44" stroke-width="2" ` +
+    `stroke-linejoin="round" stroke-linecap="round"/>${dot}</svg>`
   )
 }
 
