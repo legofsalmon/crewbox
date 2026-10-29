@@ -1,4 +1,4 @@
-// @letissier/design-system 0.11.0 · ds-check.mjs · sha256-6872bd565dd4b66f · vendored by scripts/sync.mjs; change the design-system repo, not this copy
+// @letissier/design-system 0.12.0 · ds-check.mjs · sha256-6872bd565dd4b66f · vendored by scripts/sync.mjs; change the design-system repo, not this copy
 // The design system's checker, vendored into an app by scripts/sync.mjs and
 // run from the app's CI. It needs nothing but Node 18 or later, and no
 // checkout of the design system: the stamps carry what it checks against,
