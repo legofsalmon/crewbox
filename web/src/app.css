@@ -1123,10 +1123,12 @@ a.app-version {
   text-align: center;
 }
 
-/* Someone @-mentioned you (or it's a DM) — louder than plain unread. */
+/* Someone @-mentioned you (or it's a DM) — louder than plain unread. Amber,
+   because somebody wants you: attention, not something broken (Colly,
+   2026-11-01), the same amber as the mention banner's edge. */
 .badge-mention {
-  background: var(--danger-fill);
-  color: var(--danger-on);
+  background: var(--warn);
+  color: var(--warn-on);
 }
 
 /* Online from off-site (tunnel) — support staff at the office/warehouse. */
