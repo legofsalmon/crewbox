@@ -1,4 +1,4 @@
-// @letissier/design-system 0.12.0 · ds-check.mjs · sha256-6872bd565dd4b66f · vendored by scripts/sync.mjs; change the design-system repo, not this copy
+// @letissier/design-system 0.15.0 · ds-check.mjs · sha256-e5fb37ab9d4e5de0 · vendored by scripts/sync.mjs; change the design-system repo, not this copy
 // The design system's checker, vendored into an app by scripts/sync.mjs and
 // run from the app's CI. It needs nothing but Node 18 or later, and no
 // checkout of the design system: the stamps carry what it checks against,
@@ -8,7 +8,9 @@
 //       every copy in src/ds/ and every ds: block in index.html is as it was
 //       vendored (not edited by hand), and current or behind is said
 //   node scripts/ds-check.mjs src/ds --reads src
-//       also: every var(--ds-*) read under src/ is one the tokens define
+//       also: every var(--ds-*) read under src/ is one the tokens define, and
+//       every ds- class used in a class attribute is one the vendored
+//       base.css or components.css still draws (a renamed class un-draws markup)
 //   --strict          fail when a copy is behind, not only warn
 //   --manifest URL    where the current manifest is (a URL or a file); else
 //                     ../design-system/dist/manifest.json if it is checked
@@ -27,10 +29,10 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
 
 export const MANIFEST_URL = 'https://design-system-colly.vercel.app/manifest.json';
-export const NAMES = ['tokens.css', 'base.css', 'components.css', 'tokens.js', 'tokens.d.ts', 'tokens.rs', 'icons.js', 'icons.d.ts', 'ds-check.mjs', 'ds_check.py'];
+export const NAMES = ['tokens.css', 'base.css', 'components.css', 'tokens.js', 'tokens.d.ts', 'tokens.rs', 'icons.js', 'icons.d.ts', 'behaviours.js', 'behaviours.d.ts', 'fonts.css', 'ds-check.mjs', 'ds_check.py'];
 const STAMP = /^(?:\/\*|\/\/|#) @letissier\/design-system (\S+) · (\S+) · (sha256-[0-9a-f]{16}) · /;
-const BLOCK = /\/\* ds:(tokens|base|components):start([^*]*)\*\/\r?\n?([\s\S]*?)\/\* ds:\1:end \*\//g;
-const SHEET = { tokens: 'tokens.css', base: 'base.css', components: 'components.css' };
+const BLOCK = /\/\* ds:(tokens|base|components|behaviours):start([^*]*)\*\/\r?\n?([\s\S]*?)\/\* ds:\1:end \*\//g;
+const SHEET = { tokens: 'tokens.css', base: 'base.css', components: 'components.css', behaviours: 'behaviours.js' };
 const READ_EXT = /\.(css|scss|html|js|mjs|jsx|ts|tsx|svelte|vue)$/;
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist', 'build', 'target', '.next', 'out', 'coverage']);
 
@@ -108,6 +110,9 @@ export function undefinedReads(found, reads) {
   const sheets = found.filter((c) => c.name === 'tokens.css');
   if (!sheets.length) return reads.length ? ['--reads needs a vendored tokens.css or ds:tokens block to compare with'] : [];
   const defined = new Set(sheets.flatMap((c) => [...c.payload.matchAll(/(--ds-[a-z0-9-]+)\s*:/g)].map((m) => m[1])));
+  // the classes the vendored stylesheets draw; checked only where one is vendored
+  const drawn = found.filter((c) => c.name === 'components.css' || c.name === 'base.css');
+  const classes = new Set(drawn.flatMap((c) => [...c.payload.matchAll(/\.(ds-[a-z0-9_-]+)/g)].map((m) => m[1])));
   const problems = [];
   const visit = (path) => {
     let st;
@@ -130,6 +135,13 @@ export function undefinedReads(found, reads) {
       .filter((n) => !defined.has(n) && !own.has(n))
       .sort();
     for (const n of missing) problems.push(`${path}: reads ${n}, which the design system does not define`);
+    if (!drawn.length) return;
+    const ownClasses = new Set([...text.matchAll(/\.(ds-[a-z0-9_-]+)/g)].map((m) => m[1]));
+    const used = [...text.matchAll(/class(?:Name)?\s*=\s*["'`{]([^"'`}]*)/g)].flatMap((m) => m[1].split(/\s+/));
+    const gone = [...new Set(used.filter((c) => /^ds-[a-z0-9_-]+$/.test(c)))]
+      .filter((c) => !classes.has(c) && !ownClasses.has(c))
+      .sort();
+    for (const c of gone) problems.push(`${path}: uses class ${c}, which the vendored stylesheets do not draw`);
   };
   for (const r of reads) {
     if (existsSync(r)) visit(r);
